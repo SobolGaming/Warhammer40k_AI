@@ -3626,7 +3626,8 @@ class Unit(
     )
     _TARGETED_STRATAGEM_CP_REFUND_AURA_RE = re.compile(
         r"while\s+a\s+friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit\s+is\s+within\s+(?P<range>\d+)\s+of\s+(?:this\s+model|the\s+bearer)\s+"
-        r"each\s+time\s+you\s+select\s+that\s+unit\s+as\s+the\s+target\s+of\s+a\s+stratagem\s+roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
+        r"each\s+time\s+you\s+(?:target\s+that\s+unit\s+with\s+a\s+stratagem|select\s+that\s+unit\s+as\s+the\s+target\s+of\s+a\s+stratagem)\s+"
+        r"roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
         r"(?:you\s+)?gain\s+(?P<cp>\d+)\s*cp",
         re.IGNORECASE,
     )

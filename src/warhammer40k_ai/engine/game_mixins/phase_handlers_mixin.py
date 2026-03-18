@@ -6258,6 +6258,177 @@ class GamePhaseHandlersMixin:
                             phase_name=pname,
                         )
 
+    def _on_phase_start_fight_phase_select_engagement_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase: select one enemy unit in Engagement Range and resolve a model-driven mortal-wound table."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        def _unit_sort_key(unit):
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if unit_id:
+                return unit_id
+            return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            model_id = str(get_entity_id(model) or "").strip()
+            if model_id:
+                return model_id
+            return str(getattr(model, "name", "") or "")
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        pending_model_ids: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "fight_phase_select_engagement_mortal_table":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            enemy_roots = list(self._collect_enemy_unit_roots(p) or [])
+            if not enemy_roots:
+                continue
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "").strip()
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                root_is_alive_fn = getattr(root, "is_alive", None)
+                root_alive = bool(root_is_alive_fn()) if callable(root_is_alive_fn) else bool(root_is_alive_fn)
+                if not root_alive:
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                root_is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+                if callable(root_is_in_reserves_fn) and bool(root_is_in_reserves_fn()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)):
+                    continue
+
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+
+                for model in sorted(list(models or []), key=_model_sort_key):
+                    model_is_alive_attr = getattr(model, "is_alive", True)
+                    model_alive = bool(model_is_alive_attr() if callable(model_is_alive_attr) else model_is_alive_attr)
+                    if not model_alive:
+                        continue
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_model_ids:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    spec_fn = getattr(source_unit, "model_start_fight_phase_engagement_mortal_table_specs", None)
+                    specs = list(spec_fn(model) or []) if callable(spec_fn) else []
+                    if not specs:
+                        continue
+                    for spec in list(specs or []):
+                        engagement_scope = str(spec.get("engagement_scope", "unit") or "unit").strip().lower() or "unit"
+                        candidates = []
+                        seen_targets: set[str] = set()
+                        for enemy_root in list(enemy_roots or []):
+                            if enemy_root is None:
+                                continue
+                            enemy_id = str(get_entity_id(enemy_root) or "")
+                            if not enemy_id or enemy_id in seen_targets:
+                                continue
+                            seen_targets.add(enemy_id)
+                            if engagement_scope == "model":
+                                if not model_within_engagement_range_of_unit(model, enemy_root):
+                                    continue
+                            else:
+                                try:
+                                    if not bool(getattr(self.map, "is_within_engagement_range")(root, enemy_root)):
+                                        continue
+                                except Exception:
+                                    continue
+                            candidates.append(enemy_root)
+                        if not candidates:
+                            continue
+
+                        ability_name = (
+                            str(spec.get("source", "") or "Fight phase engagement mortal table").strip()
+                            or "Fight phase engagement mortal table"
+                        )
+                        ability_key = (
+                            str(spec.get("ability_key", "") or "fight_phase_engagement_mortal_table").strip().lower()
+                            or "fight_phase_engagement_mortal_table"
+                        )
+                        options = []
+                        candidate_ids = []
+                        for cand in sorted(list(candidates or []), key=_unit_sort_key):
+                            target_id = str(get_entity_id(cand) or "")
+                            if not target_id:
+                                continue
+                            candidate_ids.append(target_id)
+                            options.append(
+                                DecisionOption.create(
+                                    str(getattr(cand, "name", "Unit") or "Unit"),
+                                    payload={"target_unit_id": target_id},
+                                )
+                            )
+                        if not options:
+                            continue
+
+                        self.request_decision(
+                            DecisionRequest.create(
+                                DECISION_CHOOSE_QUARRY,
+                                f"{ability_name}: select one enemy unit within Engagement Range.",
+                                player_id=getattr(p, "id", None),
+                                options=options,
+                                context={
+                                    "ability": str(spec.get("context_ability", "") or "fight_phase_select_engagement_mortal_table"),
+                                    "ability_name": ability_name,
+                                    "ability_key": ability_key,
+                                    "phase_name": pname,
+                                    "turn": int(current_turn),
+                                    "source_unit_id": str(get_entity_id(source_unit) or ""),
+                                    "unit_id": root_id,
+                                    "model_id": model_id,
+                                    "engagement_only": True,
+                                    "engagement_scope": engagement_scope,
+                                    "candidate_unit_ids": list(candidate_ids),
+                                    "roll_bonus_per_models": int(spec.get("roll_bonus_per_models", 0) or 0),
+                                    "roll_bonus_per_step": int(spec.get("roll_bonus_per_step", 0) or 0),
+                                    "results": list(spec.get("results", []) or []),
+                                },
+                            )
+                        )
+                        if model_id:
+                            pending_model_ids.add(model_id)
+                        break
+
     def _on_phase_start_fight_phase_select_enemy_melee_hit_penalty(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: select one enemy unit in Engagement Range to suffer a melee hit-roll penalty."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

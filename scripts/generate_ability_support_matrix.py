@@ -6507,6 +6507,11 @@ def _classify_ability_base(
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     command_phase_enemy_range_battleshock_support = _command_phase_enemy_range_battleshock_support(description)
+    single_phase_enemy_range_battleshock_support = _single_phase_enemy_range_battleshock_support(description)
+    leading_melee_attacks_and_destroyed_friendly_range_battleshock_support = (
+        _leading_melee_attacks_and_destroyed_friendly_range_battleshock_support(description)
+    )
+    leading_unit_melee_attacks_strength_bonus_support = _leading_unit_melee_attacks_strength_bonus_support(description)
     command_phase_select_friendly_synapse_units_support = _command_phase_select_friendly_synapse_units_support(description)
     shadow_in_the_warp_enemy_battleshock_penalty_support = _shadow_in_the_warp_enemy_battleshock_penalty_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
@@ -6544,6 +6549,7 @@ def _classify_ability_base(
     model_unit_destroyed_objective_control_bonus_support = _model_unit_destroyed_objective_control_bonus_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
+    fight_phase_select_engagement_mortal_table_support = _fight_phase_select_engagement_mortal_table_support(description)
     fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
     fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support = (
         _fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support(description)
@@ -6768,6 +6774,8 @@ def _classify_ability_base(
     prey_selection_support = _prey_selection_support(description)
     if prey_selection_support:
         return prey_selection_support
+    if leading_melee_attacks_and_destroyed_friendly_range_battleshock_support:
+        return leading_melee_attacks_and_destroyed_friendly_range_battleshock_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -7144,6 +7152,8 @@ def _classify_ability_base(
         return start_selected_phases_enemy_range_battleshock_support
     if command_phase_enemy_range_battleshock_support:
         return command_phase_enemy_range_battleshock_support
+    if single_phase_enemy_range_battleshock_support:
+        return single_phase_enemy_range_battleshock_support
     if command_phase_select_friendly_synapse_units_support:
         return command_phase_select_friendly_synapse_units_support
     if shadow_in_the_warp_enemy_battleshock_penalty_support:
@@ -7204,8 +7214,12 @@ def _classify_ability_base(
         return model_unit_destroyed_objective_control_bonus_support
     if failed_battleshock_aura_mortal_heal_support:
         return failed_battleshock_aura_mortal_heal_support
+    if leading_unit_melee_attacks_strength_bonus_support:
+        return leading_unit_melee_attacks_strength_bonus_support
     if fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support:
         return fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support
+    if fight_phase_select_engagement_mortal_table_support:
+        return fight_phase_select_engagement_mortal_table_support
     if fight_phase_select_enemy_melee_hit_penalty_support:
         return fight_phase_select_enemy_melee_hit_penalty_support
     if fight_phase_select_engagement_battleshock_support:
@@ -9867,13 +9881,22 @@ def _weapon_target_keyword_attack_keyword_support(description: str) -> Optional[
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    scope = ""
     pattern = (
         r"each time this model makes a (?P<scope>melee|ranged) attack with its (?P<weapon>[a-z0-9 ]+) "
         r"that targets (?P<target_clause>.+?) that attack has (?:the )?(?P<keyword>[a-z0-9 ]+) ability"
     )
     m = re.fullmatch(pattern, norm)
-    if not m:
-        return None
+    if m:
+        scope = str(m.group("scope") or "").strip().lower()
+    else:
+        m = re.fullmatch(
+            r"this models? (?P<weapon>[a-z0-9 ]+) has (?:the )?(?P<keyword>[a-z0-9 ]+) ability "
+            r"(?:when|while) targeting (?P<target_clause>.+?) units?",
+            norm,
+        )
+        if not m:
+            return None
     labels = _attack_keyword_labels_from_text(m.group("keyword") or "")
     if not labels:
         return None
@@ -9892,9 +9915,9 @@ def _weapon_target_keyword_attack_keyword_support(description: str) -> Optional[
     if not target_label:
         return None
     scope_text = "Attacks"
-    if str(m.group("scope") or "").strip().lower() == "melee":
+    if scope == "melee":
         scope_text = "Melee attacks"
-    elif str(m.group("scope") or "").strip().lower() == "ranged":
+    elif scope == "ranged":
         scope_text = "Ranged attacks"
     weapon = str(m.group("weapon") or "").strip()
     if not weapon:
@@ -10467,6 +10490,25 @@ def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, st
     if m:
         val = str(m.group("val") or "1")
         return ("Supported", f"Model ranged attacks gain +{val} to hit when targeting the closest eligible target.")
+    m = re.fullmatch(
+        r"each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+) that targets the closest eligible "
+        r"(?P<targets>[a-z0-9 ]+?) unit add (?P<val>\d+) to the hit roll",
+        norm,
+    )
+    if m:
+        try:
+            val = int(m.group("val") or 0)
+        except (TypeError, ValueError):
+            val = 0
+        weapon = str(m.group("weapon") or "").strip()
+        targets_raw = str(m.group("targets") or "").strip()
+        target_parts = [part.strip().upper() for part in re.split(r"\s+(?:and|or)\s+", targets_raw) if part.strip()]
+        target_label = "/".join(target_parts) if target_parts else targets_raw.upper()
+        if val > 0 and weapon and target_label:
+            return (
+                "Supported",
+                f"Attacks with {weapon} gain +{val} to hit when targeting the closest eligible {target_label} target.",
+            )
     chunks, remaining = _split_attack_roll_chunks(description)
     if not chunks or remaining:
         return None
@@ -11594,7 +11636,29 @@ def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[st
         + bonus_clause +
         r"on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
     )
+    aura_pattern = (
+        r"while a friendly (?P<keyword>[a-z0-9 ]+?) unit is within (?P<range>\d+) of (?:this model|the bearer) "
+        r"each time you (?:target that unit with a stratagem|select that unit as the target of a stratagem) roll one d6 "
+        + bonus_clause +
+        r"on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
+    )
     smoke_loss = "bearer loses the smoke keyword" in norm
+    m_aura = re.fullmatch(aura_pattern, norm)
+    if m_aura:
+        roll = m_aura.group("roll") or "5"
+        cp = m_aura.group("cp") or "1"
+        keyword = re.sub(r"\s+", " ", str(m_aura.group("keyword") or "").strip()).upper()
+        range_value = m_aura.group("range") or "0"
+        bonus = m_aura.group("bonus")
+        bonus_keyword = re.sub(r"\s+", " ", str(m_aura.group("bonus_keyword") or "").strip()).upper()
+        bonus_range = m_aura.group("bonus_range") or "0"
+        bonus_note = ""
+        if bonus:
+            bonus_note = f", adding {bonus} if one or more friendly {bonus_keyword} models are within {bonus_range}\""
+        return (
+            "Supported",
+            f"Aura: friendly {keyword} units within {range_value}\" roll D6{bonus_note} when targeted by a Stratagem and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+        )
     for pattern in (direct_pattern, select_pattern):
         m = re.fullmatch(pattern, norm)
         if not m:
@@ -15098,6 +15162,98 @@ def _command_phase_enemy_range_battleshock_support(description: str) -> Optional
     )
 
 
+def _single_phase_enemy_range_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your (?P<phase>movement|shooting|charge|fight) phase (?:you can )?select one enemy unit within (?P<range>\d+) "
+        r"of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if rng <= 0:
+        return None
+    phase_token = str(m.group("phase") or "").strip().lower()
+    phase_label = {
+        "movement": "Movement",
+        "shooting": "Shooting",
+        "charge": "Charge",
+        "fight": "Fight",
+    }.get(phase_token, phase_token.title())
+    return (
+        "Supported",
+        f"{phase_label} phase: select one enemy unit within {rng}\" of the source model to take a Battle-shock test.",
+    )
+
+
+def _leading_melee_attacks_and_destroyed_friendly_range_battleshock_support(
+    description: str,
+) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of melee weapons equipped by "
+        r"models in that unit when this model is destroyed each friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) "
+        r"of this model must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        bonus = int(m.group("bonus") or 0)
+    except (TypeError, ValueError):
+        bonus = 0
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if bonus <= 0 or rng <= 0:
+        return None
+    keyword_phrase = " ".join(str(m.group("keyword") or "").strip().upper().split())
+    if not keyword_phrase:
+        return None
+    return (
+        "Supported",
+        f"Leading: melee weapons in the attached unit gain +{bonus}A. When this model is destroyed, friendly {keyword_phrase} units within {rng}\" take Battle-shock tests.",
+    )
+
+
+def _leading_unit_melee_attacks_strength_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit add (?P<bonus>\d+) to the "
+        r"(?:(?:attacks and strength)|(?:strength and attacks)) characteristics of melee weapons equipped by models in that unit"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        bonus = int(m.group("bonus") or 0)
+    except (TypeError, ValueError):
+        bonus = 0
+    if bonus <= 0:
+        return None
+    return (
+        "Supported",
+        f"Leading: melee weapons equipped by models in the attached unit gain +{int(bonus)} Attacks and +{int(bonus)} Strength.",
+    )
+
+
 def _command_phase_select_friendly_synapse_units_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -16336,6 +16492,77 @@ def _fight_phase_select_engagement_battleshock_support(description: str) -> Opti
     return (
         "Supported",
         f"{prefix_text}Start of Fight phase: select one enemy unit in Engagement Range to take a Battle-shock test.",
+    )
+
+
+def _fight_phase_select_engagement_mortal_table_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    number_words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+    }
+
+    def _parse_int_token(token: str) -> int:
+        raw = str(token or "").strip().lower()
+        if raw.isdigit():
+            return int(raw)
+        return int(number_words.get(raw, 0) or 0)
+
+    pattern = (
+        r"at the start of the fight phase select one enemy unit within engagement range of this model(?: s|s) unit and roll one d6 "
+        r"adding (?P<roll_bonus>\d+|one|two|three|four|five|six|seven|eight|nine|ten) to the result for every "
+        r"(?P<step>\d+|one|two|three|four|five|six|seven|eight|nine|ten) models in this model(?: s|s) unit "
+        r"on a (?P<low_min>\d+)\s+(?P<low_max>\d+) that enemy unit suffers (?P<low>d3|d6|\d+) mortal wounds "
+        r"on a (?P<mid_min>\d+)\s+(?P<mid_max>\d+) that enemy unit suffers (?P<mid>d3|d6|\d+) mortal wounds "
+        r"on a (?P<high_threshold>\d+)\+? that enemy unit suffers (?P<high>d3|d6|\d+)(?:\s*(?:\+|plus)?\s*(?P<high_bonus>\d+))? mortal wounds"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+
+    def _fmt_roll(token: str, bonus: int = 0) -> str:
+        text = str(token or "").strip().upper()
+        if not text:
+            return ""
+        if bonus > 0:
+            return f"{text}+{int(bonus)}"
+        return text
+
+    try:
+        roll_bonus = _parse_int_token(m.group("roll_bonus") or "")
+    except (TypeError, ValueError):
+        roll_bonus = 0
+    try:
+        step = _parse_int_token(m.group("step") or "")
+    except (TypeError, ValueError):
+        step = 0
+    try:
+        high_bonus = int(m.group("high_bonus") or 0)
+    except (TypeError, ValueError):
+        high_bonus = 0
+    if roll_bonus <= 0 or step <= 0:
+        return None
+    return (
+        "Supported",
+        (
+            "Start of Fight phase: select one enemy unit in Engagement Range of the source unit; "
+            f"roll D6 with +{int(roll_bonus)} per {int(step)} models in that unit; "
+            f"{m.group('low_min')}-{m.group('low_max')} deals {_fmt_roll(m.group('low'))}, "
+            f"{m.group('mid_min')}-{m.group('mid_max')} deals {_fmt_roll(m.group('mid'))}, "
+            f"{m.group('high_threshold')}+ deals {_fmt_roll(m.group('high'), high_bonus)} mortal wounds."
+        ),
     )
 
 

@@ -12544,6 +12544,9 @@ class KeywordsDetachmentsMixin:
         """
         Return rule info for abilities like:
         "Each time this model makes a ranged attack that targets the closest eligible target, add 1 to the Hit roll."
+        Also supports weapon/keyword constrained variants like:
+        "Each time this model makes an attack with its twin las-talon that targets the closest eligible MONSTER or VEHICLE unit,
+         add 1 to the Hit roll."
         """
         if model is None:
             return None
@@ -12560,24 +12563,66 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 low = text.lower()
-                if "ranged attack" not in low:
-                    continue
-                if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
-                    continue
-                m = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", low)
-                if not m:
-                    continue
-                try:
-                    bonus = int(m.group(1) or 0)
-                except Exception:
-                    bonus = 0
-                if bonus <= 0:
+                normalized = low.replace("\u2019", "'")
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                parsed_rule = None
+                match = re.fullmatch(
+                    r"each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+?) "
+                    r"that targets the closest eligible (?P<targets>[a-z0-9 ]+?) unit add (?P<val>\d+) to the hit roll",
+                    normalized,
+                )
+                if match:
+                    weapon_name = str(match.group("weapon") or "").strip()
+                    raw_targets = str(match.group("targets") or "").strip().lower()
+                    try:
+                        bonus = int(match.group("val") or 0)
+                    except Exception:
+                        bonus = 0
+                    if weapon_name and raw_targets and bonus > 0:
+                        target_keywords: list[str] = []
+                        for token in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", raw_targets):
+                            token = str(token or "").strip()
+                            if not token:
+                                continue
+                            normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
+                            normalized_keyword = str(normalized_keyword or "").strip().upper()
+                            if normalized_keyword.endswith("S") and len(normalized_keyword) > 1:
+                                normalized_keyword = normalized_keyword[:-1]
+                            if normalized_keyword and normalized_keyword not in target_keywords:
+                                target_keywords.append(normalized_keyword)
+                        if target_keywords:
+                            parsed_rule = {
+                                "attack_type": "any",
+                                "weapon_names": [weapon_name],
+                                "require_keywords": tuple(target_keywords),
+                                "hit_bonus": int(bonus),
+                            }
+                else:
+                    if "ranged attack" not in low:
+                        continue
+                    if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
+                        continue
+                    m = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", low)
+                    if not m:
+                        continue
+                    try:
+                        bonus = int(m.group(1) or 0)
+                    except Exception:
+                        bonus = 0
+                    if bonus <= 0:
+                        continue
+                    parsed_rule = {
+                        "attack_type": "ranged",
+                        "hit_bonus": int(bonus),
+                    }
+
+                if not isinstance(parsed_rule, dict):
                     continue
                 source = str(name or "Closest eligible target").strip() or "Closest eligible target"
-                rule = {
-                    "hit_bonus": int(bonus),
-                    "source": source,
-                }
+                parsed_rule["source"] = source
+                rule = parsed_rule
                 break
         except Exception:
             rule = None

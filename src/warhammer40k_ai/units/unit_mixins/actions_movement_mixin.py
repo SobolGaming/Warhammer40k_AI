@@ -3931,6 +3931,12 @@ class ActionsMovementMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._LEADING_WEAPON_ATTACKS_BONUS_RE.fullmatch(normalized)
             if not m:
+                m = re.match(
+                    r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of "
+                    r"(?P<weapon>[a-z0-9 ' -]+?) equipped by models in that unit(?: .*)?$",
+                    normalized,
+                )
+            if not m:
                 continue
             try:
                 bonus = int(m.group("bonus") or 0)
@@ -4046,6 +4052,149 @@ class ActionsMovementMixin:
             source = str(spec.get("source", "") or "Leading weapon attacks bonus").strip() or "Leading weapon attacks bonus"
             reasons.append(f"{source} +{int(bonus)}A ({weapon_phrase})")
         return int(total), reasons
+
+    def leading_unit_melee_attacks_strength_bonus_specs(self) -> list[dict]:
+        """
+        Leading ability: while this model is leading a unit, melee weapons equipped by models in that unit
+        gain Attacks and Strength bonuses.
+
+        Returns list with keys:
+            - leader: leader unit object
+            - source: ability name
+            - attacks_bonus: int
+            - strength_bonus: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_unit_melee_attacks_strength_bonus_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        pattern = re.compile(
+            r"while this model is leading a unit add (?P<bonus>\d+) to the "
+            r"(?:(?:attacks and strength)|(?:strength and attacks)) characteristics of melee weapons "
+            r"equipped by models in that unit(?: .*)?$",
+            re.IGNORECASE,
+        )
+
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            try:
+                bonus = int(match.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = (
+                str(name or "Leading unit melee Attacks/Strength bonus").strip()
+                or "Leading unit melee Attacks/Strength bonus"
+            )
+            key = (source.lower(), int(bonus), int(bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "leader": leader,
+                    "source": source,
+                    "attacks_bonus": int(bonus),
+                    "strength_bonus": int(bonus),
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_unit_melee_attacks_strength_bonus(self, attacker_model=None) -> dict:
+        """Return leading attached-unit melee Attacks/Strength bonuses for the attacker model."""
+        result = {
+            "attacks_bonus": 0,
+            "strength_bonus": 0,
+            "attacks_reasons": [],
+            "strength_reasons": [],
+        }
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return result
+        if attacker_model is not None:
+            try:
+                model_unit = getattr(attacker_model, "parent_unit", None)
+                model_root = model_unit.get_attached_unit_root() if model_unit is not None else None
+                if model_root is not None and model_root is not root:
+                    return result
+            except Exception:
+                pass
+
+        specs = (
+            root.leading_unit_melee_attacks_strength_bonus_specs()
+            if hasattr(root, "leading_unit_melee_attacks_strength_bonus_specs")
+            else []
+        )
+        if not specs:
+            return result
+
+        for spec in list(specs or []):
+            leader = spec.get("leader")
+            if leader is None:
+                continue
+            try:
+                if not bool(getattr(leader, "is_attached_leader", False)):
+                    continue
+                alive_fn = getattr(leader, "is_alive", None)
+                if callable(alive_fn) and not alive_fn():
+                    continue
+            except Exception:
+                continue
+            try:
+                attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+            except Exception:
+                attacks_bonus = 0
+            try:
+                strength_bonus = int(spec.get("strength_bonus", 0) or 0)
+            except Exception:
+                strength_bonus = 0
+            if attacks_bonus <= 0 and strength_bonus <= 0:
+                continue
+            source = (
+                str(spec.get("source", "") or "Leading unit melee Attacks/Strength bonus").strip()
+                or "Leading unit melee Attacks/Strength bonus"
+            )
+            if attacks_bonus > 0:
+                result["attacks_bonus"] = int(result["attacks_bonus"]) + int(attacks_bonus)
+                result["attacks_reasons"].append(f"{source} +{int(attacks_bonus)}A (melee)")
+            if strength_bonus > 0:
+                result["strength_bonus"] = int(result["strength_bonus"]) + int(strength_bonus)
+                result["strength_reasons"].append(f"{source} +{int(strength_bonus)}S (melee)")
+
+        return result
 
     def leading_scaled_weapon_bonus_specs(self) -> list[dict]:
         """

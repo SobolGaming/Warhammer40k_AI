@@ -710,7 +710,28 @@ class AbilitySpecsMixin:
         specs: list[dict] = []
         seen: set[tuple[str, int]] = set()
 
+        entries: list[tuple[str, str]] = []
+        seen_entries: set[tuple[str, str]] = set()
+
+        def _append_entry(raw_name: object, raw_desc: object) -> None:
+            entry_name = str(raw_name or "").strip()
+            entry_desc = str(raw_desc or raw_name or "").strip()
+            dedupe = (entry_name, entry_desc)
+            if dedupe in seen_entries:
+                return
+            seen_entries.add(dedupe)
+            entries.append((entry_name, entry_desc))
+
         for name, desc in self._iter_model_specific_ability_entries(model):
+            _append_entry(name, desc)
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            _append_entry(getattr(ability, "name", ""), getattr(ability, "description", ""))
+        model_abilities = getattr(model, "abilities", None)
+        if isinstance(model_abilities, dict):
+            for ability in list(model_abilities.values()):
+                _append_entry(getattr(ability, "name", ""), getattr(ability, "description", ""))
+
+        for name, desc in list(entries or []):
             text_src = desc or name or ""
             if not text_src:
                 continue
@@ -774,6 +795,90 @@ class AbilitySpecsMixin:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_destroyed_friendly_keyword_range_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: when this model is destroyed, friendly keyword units within range
+        take Battle-shock tests.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - friendly_keyword_phrase: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_destroyed_friendly_keyword_range_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+
+        entries: list[tuple[str, str]] = []
+        seen_entries: set[tuple[str, str]] = set()
+
+        def _append_entry(raw_name: object, raw_desc: object) -> None:
+            entry_name = str(raw_name or "").strip()
+            entry_desc = str(raw_desc or raw_name or "").strip()
+            dedupe = (entry_name, entry_desc)
+            if dedupe in seen_entries:
+                return
+            seen_entries.add(dedupe)
+            entries.append((entry_name, entry_desc))
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            _append_entry(name, desc)
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            _append_entry(getattr(ability, "name", ""), getattr(ability, "description", ""))
+        model_abilities = getattr(model, "abilities", None)
+        if isinstance(model_abilities, dict):
+            for ability in list(model_abilities.values()):
+                _append_entry(getattr(ability, "name", ""), getattr(ability, "description", ""))
+
+        for name, desc in list(entries or []):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = re.search(
+                r"when this model is destroyed each friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of "
+                r"this model must take a battle shock test",
+                normalized,
+            )
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            friendly_keyword_phrase = " ".join(str(m.group("keyword") or "").strip().split())
+            if not friendly_keyword_phrase:
+                continue
+            source = str(name or "Destroyed friendly Battle-shock aura").strip() or "Destroyed friendly Battle-shock aura"
+            dedupe_key = (source.lower(), int(range_value), friendly_keyword_phrase.lower())
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "friendly_keyword_phrase": friendly_keyword_phrase,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_charge_end_engagement_battleshock_specs(self) -> List[dict]:
@@ -3382,6 +3487,47 @@ class AbilitySpecsMixin:
                 r"select one enemy unit within (?P<range>\d+) of it that(?: enemy)? unit must take a battle shock test",
                 normalized,
             )
+            single_phase_no_penalty = re.fullmatch(
+                r"in your (?P<phase>movement|shooting|charge|fight) phase (?P<optional>you can )?select one enemy unit "
+                r"within (?P<range>\d+) of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+                r"that(?: enemy)? unit must take a battle shock test",
+                normalized,
+            )
+            if single_phase_no_penalty:
+                try:
+                    range_value = int(single_phase_no_penalty.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                phase_token = str(single_phase_no_penalty.group("phase") or "").strip().lower()
+                phase_name = {
+                    "movement": "MOVEMENT_PHASE",
+                    "shooting": "SHOOTING_PHASE",
+                    "charge": "CHARGE_PHASE",
+                    "fight": "FIGHT_PHASE",
+                }.get(phase_token, "")
+                if not phase_name:
+                    continue
+                optional = bool(str(single_phase_no_penalty.group("optional") or "").strip())
+                ability_key = f"{phase_token}_phase_select_enemy_battleshock:{source_key}"
+                dedupe_key = (source.lower(), int(range_value), 0, (phase_name,))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "test_penalty": 0,
+                        "phase_names": [phase_name],
+                        "ability_key": ability_key,
+                        "optional": bool(optional),
+                        "once_per_turn": False,
+                        "context_ability": "phase_select_enemy_battleshock",
+                    }
+                )
+                continue
             if not command_phase_no_penalty and not army_model_command_phase_no_penalty:
                 continue
             try:
@@ -5785,6 +5931,172 @@ class AbilitySpecsMixin:
                     "engagement_only": True,
                     "hit_penalty": int(hit_penalty),
                     "context_ability": "fight_phase_select_enemy_melee_hit_penalty",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_engagement_mortal_table_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, select one enemy unit within
+        Engagement Range of this model's unit and resolve a mortal-wound table, optionally
+        adding a bonus to the D6 roll based on the size of that unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: str
+            - engagement_scope: "unit" or "model"
+            - context_ability: str
+            - roll_bonus_per_models: int
+            - roll_bonus_per_step: int
+            - results: list[dict]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_engagement_mortal_table:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+        number_words = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+
+        def _parse_int_token(token: str) -> int:
+            raw = str(token or "").strip().lower()
+            if raw.isdigit():
+                return int(raw)
+            return int(number_words.get(raw, 0) or 0)
+
+        def _build_result_entry(
+            min_roll: int,
+            max_roll: int,
+            roll_token: str,
+            *,
+            bonus: int = 0,
+        ) -> dict:
+            normalized_roll = str(roll_token or "").strip().upper()
+            if normalized_roll.isdigit():
+                return {
+                    "min": int(min_roll),
+                    "max": int(max_roll),
+                    "mortal": int(normalized_roll) + int(bonus),
+                    "mortal_roll": "",
+                    "mortal_bonus": 0,
+                }
+            return {
+                "min": int(min_roll),
+                "max": int(max_roll),
+                "mortal": 0,
+                "mortal_roll": normalized_roll,
+                "mortal_bonus": int(bonus),
+            }
+
+        pattern = re.compile(
+            r"at the start of the fight phase select one enemy unit within engagement range of this model(?: s|s) unit "
+            r"and roll one d6 adding (?P<roll_bonus>\d+|one|two|three|four|five|six|seven|eight|nine|ten) "
+            r"to the result for every (?P<step>\d+|one|two|three|four|five|six|seven|eight|nine|ten) models in this model(?: s|s) unit "
+            r"on a (?P<low_min>\d+)\s+(?P<low_max>\d+) that enemy unit suffers (?P<low_roll>d3|d6|\d+) mortal wounds? "
+            r"on a (?P<mid_min>\d+)\s+(?P<mid_max>\d+) that enemy unit suffers (?P<mid_roll>d3|d6|\d+) mortal wounds? "
+            r"on a (?P<high_threshold>\d+)\+? that enemy unit suffers (?P<high_roll>d3|d6|\d+)"
+            r"(?:\s*(?:\+|plus)?\s*(?P<high_bonus>\d+))? mortal wounds?",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            try:
+                roll_bonus = _parse_int_token(match.group("roll_bonus") or "")
+            except (TypeError, ValueError):
+                roll_bonus = 0
+            try:
+                step_models = _parse_int_token(match.group("step") or "")
+            except (TypeError, ValueError):
+                step_models = 0
+            try:
+                low_min = int(match.group("low_min") or 0)
+            except Exception:
+                low_min = 0
+            try:
+                low_max = int(match.group("low_max") or 0)
+            except Exception:
+                low_max = 0
+            try:
+                mid_min = int(match.group("mid_min") or 0)
+            except Exception:
+                mid_min = 0
+            try:
+                mid_max = int(match.group("mid_max") or 0)
+            except Exception:
+                mid_max = 0
+            try:
+                high_threshold = int(match.group("high_threshold") or 0)
+            except Exception:
+                high_threshold = 0
+            low_roll = str(match.group("low_roll") or "").strip().upper()
+            mid_roll = str(match.group("mid_roll") or "").strip().upper()
+            high_roll = str(match.group("high_roll") or "").strip().upper()
+            try:
+                high_bonus = int(match.group("high_bonus") or 0)
+            except Exception:
+                high_bonus = 0
+            if (
+                roll_bonus <= 0
+                or step_models <= 0
+                or low_min <= 0
+                or low_max < low_min
+                or mid_min <= 0
+                or mid_max < mid_min
+                or high_threshold <= 0
+                or not low_roll
+                or not mid_roll
+                or not high_roll
+            ):
+                continue
+            source = str(name or "Fight phase engagement mortal table").strip() or "Fight phase engagement mortal table"
+            source_key = self._normalize_keyword_phrase(source) or "fight_phase_engagement_mortal_table"
+            ability_key = f"fight_phase_engagement_mortal_table:{source_key}"
+            dedupe_key = (source.lower(), ability_key, int(roll_bonus), int(step_models))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "engagement_scope": "unit",
+                    "context_ability": "fight_phase_select_engagement_mortal_table",
+                    "roll_bonus_per_models": int(step_models),
+                    "roll_bonus_per_step": int(roll_bonus),
+                    "results": [
+                        _build_result_entry(int(low_min), int(low_max), str(low_roll)),
+                        _build_result_entry(int(mid_min), int(mid_max), str(mid_roll)),
+                        _build_result_entry(int(high_threshold), 999, str(high_roll), bonus=int(high_bonus)),
+                    ],
                 }
             )
 

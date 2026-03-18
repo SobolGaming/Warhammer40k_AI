@@ -9410,6 +9410,7 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         "harbinger_of_despair_battleshock",
         "fight_phase_select_engagement_battleshock",
         "command_phase_select_enemy_battleshock",
+        "phase_select_enemy_battleshock",
         "supa_glowy_fing",
     }:
         payload = _option_payload(request, result)
@@ -9543,6 +9544,109 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if callable(can_see_fn):
                 if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                     return (f"{error_prefix} target must be visible to the source model.",)
+        return ()
+    if ability == "fight_phase_select_engagement_mortal_table":
+        payload = _option_payload(request, result)
+        error_prefix = str(ctx.get("ability_name", "") or "Fight phase engagement mortal table").strip()
+        error_prefix = error_prefix or "Fight phase engagement mortal table"
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return (f"{error_prefix} source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return (f"{error_prefix} source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return (f"{error_prefix} source unit was not found.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return (f"{error_prefix} source model does not belong to the source unit.",)
+        ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "").strip().lower()
+        if not ability_key:
+            return (f"{error_prefix} ability_key is required.",)
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and current_phase != phase_name:
+            return (f"{error_prefix} can only be resolved in the queued phase.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return (f"{error_prefix} decision is no longer valid this turn.",)
+        if is_skip_choice(request, result):
+            return (f"{error_prefix} requires selecting an enemy target.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return (f"{error_prefix} target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return (f"{error_prefix} target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return (f"{error_prefix} target is not an eligible candidate.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return (f"{error_prefix} target must be an enemy unit.",)
+        engagement_scope = str(ctx.get("engagement_scope", "unit") or "unit").strip().lower() or "unit"
+        if engagement_scope == "model":
+            from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+            if not bool(model_within_engagement_range_of_unit(model, target_root)):
+                return (f"{error_prefix} target must be within Engagement Range.",)
+        else:
+            game_map = getattr(game, "map", None)
+            if game_map is None:
+                return (f"{error_prefix} game map is unavailable.",)
+            if not bool(getattr(game_map, "is_within_engagement_range", lambda *_a, **_k: False)(source_root, target_root)):
+                return (f"{error_prefix} target must be within Engagement Range.",)
+        try:
+            roll_bonus_per_models = int(ctx.get("roll_bonus_per_models", 0) or 0)
+        except (TypeError, ValueError):
+            roll_bonus_per_models = 0
+        try:
+            roll_bonus_per_step = int(ctx.get("roll_bonus_per_step", 0) or 0)
+        except (TypeError, ValueError):
+            roll_bonus_per_step = 0
+        if roll_bonus_per_models <= 0 or roll_bonus_per_step <= 0:
+            return (f"{error_prefix} roll bonus configuration is invalid.",)
+        results = list(ctx.get("results") or [])
+        if not results:
+            return (f"{error_prefix} results table is missing.",)
         return ()
     if ability == "start_any_command_phase_objective_battleshock":
         payload = _option_payload(request, result)
@@ -18666,6 +18770,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         "harbinger_of_despair_battleshock",
         "fight_phase_select_engagement_battleshock",
         "command_phase_select_enemy_battleshock",
+        "phase_select_enemy_battleshock",
         "supa_glowy_fing",
     }:
         payload = _option_payload(request, result)
@@ -21476,6 +21581,136 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
             else:
                 _log_action_for_players(game, player, f"{ability_name}: {tname} suffers no mortal wounds.")
+        except Exception:
+            pass
+        return target_unit
+    if str(ctx.get("ability", "") or "") == "fight_phase_select_engagement_mortal_table":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = (
+            str(ctx.get("ability_name", "") or "Fight phase engagement mortal table").strip()
+            or "Fight phase engagement mortal table"
+        )
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+
+        try:
+            roll_bonus_per_models = int(ctx.get("roll_bonus_per_models", 0) or 0)
+        except (TypeError, ValueError):
+            roll_bonus_per_models = 0
+        try:
+            roll_bonus_per_step = int(ctx.get("roll_bonus_per_step", 0) or 0)
+        except (TypeError, ValueError):
+            roll_bonus_per_step = 0
+        if roll_bonus_per_models > 0 and roll_bonus_per_step > 0:
+            def _model_alive(model) -> bool:
+                alive_attr = getattr(model, "is_alive", False)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+            try:
+                alive_models = [
+                    m
+                    for m in list(getattr(source_root, "get_attached_unit_models", lambda: getattr(source_root, "models", []))() or [])
+                    if _model_alive(m)
+                ]
+            except Exception:
+                alive_models = [m for m in list(getattr(source_root, "models", []) or []) if _model_alive(m)]
+            roll_bonus = int(len(alive_models) // int(roll_bonus_per_models)) * int(roll_bonus_per_step)
+        else:
+            roll_bonus = 0
+
+        roll = int(get_roll("D6") or 0)
+        modified_roll = int(roll + roll_bonus)
+        if player is not None:
+            if roll_bonus:
+                append_dice(
+                    player,
+                    f"{ability_name} roll: {int(roll)} (+{int(roll_bonus)} -> {int(modified_roll)})",
+                )
+            else:
+                append_dice(player, f"{ability_name} roll: {int(roll)}")
+
+        mortal = 0
+        results = list(ctx.get("results") or [])
+        for entry in list(results or []):
+            try:
+                min_roll = int(entry.get("min", 0) or 0)
+            except (TypeError, ValueError):
+                min_roll = 0
+            try:
+                max_roll = int(entry.get("max", min_roll) or min_roll)
+            except (TypeError, ValueError):
+                max_roll = min_roll
+            if modified_roll < min_roll or modified_roll > max_roll:
+                continue
+            try:
+                mortal = int(entry.get("mortal", 0) or 0)
+            except (TypeError, ValueError):
+                mortal = 0
+            mortal_roll = str(entry.get("mortal_roll", "") or "").strip().upper()
+            if mortal_roll:
+                rolled_mortal = int(get_roll(mortal_roll) or 0)
+                if player is not None:
+                    append_dice(player, f"{ability_name} mortal wounds: {rolled_mortal}")
+                mortal += int(rolled_mortal)
+            try:
+                mortal += int(entry.get("mortal_bonus", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            break
+        if mortal > 0:
+            try:
+                source_root._apply_mortal_wounds_to_unit(
+                    target_unit,
+                    int(mortal),
+                    game_map=getattr(game, "map", None),
+                )
+            except Exception:
+                pass
+        try:
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            if mortal > 0:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} suffers no mortal wounds.",
+                )
         except Exception:
             pass
         return target_unit

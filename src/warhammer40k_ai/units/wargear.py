@@ -5813,6 +5813,28 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Ability +{bonus}A (melee) [temporary]")
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_unit_melee_attacks_strength_bonus", None) if unit is not None else None
+                bonus_data = bonus_fn(attacker_model=attacker) if callable(bonus_fn) else None
+                if isinstance(bonus_data, dict):
+                    attacks_bonus = int(bonus_data.get("attacks_bonus", 0) or 0)
+                    reasons = [
+                        str(reason)
+                        for reason in list(bonus_data.get("attacks_reasons", []) or [])
+                        if str(reason or "").strip()
+                    ]
+                    if attacks_bonus:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(attacks_bonus), source="ability:leading_unit_melee_attacks_add"))
+                        if reasons:
+                            attack_result.attacks_special_modifiers.extend(list(reasons))
+                        else:
+                            attack_result.attacks_special_modifiers.append(
+                                f"Leading ability +{int(attacks_bonus)}A (melee)"
+                            )
+        except Exception:
+            pass
 
         try:
             weapon_lookup_name = self._temporary_weapon_lookup_name()
@@ -6698,6 +6720,28 @@ class WargearProfile:
                 if unit is not None and getattr(unit, "get_closest_eligible_hit_bonus_rule", None):
                     rule = unit.get_closest_eligible_hit_bonus_rule(attacker)
                     if rule:
+                        attack_type = str(rule.get("attack_type", "ranged") or "ranged").strip().lower()
+                        if attack_type not in ("any", "ranged"):
+                            rule = None
+                    if rule:
+                        weapon_name = ""
+                        try:
+                            if getattr(self, "parent_wargear", None) is not None:
+                                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                            if not weapon_name:
+                                weapon_name = str(getattr(self, "name", "") or "")
+                        except Exception:
+                            weapon_name = ""
+                        weapon_names = list(rule.get("weapon_names", []) or [])
+                        if weapon_names and hasattr(unit, "_weapon_name_matches"):
+                            if not unit._weapon_name_matches(weapon_names, weapon_name):
+                                rule = None
+                    if rule:
+                        require_keywords = {
+                            str(value or "").strip().upper()
+                            for value in list(rule.get("require_keywords", []) or [])
+                            if str(value or "").strip()
+                        }
                         gm = game_map
                         if gm is None:
                             try:
@@ -6705,7 +6749,13 @@ class WargearProfile:
                             except Exception:
                                 gm = None
                         if gm is not None and getattr(unit, "is_target_closest_eligible", None):
-                            if unit.is_target_closest_eligible(attacker, self, target, gm):
+                            if unit.is_target_closest_eligible(
+                                attacker,
+                                self,
+                                target,
+                                gm,
+                                require_keywords=require_keywords if require_keywords else None,
+                            ):
                                 closest_eligible_hit_bonus_rule = rule
         except Exception:
             closest_eligible_hit_bonus_rule = None
@@ -15396,6 +15446,28 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append(
                             f"+{int(bonus)}S from temporary melee bonus"
                         )
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_unit_melee_attacks_strength_bonus", None) if unit is not None else None
+                bonus_data = bonus_fn(attacker_model=attacker) if callable(bonus_fn) else None
+                if isinstance(bonus_data, dict):
+                    strength_bonus = int(bonus_data.get("strength_bonus", 0) or 0)
+                    reasons = [
+                        str(reason)
+                        for reason in list(bonus_data.get("strength_reasons", []) or [])
+                        if str(reason or "").strip()
+                    ]
+                    if strength_bonus:
+                        strength = strength + int(strength_bonus)
+                        if reasons:
+                            wound_result.setdefault("modifiers", []).extend(list(reasons))
+                        else:
+                            wound_result.setdefault("modifiers", []).append(
+                                f"Leading ability +{int(strength_bonus)}S (melee)"
+                            )
         except Exception:
             pass
         # Necrons: Cursed Legion - Cold Fervour (+2 Strength baseline for DESTROYER CULT models;

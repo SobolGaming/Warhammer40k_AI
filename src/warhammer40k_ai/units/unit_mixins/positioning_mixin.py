@@ -6500,6 +6500,9 @@ class PositioningMixin:
         Return weapon-scoped attack keyword bonus rules for patterns like:
         "Each time this model makes an attack with its volcano cannon that targets a MONSTER or VEHICLE unit,
          that attack has the [DEVASTATING WOUNDS] ability."
+        Also supports weapon-worded variants like:
+        "This model's twin heavy onslaught gatling cannon has the [SUSTAINED HITS 2] ability when targeting
+         INFANTRY units."
         """
         if model is None:
             return None
@@ -6524,6 +6527,12 @@ class PositioningMixin:
                     r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
                     normalized,
                 )
+                if not match:
+                    match = re.fullmatch(
+                        r"this model s (?P<weapon>[a-z0-9 ]+?) has (?:the )?(?P<keyword>[a-z0-9 ]+) ability "
+                        r"(?:when|while) targeting (?:an? )?(?:enemy )?(?P<targets>[a-z0-9 ]+?) units?",
+                        normalized,
+                    )
                 if not match:
                     continue
                 weapon_name = str(match.group("weapon") or "").strip()

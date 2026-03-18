@@ -45,6 +45,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="core",
             subscriptions=[
                 ("model_destroyed", "_on_model_destroyed_rules"),
+                ("model_destroyed", "_on_model_destroyed_friendly_keyword_range_battleshock"),
                 ("model_destroyed", "_on_model_destroyed_friendly_destroyed_model_weapon_attacks_override"),
                 ("model_destroyed", "_on_model_destroyed_tally_of_pestilence"),
                 ("model_destroyed", "_on_model_destroyed_phase_kill_tracking"),
@@ -268,6 +269,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_spirit_mark_cleanup"),
                 ("phase_start", "_on_phase_start_engagement_battleshock"),
                 ("phase_start", "_on_phase_start_fight_phase_select_engagement_battleshock"),
+                ("phase_start", "_on_phase_start_fight_phase_select_engagement_mortal_table"),
                 ("phase_start", "_on_phase_start_fight_phase_select_enemy_melee_hit_penalty"),
                 ("phase_start", "_on_phase_start_tocsin_of_misery"),
                 ("phase_start", "_on_phase_start_imperial_agents_psychic_veil_cleanup"),

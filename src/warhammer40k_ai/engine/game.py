@@ -8934,6 +8934,101 @@ class Game(
             promote_fn()
         return
 
+    def _on_model_destroyed_friendly_keyword_range_battleshock(
+        self,
+        target_model=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if target_model is None or target_unit is None:
+            return
+        owner_army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+        if owner_army is None:
+            return
+        spec_fn = getattr(target_unit, "model_destroyed_friendly_keyword_range_battleshock_specs", None)
+        if not callable(spec_fn):
+            return
+        specs = list(spec_fn(target_model) or [])
+        if not specs:
+            return
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        for spec in list(specs or []):
+            try:
+                range_value = float(spec.get("range", 0) or 0)
+            except (TypeError, ValueError):
+                range_value = 0.0
+            if range_value <= 0:
+                continue
+            friendly_keyword_phrase = str(spec.get("friendly_keyword_phrase", "") or "").strip()
+            if not friendly_keyword_phrase:
+                continue
+            source = str(spec.get("source", "") or "Destroyed friendly Battle-shock aura").strip() or "Destroyed friendly Battle-shock aura"
+            seen_roots: set[str] = set()
+            for unit in list(getattr(owner_army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in seen_roots:
+                    continue
+                if root_id:
+                    seen_roots.add(root_id)
+                if root is target_unit:
+                    continue
+                try:
+                    if not self._unit_is_active_for_reactive_trigger(root):
+                        continue
+                except Exception:
+                    continue
+                has_keyword = getattr(root, "has_any_keyword", None)
+                if not callable(has_keyword):
+                    continue
+                try:
+                    if not bool(has_keyword(friendly_keyword_phrase)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                in_range = False
+                for model in list(models or []):
+                    if model is None or not getattr(model, "is_alive", True):
+                        continue
+                    try:
+                        if float(distance_between_models_bases_3d(target_model, model)) <= float(range_value) + 1e-6:
+                            in_range = True
+                            break
+                    except Exception:
+                        continue
+                if not in_range:
+                    continue
+                force_test = getattr(root, "force_battle_shock_test", None)
+                if callable(force_test):
+                    force_test(
+                        int(current_turn or 1),
+                        modifier=0,
+                        source=source,
+                    )
+                    continue
+                take_test = getattr(root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(int(current_turn or 1))
+
     def _on_model_destroyed_friendly_destroyed_model_weapon_attacks_override(
         self,
         target_model=None,
