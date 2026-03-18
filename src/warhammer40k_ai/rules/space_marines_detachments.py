@@ -355,6 +355,75 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Saga of the Great Wolf")
 
+    def _detachment_rule_has_saga_completion_state(self) -> bool:
+        return bool(
+            self.is_saga_of_the_beastslayer()
+            or self.is_saga_of_the_hunter()
+            or self.is_saga_of_the_bold()
+        )
+
+    def _ulrik_slayers_oath_choice(self, unit) -> Optional[dict]:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None
+        get_choice = getattr(root, "get_attached_leader_start_of_battle_keyword_choice", None)
+        if not callable(get_choice):
+            return None
+        detail = get_choice(selection_kind="slayers_oath")
+        return detail if isinstance(detail, dict) else None
+
+    def _ulrik_slayers_oath_saga_completed_for_unit(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        sr = getattr(root, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("ulrik_slayers_oath_saga_completed"))
+
+    def ulrik_slayers_oath_on_unit_destroyed(self, destroyed_unit, *, destroyed_by_unit=None, game=None) -> bool:
+        _ = game
+        if not self._detachment_rule_has_saga_completion_state():
+            return False
+        attacker_root = self._attached_unit_root(destroyed_by_unit)
+        target_root = self._attached_unit_root(destroyed_unit)
+        if attacker_root is None or target_root is None:
+            return False
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        try:
+            if target_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        if self._ulrik_slayers_oath_saga_completed_for_unit(attacker_root):
+            return False
+        detail = self._ulrik_slayers_oath_choice(attacker_root)
+        if not isinstance(detail, dict):
+            return False
+        choice = detail.get("choice")
+        if not isinstance(choice, dict):
+            return False
+        keyword = str(choice.get("keyword", "") or "").strip().upper()
+        if not keyword:
+            return False
+        if not self._attached_unit_has_keyword(target_root, keyword):
+            return False
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["ulrik_slayers_oath_saga_completed"] = True
+        sr["ulrik_slayers_oath_keyword"] = keyword
+        sr["ulrik_slayers_oath_source"] = str(choice.get("source", "") or "Slayer's Oath").strip() or "Slayer's Oath"
+        attacker_root.special_rules = sr
+        return True
+
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -1564,7 +1633,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         attacker_unit = getattr(attacker_model, "parent_unit", None)
         if not self._legendary_slayers_attacker_is_eligible(attacker_unit):
             return False, ""
-        if self.legendary_slayers_saga_completed():
+        if self.legendary_slayers_saga_completed() or self._ulrik_slayers_oath_saga_completed_for_unit(attacker_unit):
             return True, "Legendary Slayers"
         if target_unit is None:
             return False, ""
@@ -2038,11 +2107,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         attack_instance=None,
     ) -> tuple[int, str]:
         _ = attack_instance
-        if not self.pack_quarry_saga_completed():
-            return 0, ""
         if attacker_model is None or target_unit is None:
             return 0, ""
         attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not (self.pack_quarry_saga_completed() or self._ulrik_slayers_oath_saga_completed_for_unit(attacker_unit)):
+            return 0, ""
         if not self._pack_quarry_unit_is_space_wolves(attacker_unit):
             return 0, ""
         if weapon_profile is not None:
@@ -4219,7 +4288,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not selection_key:
             return False
 
-        completed = self.heroes_all_saga_completed()
+        completed = self.heroes_all_saga_completed() or self._ulrik_slayers_oath_saga_completed_for_unit(root)
         is_character = self._heroes_all_unit_is_space_wolves_character(root)
         if not completed and not is_character:
             self.heroes_all_selection_state_by_key.pop(selection_key, None)

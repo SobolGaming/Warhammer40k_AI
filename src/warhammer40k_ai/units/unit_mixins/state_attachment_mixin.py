@@ -1373,8 +1373,11 @@ class StateAttachmentMixin:
         keyword: str,
         source: str = "",
         ability_key: Optional[str] = None,
+        selection_kind: str = "reroll_ones",
+        reroll_hit_ones: bool = True,
+        reroll_wound_ones: bool = True,
     ) -> bool:
-        """Persist a start-of-battle keyword reroll selection on the model."""
+        """Persist a start-of-battle keyword selection on the model."""
         if model is None:
             return False
         kw = str(keyword or "").strip().upper()
@@ -1392,6 +1395,9 @@ class StateAttachmentMixin:
             "keyword": kw,
             "source": str(source or ""),
             "ability_key": key,
+            "selection_kind": str(selection_kind or "reroll_ones").strip().lower() or "reroll_ones",
+            "reroll_hit_ones": bool(reroll_hit_ones),
+            "reroll_wound_ones": bool(reroll_wound_ones),
         }
         model._temporary_effects["start_of_battle_keyword_rerolls"] = data
         return True
@@ -1430,6 +1436,51 @@ class StateAttachmentMixin:
         if isinstance(data, list):
             return [v for v in data if isinstance(v, dict)]
         return []
+
+    def get_attached_leader_start_of_battle_keyword_choice(
+        self,
+        *,
+        selection_kind: str = "",
+        ability_key: Optional[str] = None,
+    ) -> Optional[dict]:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        if root is None:
+            return None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+
+        root_id = str(get_entity_id(root) or "")
+        selection_kind_key = str(selection_kind or "").strip().lower()
+        ability_key_value = str(ability_key or "").strip().lower()
+
+        for member in members:
+            if member is None:
+                continue
+            member_id = str(get_entity_id(member) or "")
+            if root_id and member_id and member_id == root_id:
+                continue
+            for model in list(getattr(member, "models", []) or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                for choice in list(member._iter_start_of_battle_keyword_reroll_choices(model) or []):
+                    if not isinstance(choice, dict):
+                        continue
+                    if selection_kind_key:
+                        choice_kind = str(choice.get("selection_kind", "") or "").strip().lower()
+                        if choice_kind != selection_kind_key:
+                            continue
+                    if ability_key_value:
+                        choice_key = str(choice.get("ability_key", "") or "").strip().lower()
+                        if choice_key != ability_key_value:
+                            continue
+                    return {"unit": member, "model": model, "choice": choice}
+        return None
 
     def _post_shoot_leadership_debuff_modifier(self, game=None) -> int:
         """Return persistent post-shoot Leadership/Battle-shock test modifier, clearing on expiry."""

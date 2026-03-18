@@ -335,6 +335,9 @@ class WargearProfile:
                 continue
             s_bonus = int(entry.get("strength_bonus", 0) or 0)
             d_bonus = int(entry.get("damage_bonus", 0) or 0)
+            weapon_name = str(entry.get("weapon_name", "") or "").strip()
+            if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                continue
             model_keyword = str(entry.get("model_keyword", "") or "").strip()
             if model_keyword:
                 applies = False
@@ -773,6 +776,55 @@ class WargearProfile:
             except Exception:
                 pass
         return False
+
+    def _model_target_keywords_profile_bonus(
+        self,
+        attacker: Optional['Model'],
+        target: Optional['Unit'],
+    ) -> tuple[int, int, int, str]:
+        if attacker is None:
+            return (0, 0, 0, "")
+        unit = getattr(attacker, "parent_unit", None)
+        get_rule = getattr(unit, "get_model_target_keywords_profile_bonus_rule", None) if unit is not None else None
+        if not callable(get_rule):
+            return (0, 0, 0, "")
+        rule = get_rule(attacker)
+        if not isinstance(rule, dict):
+            return (0, 0, 0, "")
+
+        attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+        is_melee = bool(self.parent_wargear and self.parent_wargear.is_melee())
+        is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        if attack_type == "melee" and not is_melee:
+            return (0, 0, 0, "")
+        if attack_type == "ranged" and not is_ranged:
+            return (0, 0, 0, "")
+
+        target_keywords_any = tuple(
+            str(value or "").strip().upper()
+            for value in list(rule.get("target_keywords_any", ()) or ())
+            if str(value or "").strip()
+        )
+        if target_keywords_any and not self._target_has_any_keyword(target, target_keywords_any):
+            return (0, 0, 0, "")
+
+        try:
+            strength_bonus = int(rule.get("strength_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            strength_bonus = 0
+        try:
+            ap_bonus = int(rule.get("ap_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            ap_bonus = 0
+        try:
+            damage_bonus = int(rule.get("damage_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            damage_bonus = 0
+        if not (strength_bonus or ap_bonus or damage_bonus):
+            return (0, 0, 0, "")
+
+        source = str(rule.get("source", "") or "Target profile bonus").strip() or "Target profile bonus"
+        return (int(strength_bonus), int(ap_bonus), int(damage_bonus), source)
 
     def _admech_datasheet_weapon_rules(self, attacker: 'Model') -> dict:
         unit = getattr(attacker, "parent_unit", None)
@@ -3848,6 +3900,14 @@ class WargearProfile:
                 _s_bonus, ap_bonus, _reasons = self._ranged_afflicted_strength_ap_bonus(attacker, target)
                 if ap_bonus:
                     ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
+            _profile_s_bonus, profile_ap_bonus, _profile_d_bonus, _profile_source = (
+                self._model_target_keywords_profile_bonus(attacker, target)
+            )
+            if profile_ap_bonus:
+                ap_val -= int(profile_ap_bonus)
         except Exception:
             pass
         try:
@@ -15922,6 +15982,17 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
+        try:
+            s_bonus, _profile_ap_bonus, _profile_damage_bonus, source = self._model_target_keywords_profile_bonus(
+                attacker,
+                target,
+            )
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                source_name = str(source or "Target profile bonus").strip() or "Target profile bonus"
+                wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         if isinstance(strength, int):
             sr = self._unit_special_rules(attacker)
             psychic_bonus = int(sr.get("enhancement_bearer_psychic_strength_bonus", 0) or 0)
@@ -23096,6 +23167,19 @@ class WargearProfile:
                         damage_result['special_effects'].extend(list(d_reasons))
                     else:
                         damage_result['special_effects'].append(f"+{int(d_bonus)}D from temporary melee bonus")
+        except Exception:
+            pass
+        try:
+            target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None
+            _profile_s_bonus, _profile_ap_bonus, profile_damage_bonus, profile_source = (
+                self._model_target_keywords_profile_bonus(attacker, target_unit)
+            )
+            if profile_damage_bonus:
+                damage_mods.append(
+                    Modifier(ModifierOp.ADD, int(profile_damage_bonus), source="ability:model_target_profile_damage_add")
+                )
+                source_name = str(profile_source or "Target profile bonus").strip() or "Target profile bonus"
+                damage_result['special_effects'].append(f"{source_name} +{int(profile_damage_bonus)}D")
         except Exception:
             pass
         try:

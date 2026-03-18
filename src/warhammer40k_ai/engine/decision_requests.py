@@ -325,6 +325,18 @@ def _unit_declare_selected_units_gain_scouts_specs(unit: object) -> list[dict]:
     return []
 
 
+def _unit_declare_selected_units_gain_deep_strike_specs(unit: object) -> list[dict]:
+    if unit is None:
+        return []
+    get_specs = getattr(unit, "get_declare_battle_formations_selected_units_gain_deep_strike_specs", None)
+    if callable(get_specs):
+        try:
+            return [dict(spec or {}) for spec in list(get_specs() or []) if isinstance(spec, dict)]
+        except Exception:
+            return []
+    return []
+
+
 def _unit_alive_model_count(unit: object) -> int:
     models = [
         model
@@ -2059,6 +2071,140 @@ def build_declare_selected_units_gain_scouts_requests(
                     "scout_distance": int(scout_distance),
                     "optional": True,
                     "instruction": f"Select up to one {keyword_phrase} unit to gain Scouts {int(scout_distance)}\".",
+                },
+            )
+            requests.append(request)
+            if queue_requests and hasattr(game, "request_decision"):
+                game.request_decision(request)
+                pending_by_source.add(source_id)
+
+    return requests
+
+
+def build_declare_selected_units_gain_deep_strike_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_by_source: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "declare_selected_unit_gain_deep_strike":
+                continue
+            source_id = str(ctx.get("source_unit_id", "") or "")
+            if source_id:
+                pending_by_source.add(source_id)
+
+    units_by_army: dict[str, list[object]] = {}
+    army_by_key: dict[str, object] = {}
+    for unit in all_units:
+        army = _army_for_unit(unit)
+        if army is None:
+            continue
+        key = _army_key(army)
+        if not key:
+            continue
+        units_by_army.setdefault(key, []).append(unit)
+        army_by_key[key] = army
+
+    for key in sorted(units_by_army.keys()):
+        army = army_by_key[key]
+        roots = _unique_army_root_units(units_by_army[key])
+        roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        if not roots:
+            continue
+
+        for source_unit in roots:
+            source_id = str(get_entity_id(source_unit) or "")
+            if not source_id or source_id in pending_by_source:
+                continue
+
+            source_sr = getattr(source_unit, "special_rules", None)
+            if isinstance(source_sr, dict) and bool(
+                source_sr.get("declare_selected_unit_gain_deep_strike_resolved", False)
+            ):
+                continue
+
+            specs = _unit_declare_selected_units_gain_deep_strike_specs(source_unit)
+            if not specs:
+                continue
+
+            spec = dict(specs[0] or {})
+            selector_label = str(spec.get("selector_label", "") or spec.get("keyword_phrase", "") or "").strip().upper()
+            if not selector_label:
+                continue
+            matcher = getattr(source_unit, "_unit_matches_declare_battle_formations_selector_spec", None)
+            candidate_roots: list[object] = []
+            for root in roots:
+                if root is None or not callable(matcher):
+                    continue
+                try:
+                    if not bool(matcher(root, spec)):
+                        continue
+                except Exception:
+                    continue
+                candidate_roots.append(root)
+
+            candidate_roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            candidate_ids = [
+                str(get_entity_id(unit) or "")
+                for unit in list(candidate_roots or [])
+                if str(get_entity_id(unit) or "")
+            ]
+            if not candidate_ids:
+                continue
+
+            ability_name = str(spec.get("ability_name", "") or "Declare Battle Formations Selection").strip()
+            options: List[DecisionOption] = []
+            for root in candidate_roots:
+                target_id = str(get_entity_id(root) or "")
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(root, "name", "Unit") or "Unit"),
+                        payload={
+                            "source_unit_id": source_id,
+                            "selected_unit_id": target_id,
+                            "selection_kind": "declare_selected_unit_gain_deep_strike",
+                        },
+                    )
+                )
+
+            if not options:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one {selector_label} unit to gain Deep Strike.",
+                player_id=_player_id_for_unit(source_unit),
+                options=options,
+                context={
+                    "ability": "declare_selected_unit_gain_deep_strike",
+                    "ability_name": ability_name,
+                    "phase": "Declare Battle Formations step",
+                    "source_unit_id": source_id,
+                    "candidate_unit_ids": list(candidate_ids),
+                    "selector_label": selector_label,
+                    "unit_keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip().upper(),
+                    "required_keyword_phrase": str(spec.get("required_keyword_phrase", "") or "").strip().upper(),
+                    "any_keywords": [
+                        str(keyword or "").strip().upper()
+                        for keyword in list(spec.get("any_keywords", ()) or [])
+                        if str(keyword or "").strip()
+                    ],
+                    "optional": False,
+                    "instruction": f"Select one {selector_label} unit to gain Deep Strike.",
                 },
             )
             requests.append(request)

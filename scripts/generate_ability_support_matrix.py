@@ -6359,6 +6359,7 @@ def _classify_ability_base(
     successful_hit_critical_support = _successful_hit_critical_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     melee_charge_strength_damage_support = _melee_charge_strength_damage_support(description)
+    melee_charge_weapon_damage_support = _melee_charge_weapon_damage_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
@@ -6376,6 +6377,10 @@ def _classify_ability_base(
     oath_target_hit_bonus_support = _oath_target_hit_bonus_support(description)
     oath_target_wound_reroll_support = _oath_target_wound_reroll_support(description)
     closest_target_wound_reroll_support = _closest_target_wound_reroll_support(description)
+    leading_melee_hit_selected_keyword_wound_bonus_support = _leading_melee_hit_selected_keyword_wound_bonus_support(
+        description
+    )
+    start_of_battle_keyword_saga_completion_support = _start_of_battle_keyword_saga_completion_support(description)
     author_of_the_codex_support = _author_of_the_codex_support(description)
     primarch_of_the_xiii_support = _primarch_of_the_xiii_support(description)
     master_of_battle_support = _master_of_battle_support(description)
@@ -6392,6 +6397,9 @@ def _classify_ability_base(
     synapse_keyword_grant_support = _within_synapse_range_grants_synapse_keyword_support(description)
     friendly_count_as_synapse_support = _friendly_tyranids_within_range_count_as_synapse_support(description)
     two_five_model_split_support = _two_five_model_split_support(description)
+    declare_battle_formations_select_unit_gain_deep_strike_support = (
+        _declare_battle_formations_select_unit_gain_deep_strike_support(description)
+    )
     teleport_homer_support = _teleport_homer_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
@@ -6585,6 +6593,7 @@ def _classify_ability_base(
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
     model_target_keyword_ap_bonus_support = _model_target_keyword_ap_bonus_support(description)
+    model_target_keywords_profile_bonus_support = _model_target_keywords_profile_bonus_support(description)
     unit_melee_weapon_ap_bonus_support = _unit_melee_weapon_ap_bonus_support(description)
     unit_toughness_bonus_support = _unit_toughness_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
@@ -6858,6 +6867,10 @@ def _classify_ability_base(
         return conditional_advance_shoot_charge_bonus_support
     if early_charge_end_engagement_battleshock_support:
         return early_charge_end_engagement_battleshock_support
+    if leading_melee_hit_selected_keyword_wound_bonus_support:
+        return leading_melee_hit_selected_keyword_wound_bonus_support
+    if start_of_battle_keyword_saga_completion_support:
+        return start_of_battle_keyword_saga_completion_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -6927,6 +6940,8 @@ def _classify_ability_base(
         return melee_damage_support
     if melee_charge_strength_damage_support:
         return melee_charge_strength_damage_support
+    if melee_charge_weapon_damage_support:
+        return melee_charge_weapon_damage_support
     if two_melee_weapons_support:
         return two_melee_weapons_support
     if attached_possessed_support:
@@ -6977,6 +6992,8 @@ def _classify_ability_base(
         return friendly_count_as_synapse_support
     if two_five_model_split_support:
         return two_five_model_split_support
+    if declare_battle_formations_select_unit_gain_deep_strike_support:
+        return declare_battle_formations_select_unit_gain_deep_strike_support
     if teleport_homer_support:
         return teleport_homer_support
     if post_deployment_redeploy_support:
@@ -7305,6 +7322,8 @@ def _classify_ability_base(
         return model_closest_target_ap_bonus_support
     if model_target_keyword_ap_bonus_support:
         return model_target_keyword_ap_bonus_support
+    if model_target_keywords_profile_bonus_support:
+        return model_target_keywords_profile_bonus_support
     if unit_melee_weapon_ap_bonus_support:
         return unit_melee_weapon_ap_bonus_support
     if unit_toughness_bonus_support:
@@ -10350,6 +10369,27 @@ def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, st
     return ("Supported", note)
 
 
+def _leading_melee_hit_selected_keyword_wound_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while this model is leading a unit each time a model in that unit makes a melee attack add (?P<hit>\d+) to the hit roll "
+        r"if that attack targets a unit that has this models [a-z0-9 ]+ keyword(?: see above)? add (?P<wound>\d+) to the wound roll as well",
+        norm,
+    )
+    if not m:
+        return None
+    hit_val = str(m.group("hit") or "1")
+    wound_val = str(m.group("wound") or "1")
+    return (
+        "Supported",
+        f"Leading: attached unit melee attacks gain +{hit_val} to hit; attacks against the selected keyword gain +{wound_val} to wound.",
+    )
+
+
 def _model_closest_target_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -10387,6 +10427,109 @@ def _model_target_keyword_ap_bonus_support(description: str) -> Optional[Tuple[s
     if not keyword:
         return None
     return ("Supported", f"Model ranged attacks improve AP by {val} against {keyword} units.")
+
+
+def _model_target_keywords_profile_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    raw = _strip_html(description or "")
+    raw = raw.replace("\u2019", "'").replace("\u0192?T", "'")
+    raw = re.sub(r"\s+", " ", raw).strip().lower()
+    if not raw:
+        return None
+
+    attack_type = "attacks"
+    if "each time this model makes a ranged attack" in raw or "each time a ranged attack made by this model" in raw:
+        attack_type = "ranged attacks"
+    elif "each time this model makes a melee attack" in raw or "each time a melee attack made by this model" in raw:
+        attack_type = "melee attacks"
+    elif "each time this model makes an attack" not in raw and "each time an attack made by this model" not in raw:
+        return None
+
+    target_match = re.search(
+        r"targets (?:an? )?(?:enemy )?(?P<keywords>[a-z0-9,\- ]+?) (?:unit|model)\b",
+        raw,
+    )
+    if not target_match:
+        return None
+    keywords_text = re.sub(r",\s*(?:or|and)\s+", ", ", str(target_match.group("keywords") or ""), flags=re.IGNORECASE)
+    keywords: list[str] = []
+    for token in re.split(r"\s*,\s*|\s+(?:or|and)\s+", keywords_text):
+        keyword = re.sub(r"[^a-z0-9]+", " ", str(token or "").strip().lower())
+        keyword = re.sub(r"\s+", " ", keyword).strip().upper()
+        if keyword and keyword not in keywords:
+            keywords.append(keyword)
+    if not keywords:
+        return None
+
+    characteristic_match = re.search(
+        r"improve the (?P<chars>[a-z0-9,\- ]+?) characteristics? of that attack by (?P<value>\d+)",
+        raw,
+    )
+    if not characteristic_match:
+        return None
+
+    characteristics_text = str(characteristic_match.group("chars") or "").strip()
+    if not characteristics_text:
+        return None
+    val = str(characteristic_match.group("value") or "0")
+    if val == "0":
+        return None
+
+    has_strength = "strength" in characteristics_text
+    has_ap = "armour penetration" in characteristics_text or "armor penetration" in characteristics_text
+    has_damage = "damage" in characteristics_text
+    if not (has_strength or has_damage):
+        return None
+
+    modifiers: list[str] = []
+    if has_strength:
+        modifiers.append("Strength")
+    if has_ap:
+        modifiers.append("AP")
+    if has_damage:
+        modifiers.append("Damage")
+    if len(modifiers) == 1:
+        modifier_text = modifiers[0]
+    elif len(modifiers) == 2:
+        modifier_text = f"{modifiers[0]} and {modifiers[1]}"
+    else:
+        modifier_text = ", ".join(modifiers[:-1]) + f", and {modifiers[-1]}"
+    target_text = "/".join(keywords)
+    return ("Supported", f"Model {attack_type} against {target_text} units improve {modifier_text} by {val}.")
+
+
+def _start_of_battle_keyword_saga_completion_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    raw = _strip_html(description or "")
+    raw = raw.replace("\u2019", "'").replace("\u0192?T", "'")
+    raw = re.sub(r"\s+", " ", raw).strip().lower()
+    if not raw:
+        return None
+
+    match = re.search(
+        r"at the start of the battle,? select one of the following keywords to be this model'?s [a-z0-9' ]+:\s*"
+        r"(?P<keywords>[a-z0-9 ;,]+?)\.\s*the first time this model'?s unit destroys a unit with this model'?s [a-z0-9' ]+ keyword,? "
+        r"if your detachment rule has a saga, until the end of the battle, this model'?s unit receives the benefits of that detachment rule as if that saga had been completed",
+        raw,
+    )
+    if not match:
+        return None
+
+    keywords: list[str] = []
+    for token in re.split(r"\s*[;,]\s*", str(match.group("keywords") or "").strip()):
+        keyword = re.sub(r"[^a-z0-9]+", " ", str(token or "").strip().lower())
+        keyword = re.sub(r"\s+", " ", keyword).strip().upper()
+        if keyword and keyword not in keywords:
+            keywords.append(keyword)
+    if not keywords:
+        return None
+
+    return (
+        "Supported",
+        f"Start of battle: select {', '.join(keywords)}; first matching unit destroyed by this unit grants unit-specific Saga-completed detachment benefits until battle end.",
+    )
 
 
 def _model_stationary_ranged_sustained_hits_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12608,6 +12751,26 @@ def _melee_charge_strength_damage_support(description: str) -> Optional[Tuple[st
     return ("Supported", f"Melee attacks after charging: +{val} Strength and +{val} Damage.")
 
 
+def _melee_charge_weapon_damage_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in this unit makes a melee attack with its (?P<weapon>[a-z0-9 ]+) "
+        r"if it made a charge move this turn add (?P<val>\d+) to the damage characteristic of that attack"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = " ".join(str(m.group("weapon") or "").strip().split())
+    val = str(m.group("val") or "").strip()
+    if not weapon or not val:
+        return None
+    return ("Supported", f"{weapon.title()} melee attacks after charging get +{val} Damage.")
+
+
 def _end_of_fight_embark_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13783,6 +13946,32 @@ def _two_five_model_split_support(description: str) -> Optional[Tuple[str, str]]
     return (
         "Supported",
         "Declare Battle Formations: this 10-model unit can optionally split into two separate 5-model units before setup.",
+    )
+
+
+def _declare_battle_formations_select_unit_gain_deep_strike_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    raw = _strip_html(description or "")
+    raw = raw.replace("\u2019", "'").replace("\u0192?T", "'")
+    raw = re.sub(r"\s+", " ", raw).strip().lower()
+    if not raw:
+        return None
+    match = re.search(
+        r"(?:at the start of|during) the declare battle formations step\b.*?\bselect one "
+        r"(?P<selector>.+?) unit from your army\b.*?\bthat unit gains(?: the)? deep strike ability",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    selector = re.sub(r"\bfriendly\b", " ", str(match.group("selector") or ""), flags=re.IGNORECASE)
+    selector = re.sub(r"\s+", " ", selector).strip().upper()
+    if not selector:
+        return None
+    return (
+        "Supported",
+        f"Declare Battle Formations: select one {selector} unit from your army; the selected unit gains Deep Strike for the battle.",
     )
 
 
@@ -17395,31 +17584,31 @@ def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[
         return None
     patterns = (
         (
-            r"each time this model makes a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this model (?:makes?|ends?) a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
             "model",
         ),
         (
-            r"each time this model makes a charge move until the end of the turn melee weapons equipped by this model have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this model (?:makes?|ends?) a charge move until the end of the turn melee weapons equipped by this model have the (?P<keyword>[a-z0-9 \-]+) ability",
             "model",
         ),
         (
-            r"each time this model makes a charge move until the end of the turn melee weapons it is equipped with have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this model (?:makes?|ends?) a charge move until the end of the turn melee weapons it is equipped with have the (?P<keyword>[a-z0-9 \-]+) ability",
             "model",
         ),
         (
-            r"each time this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this unit (?:makes?|ends?) a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
             "unit",
         ),
         (
-            r"each time this models unit makes a charge move until the end of the turn melee weapons equipped by models in that unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this models unit (?:makes?|ends?) a charge move until the end of the turn melee weapons equipped by models in that unit have the (?P<keyword>[a-z0-9 \-]+) ability",
             "unit",
         ),
         (
-            r"each time this unit makes a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time this unit (?:makes?|ends?) a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
             "unit",
         ),
         (
-            r"each time a model in this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            r"each time a model in this unit (?:makes?|ends?) a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
             "unit",
         ),
     )

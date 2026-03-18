@@ -974,6 +974,139 @@ class ActionsMovementMixin:
     def has_declare_battle_formations_selected_units_gain_scouts_ability(self) -> bool:
         return bool(self.get_declare_battle_formations_selected_units_gain_scouts_specs())
 
+    @classmethod
+    def _declare_battle_formations_unit_selector_spec(cls, keyword_phrase: str) -> Optional[dict]:
+        raw_phrase = str(keyword_phrase or "").strip()
+        if not raw_phrase:
+            return None
+        raw_phrase = re.sub(r"\bfriendly\b", " ", raw_phrase, flags=re.IGNORECASE)
+        raw_phrase = re.sub(r"\s+", " ", raw_phrase).strip()
+        if not raw_phrase:
+            return None
+        normalized_phrase = cls._normalize_keyword_phrase(raw_phrase).upper()
+        if not normalized_phrase:
+            return None
+
+        selector_spec = {
+            "keyword_phrase": normalized_phrase,
+            "required_keyword_phrase": "",
+            "any_keywords": tuple(),
+            "selector_label": normalized_phrase,
+        }
+
+        raw_options = [
+            cls._normalize_keyword_phrase(token).upper()
+            for token in re.split(r"\s*,\s*|\s+(?:or|and)\s+", raw_phrase, flags=re.IGNORECASE)
+            if cls._normalize_keyword_phrase(token)
+        ]
+        if len(raw_options) < 2:
+            return selector_spec
+
+        simple_prefixes = raw_options[:-1]
+        if not simple_prefixes or not all(" " not in option for option in simple_prefixes):
+            return selector_spec
+
+        last_parts = str(raw_options[-1] or "").split()
+        if len(last_parts) < 2:
+            return selector_spec
+
+        required_phrase = " ".join(last_parts[1:]).strip().upper()
+        if not required_phrase:
+            return selector_spec
+
+        any_keywords = tuple(dict.fromkeys([*simple_prefixes, str(last_parts[0]).strip().upper()]))
+        if len(any_keywords) < 2:
+            return selector_spec
+
+        selector_spec["required_keyword_phrase"] = required_phrase
+        selector_spec["any_keywords"] = any_keywords
+        selector_spec["selector_label"] = f"{'/'.join(any_keywords)} {required_phrase}".strip()
+        return selector_spec
+
+    def _unit_matches_declare_battle_formations_selector_spec(self, unit: 'Unit', selector_spec: dict) -> bool:
+        if unit is None or not isinstance(selector_spec, dict):
+            return False
+
+        required_phrase = str(selector_spec.get("required_keyword_phrase", "") or "").strip().upper()
+        any_keywords = tuple(
+            str(keyword or "").strip().upper()
+            for keyword in list(selector_spec.get("any_keywords", ()) or ())
+            if str(keyword or "").strip()
+        )
+        keyword_phrase = str(selector_spec.get("keyword_phrase", "") or "").strip().upper()
+
+        if required_phrase:
+            if not self._unit_matches_keyword_phrase(unit, required_phrase, use_effective=False):
+                return False
+            if any_keywords and not any(
+                self._unit_matches_keyword_phrase(unit, keyword, use_effective=False)
+                for keyword in list(any_keywords or ())
+            ):
+                return False
+            return True
+
+        if not keyword_phrase:
+            return False
+        return self._unit_matches_keyword_phrase(unit, keyword_phrase, use_effective=False)
+
+    def _ability_declare_selected_units_gain_deep_strike(self, ability) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "During the Declare Battle Formations step, if your army includes this
+        model, select one Phobos, Gravis or Tacticus Adeptus Astartes Infantry
+        unit from your army. That unit gains the Deep Strike ability."
+        """
+        name, desc = self._ability_name_and_description(ability)
+        text = self._normalize_rules_text(f"{name} {desc}".strip())
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "declare battle formations" not in low or "deep strike" not in low:
+            return None
+        match = re.search(
+            r"(?:at the start of|during) the declare battle formations step\b.*?\bselect one "
+            r"(?P<keywords>.+?) unit from your army\b.*?\bthat unit gains(?: the)? deep strike ability",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        selector_spec = self._declare_battle_formations_unit_selector_spec(match.group("keywords") or "")
+        if selector_spec is None:
+            return None
+        return {
+            "ability_name": str(name or "").strip() or "Declare Battle Formations Selection",
+            **selector_spec,
+            "max_units": 1,
+        }
+
+    def get_declare_battle_formations_selected_units_gain_deep_strike_specs(self) -> list[dict]:
+        """Return Declare Battle Formations unit-selection rules that grant Deep Strike to the selected unit."""
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            spec = self._ability_declare_selected_units_gain_deep_strike(ability)
+            if not isinstance(spec, dict):
+                continue
+            key = (
+                str(spec.get("ability_name", "") or "").strip().lower(),
+                str(spec.get("keyword_phrase", "") or "").strip().upper(),
+                str(spec.get("required_keyword_phrase", "") or "").strip().upper(),
+                tuple(
+                    str(keyword or "").strip().upper()
+                    for keyword in list(spec.get("any_keywords", ()) or ())
+                    if str(keyword or "").strip()
+                ),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(dict(spec))
+        return specs
+
+    def has_declare_battle_formations_selected_units_gain_deep_strike_ability(self) -> bool:
+        return bool(self.get_declare_battle_formations_selected_units_gain_deep_strike_specs())
+
     def _apply_attached_possessed_formation_bonus(self, bodyguard: 'Unit') -> None:
         """Apply the WORLD EATERS POSSESSED formation bonus for Leaders like LORD OF THE EIGHTBOUND."""
         if bodyguard is None:
@@ -7885,6 +8018,23 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Ulrik The Slayer: while leading a unit, melee attacks gain +1 to wound vs the selected Slayer's Oath keyword.
+        try:
+            if atype in ("any", "melee") and target is not None:
+                choice_entry = None
+                get_choice = getattr(root, "get_attached_leader_start_of_battle_keyword_choice", None)
+                if callable(get_choice):
+                    detail = get_choice(selection_kind="slayers_oath")
+                    if isinstance(detail, dict):
+                        choice_entry = detail.get("choice")
+                if isinstance(choice_entry, dict):
+                    keyword = str(choice_entry.get("keyword", "") or "").strip().upper()
+                    if keyword and self._target_has_keyword(target, keyword):
+                        mods["wound"] += 1
+                        wound_reasons.append(f"+1 to wound from Oathbound vs {keyword} targets")
+        except Exception:
+            pass
+
         # Steeped in Suffering: +1 to wound vs targets below Half-strength.
         try:
             has_steeped = bool(
@@ -8313,6 +8463,7 @@ class ActionsMovementMixin:
                 m = self._MELEE_CHARGE_STRENGTH_DAMAGE_RE.fullmatch(normalized)
                 damage_bonus = None
                 model_keyword = ""
+                weapon_name = ""
                 if m:
                     try:
                         val = int(m.group("val") or 0)
@@ -8333,30 +8484,44 @@ class ActionsMovementMixin:
                         damage_bonus = 0
                     else:
                         m = self._MELEE_CHARGE_DAMAGE_ONLY_MODEL_KEYWORD_RE.fullmatch(normalized)
-                        if not m:
-                            continue
-                        try:
-                            val = int(m.group("val") or 0)
-                        except Exception:
+                        if m:
+                            try:
+                                val = int(m.group("val") or 0)
+                            except Exception:
+                                val = 0
+                            if val <= 0:
+                                continue
+                            damage_bonus = int(val)
+                            try:
+                                kw_raw = str(m.group("keyword") or "").strip()
+                            except Exception:
+                                kw_raw = ""
+                            model_keyword = member._normalize_keyword_phrase(kw_raw) or kw_raw.lower()
                             val = 0
-                        if val <= 0:
-                            continue
-                        damage_bonus = int(val)
-                        try:
-                            kw_raw = str(m.group("keyword") or "").strip()
-                        except Exception:
-                            kw_raw = ""
-                        model_keyword = member._normalize_keyword_phrase(kw_raw) or kw_raw.lower()
-                        val = 0
+                        else:
+                            m = self._MELEE_CHARGE_DAMAGE_ONLY_WEAPON_NAME_RE.fullmatch(normalized)
+                            if not m:
+                                continue
+                            try:
+                                val = int(m.group("val") or 0)
+                            except Exception:
+                                val = 0
+                            if val <= 0:
+                                continue
+                            damage_bonus = int(val)
+                            weapon_name = str(m.group("weapon") or "").strip()
+                            val = 0
 
                 source = str(name or "Charge melee strength/damage").strip() or "Charge melee strength/damage"
-                key = (source.lower(), int(val), int(damage_bonus), str(model_keyword))
+                key = (source.lower(), int(val), int(damage_bonus), str(model_keyword), str(weapon_name).lower())
                 if key in seen:
                     continue
                 seen.add(key)
                 entry = {"strength_bonus": int(val), "damage_bonus": int(damage_bonus), "source": source}
                 if model_keyword:
                     entry["model_keyword"] = str(model_keyword)
+                if weapon_name:
+                    entry["weapon_name"] = str(weapon_name)
                 entries.append(entry)
 
         if not hasattr(root, "_ability_cache"):
@@ -15166,7 +15331,7 @@ class ActionsMovementMixin:
         charge_move_unit_melee_keyword_re = re.compile(
             r"(?:while\s+this\s+model\s+is\s+leading\s+a\s+unit\s+)?"
             r"each\s+time\s+(?:a\s+model\s+in\s+this\s+unit|models\s+in\s+this\s+unit|this\s+model\s+s\s+unit|this\s+models\s+unit|this\s+unit|that\s+unit)\s+"
-            r"makes?\s+a\s+charge\s+move\s+until\s+the\s+end\s+of\s+the\s+turn\s+"
+            r"(?:makes?|ends?)\s+a\s+charge\s+move\s+until\s+the\s+end\s+of\s+the\s+turn\s+"
             r"melee\s+weapons\s+equipped\s+by\s+models\s+in\s+(?:this\s+unit|that\s+unit)\s+have\s+the\s+"
             r"(?P<keyword>[a-z0-9 \-]+)\s+ability",
             re.IGNORECASE,

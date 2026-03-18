@@ -2648,6 +2648,43 @@ class GameSetupDeploymentReservesMixin:
                 if source_id:
                     pending_source_ids.add(source_id)
 
+    def _apply_selected_unit_gain_deep_strike_declarations(self) -> None:
+        """Queue Declare Battle Formations selection requests for unit abilities that grant Deep Strike to a selected unit."""
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_source_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != "declare_selected_unit_gain_deep_strike":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_source_ids.add(source_id)
+
+        from ..decision_requests import build_declare_selected_units_gain_deep_strike_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Selected Deep Strike declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Selected Deep Strike declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_declare_selected_units_gain_deep_strike_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                source_id = str(getattr(req, "context", {}).get("source_unit_id", "") or "")
+                if source_id and source_id in pending_source_ids:
+                    continue
+                self.request_decision(req)
+                if source_id:
+                    pending_source_ids.add(source_id)
+
     def _apply_leader_attachment_declarations(self) -> None:
         players = list(self.players or [])
         if not players:
@@ -2934,6 +2971,7 @@ class GameSetupDeploymentReservesMixin:
 
         self._apply_selected_leading_infiltrators_declarations()
         self._apply_selected_unit_gain_scouts_declarations()
+        self._apply_selected_unit_gain_deep_strike_declarations()
         self._apply_leader_attachment_declarations()
         self._apply_support_artillery_attachment_declarations()
         self._apply_transport_assignment_declarations()

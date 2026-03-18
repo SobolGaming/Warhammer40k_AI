@@ -13027,6 +13027,112 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    @classmethod
+    def _split_target_keywords_any(cls, raw_keywords: str) -> tuple[str, ...]:
+        text = str(raw_keywords or "").strip()
+        if not text:
+            return ()
+        text = re.sub(r",\s*(?:or|and)\s+", ", ", text, flags=re.IGNORECASE)
+        keywords: list[str] = []
+        for token in re.split(r"\s*,\s*|\s+(?:or|and)\s+", text):
+            keyword = cls._normalize_keyword_phrase(token).upper()
+            if keyword and keyword not in keywords:
+                keywords.append(keyword)
+        return tuple(keywords)
+
+    def get_model_target_keywords_profile_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return model attack profile bonus rules for patterns like:
+        "Each time this model makes an attack that targets a MONSTER, VEHICLE, or FORTIFICATION unit,
+         improve the Strength, Armour Penetration and Damage characteristics of that attack by 2."
+        """
+        if model is None:
+            return None
+        cache_key = f"model_target_keywords_profile_bonus_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                continue
+
+            normalized = re.sub(r"\s+", " ", str(text or "").replace("\u2019", "'").lower()).strip()
+            normalized_words = re.sub(r"'s\b", "s", normalized)
+            normalized_words = re.sub(r"[^a-z0-9]+", " ", normalized_words)
+            normalized_words = re.sub(r"\s+", " ", normalized_words).strip()
+
+            if "improve the" not in normalized_words or "characteristic" not in normalized_words:
+                continue
+
+            attack_type = ""
+            if (
+                "each time a ranged attack made by this model" in normalized_words
+                or "each time this model makes a ranged attack" in normalized_words
+            ):
+                attack_type = "ranged"
+            elif (
+                "each time a melee attack made by this model" in normalized_words
+                or "each time this model makes a melee attack" in normalized_words
+            ):
+                attack_type = "melee"
+            elif (
+                "each time an attack made by this model" in normalized_words
+                or "each time this model makes an attack" in normalized_words
+            ):
+                attack_type = "any"
+            if not attack_type:
+                continue
+
+            target_match = re.search(
+                r"targets (?:an? )?(?:enemy )?(?P<keywords>[a-z0-9,\- ]+?) (?:unit|model)\b",
+                normalized,
+            )
+            if not target_match:
+                continue
+            target_keywords_any = self._split_target_keywords_any(target_match.group("keywords") or "")
+            if not target_keywords_any:
+                continue
+
+            characteristic_match = re.search(
+                r"improve the (?P<chars>[a-z0-9,\- ]+?) characteristics? of that attack by (?P<value>\d+)",
+                normalized,
+            )
+            if not characteristic_match:
+                continue
+            characteristics_text = str(characteristic_match.group("chars") or "").strip()
+            if not characteristics_text:
+                continue
+            try:
+                bonus_value = int(characteristic_match.group("value") or 0)
+            except (TypeError, ValueError):
+                bonus_value = 0
+            if bonus_value <= 0:
+                continue
+
+            strength_bonus = int(bonus_value) if "strength" in characteristics_text else 0
+            ap_bonus = int(bonus_value) if ("armour penetration" in characteristics_text or "armor penetration" in characteristics_text) else 0
+            damage_bonus = int(bonus_value) if "damage" in characteristics_text else 0
+            if not (strength_bonus or damage_bonus):
+                continue
+
+            source = str(name or "Target profile bonus").strip() or "Target profile bonus"
+            rule = {
+                "attack_type": attack_type,
+                "target_keywords_any": target_keywords_any,
+                "strength_bonus": int(strength_bonus),
+                "ap_bonus": int(ap_bonus),
+                "damage_bonus": int(damage_bonus),
+                "source": source,
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_melee_target_excluding_keywords_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return melee AP bonus rule for patterns like:
@@ -14978,6 +15084,10 @@ class KeywordsDetachmentsMixin:
         entries = self._iter_start_of_battle_keyword_reroll_choices(model)
         for entry in list(entries or []):
             if not isinstance(entry, dict):
+                continue
+            if roll_key == "hit" and not bool(entry.get("reroll_hit_ones", True)):
+                continue
+            if roll_key == "wound" and not bool(entry.get("reroll_wound_ones", True)):
                 continue
             keyword = str(entry.get("keyword", "") or "").strip()
             if not keyword:

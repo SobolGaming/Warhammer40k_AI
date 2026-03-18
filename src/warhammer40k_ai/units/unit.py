@@ -3945,6 +3945,11 @@ class Unit(
         r"of melee weapons equipped by (?P<keyword>[a-z0-9 ]+) models in this unit",
         re.IGNORECASE,
     )
+    _MELEE_CHARGE_DAMAGE_ONLY_WEAPON_NAME_RE = re.compile(
+        r"each time a model in this unit makes a melee attack with its (?P<weapon>[a-z0-9 ]+) "
+        r"if (?:it|this unit) made a charge move this turn add (?P<val>\d+) to the damage characteristic of that attack",
+        re.IGNORECASE,
+    )
     _SPIRIT_MARK_RE = re.compile(
         r"once per turn in your movement phase when this model starts or ends a move select one friendly (?P<keyword>[a-z0-9 ]+) unit within "
         r"(?P<range>\d+)\s*\"?\s*of this model(?: excluding titanic units)? and one enemy unit visible to this model "

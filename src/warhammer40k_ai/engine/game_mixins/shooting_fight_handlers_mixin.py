@@ -15302,6 +15302,9 @@ class GameShootingFightHandlersMixin:
             boast_fn = getattr(sm_mgr, "heroes_all_on_unit_destroyed", None) if sm_mgr is not None else None
             if callable(boast_fn):
                 boast_fn(unit, destroyed_by_unit=destroyed_by_unit, game=self)
+            ulrik_fn = getattr(sm_mgr, "ulrik_slayers_oath_on_unit_destroyed", None) if sm_mgr is not None else None
+            if callable(ulrik_fn):
+                ulrik_fn(unit, destroyed_by_unit=destroyed_by_unit, game=self)
 
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

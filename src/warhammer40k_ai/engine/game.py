@@ -10292,7 +10292,11 @@ class Game(
                 for model in list(getattr(unit, "models", []) or []):
                     if model is None or not bool(getattr(model, "is_alive", True)):
                         continue
-                    specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) or []
+                    spec_fn = getattr(unit, "model_start_of_battle_keyword_selection_specs", None)
+                    if callable(spec_fn):
+                        specs = spec_fn(model) or []
+                    else:
+                        specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) or []
                     if not specs:
                         continue
                     unit_id = get_entity_id(unit)
@@ -10317,6 +10321,7 @@ class Game(
                                     "model_id": model_id,
                                     "ability_key": ability_key,
                                     "ability_name": spec.get("source", ""),
+                                    "selection_kind": spec.get("selection_kind", "reroll_ones"),
                                 },
                             )
                             for kw in keywords
@@ -10328,6 +10333,7 @@ class Game(
                             "ability": "start_of_battle_keyword_reroll",
                             "ability_name": spec.get("source", ""),
                             "ability_key": ability_key,
+                            "selection_kind": spec.get("selection_kind", "reroll_ones"),
                             "unit_id": unit_id,
                             "model_id": model_id,
                             "battle_round": br,

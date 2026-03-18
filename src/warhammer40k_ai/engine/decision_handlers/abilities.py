@@ -3098,7 +3098,13 @@ def _validate_choose_start_of_battle_keyword(game: object, request: DecisionRequ
     if unit is None:
         return ("Start-of-battle keyword selection unit not found.",)
     ability_key = payload.get("ability_key") or request.context.get("ability_key")
-    specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) if hasattr(unit, "model_start_of_battle_keyword_reroll_ones_specs") else []
+    spec_fn = getattr(unit, "model_start_of_battle_keyword_selection_specs", None)
+    if callable(spec_fn):
+        specs = spec_fn(model) or []
+    elif hasattr(unit, "model_start_of_battle_keyword_reroll_ones_specs"):
+        specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) or []
+    else:
+        specs = []
     if not specs:
         return ("Start-of-battle keyword selection ability not found.",)
     if ability_key:
@@ -3126,6 +3132,23 @@ def _apply_choose_start_of_battle_keyword(game: object, request: DecisionRequest
         raise RuntimeError("Start-of-battle keyword selection unit not found.")
     source = payload.get("ability_name") or request.context.get("ability_name") or "Start of battle keyword selection"
     ability_key = payload.get("ability_key") or request.context.get("ability_key")
+    spec_fn = getattr(unit, "model_start_of_battle_keyword_selection_specs", None)
+    if callable(spec_fn):
+        specs = spec_fn(model) or []
+    elif hasattr(unit, "model_start_of_battle_keyword_reroll_ones_specs"):
+        specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) or []
+    else:
+        specs = []
+    matched_spec = None
+    ability_key_value = str(ability_key or "").strip().lower()
+    if ability_key_value:
+        for spec in list(specs or []):
+            spec_key = str(spec.get("ability_key", "") or "").strip().lower()
+            if spec_key == ability_key_value:
+                matched_spec = spec
+                break
+    elif len(specs) == 1:
+        matched_spec = specs[0]
     applied = False
     try:
         applied = bool(
@@ -3134,6 +3157,9 @@ def _apply_choose_start_of_battle_keyword(game: object, request: DecisionRequest
                 keyword=str(keyword),
                 source=str(source),
                 ability_key=str(ability_key or ""),
+                selection_kind=str((matched_spec or {}).get("selection_kind", "reroll_ones") or "reroll_ones"),
+                reroll_hit_ones=bool((matched_spec or {}).get("reroll_hit_ones", True)),
+                reroll_wound_ones=bool((matched_spec or {}).get("reroll_wound_ones", True)),
             )
         )
     except Exception:
@@ -4942,6 +4968,81 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if keyword_phrase:
             if not callable(matcher) or not bool(matcher(target_root, keyword_phrase, use_effective=False)):
                 return (f"Selected Scouts target must have {keyword_phrase}.",)
+        return ()
+    if ability == "declare_selected_unit_gain_deep_strike":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Selected Deep Strike source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Selected Deep Strike source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Selected Deep Strike source army was not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        owner = getattr(source_army, "player", None)
+        if owner is not None and player is not None and player is not owner:
+            return ("Selected Deep Strike must be resolved by the owning player.",)
+        get_specs = getattr(source_root, "get_declare_battle_formations_selected_units_gain_deep_strike_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return ("Selected Deep Strike source unit does not have the required ability.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Selected Deep Strike target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Selected Deep Strike target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Selected Deep Strike target is not an eligible candidate.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is not source_army:
+            return ("Selected Deep Strike target must be from your army.",)
+        selector_spec = {
+            "keyword_phrase": str(ctx.get("unit_keyword_phrase", "") or "").strip().upper(),
+            "required_keyword_phrase": str(ctx.get("required_keyword_phrase", "") or "").strip().upper(),
+            "any_keywords": tuple(
+                str(keyword or "").strip().upper()
+                for keyword in list(ctx.get("any_keywords", []) or [])
+                if str(keyword or "").strip()
+            ),
+        }
+        matcher = getattr(source_root, "_unit_matches_declare_battle_formations_selector_spec", None)
+        if not callable(matcher) or not bool(matcher(target_root, selector_spec)):
+            selector_label = str(ctx.get("selector_label", "") or selector_spec.get("keyword_phrase", "") or "").strip()
+            if selector_label:
+                return (f"Selected Deep Strike target must have {selector_label}.",)
+            return ("Selected Deep Strike target does not satisfy the required keywords.",)
         return ()
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
@@ -11934,6 +12035,91 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "selected_unit_ids": [selected_id] if selected_id else [],
             "source": ability_name,
             "scout_distance": float(scout_distance),
+        }
+    if ability == "declare_selected_unit_gain_deep_strike":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Selected Deep Strike").strip() or "Selected Deep Strike"
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["declare_selected_unit_gain_deep_strike_resolved"] = True
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [target_root]
+        for member in list(members or []):
+            member_sr = getattr(member, "special_rules", None)
+            if not isinstance(member_sr, dict):
+                member_sr = {}
+            member_sr["bearer_unit_deep_strike"] = True
+            member_sr["declare_selected_unit_gain_deep_strike_source"] = ability_name
+            member.special_rules = member_sr
+            invalidate_member_cache = getattr(member, "_invalidate_ability_cache", None)
+            if callable(invalidate_member_cache):
+                invalidate_member_cache()
+        invalidate_target_cache = getattr(target_root, "_invalidate_ability_cache", None)
+        if callable(invalidate_target_cache):
+            invalidate_target_cache()
+
+        selected_id = str(get_entity_id(target_root) or "")
+        source_sr["declare_selected_unit_gain_deep_strike_selected_unit_ids"] = [selected_id] if selected_id else []
+        source_root.special_rules = source_sr
+        invalidate_source_cache = getattr(source_root, "_invalidate_ability_cache", None)
+        if callable(invalidate_source_cache):
+            invalidate_source_cache()
+
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name}; that unit gains Deep Strike.",
+        )
+        return {
+            "selected_unit_ids": [selected_id] if selected_id else [],
+            "source": ability_name,
         }
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
