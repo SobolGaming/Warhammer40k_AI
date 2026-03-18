@@ -4789,6 +4789,7 @@ class GameReactiveDecisionsMixin:
             if kind not in (
                 "loping_speed",
                 "tactica_obliqua",
+                "enemy_fall_back_end_normal_move",
                 "post_shoot_no_charge",
                 "blood_surge",
                 "brazen_fury",
@@ -4938,6 +4939,29 @@ class GameReactiveDecisionsMixin:
                     max_distance=max_distance,
                     kind=kind,
                     movement_type=movement_type or "reactive",
+                    source=source,
+                )
+                return
+            if kind == "enemy_fall_back_end_normal_move":
+                can_trigger = getattr(unit, "can_enemy_fall_back_end_normal_move", None)
+                if callable(can_trigger):
+                    if not bool(can_trigger(game=self, game_map=getattr(self, "map", None))):
+                        return
+                try:
+                    max_distance = int(ctx.get("max_distance", 0) or 0)
+                except Exception:
+                    max_distance = 0
+                if max_distance <= 0:
+                    return
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id) if moving_unit_id else None
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "move",
                     source=source,
                 )
                 return

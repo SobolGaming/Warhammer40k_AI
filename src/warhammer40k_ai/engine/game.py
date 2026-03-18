@@ -2838,6 +2838,196 @@ class Game(
                     moving_unit=unit,
                 )
 
+    def _on_unit_move_started_enemy_fall_back_end_normal_move(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "fall_back":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+        moving_owner = getattr(moving_root.get_parent_army(), "player", None)
+        moving_unit_id = str(get_entity_id(moving_root) or "")
+        if not moving_unit_id:
+            return
+
+        candidates: list[dict] = []
+        for player in list(self.players or []):
+            if player is None or player is moving_owner:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            seen_root_ids: set[str] = set()
+            for candidate in sorted(list(getattr(army, "units", []) or []), key=lambda obj: str(get_entity_id(obj) or "")):
+                if candidate is None:
+                    continue
+                try:
+                    root = candidate.get_attached_unit_root()
+                except Exception:
+                    root = candidate
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_root_ids:
+                    continue
+                seen_root_ids.add(root_id)
+                if not self._entity_is_alive(root):
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                try:
+                    if root.is_in_reserves() or bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None):
+                        continue
+                except Exception:
+                    pass
+                rule_fn = getattr(root, "get_enemy_fall_back_end_normal_move_rule", None)
+                if not callable(rule_fn):
+                    continue
+                rule = rule_fn()
+                if not isinstance(rule, dict):
+                    continue
+                try:
+                    if not game_map.is_within_engagement_range(root, moving_root):
+                        continue
+                except Exception:
+                    continue
+                source = str(rule.get("source", "") or "Reactive Fall Back move").strip() or "Reactive Fall Back move"
+                candidates.append(
+                    {
+                        "player_id": str(getattr(player, "id", "") or ""),
+                        "unit_id": root_id,
+                        "source": source,
+                    }
+                )
+
+        if not candidates:
+            return
+        candidates.sort(key=lambda entry: (str(entry.get("player_id") or ""), str(entry.get("unit_id") or "")))
+        store = getattr(self, "_enemy_fall_back_end_normal_move_candidates", None)
+        if not isinstance(store, dict):
+            store = {}
+            self._enemy_fall_back_end_normal_move_candidates = store
+        store[moving_unit_id] = list(candidates)
+
+    def _on_unit_move_ended_enemy_fall_back_end_normal_move(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "fall_back":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+        moving_unit_id = str(get_entity_id(moving_root) or "")
+        if not moving_unit_id:
+            return
+
+        store = getattr(self, "_enemy_fall_back_end_normal_move_candidates", None)
+        if not isinstance(store, dict):
+            return
+        entries = list(store.pop(moving_unit_id, []) or [])
+        if not entries:
+            return
+
+        pending_keys: set[tuple[str, str]] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("reactive_move_kind", "") or "") != "enemy_fall_back_end_normal_move":
+                    continue
+                pending_keys.add(
+                    (
+                        str(ctx.get("reactive_move_unit_id", "") or ""),
+                        str(ctx.get("reactive_move_moving_unit_id", "") or ""),
+                    )
+                )
+
+        def _normal_move_distance(reacting_unit) -> int:
+            try:
+                models = list(reacting_unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(reacting_unit, "models", []) or [])
+            for model in list(models or []):
+                if model is None or not self._entity_is_alive(model):
+                    continue
+                try:
+                    distance = int(reacting_unit.get_effective_model_characteristic(model, "movement", game_map=game_map) or 0)
+                except Exception:
+                    distance = 0
+                if distance > 0:
+                    return int(distance)
+            try:
+                return int(float(getattr(reacting_unit, "movement", 0) or 0))
+            except Exception:
+                return 0
+
+        for entry in list(entries or []):
+            reacting_unit_id = str(entry.get("unit_id", "") or "")
+            if not reacting_unit_id or (reacting_unit_id, moving_unit_id) in pending_keys:
+                continue
+            reacting_unit = self._resolve_unit_by_id(reacting_unit_id)
+            if reacting_unit is None:
+                continue
+            try:
+                reacting_root = reacting_unit.get_attached_unit_root()
+            except Exception:
+                reacting_root = reacting_unit
+            if reacting_root is None:
+                continue
+            can_trigger = getattr(reacting_root, "can_enemy_fall_back_end_normal_move", None)
+            if callable(can_trigger):
+                if not bool(can_trigger(game=self, game_map=game_map)):
+                    continue
+            elif not self._entity_is_alive(reacting_root):
+                continue
+            player = self._resolve_player_by_id(str(entry.get("player_id", "") or ""))
+            if player is None:
+                player = getattr(reacting_root.get_parent_army(), "player", None)
+            if player is None:
+                continue
+            max_distance = int(_normal_move_distance(reacting_root) or 0)
+            if max_distance <= 0:
+                continue
+            source = str(entry.get("source", "") or "Reactive Fall Back move").strip() or "Reactive Fall Back move"
+            message = (
+                f"{getattr(moving_root, 'name', 'Enemy unit')} Fell Back from {getattr(reacting_root, 'name', 'unit')}.\n\n"
+                f"{source}: Make a Normal move of up to {int(max_distance)}\"?"
+            )
+            request = self._queue_reactive_move_confirmation(
+                player=player,
+                unit=reacting_root,
+                kind="enemy_fall_back_end_normal_move",
+                movement_type="move",
+                source=source,
+                message=message,
+                moving_unit=moving_root,
+            )
+            if request is None:
+                continue
+            request.context["max_distance"] = int(max_distance)
+            pending_keys.add((reacting_unit_id, moving_unit_id))
+
     @staticmethod
     def _entity_is_alive(entity, *, default: bool = True) -> bool:
         if entity is None:

@@ -4924,6 +4924,99 @@ class KeywordsDetachmentsMixin:
             return member, sr
         return None, None
 
+    def get_enemy_fall_back_end_normal_move_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time an enemy unit within Engagement Range of this unit is selected to Fall Back, after it ends that Fall Back move,
+        if this unit is not within Engagement Range of one or more enemy units, this unit can make a Normal move."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "enemy_fall_back_end_normal_move_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"[^a-z0-9]+", " ", norm.lower()).strip()
+                norm = re.sub(r"\s+", " ", norm)
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not unit._ENEMY_FALL_BACK_END_NORMAL_MOVE_RE.fullmatch(norm):
+                    continue
+                source = str(name or "Reactive Fall Back move").strip() or "Reactive Fall Back move"
+                rule = {
+                    "source": source,
+                    "movement_type": "move",
+                    "move_distance": "M",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_enemy_fall_back_end_normal_move(self, game=None, game_map=None) -> bool:
+        rule = self.get_enemy_fall_back_end_normal_move_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive() or not getattr(root, "deployed", False):
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(root):
+                    if game_map.is_within_engagement_range(root, enemy):
+                        return False
+            except Exception:
+                return False
+        return True
+
     def get_setup_reactive_shoot_or_charge_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -12298,6 +12391,64 @@ class KeywordsDetachmentsMixin:
                 break
         except Exception:
             rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_closest_eligible_wound_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time a model in this unit makes an attack that targets the closest eligible target,
+         re-roll a Wound roll of 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"closest_eligible_wound_reroll_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+        for name, desc in entries:
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                continue
+            low = text.lower()
+            if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
+                continue
+            if "wound roll" not in low:
+                continue
+            if ("re-roll" not in low) and ("reroll" not in low):
+                continue
+            if "ranged attack" in low:
+                attack_type = "ranged"
+            elif "melee attack" in low:
+                attack_type = "melee"
+            elif "makes an attack" in low:
+                attack_type = "any"
+            else:
+                continue
+            reroll_values = []
+            m_value = re.search(r"re-?roll\s+a\s+wound\s+roll\s+of\s+(?P<val>\d+)", low)
+            if m_value:
+                reroll_values.append(int(m_value.group("val") or 0))
+            reroll_full = bool(re.search(r"re-?roll\s+the\s+wound\s+roll(?:\s+instead)?", low))
+            reroll_values = [value for value in reroll_values if value > 0]
+            if not reroll_full and not reroll_values:
+                continue
+            source = str(name or "Closest eligible target").strip() or "Closest eligible target"
+            rule = {
+                "attack_type": attack_type,
+                "source": source,
+            }
+            if reroll_values:
+                rule["reroll_values"] = tuple(sorted(set(reroll_values)))
+            if reroll_full:
+                rule["reroll_full"] = True
+            break
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

@@ -1457,6 +1457,11 @@ class ShootingMixin:
                 required = {str(k or "").strip() for k in require_keywords if str(k or "").strip()}
             except Exception:
                 required = None
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged_weapon = bool(parent_wargear and callable(getattr(parent_wargear, "is_ranged", None)) and parent_wargear.is_ranged())
+        is_melee_weapon = bool(parent_wargear and callable(getattr(parent_wargear, "is_melee", None)) and parent_wargear.is_melee())
+        if not is_ranged_weapon and not is_melee_weapon:
+            return False
 
         def _matches_required(unit) -> bool:
             if not required:
@@ -1469,13 +1474,36 @@ class ShootingMixin:
                     continue
             return False
 
-        if not _matches_required(target_root):
-            return False
-
-        try:
-            if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_root, game_map):
+        def _is_eligible_target(unit) -> bool:
+            if not _matches_required(unit):
                 return False
-        except Exception:
+            if is_ranged_weapon:
+                try:
+                    return bool(self._can_model_shoot_weapon_at_target(model, weapon_profile, unit, game_map))
+                except Exception:
+                    return False
+            if not is_melee_weapon:
+                return False
+            within_engagement_fn = getattr(self, "_model_within_engagement_range_of_unit", None)
+            if callable(within_engagement_fn) and bool(within_engagement_fn(model, unit)):
+                return True
+            has_fight_within_3_fn = getattr(self, "has_fight_within_3_ability", None)
+            fight_within_3_active_fn = getattr(self, "fight_within_3_active", None)
+            within_range_fn = getattr(self, "_model_within_range_of_unit", None)
+            if not callable(has_fight_within_3_fn) or not bool(has_fight_within_3_fn()):
+                return False
+            if not callable(fight_within_3_active_fn) or not bool(fight_within_3_active_fn()):
+                return False
+            if not callable(within_range_fn):
+                return False
+            try:
+                if not bool(game_map.is_within_engagement_range(self, unit)):
+                    return False
+            except Exception:
+                return False
+            return bool(within_range_fn(model, unit, 3.0))
+
+        if not _is_eligible_target(target_root):
             return False
 
         def _min_distance_to_unit(unit) -> Optional[float]:
@@ -1524,12 +1552,7 @@ class ShootingMixin:
                     continue
             except Exception:
                 pass
-            try:
-                if not self._can_model_shoot_weapon_at_target(model, weapon_profile, root, game_map):
-                    continue
-            except Exception:
-                continue
-            if not _matches_required(root):
+            if not _is_eligible_target(root):
                 continue
             dist = _min_distance_to_unit(root)
             if dist is None:

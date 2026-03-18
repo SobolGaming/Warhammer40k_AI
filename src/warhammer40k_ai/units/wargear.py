@@ -17133,14 +17133,12 @@ class WargearProfile:
                 bonus = int(lead_mods.get("wound", 0) or 0)
                 dice_modifier += bonus
                 wound_result['modifiers'].extend(list(lead_mods.get("wound_reasons", ()) or ()))
-            try:
-                unit_wound_mods = unit.get_unit_wound_reroll_modifiers(
-                    attack_type,
-                    target=target,
-                    attacker_model=attacker,
-                )
-            except TypeError:
-                unit_wound_mods = unit.get_unit_wound_reroll_modifiers(attack_type, target=target)
+            unit_wound_mods = unit.get_unit_wound_reroll_modifiers(
+                attack_type,
+                target=target,
+                attacker_model=attacker,
+                weapon_profile=self,
+            )
             if isinstance(unit_wound_mods, dict) and int(unit_wound_mods.get("wound", 0) or 0):
                 bonus = int(unit_wound_mods.get("wound", 0) or 0)
                 dice_modifier += bonus

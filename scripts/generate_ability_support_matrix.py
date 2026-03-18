@@ -6372,6 +6372,8 @@ def _classify_ability_base(
     emergency_combat_embarkation_support = _emergency_combat_embarkation_support(description)
     stabilised_disembarkation_support = _stabilised_disembarkation_support(description)
     conditional_advance_shoot_charge_bonus_support = _conditional_advance_shoot_charge_bonus_support(description)
+    oath_target_wound_reroll_support = _oath_target_wound_reroll_support(description)
+    closest_target_wound_reroll_support = _closest_target_wound_reroll_support(description)
     author_of_the_codex_support = _author_of_the_codex_support(description)
     primarch_of_the_xiii_support = _primarch_of_the_xiii_support(description)
     master_of_battle_support = _master_of_battle_support(description)
@@ -6399,6 +6401,7 @@ def _classify_ability_base(
     opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     enemy_fall_back_selection_mortal_wounds_support = _enemy_fall_back_selection_mortal_wounds_support(description)
+    enemy_fall_back_end_normal_move_support = _enemy_fall_back_end_normal_move_support(description)
     objective_marker_command_phase_cp_gain_support = _objective_marker_command_phase_cp_gain_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
@@ -6435,6 +6438,7 @@ def _classify_ability_base(
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
     post_shoot_disembark_wound_reroll_support = _post_shoot_disembark_wound_reroll_support(description)
     post_shoot_ap_bonus_support = _post_shoot_ap_bonus_support(description)
+    post_shoot_keyword_wound_bonus_support = _post_shoot_keyword_wound_bonus_support(description)
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
@@ -6837,6 +6841,10 @@ def _classify_ability_base(
         return orks_named_datasheet_support
     if unit_contains_advance_charge_heroic_intervention_support:
         return unit_contains_advance_charge_heroic_intervention_support
+    if oath_target_wound_reroll_support:
+        return oath_target_wound_reroll_support
+    if closest_target_wound_reroll_support:
+        return closest_target_wound_reroll_support
     if conditional_advance_shoot_charge_bonus_support:
         return conditional_advance_shoot_charge_bonus_support
     if early_charge_end_engagement_battleshock_support:
@@ -6982,6 +6990,8 @@ def _classify_ability_base(
         return enemy_fall_back_desperate_escape_support
     if enemy_fall_back_selection_mortal_wounds_support:
         return enemy_fall_back_selection_mortal_wounds_support
+    if enemy_fall_back_end_normal_move_support:
+        return enemy_fall_back_end_normal_move_support
     if objective_marker_command_phase_cp_gain_support:
         return objective_marker_command_phase_cp_gain_support
     if command_phase_bonus_cp_support:
@@ -7040,6 +7050,8 @@ def _classify_ability_base(
         return post_shoot_disembark_wound_reroll_support
     if post_shoot_ap_bonus_support:
         return post_shoot_ap_bonus_support
+    if post_shoot_keyword_wound_bonus_support:
+        return post_shoot_keyword_wound_bonus_support
     if post_shoot_infantry_mortal_support:
         return post_shoot_infantry_mortal_support
     if post_shoot_wracking_agonies_support:
@@ -13666,6 +13678,38 @@ def _conditional_advance_shoot_charge_bonus_support(description: str) -> Optiona
     )
 
 
+def _oath_target_wound_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "each time a model in this unit makes an attack" not in norm:
+        return None
+    if "targets your oath of moment target" not in norm:
+        return None
+    if "you can reroll the wound roll" not in norm:
+        return None
+    return ("Supported", "Attacks against the current Oath of Moment target can re-roll the Wound roll.")
+
+
+def _closest_target_wound_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "closest eligible target" not in norm:
+        return None
+    if "wound roll" not in norm:
+        return None
+    if "re roll a wound roll of 1" in norm or "reroll a wound roll of 1" in norm:
+        return ("Supported", "Attacks against the closest eligible target can re-roll Wound rolls of 1.")
+    if "re roll the wound roll" in norm or "reroll the wound roll" in norm:
+        return ("Supported", "Attacks against the closest eligible target can re-roll the Wound roll.")
+    return None
+
+
 def _enemy_fall_back_selection_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13686,6 +13730,25 @@ def _enemy_fall_back_selection_mortal_wounds_support(description: str) -> Option
     return (
         "Supported",
         f"Once per turn, when an enemy unit within Engagement Range is selected to Fall Back: roll D6; on {threshold}+ that unit suffers {mortal} mortal wounds.",
+    )
+
+
+def _enemy_fall_back_end_normal_move_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time an enemy unit within engagement range of this unit is selected to fall back "
+        r"after it ends that fall back move if this unit is not within engagement range of one or more enemy units "
+        r"this unit can make a normal move"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After an enemy unit that was within this unit's Engagement Range finishes a Fall Back move, this unit can make a Normal move if it is no longer engaged.",
     )
 
 
@@ -14823,7 +14886,8 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     pattern = (
         r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
         r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
-        r"select one enemy unit (?:that was )?hit by one or more of those attacks "
+        r"select one enemy unit (?:that was )?hit by one or more "
+        r"(?:of those attacks|attacks made by this (?:model|unit) this phase) "
         r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the (?P<duration>end of the phase|start of your next shooting phase) "
         r"that (?:enemy )?unit cannot have the benefit of cover"
@@ -14833,7 +14897,8 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
         m = re.fullmatch(
             r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
             r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
-            r"select one enemy unit (?:that was )?hit by one or more of those attacks "
+            r"select one enemy unit (?:that was )?hit by one or more "
+            r"(?:of those attacks|attacks made by this (?:model|unit) this phase) "
             r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
             r"until the (?P<duration>end of the phase|start of your next shooting phase) that unit is (?P<state>[a-z0-9 -]+) "
             r"while a unit is (?P=state) it cannot have the benefit of cover",
@@ -15361,6 +15426,48 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     elif "once per phase" in norm:
         note += " Target limit: once per phase."
     return ("Supported", note)
+
+
+def _post_shoot_keyword_wound_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:in your shooting phase after this|each time this) (?:model|unit) has shot select one enemy "
+        r"(?:(?P<target_keywords>monster or vehicle|monster|vehicle) )?unit "
+        r"(?:that was )?hit by one or more (?:of those attacks|attacks made by this (?:model|unit) this phase) "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
+        r"(?:(?P<atype>ranged|melee) )?attack that targets that enemy unit add (?P<val>\d+) to the wound roll"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper() or "FRIENDLY"
+    atype = str(m.group("atype") or "").strip().lower()
+    try:
+        val = int(m.group("val") or 0)
+    except Exception:
+        val = 0
+    if val <= 0:
+        return None
+    scope = "attacks"
+    if atype == "ranged":
+        scope = "ranged attacks"
+    elif atype == "melee":
+        scope = "melee attacks"
+    target_keywords = str(m.group("target_keywords") or "").strip().lower()
+    if target_keywords == "monster or vehicle":
+        target_note = " enemy MONSTER/VEHICLE unit"
+    elif target_keywords:
+        target_note = f" enemy {target_keywords.upper()} unit"
+    else:
+        target_note = " hit enemy unit"
+    return (
+        "Supported",
+        f"After shooting: select one{target_note}; friendly {keyword} {scope} against it gain +{val} to wound until phase end.",
+    )
 
 
 def _post_shoot_snare_support(description: str) -> Optional[Tuple[str, str]]:

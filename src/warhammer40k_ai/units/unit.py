@@ -4097,15 +4097,17 @@ class Unit(
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
         r"(?:after this (?:model|unit) has shot|each time this (?:model|unit) has shot)) "
-        r"select one enemy unit hit by one or more of those attacks made with "
-        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) until the (?P<duration>end of the phase|start of your next shooting phase) "
+        r"select one enemy unit (?:that was )?hit by one or more "
+        r"(?:of those attacks made with |attacks made with )"
+        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+)(?: this phase)? until the (?P<duration>end of the phase|start of your next shooting phase) "
         r"that (?:enemy )?unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_RE = re.compile(
         r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
         r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
-        r"select one enemy unit (?:that was )?hit by one or more of those attacks "
+        r"select one enemy unit (?:that was )?hit by one or more "
+        r"(?:of those attacks|attacks made by this (?:model|unit) this phase) "
         r"until the (?P<duration>end of the phase|start of your next shooting phase) that (?:enemy )?unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
@@ -4140,6 +4142,14 @@ class Unit(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
         r"until the end of the phase each time a (?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) model(?: from your army)?|model from your army) makes an attack that targets that unit "
         r"add (?P<val>\d+) to the hit roll",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_KEYWORD_WOUND_BONUS_RE = re.compile(
+        r"(?:in your shooting phase after this|each time this) (?:unit|model) has shot select one enemy "
+        r"(?:(?P<target_keywords>monster or vehicle|monster|vehicle) )?unit "
+        r"(?:that was )?hit by one or more (?:of those attacks|attacks made by this (?:model|unit) this phase) "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
+        r"(?:(?P<atype>ranged|melee) )?attack that targets that enemy unit add (?P<val>\d+) to the wound roll",
         re.IGNORECASE,
     )
     _TAU_ADVANCED_SCOUTING_RE = re.compile(
@@ -4740,6 +4750,12 @@ class Unit(
         r"that was selected as a target of that charge provided that unit is not within engagement range of one or more enemy units "
         r"and every model in that unit is within (?P<range>\d+) of this transport it can embark within this transport "
         r"the charging unit can then select new targets for its charge",
+        re.IGNORECASE,
+    )
+    _ENEMY_FALL_BACK_END_NORMAL_MOVE_RE = re.compile(
+        r"each time an enemy unit within engagement range of this unit is selected to fall back "
+        r"after it ends that fall back move if this unit is not within engagement range of one or more enemy units "
+        r"this unit can make a normal move",
         re.IGNORECASE,
     )
     _STABILISED_DISEMBARKATION_RE = re.compile(

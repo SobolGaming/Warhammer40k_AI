@@ -158,6 +158,29 @@ class OathOfMomentManager:
                     return True
         return False
 
+    def _unit_has_ability_name(self, unit, ability_name: str) -> bool:
+        if unit is None:
+            return False
+        target = str(ability_name or "").strip().upper()
+        if not target:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return False
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            iter_entries = getattr(member, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_entries):
+                continue
+            for name, _desc in list(iter_entries(model=None) or []):
+                if str(name or "").strip().upper() == target:
+                    return True
+        return False
+
     def _recalculating_source_units(self) -> list:
         army = self.army
         if army is None:
@@ -326,6 +349,11 @@ class OathOfMomentManager:
         if not self.can_reroll_hit(attacker_unit, target_unit):
             return False
         return self._unit_contains_name(attacker_unit, "DARNATH LYSANDER")
+
+    def sternguard_focus_reroll_wound_full_applies(self, attacker_unit, target_unit) -> bool:
+        if not self.can_reroll_hit(attacker_unit, target_unit):
+            return False
+        return self._unit_has_ability_name(attacker_unit, "Sternguard Focus")
 
     def _current_battle_round(self, *, game=None) -> int:
         if game is not None:

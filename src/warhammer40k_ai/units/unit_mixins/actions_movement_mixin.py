@@ -6982,7 +6982,7 @@ class ActionsMovementMixin:
             return False
         return True
 
-    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
+    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None, weapon_profile=None) -> dict:
         """
         Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.
         """
@@ -7151,6 +7151,21 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Sternguard Veteran Squad: attacks against the current Oath target can re-roll the Wound roll.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            apply_full_fn = (
+                getattr(oath_mgr, "sternguard_focus_reroll_wound_full_applies", None)
+                if oath_mgr is not None
+                else None
+            )
+            if callable(apply_full_fn) and apply_full_fn(root, target):
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append("Sternguard Focus: re-roll Wound roll")
+        except Exception:
+            pass
+
         # The Lost Brethren: A Noble Death in Combat (Death Company melee attacks).
         try:
             if atype in ("any", "melee"):
@@ -7182,6 +7197,35 @@ class ActionsMovementMixin:
         if callable(get_parent_army):
             army = get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if target is not None and attacker_model is not None and weapon_profile is not None:
+            closest_rule_fn = getattr(root, "get_closest_eligible_wound_reroll_rule", None)
+            closest_target_fn = getattr(root, "is_target_closest_eligible", None)
+            game_map = getattr(game, "map", None) if game is not None else None
+            if callable(closest_rule_fn) and callable(closest_target_fn) and game_map is not None:
+                rule = closest_rule_fn(attacker_model)
+                if isinstance(rule, dict):
+                    rule_attack_type = str(rule.get("attack_type", "any") or "any").strip().lower() or "any"
+                    if (rule_attack_type == "any" or atype == "any" or rule_attack_type == atype) and bool(
+                        closest_target_fn(attacker_model, weapon_profile, target, game_map)
+                    ):
+                        source = str(rule.get("source", "") or "Closest eligible target").strip() or "Closest eligible target"
+                        if bool(rule.get("reroll_full", False)):
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                        parsed_values: list[int] = []
+                        for value in list(rule.get("reroll_values", ()) or ()):
+                            try:
+                                parsed_value = int(value)
+                            except (TypeError, ValueError):
+                                continue
+                            if parsed_value <= 0:
+                                continue
+                            parsed_values.append(parsed_value)
+                            reroll_wound_values.add(parsed_value)
+                        if parsed_values:
+                            reroll_wound_reasons.append(
+                                f"{source}: re-roll Wound rolls of {', '.join(str(v) for v in sorted(set(parsed_values)))}"
+                            )
         if army is not None and target is not None:
             has_active_priority = getattr(army, "has_active_priority_objective_identified_model", None)
             get_objective = getattr(army, "get_priority_objective_identified_selected_objective", None)
@@ -7697,6 +7741,76 @@ class ActionsMovementMixin:
                             source = str(sr.get("post_shoot_keyword_wound_reroll_source", "") or "Post-shoot Wound reroll").strip()
                             mods["reroll_wound_full"] = True
                             reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
+
+        # Target buffs: post-shoot keyword wound bonus (e.g., Thunderstrike).
+        try:
+            if target is not None:
+                t_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                sr = getattr(t_root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("post_shoot_keyword_wound_bonus_active"):
+                    owner_id = str(sr.get("post_shoot_keyword_wound_bonus_owner", "") or "")
+                    try:
+                        turn = int(sr.get("post_shoot_keyword_wound_bonus_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    game = None
+                    try:
+                        game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    if game is not None and owner_id:
+                        try:
+                            current_id = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            current_id = ""
+                        try:
+                            if int(getattr(game, "turn", 0) or 0) != turn or (current_id and current_id != owner_id):
+                                for k in (
+                                    "post_shoot_keyword_wound_bonus_active",
+                                    "post_shoot_keyword_wound_bonus_owner",
+                                    "post_shoot_keyword_wound_bonus_turn",
+                                    "post_shoot_keyword_wound_bonus_source",
+                                    "post_shoot_keyword_wound_bonus_phrase",
+                                    "post_shoot_keyword_wound_bonus_attack_type",
+                                    "post_shoot_keyword_wound_bonus_value",
+                                    "post_shoot_keyword_wound_bonus_expires_phase",
+                                ):
+                                    sr.pop(k, None)
+                                t_root.special_rules = sr
+                                sr = None
+                        except Exception:
+                            pass
+                    if isinstance(sr, dict) and sr.get("post_shoot_keyword_wound_bonus_active"):
+                        applies = True
+                        if owner_id:
+                            try:
+                                army = root.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                            except Exception:
+                                player = None
+                            if player is not None and str(getattr(player, "id", "") or "") != owner_id:
+                                applies = False
+                        required_attack_type = str(sr.get("post_shoot_keyword_wound_bonus_attack_type", "") or "any").strip().lower() or "any"
+                        if applies and required_attack_type not in ("any", atype):
+                            applies = False
+                        phrase = str(sr.get("post_shoot_keyword_wound_bonus_phrase", "") or "").strip()
+                        if applies and phrase:
+                            try:
+                                if not self._unit_matches_keyword_phrase(root, phrase, use_effective=True):
+                                    applies = False
+                            except Exception:
+                                applies = False
+                        if applies:
+                            try:
+                                bonus = int(sr.get("post_shoot_keyword_wound_bonus_value", 0) or 0)
+                            except Exception:
+                                bonus = 0
+                            if bonus:
+                                source = str(sr.get("post_shoot_keyword_wound_bonus_source", "") or "Post-shoot Wound bonus").strip() or "Post-shoot Wound bonus"
+                                mods["wound"] += int(bonus)
+                                wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
         except Exception:
             pass
 
