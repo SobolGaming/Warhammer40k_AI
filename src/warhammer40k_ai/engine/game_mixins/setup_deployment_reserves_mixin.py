@@ -2503,7 +2503,7 @@ class GameSetupDeploymentReservesMixin:
         build_player_color_selection_requests(self, players, queue_requests=True)
 
     def _apply_patrol_squad_declarations(self) -> None:
-        """Queue PATROL SQUAD split choices at the start of Declare Battle Formations."""
+        """Queue two-into-five split choices at the start of Declare Battle Formations."""
         players = list(self.players or [])
         if not players:
             return
@@ -2514,7 +2514,7 @@ class GameSetupDeploymentReservesMixin:
                 if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") != "patrol_squad":
+                if str(ctx.get("ability", "") or "") not in {"patrol_squad", "combat_squads"}:
                     continue
                 unit_id = str(ctx.get("unit_id", "") or "")
                 if unit_id:
@@ -2524,10 +2524,10 @@ class GameSetupDeploymentReservesMixin:
 
         for player in players:
             if player is None:
-                raise RuntimeError("Patrol Squad declarations require players.")
+                raise RuntimeError("Split-unit declarations require players.")
             army = player.get_army()
             if army is None:
-                raise RuntimeError(f"Patrol Squad declarations require an army for {player.name}.")
+                raise RuntimeError(f"Split-unit declarations require an army for {player.name}.")
             units = list(getattr(army, "units", []) or [])
             requests = build_patrol_squad_requests(self, units, queue_requests=False)
             for req in list(requests or []):

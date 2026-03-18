@@ -654,7 +654,7 @@ class NetworkServer:
         if getattr(request, "decision_type", None) != DECISION_CONFIRM_YES_NO:
             return False
         ctx = getattr(request, "context", {}) or {}
-        return str(ctx.get("ability", "") or "") == "patrol_squad"
+        return str(ctx.get("ability", "") or "") in {"patrol_squad", "combat_squads"}
 
     def _is_formation_decision(self, request: DecisionRequest | None) -> bool:
         if request is None:

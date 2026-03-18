@@ -435,17 +435,21 @@ def _add_disabled_ability_names(unit: Any, names: Iterable[str]) -> None:
     unit.special_rules = sr
 
 
-def split_unit_into_patrol_squad_units(
+def _split_unit_into_two_five_model_units(
     unit: Any,
     *,
+    declaration_flag: str,
+    split_applied_flag: str,
+    split_index_flag: str,
+    split_origin_flag: str,
+    second_unit_disabled: Optional[list[str]] = None,
     game: Optional[Any] = None,
     game_map: Optional[Any] = None,
 ) -> List[Any]:
     """
-    Split a PATROL SQUAD unit into two 5-model units.
+    Split a 10-model unit into two 5-model units.
 
     - Uses current alive model order: first 5 models become split unit #1, next 5 become split unit #2.
-    - If the source has Bomb Squigs/Distraction Grot, split unit #2 has those abilities disabled.
     - Persistent/expiring state is copied to both new units.
     """
     if unit is None:
@@ -481,12 +485,7 @@ def split_unit_into_patrol_squad_units(
 
     map_units = getattr(game_map, "units", None) if game_map is not None else None
     root_was_on_map = bool(map_units is not None and root in list(map_units or []))
-
-    second_unit_disabled: list[str] = []
-    if _unit_has_ability_name(root, "Bomb Squigs"):
-        second_unit_disabled.append("Bomb Squigs")
-    if _unit_has_ability_name(root, "Distraction Grot"):
-        second_unit_disabled.append("Distraction Grot")
+    disabled_names = list(second_unit_disabled or [])
 
     from ..units.unit import Unit as UnitClass
 
@@ -519,14 +518,14 @@ def split_unit_into_patrol_squad_units(
         sr = getattr(new_unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
-        sr["patrol_squad_declared"] = True
-        sr["patrol_squad_split_applied"] = True
-        sr["patrol_squad_split_index"] = int(index + 1)
+        sr[str(declaration_flag or "split_declared")] = True
+        sr[str(split_applied_flag or "split_applied")] = True
+        sr[str(split_index_flag or "split_index")] = int(index + 1)
         if root_id:
-            sr["patrol_squad_split_origin_unit_id"] = root_id
+            sr[str(split_origin_flag or "split_origin_unit_id")] = root_id
         new_unit.special_rules = sr
-        if index == 1 and second_unit_disabled:
-            _add_disabled_ability_names(new_unit, second_unit_disabled)
+        if index == 1 and disabled_names:
+            _add_disabled_ability_names(new_unit, disabled_names)
 
         resulting_units.append(new_unit)
 
@@ -557,3 +556,57 @@ def split_unit_into_patrol_squad_units(
         refresh_subscribers()
 
     return resulting_units
+
+
+def split_unit_into_patrol_squad_units(
+    unit: Any,
+    *,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split a PATROL SQUAD unit into two 5-model units.
+
+    - Uses current alive model order: first 5 models become split unit #1, next 5 become split unit #2.
+    - If the source has Bomb Squigs/Distraction Grot, split unit #2 has those abilities disabled.
+    - Persistent/expiring state is copied to both new units.
+    """
+    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    if root is None:
+        return []
+    second_unit_disabled: list[str] = []
+    if _unit_has_ability_name(root, "Bomb Squigs"):
+        second_unit_disabled.append("Bomb Squigs")
+    if _unit_has_ability_name(root, "Distraction Grot"):
+        second_unit_disabled.append("Distraction Grot")
+    return _split_unit_into_two_five_model_units(
+        unit,
+        declaration_flag="patrol_squad_declared",
+        split_applied_flag="patrol_squad_split_applied",
+        split_index_flag="patrol_squad_split_index",
+        split_origin_flag="patrol_squad_split_origin_unit_id",
+        second_unit_disabled=second_unit_disabled,
+        game=game,
+        game_map=game_map,
+    )
+
+
+def split_unit_into_combat_squad_units(
+    unit: Any,
+    *,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split a COMBAT SQUADS unit into two 5-model units.
+    """
+    return _split_unit_into_two_five_model_units(
+        unit,
+        declaration_flag="combat_squads_declared",
+        split_applied_flag="combat_squads_split_applied",
+        split_index_flag="combat_squads_split_index",
+        split_origin_flag="combat_squads_split_origin_unit_id",
+        second_unit_disabled=[],
+        game=game,
+        game_map=game_map,
+    )

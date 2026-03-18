@@ -6372,6 +6372,8 @@ def _classify_ability_base(
     emergency_combat_embarkation_support = _emergency_combat_embarkation_support(description)
     stabilised_disembarkation_support = _stabilised_disembarkation_support(description)
     conditional_advance_shoot_charge_bonus_support = _conditional_advance_shoot_charge_bonus_support(description)
+    battleshock_leadership_reroll_aura_support = _battleshock_leadership_reroll_aura_support(description)
+    oath_target_hit_bonus_support = _oath_target_hit_bonus_support(description)
     oath_target_wound_reroll_support = _oath_target_wound_reroll_support(description)
     closest_target_wound_reroll_support = _closest_target_wound_reroll_support(description)
     author_of_the_codex_support = _author_of_the_codex_support(description)
@@ -6389,6 +6391,8 @@ def _classify_ability_base(
     )
     synapse_keyword_grant_support = _within_synapse_range_grants_synapse_keyword_support(description)
     friendly_count_as_synapse_support = _friendly_tyranids_within_range_count_as_synapse_support(description)
+    two_five_model_split_support = _two_five_model_split_support(description)
+    teleport_homer_support = _teleport_homer_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
     command_phase_unit_return_support = _command_phase_unit_return_support(description)
@@ -6407,6 +6411,7 @@ def _classify_ability_base(
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
+    command_phase_vehicle_repair_hit_bonus_support = _command_phase_vehicle_repair_hit_bonus_support(description)
     wholly_within_friendly_battleline_ranged_invuln_support = _wholly_within_friendly_battleline_ranged_invuln_support(description)
     repulsor_grid_support = _repulsor_grid_support(description)
     death_vision_of_sanguinius_support = _death_vision_of_sanguinius_support(name, description)
@@ -6841,6 +6846,10 @@ def _classify_ability_base(
         return orks_named_datasheet_support
     if unit_contains_advance_charge_heroic_intervention_support:
         return unit_contains_advance_charge_heroic_intervention_support
+    if battleshock_leadership_reroll_aura_support:
+        return battleshock_leadership_reroll_aura_support
+    if oath_target_hit_bonus_support:
+        return oath_target_hit_bonus_support
     if oath_target_wound_reroll_support:
         return oath_target_wound_reroll_support
     if closest_target_wound_reroll_support:
@@ -6966,6 +6975,10 @@ def _classify_ability_base(
         return synapse_keyword_grant_support
     if friendly_count_as_synapse_support:
         return friendly_count_as_synapse_support
+    if two_five_model_split_support:
+        return two_five_model_split_support
+    if teleport_homer_support:
+        return teleport_homer_support
     if post_deployment_redeploy_support:
         return post_deployment_redeploy_support
     if sticky_support:
@@ -7002,6 +7015,8 @@ def _classify_ability_base(
         return command_phase_regain_wound_support
     if command_phase_model_repair_fnp_support:
         return command_phase_model_repair_fnp_support
+    if command_phase_vehicle_repair_hit_bonus_support:
+        return command_phase_vehicle_repair_hit_bonus_support
     if wholly_within_friendly_battleline_ranged_invuln_support:
         return wholly_within_friendly_battleline_ranged_invuln_support
     if repulsor_grid_support:
@@ -13693,6 +13708,49 @@ def _oath_target_wound_reroll_support(description: str) -> Optional[Tuple[str, s
     return ("Supported", "Attacks against the current Oath of Moment target can re-roll the Wound roll.")
 
 
+def _oath_target_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "each time a model in this unit makes an attack" not in norm:
+        return None
+    if "targets your oath of moment target" not in norm:
+        return None
+    if "add 1 to the hit roll" not in norm:
+        return None
+    return ("Supported", "Attacks against the current Oath of Moment target gain +1 to the Hit roll.")
+
+
+def _battleshock_leadership_reroll_aura_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly (?P<keyword>[a-z0-9 ]+?) unit is within (?P<range>\d+) of this model "
+        r"you can reroll battle shock and leadership tests taken for that unit"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = " ".join(str(m.group("keyword") or "").strip().upper().split())
+    if not keyword:
+        return None
+    try:
+        aura_range = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        aura_range = 0
+    if aura_range <= 0:
+        return None
+    return (
+        "Supported",
+        f'Aura: friendly {keyword} units within {aura_range}" can re-roll Battle-shock and Leadership tests.',
+    )
+
+
 def _closest_target_wound_reroll_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13708,6 +13766,24 @@ def _closest_target_wound_reroll_support(description: str) -> Optional[Tuple[str
     if "re roll the wound roll" in norm or "reroll the wound roll" in norm:
         return ("Supported", "Attacks against the closest eligible target can re-roll the Wound roll.")
     return None
+
+
+def _two_five_model_split_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the declare battle formations step(?: before any units have been set up)? "
+        r"this unit can be split into two units each containing five models"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Declare Battle Formations: this 10-model unit can optionally split into two separate 5-model units before setup.",
+    )
 
 
 def _enemy_fall_back_selection_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
@@ -14077,6 +14153,33 @@ def _command_phase_model_repair_fnp_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Command phase: select one friendly {keyword} model within {range_val}\"; it regains up to {heal} wounds and gains Feel No Pain {fnp}+ if it is a VEHICLE until next Command phase.",
+    )
+
+
+def _command_phase_vehicle_repair_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase(?: you can)? select one friendly (?P<keyword>[a-z0-9 ]+?) vehicle model within (?P<range>\d+) of this model "
+        r"that model regains up to (?P<heal>d3|\d+) lost wounds and until the start of your next command phase each time that vehicle model makes an attack "
+        r"add (?P<bonus>\d+) to the hit roll"
+        r"(?: each model can only be selected for this ability once per (?:turn|command phase)"
+        r"| you cannot select a unit for this ability that has already been selected for the [a-z0-9 ]+ ability this phase and vice versa)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    range_val = str(m.group("range") or "3")
+    heal = str(m.group("heal") or "D3").upper()
+    bonus = str(m.group("bonus") or "1")
+    target = f"friendly {keyword} VEHICLE model" if keyword else "friendly VEHICLE model"
+    return (
+        "Supported",
+        f"Command phase: select one {target} within {range_val}\" to regain up to {heal} wounds and gain +{bonus} to hit until next Command phase.",
     )
 
 
@@ -15605,8 +15708,8 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
         r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?"
     )
     pattern_unit = (
-        r"(?:at the )?start of the fight phase each enemy unit within engagement range of one or more units (?:from your army )?"
-        r"with this ability must take a battle shock test"
+        r"(?:at the )?start of the fight phase each enemy unit within engagement range of "
+        r"(?:(?:one or more units (?:from your army )?with this ability)|this unit) must take a battle shock test"
         r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
         r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?"
     )
@@ -15662,6 +15765,29 @@ def _fight_phase_range_battleshock_support(description: str) -> Optional[Tuple[s
     return (
         "Supported",
         f"Start of Fight phase: enemy {keyword_prefix}units within {range_value}\" take a Battle-shock test.",
+    )
+
+
+def _teleport_homer_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the battle you can set up one teleport homer token for this unit anywhere on the battlefield "
+        r"that is not in your opponent(?:s| s) deployment zone if you do once per battle you can target this unit with the rapid ingress stratagem for 0cp "
+        r"but when resolving that stratagem you must set this unit up within (?P<anchor>\d+)(?: horizontally)? of that token "
+        r"and not within (?P<enemy>\d+)(?: horizontally)? of any enemy models that token is then removed"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    anchor = str(m.group("anchor") or "3")
+    enemy = str(m.group("enemy") or "9")
+    return (
+        "Supported",
+        f"Start-of-battle marker placement decision with opponent-zone exclusion, 0CP Rapid Ingress, setup within {anchor}\" of the token and more than {enemy}\" from enemies, and one-use token consumption on success.",
     )
 
 

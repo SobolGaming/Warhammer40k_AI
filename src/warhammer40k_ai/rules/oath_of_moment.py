@@ -355,6 +355,11 @@ class OathOfMomentManager:
             return False
         return self._unit_has_ability_name(attacker_unit, "Sternguard Focus")
 
+    def fury_of_the_first_hit_bonus_applies(self, attacker_unit, target_unit) -> bool:
+        if not self.can_reroll_hit(attacker_unit, target_unit):
+            return False
+        return self._unit_has_ability_name(attacker_unit, "Fury of the First")
+
     def _current_battle_round(self, *, game=None) -> int:
         if game is not None:
             try:

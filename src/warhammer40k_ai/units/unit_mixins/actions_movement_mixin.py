@@ -6021,6 +6021,13 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+        fury_hit_bonus_fn = getattr(oath_mgr, "fury_of_the_first_hit_bonus_applies", None) if oath_mgr is not None else None
+        if callable(fury_hit_bonus_fn) and fury_hit_bonus_fn(root, target):
+            mods["hit"] += 1
+            hit_reasons.append("+1 to hit from Fury of the First")
+
         # Bastion Task Force: Interlocking Tactics re-roll Hit rolls of 1 vs auspex scanned units.
         try:
             if target is not None:

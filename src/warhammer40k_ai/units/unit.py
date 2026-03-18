@@ -4222,8 +4222,8 @@ class Unit(
         re.IGNORECASE,
     )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE = re.compile(
-        r"at the start of the fight phase each enemy unit within engagement range of one or more units "
-        r"(?:from your army )?with this ability must take a battle shock test"
+        r"at the start of the fight phase each enemy unit within engagement range of "
+        r"(?:(?:one or more units (?:from your army )?with this ability)|this unit) must take a battle shock test"
         r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
         r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?",
         re.IGNORECASE,

@@ -1367,7 +1367,26 @@ def build_patrol_squad_requests(
     for unit in _unique_army_root_units(all_units):
         if unit is None:
             continue
-        if not _unit_has_ability_name(unit, "PATROL SQUAD"):
+        ability_key = ""
+        ability_name = ""
+        declared_flag = ""
+        split_label = "Split"
+        keep_label = "Keep Together"
+        split_action = ""
+        skip_action = ""
+        if _unit_has_ability_name(unit, "PATROL SQUAD"):
+            ability_key = "patrol_squad"
+            ability_name = "Patrol Squad"
+            declared_flag = "patrol_squad_declared"
+            split_action = "split_patrol_squad"
+            skip_action = "skip_patrol_squad"
+        elif _unit_has_ability_name(unit, "Combat Squads"):
+            ability_key = "combat_squads"
+            ability_name = "Combat Squads"
+            declared_flag = "combat_squads_declared"
+            split_action = "split_combat_squads"
+            skip_action = "skip_combat_squads"
+        else:
             continue
         if bool(getattr(unit, "is_attached_leader", False)):
             continue
@@ -1376,7 +1395,7 @@ def build_patrol_squad_requests(
         if _unit_alive_model_count(unit) != 10:
             continue
         sr = getattr(unit, "special_rules", None)
-        if isinstance(sr, dict) and bool(sr.get("patrol_squad_declared", False)):
+        if isinstance(sr, dict) and bool(sr.get(declared_flag, False)):
             continue
 
         unit_id = str(get_entity_id(unit) or "")
@@ -1388,9 +1407,9 @@ def build_patrol_squad_requests(
         unit_name = str(getattr(unit, "name", "Unit") or "Unit")
 
         token_abilities: list[str] = []
-        if _unit_has_ability_name(unit, "Bomb Squigs"):
+        if ability_key == "patrol_squad" and _unit_has_ability_name(unit, "Bomb Squigs"):
             token_abilities.append("Bomb Squigs")
-        if _unit_has_ability_name(unit, "Distraction Grot"):
+        if ability_key == "patrol_squad" and _unit_has_ability_name(unit, "Distraction Grot"):
             token_abilities.append("Distraction Grot")
         token_note = ""
         if token_abilities:
@@ -1401,29 +1420,30 @@ def build_patrol_squad_requests(
             )
 
         message = (
-            f"Use Patrol Squad for {unit_name} ({player_name})?\n\n"
+            f"Use {ability_name} for {unit_name} ({player_name})?\n\n"
             "Split into two units of five models each."
             f"{token_note}"
         )
         options = [
             DecisionOption.create(
-                "Split",
-                payload={"choice": True, "unit_id": unit_id, "action": "split_patrol_squad"},
+                split_label,
+                payload={"choice": True, "unit_id": unit_id, "action": split_action},
             ),
             DecisionOption.create(
-                "Keep Together",
-                payload={"choice": False, "unit_id": unit_id, "action": "skip_patrol_squad"},
+                keep_label,
+                payload={"choice": False, "unit_id": unit_id, "action": skip_action},
             ),
         ]
         request = DecisionRequest.create(
             DECISION_CONFIRM_YES_NO,
-            "Patrol Squad",
+            ability_name,
             player_id=player_id,
             options=options,
             context={
-                "ability": "patrol_squad",
-                "ability_name": "Patrol Squad",
+                "ability": ability_key,
+                "ability_name": ability_name,
                 "unit_id": unit_id,
+                "declared_flag": declared_flag,
                 "message": message,
             },
         )

@@ -21,6 +21,7 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
     if ability not in (
         "hover_mode",
         "patrol_squad",
+        "combat_squads",
         "flickering_reality_reroll",
         "pyrogenesis_flux",
         "extremis_level_threat",
@@ -200,22 +201,35 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
     if unit is None or choice is None:
         return None
 
-    if ability == "patrol_squad":
+    if ability in ("patrol_squad", "combat_squads"):
+        declared_flag = str(ctx.get("declared_flag", "") or "").strip()
+        if not declared_flag:
+            declared_flag = "patrol_squad_declared" if ability == "patrol_squad" else "combat_squads_declared"
         if not bool(choice):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
-            sr["patrol_squad_declared"] = True
+            sr[declared_flag] = True
             unit.special_rules = sr
             return None
-        from ...utility.unit_split import split_unit_into_patrol_squad_units
-        split_units = split_unit_into_patrol_squad_units(
-            unit,
-            game=game,
-            game_map=getattr(game, "map", None),
-        )
+        if ability == "patrol_squad":
+            from ...utility.unit_split import split_unit_into_patrol_squad_units
+
+            split_units = split_unit_into_patrol_squad_units(
+                unit,
+                game=game,
+                game_map=getattr(game, "map", None),
+            )
+        else:
+            from ...utility.unit_split import split_unit_into_combat_squad_units
+
+            split_units = split_unit_into_combat_squad_units(
+                unit,
+                game=game,
+                game_map=getattr(game, "map", None),
+            )
         if len(list(split_units or [])) != 2:
-            raise RuntimeError("Patrol Squad split failed.")
+            raise RuntimeError(f"{str(ctx.get('ability_name', '') or ability).strip() or ability} split failed.")
         return None
 
     if ability == "hover_mode":

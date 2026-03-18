@@ -1612,6 +1612,25 @@ class StateAttachmentMixin:
         except Exception:
             reroll_sources = []
         try:
+            army = root.get_parent_army() if root is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            from ...utility.aura_effects import get_aura_battleshock_test_reroll_sources
+
+            aura_sources = list(get_aura_battleshock_test_reroll_sources(root, game_map=getattr(game, "map", None)) or [])
+        except Exception:
+            aura_sources = []
+        if aura_sources:
+            seen_aura = {str(src or "").strip().lower() for src in list(reroll_sources or []) if str(src or "").strip()}
+            for src in aura_sources:
+                label = str(src or "").strip()
+                if not label:
+                    continue
+                key = label.lower()
+                if key in seen_aura:
+                    continue
+                seen_aura.add(key)
+                reroll_sources.append(label)
+        try:
             checker = getattr(root, "_attached_unit_has_active_enhancement", None)
             has_proud = bool(
                 callable(checker)
