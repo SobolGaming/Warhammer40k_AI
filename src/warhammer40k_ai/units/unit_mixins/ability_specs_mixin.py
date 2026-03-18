@@ -545,18 +545,19 @@ class AbilitySpecsMixin:
                 if m_pen:
                     if str(m_pen.group("subject") or "").strip().lower() != "unit":
                         continue
+                    infantry_only = bool(m_pen.group("infantry"))
                     try:
                         pen = int(m_pen.group("pen") or 0)
                     except Exception:
                         pen = 0
                     if pen:
                         source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
-                        key = (source.lower(), False, -int(pen), 0, exclude_mv)
+                        key = (source.lower(), infantry_only, -int(pen), 0, exclude_mv)
                         if key not in seen:
                             seen.add(key)
                             specs.append(
                                 {
-                                    "infantry_only": False,
+                                    "infantry_only": bool(infantry_only),
                                     "exclude_monster_vehicle": bool(exclude_mv),
                                     "test_modifier": -int(pen),
                                     "source": source,

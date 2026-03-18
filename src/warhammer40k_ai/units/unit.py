@@ -3633,10 +3633,13 @@ class Unit(
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(
         r"in your shooting phase(?: and the fight phase)? after this (?P<subject>model|unit) has shot(?: or fought)? "
+        r"(?:you can )?"
         r"select one enemy (?:(?P<infantry>infantry) )?unit "
         r"(?:\((?:excluding|except) (?P<exclude_paren>[a-z0-9 ]+)\) )?"
         r"(?:excluding (?P<exclude>[a-z0-9 ]+) )?"
-        r"(?:that was )?hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test",
+        r"(?:that was )?hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?[a-z0-9 ' -]+ )?"
+        r"that (?:enemy )?unit must take a battle shock test",
         re.IGNORECASE,
     )
     _ARMY_ONCE_PER_TURN_POST_SHOOT_BATTLESHOCK_RE = re.compile(
@@ -3645,9 +3648,10 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_PENALTY_RE = re.compile(
-        r"in your shooting phase after this (?P<subject>model|unit) has shot select one (?:enemy )?unit "
-        r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
-        r"(?:made with (?:a|an|the|its) [a-z0-9 ]+ )?"
+        r"in your shooting phase after this (?P<subject>model|unit) has shot (?:you can )?select one (?:enemy )?"
+        r"(?:(?P<infantry>infantry) )?unit (?:excluding monsters and vehicles )?"
+        r"(?:that was )?hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?[a-z0-9 ' -]+ )?"
         r"that (?:enemy )?unit must take a battle shock test subtracting (?P<pen>\d+) from (?:(?:the )?result|that test)",
         re.IGNORECASE,
     )
@@ -4243,8 +4247,11 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_KEYWORD_HIT_BONUS_RE = re.compile(
-        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
-        r"until the end of the phase each time a (?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) model(?: from your army)?|model from your army) makes an attack that targets that unit "
+        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"(?:that was )?hit by one or more (?:of those attacks|attacks made by this unit this phase) "
+        r"until the end of the phase each time a "
+        r"(?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) (?:model|unit)(?: from your army)?|(?:model|unit) from your army) "
+        r"makes an attack that targets that (?:enemy )?unit "
         r"add (?P<val>\d+) to the hit roll",
         re.IGNORECASE,
     )

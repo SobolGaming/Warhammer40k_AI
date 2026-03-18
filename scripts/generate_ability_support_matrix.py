@@ -6502,6 +6502,7 @@ def _classify_ability_base(
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     start_shooting_phase_visible_keyword_hit_reroll_ones_support = _start_shooting_phase_visible_keyword_hit_reroll_ones_support(description)
+    post_shoot_keyword_hit_bonus_support = _post_shoot_keyword_hit_bonus_support(description)
     opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
     start_any_command_phase_enemy_range_battleshock_support = _start_any_command_phase_enemy_range_battleshock_support(description)
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
@@ -7142,6 +7143,8 @@ def _classify_ability_base(
         return start_shooting_phase_visible_battleshock_support
     if start_shooting_phase_visible_keyword_hit_reroll_ones_support:
         return start_shooting_phase_visible_keyword_hit_reroll_ones_support
+    if post_shoot_keyword_hit_bonus_support:
+        return post_shoot_keyword_hit_bonus_support
     if opponent_command_phase_below_starting_battleshock_support:
         return opponent_command_phase_below_starting_battleshock_support
     if start_any_command_phase_enemy_range_battleshock_support:
@@ -15384,8 +15387,9 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
             )
         return ("Supported", f"After shooting, an enemy unit hit by {weapon_name} must take a Battle-shock test.")
     pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one (?:enemy )?"
+        r"in your shooting phase after this (?:model|unit) has shot (?:you can )?select one (?:enemy )?"
         r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?[a-z0-9 ' -]+ )?"
         r"that (?:enemy )?unit must take a battle shock test"
         r"(?: subtracting (?P<pen>\d+) from (?:(?:the )?result|that test))?"
     )
@@ -16181,6 +16185,34 @@ def _post_shoot_keyword_wound_bonus_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"After shooting: select one{target_note}; friendly {keyword} {scope} against it gain +{val} to wound until phase end.",
+    )
+
+
+def _post_shoot_keyword_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"(?:that was )?hit by one or more (?:of those attacks|attacks made by this unit this phase) "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) "
+        r"(?:model|unit) makes an attack that targets that enemy unit add (?P<val>\d+) to the hit roll"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper() or "FRIENDLY"
+    try:
+        val = int(m.group("val") or 0)
+    except (TypeError, ValueError):
+        val = 0
+    if val <= 0:
+        return None
+    return (
+        "Supported",
+        f"After shooting: select a hit enemy unit; friendly {keyword} models/units gain +{val} to hit against it until phase end.",
     )
 
 
