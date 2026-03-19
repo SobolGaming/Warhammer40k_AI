@@ -4368,6 +4368,85 @@ _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_FENRIS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010393002": StratagemToolDescriptor(
+        stratagem_id="000010393002",
+        name="Devout Push",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="extend_pile_in_and_consolidate_to_six",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["INFANTRY"], "pile_in_distance_in": 6.0, "consolidate_distance_in": 6.0},
+    ),
+    "000010393007": StratagemToolDescriptor(
+        stratagem_id="000010393007",
+        name="Dread Crusaders",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="adeptus_astartes_infantry_unit_selected_as_charge_target",
+        duration="immediate",
+        effect="force_battleshock_test_with_modifier",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["INFANTRY"], "battle_shock_test_modifier": -1},
+    ),
+    "000010393004": StratagemToolDescriptor(
+        stratagem_id="000010393004",
+        name="For the Emperor's Honour!",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["INFANTRY"], "attack_type": "melee", "grant_keywords": ["PRECISION"]},
+    ),
+    "000010393003": StratagemToolDescriptor(
+        stratagem_id="000010393003",
+        name="Hearts Hardened to Duty",
+        timing="fight_phase_before_consolidate",
+        target="adeptus_astartes_infantry_unit_before_consolidating",
+        duration="until_end_of_phase",
+        effect="consolidate_ignore_closest_enemy_requirement",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["INFANTRY"]},
+    ),
+    "000010393006": StratagemToolDescriptor(
+        stratagem_id="000010393006",
+        name="Heresy Begets Retribution",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="chaplain_or_judiciar_unit_within_9_not_engaged",
+        duration="immediate",
+        effect="reactive_retribution_move_toward_closest_enemy",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "required_keywords_any": ["CHAPLAIN", "JUDICIAR"],
+            "reactive_move_distance": "D6",
+            "allow_engagement_range": True,
+            "closest_enemy_unit_exclude_keywords": ["AIRCRAFT"],
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+    "000010393005": StratagemToolDescriptor(
+        stratagem_id="000010393005",
+        name="Pious Enmity",
+        timing="fight_phase_before_selected_to_fight",
+        target="chaplain_or_judiciar_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="reroll_melee_hit_ones_and_conditional_wound_ones",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["CHAPLAIN", "JUDICIAR"],
+            "attack_type": "melee",
+            "reroll_hit_values": [1],
+            "reroll_wound_values_vs_keywords": {"MONSTER": [1], "VEHICLE": [1]},
+        },
+    ),
+}
+
+_COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008523003": StratagemToolDescriptor(
         stratagem_id="000008523003",
@@ -5235,6 +5314,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CHAMPIONS_OF_FENRIS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5338,6 +5420,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
+        or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)

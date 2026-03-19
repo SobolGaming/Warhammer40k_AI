@@ -61,6 +61,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_champions_of_fenris", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_companions_of_vehemence_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_companions_of_vehemence", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_company_of_hunters_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_company_of_hunters", None) if mgr is not None else None
@@ -349,6 +354,19 @@ class SpaceMarinesStratagemMixin:
         return self._sm_is_character_unit(unit) and (
             self._sm_is_infantry_unit(unit) or self._sm_is_mounted_unit(unit)
         )
+
+    def _sm_is_chaplain_or_judiciar_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if self._sm_has_keyword(root, "CHAPLAIN") or self._sm_has_keyword(root, "JUDICIAR"):
+            return True
+        names = [str(getattr(root, "name", "") or "").strip().lower()]
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else []
+        for member in list(members or []):
+            names.append(str(getattr(member, "name", "") or "").strip().lower())
+        return any("chaplain" in name or "judiciar" in name for name in names if name)
 
     def _sm_distance_between_units(self, first: Any, second: Any) -> Optional[float]:
         game_map = self._sm_game_map()
@@ -1018,6 +1036,154 @@ class SpaceMarinesStratagemMixin:
             if not self._is_adeptus_astartes_unit(root):
                 continue
             if not self._sm_is_infantry_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_vehemence_infantry_fight_candidates(self) -> list[Any]:
+        if not self._is_companions_of_vehemence_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_infantry_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_vehemence_chaplain_or_judiciar_fight_candidates(self) -> list[Any]:
+        if not self._is_companions_of_vehemence_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_chaplain_or_judiciar_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_vehemence_hearts_hardened_candidates(self, *, unit: Any) -> list[Any]:
+        if not self._is_companions_of_vehemence_detachment():
+            return []
+        root = self._sm_root(unit)
+        if root is None:
+            return []
+        if not self._sm_owned_by_player(root, self.player):
+            return []
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._is_adeptus_astartes_unit(root):
+            return []
+        if not self._sm_is_infantry_unit(root):
+            return []
+        return [root]
+
+    def _space_marines_vehemence_charge_target_candidates(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        if not self._is_companions_of_vehemence_detachment():
+            return []
+        charging_root = self._sm_root(charging_unit)
+        if charging_root is None or self._sm_owned_by_player(charging_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_infantry_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_vehemence_retribution_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_companions_of_vehemence_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_chaplain_or_judiciar_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
                 continue
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
@@ -3052,6 +3218,239 @@ class SpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_companions_of_vehemence_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_companions_of_vehemence_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+
+        phase_reactions = (
+            ("DEVOUT PUSH", self._space_marines_vehemence_infantry_fight_candidates),
+            ("FOR THE EMPEROR'S HONOUR!", self._space_marines_vehemence_infantry_fight_candidates),
+            ("PIOUS ENMITY", self._space_marines_vehemence_chaplain_or_judiciar_fight_candidates),
+        )
+        for stratagem_name, candidate_fn in phase_reactions:
+            stratagem = self.get_by_name(stratagem_name)
+            candidates = candidate_fn()
+            if stratagem is None or not candidates:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_companions_of_vehemence_before_consolidate_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+    ) -> None:
+        if not self._is_companions_of_vehemence_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        root = self._sm_root(unit)
+        if root is None:
+            return
+        stratagem = self.get_by_name("HEARTS HARDENED TO DUTY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_vehemence_hearts_hardened_candidates(unit=root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_attacks_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=root,
+        ):
+            return
+        payload = {
+            "event": "fight_attacks_resolved",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "enemy_unit": self._sm_root(target_unit),
+            "candidates": candidates,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_companions_of_vehemence_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_companions_of_vehemence_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "charge phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        charging_root = self._sm_root(charging_unit)
+        if charging_root is None or self._sm_owned_by_player(charging_root, self.player):
+            return
+        stratagem = self.get_by_name("DREAD CRUSADERS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_vehemence_charge_target_candidates(
+            charging_unit=charging_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="charge_declared",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+            attacking_unit=charging_root,
+        ):
+            return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "charging_unit": charging_root,
+            "enemy_unit": charging_root,
+            "attacking_unit": charging_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_companions_of_vehemence_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_companions_of_vehemence_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
+            return
+        stratagem = self.get_by_name("HERESY BEGETS RETRIBUTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_vehemence_retribution_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": action,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_companions_of_vehemence_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_companions_of_vehemence_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if (
+                sr.get("space_marines_devout_push_active") is True
+                or sr.get("space_marines_hearts_hardened_to_duty_active") is True
+                or sr.get("space_marines_pious_enmity_active") is True
+            ):
+                for key in (
+                    "space_marines_devout_push_active",
+                    "space_marines_devout_push_expires_phase",
+                    "space_marines_devout_push_turn_owner",
+                    "space_marines_devout_push_turn",
+                    "space_marines_devout_push_source",
+                    "space_marines_hearts_hardened_to_duty_active",
+                    "space_marines_hearts_hardened_to_duty_expires_phase",
+                    "space_marines_hearts_hardened_to_duty_turn_owner",
+                    "space_marines_hearts_hardened_to_duty_turn",
+                    "space_marines_hearts_hardened_to_duty_source",
+                    "space_marines_pious_enmity_active",
+                    "space_marines_pious_enmity_expires_phase",
+                    "space_marines_pious_enmity_turn_owner",
+                    "space_marines_pious_enmity_turn",
+                    "space_marines_pious_enmity_source",
+                    "stratagem_consolidate_distance_override",
+                    "stratagem_consolidate_expires_phase",
+                    "stratagem_consolidate_source",
+                    "bearer_unit_pile_in_distance_override",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
     def _space_marines_black_spear_adaptive_tactics_candidates(self) -> tuple[list[Any], list[Any]]:
         if not self._is_black_spear_task_force_detachment():
             return ([], [])
@@ -4756,6 +5155,26 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_stalking_wolves(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_companions_of_vehemence_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_companions_of_vehemence_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DEVOUT PUSH":
+            return self._use_space_marines_devout_push(stratagem, **kwargs)
+        if name_u == "DREAD CRUSADERS":
+            return self._use_space_marines_dread_crusaders(stratagem, **kwargs)
+        if name_u in {"FOR THE EMPEROR'S HONOUR!", "FOR THE EMPEROR’S HONOUR!"}:
+            return self._use_space_marines_for_the_emperors_honour(stratagem, **kwargs)
+        if name_u == "HEARTS HARDENED TO DUTY":
+            return self._use_space_marines_hearts_hardened_to_duty(stratagem, **kwargs)
+        if name_u == "HERESY BEGETS RETRIBUTION":
+            return self._use_space_marines_heresy_begets_retribution(stratagem, **kwargs)
+        if name_u == "PIOUS ENMITY":
+            return self._use_space_marines_pious_enmity(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_first_company_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -5731,6 +6150,418 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_devout_push(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DEVOUT PUSH: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_vehemence_context(
+            "DEVOUT PUSH",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: DEVOUT PUSH: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: DEVOUT PUSH: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: DEVOUT PUSH: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: DEVOUT PUSH: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: DEVOUT PUSH: target must be an INFANTRY unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: DEVOUT PUSH: target has already been selected to fight this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_vehemence_infantry_fight_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: DEVOUT PUSH: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_devout_push_active"] = True
+        sr["space_marines_devout_push_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_devout_push_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_devout_push_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_devout_push_source"] = str(getattr(stratagem, "name", "") or "DEVOUT PUSH")
+        sr["bearer_unit_pile_in_distance_override"] = max(float(sr.get("bearer_unit_pile_in_distance_override", 0.0) or 0.0), 6.0)
+        sr["stratagem_consolidate_distance_override"] = max(float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0), 6.0)
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "DEVOUT PUSH")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEVOUT PUSH: %s piles in and consolidates up to 6\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_dread_crusaders(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: DREAD CRUSADERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DREAD CRUSADERS: not opponent's Charge phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _action, from_pending = self._sm_vehemence_context(
+            "DREAD CRUSADERS",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: DREAD CRUSADERS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: DREAD CRUSADERS: missing charging unit")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: DREAD CRUSADERS: charging unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: DREAD CRUSADERS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: DREAD CRUSADERS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: DREAD CRUSADERS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: DREAD CRUSADERS: target must be an INFANTRY unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_vehemence_charge_target_candidates(
+            charging_unit=enemy_root,
+            target_units=target_units,
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: DREAD CRUSADERS: selected unit is not currently eligible")
+            return False
+        if not from_pending and target_units and not any(self._sm_root(target) is root for target in list(target_units or [])):
+            logger.error("ERROR: DREAD CRUSADERS: target unit was not selected as a charge target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source = str(getattr(stratagem, "name", "") or "DREAD CRUSADERS").strip() or "DREAD CRUSADERS"
+        force_test = getattr(enemy_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(current_turn, modifier=-1, source=source)
+        else:
+            enemy_sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(enemy_sr, dict):
+                enemy_sr = {}
+            enemy_sr["battle_shock_test_modifier"] = int(enemy_sr.get("battle_shock_test_modifier", 0) or 0) - 1
+            reasons = list(enemy_sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append(f"{source}: -1")
+            enemy_sr["battle_shock_test_modifier_reasons"] = reasons
+            enemy_root.special_rules = enemy_sr
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DREAD CRUSADERS: %s must take a Battle-shock test at -1.",
+            getattr(enemy_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_space_marines_for_the_emperors_honour(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_vehemence_context(
+            "FOR THE EMPEROR'S HONOUR!",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: target must be an INFANTRY unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_vehemence_infantry_fight_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FOR THE EMPEROR'S HONOUR!: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "FOR THE EMPEROR'S HONOUR!").strip() or "FOR THE EMPEROR'S HONOUR!"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_for_the_emperors_honour:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["PRECISION"],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FOR THE EMPEROR'S HONOUR!: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_hearts_hardened_to_duty(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_vehemence_context(
+            "HEARTS HARDENED TO DUTY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: target must be an INFANTRY unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_vehemence_hearts_hardened_candidates(unit=root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: HEARTS HARDENED TO DUTY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_hearts_hardened_to_duty_active"] = True
+        sr["space_marines_hearts_hardened_to_duty_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_hearts_hardened_to_duty_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_hearts_hardened_to_duty_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_hearts_hardened_to_duty_source"] = str(getattr(stratagem, "name", "") or "HEARTS HARDENED TO DUTY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HEARTS HARDENED TO DUTY: %s can consolidate without ending closer to the closest enemy this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_heresy_begets_retribution(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: not opponent's Movement phase")
+            return False
+
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_vehemence_context(
+            "HERESY BEGETS RETRIBUTION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: missing enemy move trigger")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: invalid trigger action")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: trigger unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: enemy unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_chaplain_or_judiciar_unit(root):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target must be a CHAPLAIN or JUDICIAR unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target must not be within Engagement Range")
+            return False
+        distance = self._sm_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: target must be within 9\" of the enemy unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_vehemence_retribution_candidates(enemy_unit=enemy_root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = max(0, int(dice_module.get_roll("D6") or 0))
+        if max_distance <= 0:
+            logger.error("ERROR: HERESY BEGETS RETRIBUTION: invalid reactive move distance")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="heresy_begets_retribution",
+            movement_type="reactive",
+            reactive_movement_type="retribution_move",
+            source=str(getattr(stratagem, "name", "") or "HERESY BEGETS RETRIBUTION"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_engagement_range=True,
+            extra_context={
+                "heresy_begets_retribution_enemy_unit_id": str(get_entity_id(enemy_root) or ""),
+                "heresy_begets_retribution_source": str(getattr(stratagem, "name", "") or "HERESY BEGETS RETRIBUTION"),
+            },
+        )
+        if request is not None:
+            request.context["reactive_move_allow_engagement_range"] = True
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HERESY BEGETS RETRIBUTION: %s can make a Retribution move of up to %d\" toward the closest enemy.",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_space_marines_pious_enmity(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PIOUS ENMITY: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_vehemence_context(
+            "PIOUS ENMITY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: PIOUS ENMITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: PIOUS ENMITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PIOUS ENMITY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: PIOUS ENMITY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_chaplain_or_judiciar_unit(root):
+            logger.error("ERROR: PIOUS ENMITY: target must be a CHAPLAIN or JUDICIAR unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: PIOUS ENMITY: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_vehemence_chaplain_or_judiciar_fight_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: PIOUS ENMITY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_pious_enmity_active"] = True
+        sr["space_marines_pious_enmity_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_pious_enmity_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_pious_enmity_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_pious_enmity_source"] = str(getattr(stratagem, "name", "") or "PIOUS ENMITY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PIOUS ENMITY: %s re-rolls melee Hit rolls of 1 this phase and re-rolls melee Wound rolls of 1 vs MONSTER/VEHICLE targets.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_space_marines_courage_and_honour(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "fight phase":
@@ -6237,6 +7068,43 @@ class SpaceMarinesStratagemMixin:
         if objective is None and len(objective_candidates) == 1:
             objective = objective_candidates[0]
         return (unit, candidates, objective, objective_candidates, attacking_unit, target_units, choice_payload, from_pending)
+
+    def _sm_vehemence_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        trigger_unit = kwargs.get("moving_unit") or kwargs.get("charging_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if trigger_unit is None:
+                trigger_unit = (
+                    reaction.get("moving_unit")
+                    or reaction.get("charging_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("enemy_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, candidates, trigger_unit, target_units, action, from_pending)
 
     def _use_space_marines_wrathful_conquerors(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()

@@ -74,6 +74,66 @@ def _parse_xy_point(value: object) -> tuple[float, float] | None:
         return None
 
 
+def _validate_heresy_begets_retribution_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    reactive_move_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_kind != "heresy_begets_retribution" and reactive_move_type != "retribution_move":
+        return ()
+    if unit is None:
+        return ("Move unit: Heresy Begets Retribution requires a valid unit.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ("Move unit: Heresy Begets Retribution requires a game map.",)
+
+    try:
+        from ...utility.calcs import MovementType, get_validation_rules, validate_final_position
+    except Exception:
+        return ("Move unit: Heresy Begets Retribution validation rules are unavailable.",)
+
+    validation_rules = get_validation_rules(MovementType.BESTIAL_RAGE, moving_unit=unit)
+    validation_rules["closest_enemy_unit_reason"] = "Heresy Begets Retribution"
+
+    positions_by_id: dict[str, tuple[float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "").strip()
+        pos = entry.get("position") or []
+        if not model_id or not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            positions_by_id[model_id] = (
+                float(pos[0]),
+                float(pos[1]),
+                float(pos[2]) if len(pos) > 2 else 0.0,
+            )
+        except (TypeError, ValueError):
+            continue
+
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    for model in list(models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id or model_id not in positions_by_id:
+            continue
+        validation = validate_final_position(model, positions_by_id[model_id], validation_rules, game_map)
+        if not bool((validation or {}).get("valid", False)):
+            reason = str((validation or {}).get("reason", "") or "invalid final position")
+            return (f"Move unit: Heresy Begets Retribution {reason}.",)
+    return ()
+
+
 def _masters_of_the_void_enemy_dz_override_active(unit: object, game: object) -> bool:
     if unit is None or game is None:
         return False
@@ -723,6 +783,14 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if wraithlike_errors:
         return wraithlike_errors
+    heresy_errors = _validate_heresy_begets_retribution_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if heresy_errors:
+        return heresy_errors
     return ()
 
 

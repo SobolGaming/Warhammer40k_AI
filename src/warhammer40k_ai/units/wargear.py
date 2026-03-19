@@ -12666,6 +12666,21 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Space Marines: Companions of Vehemence (Pious Enmity).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "companions_of_vehemence_pious_enmity_reroll_hit_ones", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, source = reroll_fn(attacker, attack_type=attack_type, game=game)
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Pious Enmity").strip() or "Pious Enmity"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
         # Space Marines: Reclamation Force (Liberatum).
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -18189,6 +18204,26 @@ class WargearProfile:
                 if bool(reroll_wound_ones):
                     reroll_wound_values.add(1)
                     source_name = str(source or "Rapid-drop Deployment").strip() or "Rapid-drop Deployment"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Space Marines: Companions of Vehemence (Pious Enmity).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "companions_of_vehemence_pious_enmity_reroll_wound_ones", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_wound_ones, source = reroll_fn(
+                    attacker,
+                    target,
+                    attack_type=attack_type,
+                    game=game,
+                )
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Pious Enmity").strip() or "Pious Enmity"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass

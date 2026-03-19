@@ -7519,6 +7519,81 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             source = "Merciless Denunciation"
         return True, source
 
+    def _companions_of_vehemence_pious_enmity_state(self, unit, *, game=None):
+        if not self.is_companions_of_vehemence():
+            return None, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_pious_enmity_active")):
+            return None, ""
+        game_obj = self._resolve_game_context(game=game)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        exp = str(sr.get("space_marines_pious_enmity_expires_phase", "") or "").strip().upper()
+        if exp and phase_name and exp != phase_name:
+            return None, ""
+        try:
+            marked_turn = int(sr.get("space_marines_pious_enmity_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, ""
+        source = str(sr.get("space_marines_pious_enmity_source", "") or "Pious Enmity").strip() or "Pious Enmity"
+        return root, source
+
+    def companions_of_vehemence_pious_enmity_reroll_hit_ones(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None:
+            return False, ""
+        if str(attack_type or "").strip().lower() not in {"any", "melee"}:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root, source = self._companions_of_vehemence_pious_enmity_state(unit, game=game)
+        if root is None:
+            return False, ""
+        model_root = self._attached_unit_root(unit)
+        if model_root is None or str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+            return False, ""
+        return True, source
+
+    def companions_of_vehemence_pious_enmity_reroll_wound_ones(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        if str(attack_type or "").strip().lower() not in {"any", "melee"}:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root, source = self._companions_of_vehemence_pious_enmity_state(unit, game=game)
+        if root is None:
+            return False, ""
+        model_root = self._attached_unit_root(unit)
+        if model_root is None or str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+            return False, ""
+        if not (
+            self._attached_unit_has_keyword(target_unit, "MONSTER")
+            or self._attached_unit_has_keyword(target_unit, "VEHICLE")
+        ):
+            return False, ""
+        return True, source
+
     def _company_of_hunters_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)
         if root is None:

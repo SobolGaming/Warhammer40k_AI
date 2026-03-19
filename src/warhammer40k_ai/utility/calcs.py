@@ -986,6 +986,8 @@ def get_validation_rules(
                 sr = getattr(moving_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("stratagem_consolidate_requires_engagement"):
                     base_rules['consolidate_requires_engagement'] = True
+                if isinstance(sr, dict) and sr.get("space_marines_hearts_hardened_to_duty_active"):
+                    base_rules['consolidate_ignore_closest_enemy_requirement'] = True
         except Exception:
             pass
         try:
@@ -3213,6 +3215,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         except Exception:
             max_dist = CONSOLIDATE_DISTANCE
         requires_engagement = bool(validation_rules.get('consolidate_requires_engagement', False))
+        ignore_closest_enemy_requirement = bool(
+            validation_rules.get('consolidate_ignore_closest_enemy_requirement', False)
+        )
 
         # Helper: determine if new position is within engagement range of ANY enemy model
         def _is_in_engagement_range_of_any_enemy(enemy_models: list) -> bool:
@@ -3360,17 +3365,19 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     if (not engagement_possible) and (not requires_engagement):
                         if _objective_fallback_ok():
                             return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
+                        if ignore_closest_enemy_requirement:
+                            return {'valid': True, 'reason': 'Valid final position (Hearts Hardened to Duty)'}
 
                     from ..utility.aura_utils import distance_between_bases_3d
                     new_distance_to_unit = min(float(distance_between_bases_3d(new_base, em.model_base)) for em in closest_models)
 
-                    if new_distance_to_unit >= closest_distance:
+                    if (not ignore_closest_enemy_requirement) and new_distance_to_unit >= closest_distance:
                         return {
                             'valid': False,
                             'reason': f'Consolidate must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" >= {closest_distance:.2f}"'
                         }
 
-                    if validation_rules.get('prefer_base_contact', False):
+                    if validation_rules.get('prefer_base_contact', False) and not ignore_closest_enemy_requirement:
                         if closest_distance <= max_dist and new_distance_to_unit > BASE_CONTACT_EPSILON:
                             return {
                                 'valid': False,
@@ -3402,19 +3409,21 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 if (not engagement_possible) and (not requires_engagement):
                     if _objective_fallback_ok():
                         return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
+                    if ignore_closest_enemy_requirement:
+                        return {'valid': True, 'reason': 'Valid final position (Hearts Hardened to Duty)'}
 
                 # Must end closer to the closest enemy model (even if not reaching engagement)
                 from ..utility.aura_utils import distance_between_bases_3d
                 new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
 
-                if new_distance_to_closest >= closest_distance:
+                if (not ignore_closest_enemy_requirement) and new_distance_to_closest >= closest_distance:
                     return {
                         'valid': False,
                         'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" >= {closest_distance:.2f}"'
                     }
 
                 # Prefer base contact if achievable within consolidate distance
-                if validation_rules.get('prefer_base_contact', False):
+                if validation_rules.get('prefer_base_contact', False) and not ignore_closest_enemy_requirement:
                     if closest_distance <= max_dist and new_distance_to_closest > BASE_CONTACT_EPSILON:
                         return {
                             'valid': False,

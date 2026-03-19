@@ -84,16 +84,21 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CHILLING HOWL",
     "CODEX DISCIPLINE",
     "COURAGE AND HONOUR!",
+    "DEVOUT PUSH",
     "DISCIPLINED EXTERMINATION",
+    "DREAD CRUSADERS",
     "DRAGONFIRE ROUNDS",
     "DROPSHIP EXTRACTION",
     "DUTY AND HONOUR",
     "EXEMPLARY VIGILANCE",
     "FOCUSED FURY",
+    "FOR THE EMPEROR'S HONOUR!",
     "FURY OF THE FIRST",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
     "HELLFIRE ROUNDS",
+    "HEARTS HARDENED TO DUTY",
+    "HERESY BEGETS RETRIBUTION",
     "HERESY UNDONE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
@@ -105,6 +110,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NOT ONE BACKWARDS STEP",
     "ONRUSHING STORM",
     "ORBITAL TELEPORTARIUM",
+    "PIOUS ENMITY",
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
     "PREYTAKER’S EYE",
@@ -1696,9 +1702,17 @@ class StratagemManager(
             "MORE GITZ OVER 'ERE!",
             "SQUIG FLINGIN'",
             "LEGENDARY FORTITUDE",
+            "HERESY BEGETS RETRIBUTION",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
-        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
+        if names & {
+            "ANTI-GRAV REPULSION",
+            "ANTI‑GRAV REPULSION",
+            "BLIND GRENADES",
+            "A DEADLY SNARE",
+            "DREAD CRUSADERS",
+            "SHADE PATH",
+        }:
             add("charge_declared", self._on_charge_declared)
         if names & {"OVERWATCH", "FIRE OVERWATCH", "FIRES OF COVENANT", "A CHALLENGE MET", "MIRAGE OF ECHOES"}:
             add("unit_set_up", self._on_unit_set_up)
@@ -1816,6 +1830,8 @@ class StratagemManager(
             if not has_consolidate_spec:
                 has_consolidate_spec = bool(self._get_consolidate_move_spec(s))
                 if not has_consolidate_spec and str(getattr(s, "name", "") or "").strip().upper() == "OVERRUN":
+                    has_consolidate_spec = True
+                if not has_consolidate_spec and str(getattr(s, "name", "") or "").strip().upper() == "HEARTS HARDENED TO DUTY":
                     has_consolidate_spec = True
             if not has_charge_melee_ap_spec:
                 has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
@@ -5952,6 +5968,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_companions_of_vehemence_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6990,6 +7010,7 @@ class StratagemManager(
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -8894,6 +8915,7 @@ class StratagemManager(
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
@@ -8917,6 +8939,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_genestealer_cults_host_of_ascension_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_space_marines_companions_of_vehemence_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -11973,6 +11999,13 @@ class StratagemManager(
                 raise
             try:
                 self._queue_tyranids_invasion_fleet_before_consolidate_reactions(
+                    unit=root,
+                    target_unit=target_unit,
+                )
+            except Exception:
+                raise
+            try:
+                self._queue_space_marines_companions_of_vehemence_before_consolidate_reactions(
                     unit=root,
                     target_unit=target_unit,
                 )
@@ -16269,6 +16302,9 @@ class StratagemManager(
         fenris_result = self._use_space_marines_champions_of_fenris_stratagem(s, **kwargs)
         if fenris_result is not None:
             return fenris_result
+        vehemence_result = self._use_space_marines_companions_of_vehemence_stratagem(s, **kwargs)
+        if vehemence_result is not None:
+            return vehemence_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

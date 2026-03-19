@@ -1380,7 +1380,10 @@ class IndividualModelMovementDialog(BaseDialog):
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
         try:
             ctx = dict(getattr(self.decision_request, "context", {}) or {})
-            if bool(ctx.get("reactive_move_allow_engagement_range")) and self.movement_type == "reactive":
+            reactive_move_type = str(ctx.get("reactive_move_movement_type", "") or "").strip().lower()
+            if self.movement_type == "reactive" and reactive_move_type == "retribution_move":
+                pathfinding_movement_type = MovementType.BESTIAL_RAGE
+            elif bool(ctx.get("reactive_move_allow_engagement_range")) and self.movement_type == "reactive":
                 pathfinding_movement_type = MovementType.CHARGE
         except Exception:
             pass
