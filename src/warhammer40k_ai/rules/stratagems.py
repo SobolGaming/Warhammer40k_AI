@@ -80,10 +80,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
     "DUTY AND HONOUR",
+    "FOCUSED FURY",
     "HEROES OF THE CHAPTER",
+    "IN THE SHADOW OF GREAT WINGS",
+    "INSTANT OF GRACE",
     "LEGENDARY FORTITUDE",
     "ORBITAL TELEPORTARIUM",
+    "STRIKE NOW FOR GLORY",
     "TERRIFYING PROFICIENCY",
+    "UNTO THE BURNING SKIES",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -5864,6 +5869,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_angelic_inheritors_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6896,6 +6905,7 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9782,6 +9792,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_guardian_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_angelic_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16083,6 +16100,9 @@ class StratagemManager(
         cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
         if cult_result is not None:
             return cult_result
+        angelic_result = self._use_space_marines_angelic_inheritors_stratagem(s, **kwargs)
+        if angelic_result is not None:
+            return angelic_result
         first_company_result = self._use_space_marines_first_company_task_force_stratagem(s, **kwargs)
         if first_company_result is not None:
             return first_company_result

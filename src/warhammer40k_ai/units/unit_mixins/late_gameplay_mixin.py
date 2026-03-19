@@ -4470,6 +4470,51 @@ class LateGameplayMixin:
             pass
 
         try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("space_marines_in_the_shadow_active"):
+                applies = True
+                game = None
+                try:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("space_marines_in_the_shadow_turn_owner", "") or "").strip()
+                if owner_id:
+                    unit_owner = ""
+                    try:
+                        unit_owner = str(
+                            getattr(getattr(root.get_parent_army(), "player", None), "id", "") or ""
+                        ).strip()
+                    except Exception:
+                        unit_owner = ""
+                    if unit_owner and unit_owner != owner_id:
+                        applies = False
+                if applies and game is not None:
+                    exp_phase = str(sr.get("space_marines_in_the_shadow_expires_phase", "") or "").strip().upper()
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if exp_phase and current_phase and current_phase != exp_phase:
+                        applies = False
+                    try:
+                        effect_turn = int(sr.get("space_marines_in_the_shadow_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        applies = False
+                if applies:
+                    try:
+                        dist = float(sr.get("space_marines_in_the_shadow_targeting_range", 18) or 18)
+                    except Exception:
+                        dist = 18.0
+                    source = str(sr.get("space_marines_in_the_shadow_source", "") or "").strip() or "IN THE SHADOW OF GREAT WINGS"
+                    _consider(dist, source)
+        except Exception:
+            pass
+
+        try:
             army = root.get_parent_army()
         except Exception:
             army = None

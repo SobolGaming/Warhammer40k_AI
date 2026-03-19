@@ -3971,6 +3971,74 @@ _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009836003": StratagemToolDescriptor(
+        stratagem_id="000009836003",
+        name="Focused Fury",
+        timing="fight_phase_on_select_to_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_lethal_hits_and_conditional_lance",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "base_keywords": ["LETHAL HITS"],
+            "character_unit_bonus_keywords": ["LANCE"],
+        },
+    ),
+    "000009836006": StratagemToolDescriptor(
+        stratagem_id="000009836006",
+        name="In the Shadow of Great Wings",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="adeptus_astartes_character_unit_targeted",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        effect_params={"targeting_range": 18},
+    ),
+    "000009836004": StratagemToolDescriptor(
+        stratagem_id="000009836004",
+        name="Instant of Grace",
+        timing="your_command_phase",
+        target="adeptus_astartes_infantry_unit_with_non_character_model",
+        duration="until_start_of_your_next_command_phase",
+        effect="temporary_model_character_keyword_and_unit_character_status",
+        cp_cost=1,
+        effect_params={
+            "selected_model_keyword": "CHARACTER",
+            "selected_unit_counts_as_keyword": "CHARACTER",
+        },
+    ),
+    "000009836005": StratagemToolDescriptor(
+        stratagem_id="000009836005",
+        name="Strike Now for Glory",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_sustained_hits",
+        cp_cost=1,
+        effect_params={"sustained_hits_value": 1},
+    ),
+    "000009836007": StratagemToolDescriptor(
+        stratagem_id="000009836007",
+        name="Unto the Burning Skies",
+        timing="end_of_opponent_fight_phase",
+        target="adeptus_astartes_jump_pack_unit_or_the_sanguinor_even_if_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["JUMP PACK"],
+            "reserve_status": "strategic_reserves",
+            "allow_engaged_if_unit_named": "The Sanguinor",
+        },
+    ),
+}
+
+_ANGELIC_INHERITORS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
@@ -4616,6 +4684,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4705,6 +4776,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
