@@ -17620,6 +17620,29 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Space Marines: Company of Hunters (Talon Strike) +1 to wound
+        # for attacks that target INFANTRY CHARACTER or MOUNTED CHARACTER units.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            bonus_fn = getattr(sm_mgr, "company_of_hunters_talon_strike_wound_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Talon Strike").strip() or "Talon Strike"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+
         # Chaos Daemons: Legion of Excess - Archagonists (+1 to wound in melee).
         is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         if is_melee:

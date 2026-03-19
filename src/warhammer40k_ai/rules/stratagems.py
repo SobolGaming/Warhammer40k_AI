@@ -129,6 +129,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DAEMONTIDE",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
+    "DEATH ON THE WIND",
     "DEATH ECSTASY",
     "DEVOTED DUELLISTS",
     "DIABOLIC MAJESTY",
@@ -145,6 +146,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
+    "HUNTERS' TRAIL",
     "LAYERED WARDS",
     "LET DUTY BE YOUR SHIELD",
     "LIGHTNING-FAST REACTIONS",
@@ -175,6 +177,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PURGING FIRE",
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
+    "RAPID REAPPRAISAL",
     "REDIRECTED STRIKE",
     "REFUSAL TO BE OUTDONE",
     "MEET FORCE WITH FORCE",
@@ -193,6 +196,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "TALON STRIKE",
     "THUNDERSTOMP",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
@@ -1746,6 +1750,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
+        if "DEATH ON THE WIND" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_company_of_hunters)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
@@ -5906,6 +5912,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_company_of_hunters_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_black_spear_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6947,6 +6957,7 @@ class StratagemManager(
         try:
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
@@ -7081,6 +7092,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_bastion_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_company_of_hunters_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9557,6 +9572,12 @@ class StratagemManager(
 
     def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_bastion_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+
+    def _on_unit_shooting_resolved_space_marines_company_of_hunters(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        self._queue_space_marines_company_of_hunters_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
             hits_by_target=hits_by_target,
         )
@@ -16179,6 +16200,9 @@ class StratagemManager(
         angelic_result = self._use_space_marines_angelic_inheritors_stratagem(s, **kwargs)
         if angelic_result is not None:
             return angelic_result
+        company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
+        if company_hunters_result is not None:
+            return company_hunters_result
         black_spear_result = self._use_space_marines_black_spear_task_force_stratagem(s, **kwargs)
         if black_spear_result is not None:
             return black_spear_result

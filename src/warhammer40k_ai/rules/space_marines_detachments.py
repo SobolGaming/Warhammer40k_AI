@@ -8131,6 +8131,131 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def masters_of_manoeuvre_charge_after_fall_back_applies(self, unit) -> bool:
         return self.masters_of_manoeuvre_charge_after_advance_applies(unit)
 
+    @staticmethod
+    def _company_of_hunters_talon_strike_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_company_of_hunters_talon_strike_active",
+            "space_marines_company_of_hunters_talon_strike_turn",
+            "space_marines_company_of_hunters_talon_strike_expires_phase",
+            "space_marines_company_of_hunters_talon_strike_source",
+            "space_marines_company_of_hunters_talon_strike_wound_bonus",
+            "space_marines_company_of_hunters_talon_strike_player_id",
+        )
+
+    def clear_company_of_hunters_talon_strike(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._company_of_hunters_talon_strike_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_company_of_hunters_talon_strike(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Talon Strike",
+    ) -> bool:
+        if not self.is_company_of_hunters():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        expires_phase = str(phase_name or "").strip().upper().replace(" ", "_")
+        if expires_phase not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_company_of_hunters_talon_strike_active"] = True
+        sr["space_marines_company_of_hunters_talon_strike_expires_phase"] = expires_phase
+        try:
+            sr["space_marines_company_of_hunters_talon_strike_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_company_of_hunters_talon_strike_turn"] = 0
+        sr["space_marines_company_of_hunters_talon_strike_player_id"] = str(player_id or "").strip()
+        sr["space_marines_company_of_hunters_talon_strike_wound_bonus"] = 1
+        sr["space_marines_company_of_hunters_talon_strike_source"] = str(source or "Talon Strike").strip() or "Talon Strike"
+        root.special_rules = sr
+        return True
+
+    def company_of_hunters_talon_strike_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        _ = attack_instance
+        if not self.is_company_of_hunters():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_company_of_hunters_talon_strike_active")):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+            expected_phase = str(sr.get("space_marines_company_of_hunters_talon_strike_expires_phase", "") or "").strip().upper()
+            if expected_phase and current_phase and current_phase != expected_phase:
+                self.clear_company_of_hunters_talon_strike(root)
+                return 0, ""
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("space_marines_company_of_hunters_talon_strike_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if marked_turn and current_turn and current_turn != marked_turn:
+                self.clear_company_of_hunters_talon_strike(root)
+                return 0, ""
+
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self._attached_unit_has_keyword(target_root, "CHARACTER"):
+            return 0, ""
+        if not (
+            self._attached_unit_has_keyword(target_root, "INFANTRY")
+            or self._attached_unit_has_keyword(target_root, "MOUNTED")
+        ):
+            return 0, ""
+
+        try:
+            bonus = int(sr.get("space_marines_company_of_hunters_talon_strike_wound_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("space_marines_company_of_hunters_talon_strike_source", "") or "Talon Strike").strip() or "Talon Strike"
+        return int(bonus), source
+
     def close_range_eradication_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_firestorm_assault_force():
             return False

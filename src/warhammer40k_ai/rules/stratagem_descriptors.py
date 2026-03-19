@@ -4198,6 +4198,67 @@ _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COMPANY_OF_HUNTERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008779005": StratagemToolDescriptor(
+        stratagem_id="000008779005",
+        name="Death on the Wind",
+        timing="your_shooting_phase_after_shooting",
+        target="one_ravenwing_unit_that_just_shot_and_one_enemy_unit_hit_by_its_attacks",
+        duration="immediate",
+        effect="force_battleshock_test_with_conditional_ravenwing_modifier",
+        cp_cost=1,
+        effect_params={
+            "requires_hit_enemy_target": True,
+            "test_modifier_if_friendly_ravenwing_within_6": -1,
+        },
+    ),
+    "000008779002": StratagemToolDescriptor(
+        stratagem_id="000008779002",
+        name="Hunters' Trail",
+        timing="either_command_phase",
+        target="one_ravenwing_mounted_unit_within_range_of_objective_you_control",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["RAVENWING", "MOUNTED"],
+            "requires_controlled_objective": True,
+        },
+    ),
+    "000008779007": StratagemToolDescriptor(
+        stratagem_id="000008779007",
+        name="Rapid Reappraisal",
+        timing="end_of_opponent_fight_phase",
+        target="one_ravenwing_unit_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["RAVENWING"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000008779004": StratagemToolDescriptor(
+        stratagem_id="000008779004",
+        name="Talon Strike",
+        timing="shooting_or_fight_phase_before_selected",
+        target="one_ravenwing_mounted_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_wound_bonus_vs_character_infantry_or_mounted",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["RAVENWING", "MOUNTED"],
+            "wound_bonus": 1,
+            "target_required_keywords_all": ["CHARACTER"],
+            "target_required_keywords_any": ["INFANTRY", "MOUNTED"],
+        },
+    ),
+}
+
+_COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COMPANY_OF_HUNTERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -4920,6 +4981,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COMPANY_OF_HUNTERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5015,6 +5079,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
