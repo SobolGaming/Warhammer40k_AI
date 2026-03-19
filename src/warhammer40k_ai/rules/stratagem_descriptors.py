@@ -3971,6 +3971,102 @@ _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_EMPERORS_SHIELD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010461006": StratagemToolDescriptor(
+        stratagem_id="000010461006",
+        name="Disciplined Extermination",
+        timing="your_shooting_phase",
+        target="first_company_veteran_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_ignores_cover_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["IGNORES COVER"],
+            "ap_bonus": 1,
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+        },
+    ),
+    "000010461007": StratagemToolDescriptor(
+        stratagem_id="000010461007",
+        name="Dropship Extraction",
+        timing="end_of_opponent_fight_phase",
+        target="adeptus_astartes_terminator_unit_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["TERMINATOR"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000010461003": StratagemToolDescriptor(
+        stratagem_id="000010461003",
+        name="Fury of the First",
+        timing="shooting_or_fight_phase_on_select",
+        target="first_company_veteran_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="hit_bonus_and_conditional_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "hit_bonus": 1,
+            "wound_bonus": 1,
+            "wound_bonus_condition": "below_half_strength",
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+        },
+    ),
+    "000010461004": StratagemToolDescriptor(
+        stratagem_id="000010461004",
+        name="Obdurate Vengeance",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="first_company_veteran_unit_targeted_by_enemy_melee_attacks",
+        duration="until_end_of_fight_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "threshold": 3,
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+        },
+    ),
+    "000010461005": StratagemToolDescriptor(
+        stratagem_id="000010461005",
+        name="Wrathful Conquerors",
+        timing="your_movement_phase",
+        target="first_company_veteran_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_start_or_end_of_turn",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ]
+        },
+    ),
+}
+
+_EMPERORS_SHIELD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _EMPERORS_SHIELD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008475006": StratagemToolDescriptor(
         stratagem_id="000008475006",
@@ -4972,6 +5068,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _EMPERORS_SHIELD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5076,6 +5175,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

@@ -862,6 +862,46 @@ class KeywordsDetachmentsMixin:
             return None
         return None
 
+    def _space_marines_obdurate_vengeance_rule(self) -> Optional[dict]:
+        sr = getattr(self, "special_rules", None)
+        if not (isinstance(sr, dict) and sr.get("space_marines_obdurate_vengeance_active")):
+            return None
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            marked_turn = int(sr.get("space_marines_obdurate_vengeance_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        exp = str(sr.get("space_marines_obdurate_vengeance_expires_phase", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+            if not (marked_turn and current_turn and marked_turn != current_turn):
+                source = str(sr.get("space_marines_obdurate_vengeance_source", "") or "OBDURATE VENGEANCE").strip()
+                source = source or "OBDURATE VENGEANCE"
+                try:
+                    threshold = int(sr.get("space_marines_obdurate_vengeance_threshold", 3) or 3)
+                except (TypeError, ValueError):
+                    threshold = 3
+                return {
+                    "threshold": max(2, min(6, int(threshold))),
+                    "source": source,
+                }
+        if phase_name and phase_name != "FIGHT_PHASE":
+            for key in (
+                "space_marines_obdurate_vengeance_active",
+                "space_marines_obdurate_vengeance_threshold",
+                "space_marines_obdurate_vengeance_expires_phase",
+                "space_marines_obdurate_vengeance_turn_owner",
+                "space_marines_obdurate_vengeance_turn",
+                "space_marines_obdurate_vengeance_source",
+            ):
+                sr.pop(key, None)
+            self.special_rules = sr
+        return None
+
     def empowered_by_death_sources(self) -> list[str]:
         """Return source names for Empowered by Death style Fight First abilities."""
         cache_key = "empowered_by_death_sources"
@@ -1565,6 +1605,10 @@ class KeywordsDetachmentsMixin:
                 return rule
         except Exception:
             pass
+
+        rule = self._space_marines_obdurate_vengeance_rule()
+        if rule is not None:
+            return rule
 
         # Adepta Sororitas: Penitent Host (Death Before Disgrace) temporary vow.
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None

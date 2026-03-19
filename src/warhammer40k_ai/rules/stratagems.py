@@ -82,9 +82,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
     "CODEX DISCIPLINE",
+    "DISCIPLINED EXTERMINATION",
     "DRAGONFIRE ROUNDS",
+    "DROPSHIP EXTRACTION",
     "DUTY AND HONOUR",
     "FOCUSED FURY",
+    "FURY OF THE FIRST",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
     "HELLFIRE ROUNDS",
@@ -173,6 +176,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MORDIAN MINUTE",
     "NEW ORDERS",
     "NO RETREAT!",
+    "OBDURATE VENGEANCE",
     "PEERLESS WARRIOR",
     "PURGING FIRE",
     "RAPID INGRESS",
@@ -210,6 +214,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
+    "WRATHFUL CONQUERORS",
     "WRAITHLIKE RETREAT",
     "INTERLOCKING MANOUEVRES",
     "BLOODY DANCE",
@@ -5904,6 +5909,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_emperors_shield_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_anvil_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6956,6 +6965,7 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_emperors_shield_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
@@ -7084,6 +7094,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_emperors_shield_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -10910,6 +10924,13 @@ class StratagemManager(
             self._queue_emperors_children_slaanesh_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_emperors_shield_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise
@@ -16203,6 +16224,9 @@ class StratagemManager(
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result
+        emperors_shield_result = self._use_space_marines_emperors_shield_stratagem(s, **kwargs)
+        if emperors_shield_result is not None:
+            return emperors_shield_result
         black_spear_result = self._use_space_marines_black_spear_task_force_stratagem(s, **kwargs)
         if black_spear_result is not None:
             return black_spear_result

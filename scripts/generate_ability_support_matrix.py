@@ -20132,12 +20132,16 @@ def _stratagem_support(
         "SHOCK CAVALRY": "Movement/Charge phase: targeted THUNDERWOLF CAVALRY unit can move through models (excluding TITANIC) and terrain <=4\"; move/advance/fall back can pass within Engagement Range but cannot end there.",
         "PINNING FIRE": "Shooting phase: targeted ADEPTUS ASTARTES unit that has not been selected to shoot can, after shooting, pin one hit enemy CHARACTER/MONSTER/VEHICLE unit (Move -2, Charge -2) until your next Shooting phase.",
         "BATTLE DRILL RECALL": "Shooting phase: selected ADEPTUS ASTARTES unit that has not been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; if it Remained Stationary this turn, its ranged attacks score Critical Hits on 5+.",
+        "DISCIPLINED EXTERMINATION": "Your Shooting phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not been selected to shoot gains [IGNORES COVER] and improves the AP of its ranged weapons by 1 until end of phase.",
+        "DROPSHIP EXTRACTION": "End of opponent Fight phase: selected ADEPTUS ASTARTES TERMINATOR unit not in Engagement Range enters Strategic Reserves.",
         "DUTY AND HONOUR": "Movement phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within range of a controlled objective makes that objective sticky until the opponent controls it.",
         "HAIL OF VENGEANCE": "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected ADEPTUS ASTARTES unit that lost one or more models to that attacker can make a reactive shooting attack into the attacking unit, but only if that enemy remains an eligible target.",
+        "FURY OF THE FIRST": "Shooting/Fight phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Half-strength it also gains +1 to Wound, until end of phase.",
         "HEROES OF THE CHAPTER": "Shooting/Fight phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Half-strength it also gains +1 to Wound, until end of phase.",
         "LEGENDARY FORTITUDE": "Opponent Charge phase reaction after an enemy ends a Charge move: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within Engagement Range of that enemy reduces incoming melee Damage by 1 until end of turn.",
         "NO THREAT TOO GREAT": "Shooting phase: selected ADEPTUS ASTARTES unit that has not been selected to shoot can re-roll ranged Wound rolls against MONSTER and VEHICLE units until end of phase.",
         "NOT ONE BACKWARDS STEP": "Command phase: selected ADEPTUS ASTARTES INFANTRY unit within range of an objective marker doubles its Objective Control and must Remain Stationary for the rest of the turn.",
+        "OBDURATE VENGEANCE": "Fight phase defensive reaction after enemy targets are selected: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit gains melee fight-on-death on 3+ after the attacker finishes its attacks until end of phase.",
         "ORBITAL TELEPORTARIUM": "End of opponent Fight phase: selected ADEPTUS ASTARTES TERMINATOR unit not in Engagement Range enters Strategic Reserves and, in your next Movement phase, must return using Deep Strike.",
         "RIGID DISCIPLINE": "End of the Fight phase: selected ADEPTUS ASTARTES unit within Engagement Range can make a Fall Back move of up to 6\".",
         "TERRIFYING PROFICIENCY": "Your Fight phase reaction after an eligible charged 1st Company veteran unit destroys an enemy: in the opponent's next Command phase, each enemy unit within 6\" must take a Battle-shock test, units Below Half-strength test at -1, and affected units do not take other Battle-shock tests that phase.",
@@ -20146,6 +20150,7 @@ def _stratagem_support(
         "INSTANT OF GRACE": "Your Command phase: selected ADEPTUS ASTARTES INFANTRY unit grants one non-CHARACTER model the CHARACTER keyword until your next Command phase, and the unit counts as a CHARACTER unit for Legacy of the Angel and other keyword checks while the effect lasts.",
         "STRIKE NOW FOR GLORY": "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet shot gains [SUSTAINED HITS 1] on ranged weapons until end of phase.",
         "UNTO THE BURNING SKIES": "End of opponent Fight phase: selected ADEPTUS ASTARTES JUMP PACK unit enters Strategic Reserves; units in Engagement Range are ineligible unless the selected unit is The Sanguinor.",
+        "WRATHFUL CONQUERORS": "Movement phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within range of a controlled objective makes that objective sticky until the opponent controls it.",
         "ANCESTRAL SENTENCE": "Your Shooting phase: selected LEAGUES OF VOTANN unit not yet selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; can optionally spend 3 YP to use [SUSTAINED HITS 2] instead.",
         "HONOUR OF THE HOLD": "Fight phase: selected LEAGUES OF VOTANN unit not yet selected to fight picks one enemy in Engagement Range; until end of phase, melee attacks targeting that enemy gain +1 AP (or +2 AP if 3 YP were spent when using the stratagem).",
         "HUNTR'S MARK": "Your Shooting phase: selected LEAGUES OF VOTANN unit not yet selected to shoot re-rolls Hit rolls of 1 and Wound rolls of 1 on ranged attacks until end of phase.",
@@ -20268,6 +20273,11 @@ def _stratagem_support(
             "Your Shooting phase: selected YNNARI unit that has not been selected to shoot gains [LETHAL HITS] and [IGNORES COVER] on ranged weapons until end of phase.",
             name_u,
         )
+
+    if name_u == "DROPSHIP EXTRACTION":
+        if det_u == "EMPEROR S SHIELD":
+            return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+        return ("Not implemented", "Not implemented in engine.", name_u)
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
