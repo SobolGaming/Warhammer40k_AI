@@ -20143,14 +20143,17 @@ def _stratagem_support(
         "BATTLE DRILL RECALL": "Shooting phase: selected ADEPTUS ASTARTES unit that has not been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; if it Remained Stationary this turn, its ranged attacks score Critical Hits on 5+.",
         "COURAGE AND HONOUR!": "Fight phase: selected ADEPTUS ASTARTES unit gains [LANCE] on melee weapons until end of phase, and if that unit is under Assault Doctrine those melee attacks also improve AP by 1.",
         "CHILLING HOWL": "Opponent's Command phase: selected ADEPTUS ASTARTES TERMINATOR unit forces each enemy unit within 6\" to take a Battle-shock test, with Below Half-strength units taking that test at -1.",
+        "COGITATED FEROCITY": "Fight phase: selected ADEPTUS ASTARTES DREADNOUGHT/TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet fought chooses [LETHAL HITS] or [SUSTAINED HITS 1] on melee weapons until end of phase.",
         "DEVOUT PUSH": "Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet fought piles in and consolidates up to 6\" until end of phase.",
         "DISCIPLINED EXTERMINATION": "Your Shooting phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not been selected to shoot gains [IGNORES COVER] and improves the AP of its ranged weapons by 1 until end of phase.",
         "DREAD CRUSADERS": "Opponent Charge phase reaction after an enemy declares a charge: selected ADEPTUS ASTARTES INFANTRY charge target forces that enemy unit to take a Battle-shock test at -1.",
         "DROPSHIP EXTRACTION": "End of opponent Fight phase: selected ADEPTUS ASTARTES TERMINATOR unit not in Engagement Range enters Strategic Reserves.",
+        "DOMINATOR BEACON": "Movement phase: selected ADEPTUS ASTARTES DREADNOUGHT/TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within range of a controlled objective makes that objective sticky until the opponent controls it.",
         "DUTY AND HONOUR": "Movement phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within range of a controlled objective makes that objective sticky until the opponent controls it.",
         "EXEMPLARY VIGILANCE": "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not been selected to shoot gains [IGNORES COVER] on ranged weapons until end of phase, and if that unit is under Devastator Doctrine those ranged attacks also improve AP by 1.",
         "FOR THE EMPEROR'S HONOUR!": "Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet fought gains [PRECISION] on melee weapons until end of phase.",
         "HAIL OF VENGEANCE": "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected ADEPTUS ASTARTES unit that lost one or more models to that attacker can make a reactive shooting attack into the attacking unit, but only if that enemy remains an eligible target.",
+        "AUGMETIC FORTITUDE": "Opponent Charge phase reaction after an enemy ends a Charge move: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit within Engagement Range of that enemy reduces incoming melee Damage by 1 until end of turn.",
         "FURY OF THE FIRST": "Shooting/Fight phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Half-strength it also gains +1 to Wound, until end of phase.",
         "HEROES OF THE CHAPTER": "Shooting/Fight phase: selected ADEPTUS ASTARTES TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Half-strength it also gains +1 to Wound, until end of phase.",
         "HEARTS HARDENED TO DUTY": "Fight phase, just before a selected ADEPTUS ASTARTES INFANTRY unit consolidates: that unit can consolidate without ending closer to the closest enemy until end of phase.",
@@ -20165,6 +20168,7 @@ def _stratagem_support(
         "PRACTICAL TACTICS": "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" that is not within Engagement Range can make a reactive Normal move of up to D6\", or up to 6\" if that unit is under Tactical Doctrine.",
         "PREYTAKER'S EYE": "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet acted chooses [LETHAL HITS] or [SUSTAINED HITS 1] for its relevant weapons until end of phase.",
         "PREYTAKER’S EYE": "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet acted chooses [LETHAL HITS] or [SUSTAINED HITS 1] for its relevant weapons until end of phase.",
+        "RUTHLESS BUTCHERY": "Shooting/Fight phase: selected ADEPTUS ASTARTES DREADNOUGHT/TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Starting Strength it also gains +1 to Wound, until end of phase.",
         "RIGID DISCIPLINE": "End of the Fight phase: selected ADEPTUS ASTARTES unit within Engagement Range can make a Fall Back move of up to 6\".",
         "RUNES OF CLAIMING": "End of your Command phase: selected ADEPTUS ASTARTES INFANTRY or WALKER unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at the end of a phase.",
         "TACTICAL FORESIGHT": "Opponent Shooting/Fight phase defensive reaction after enemy targets are selected: selected ADEPTUS ASTARTES target unit is -1 to wound until end of phase against attacks whose Strength is greater than or equal to that unit's Toughness.",
@@ -20301,9 +20305,12 @@ def _stratagem_support(
         )
 
     if name_u == "DROPSHIP EXTRACTION":
-        if det_u == "EMPEROR S SHIELD":
+        if det_u in {"EMPEROR S SHIELD", "HAMMER OF AVERNII"}:
             return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
         return ("Not implemented", "Not implemented in engine.", name_u)
+
+    if stratagem_id in {"000010624003", "000010624004", "000010624005", "000010624006"}:
+        return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
 
     if stratagem_id == "000008483003":
         return (

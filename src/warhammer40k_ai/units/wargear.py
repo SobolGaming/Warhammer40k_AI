@@ -16713,8 +16713,12 @@ class WargearProfile:
                 if applies and owner_id and current_owner_id and owner_id != current_owner_id:
                     applies = False
                 requires_below_half = bool(sr.get("space_marines_heroes_of_the_chapter_wound_bonus_below_half_only", False))
+                requires_below_starting = bool(sr.get("space_marines_heroes_of_the_chapter_wound_bonus_below_starting_only", False))
                 below_half = bool(getattr(root, "is_below_half_strength", lambda: False)()) if root is not None else False
+                below_starting = bool(getattr(root, "is_below_starting_strength", lambda: False)()) if root is not None else False
                 if applies and requires_below_half and not below_half:
+                    applies = False
+                if applies and requires_below_starting and not below_starting:
                     applies = False
                 if applies:
                     wound_bonus = int(sr.get("space_marines_heroes_of_the_chapter_wound_bonus", 0) or 0)

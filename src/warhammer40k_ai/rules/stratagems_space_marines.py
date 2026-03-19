@@ -86,6 +86,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_godhammer_assault_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_hammer_of_avernii_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_hammer_of_avernii", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_gladius_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_gladius_task_force", None) if mgr is not None else None
@@ -209,6 +214,28 @@ class SpaceMarinesStratagemMixin:
                 "sternguard veteran squad",
                 "vanguard veteran squad",
             )
+        )
+
+    @staticmethod
+    def _sm_is_dreadnought_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("DREADNOUGHT")):
+            return True
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("DREADNOUGHT")):
+            return True
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "dreadnought" in name
+
+    @staticmethod
+    def _sm_is_hammer_of_avernii_elite_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        return (
+            SpaceMarinesStratagemMixin._sm_is_first_company_veteran_unit(unit)
+            or SpaceMarinesStratagemMixin._sm_is_dreadnought_unit(unit)
         )
 
     @staticmethod
@@ -927,9 +954,7 @@ class SpaceMarinesStratagemMixin:
             return []
         return self._space_marines_veteran_phase_candidates(phase_name=phase_name)
 
-    def _space_marines_first_company_legendary_fortitude_candidates(self, *, enemy_unit: Any) -> list[Any]:
-        if not self._is_1st_company_task_force_detachment():
-            return []
+    def _space_marines_veteran_engaged_candidates(self, *, enemy_unit: Any) -> list[Any]:
         enemy_root = self._sm_root(enemy_unit)
         game_map = self._sm_game_map()
         if enemy_root is None or game_map is None:
@@ -965,10 +990,96 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_first_company_legendary_fortitude_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_1st_company_task_force_detachment():
+            return []
+        return self._space_marines_veteran_engaged_candidates(enemy_unit=enemy_unit)
+
+    def _space_marines_hammer_of_avernii_augmetic_fortitude_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_hammer_of_avernii_detachment():
+            return []
+        return self._space_marines_veteran_engaged_candidates(enemy_unit=enemy_unit)
+
     def _space_marines_first_company_orbital_teleportarium_candidates(self) -> list[Any]:
         if not self._is_1st_company_task_force_detachment():
             return []
         return self._space_marines_terminator_not_engaged_candidates()
+
+    def _space_marines_hammer_of_avernii_dominator_beacon_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_hammer_of_avernii_detachment():
+            return ([], {})
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ([], {})
+        candidates: list[Any] = []
+        objective_map: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_hammer_of_avernii_elite_unit(root):
+                continue
+            objectives = self._sm_objective_candidates_you_control(root)
+            if not objectives:
+                continue
+            candidates.append(root)
+            if uid:
+                objective_map[uid] = list(objectives)
+        return (sorted(candidates, key=self._sm_sort_key), objective_map)
+
+    def _space_marines_hammer_of_avernii_ruthless_butchery_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_hammer_of_avernii_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_hammer_of_avernii_elite_unit(root):
+                continue
+            if phase_key == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_hammer_of_avernii_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], Any, bool]:
+        return self._sm_first_company_context(stratagem_name, kwargs)
 
     def _space_marines_veteran_objective_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
         get_army = getattr(self.player, "get_army", None)
@@ -6193,6 +6304,193 @@ class SpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_hammer_of_avernii_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_hammer_of_avernii_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("DOMINATOR BEACON")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0)
+                    >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates, objective_map = self._space_marines_hammer_of_avernii_dominator_beacon_candidates()
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Movement phase",
+                    ):
+                        payload: dict[str, Any] = {
+                            "event": "phase_start",
+                            "phase": "Movement phase",
+                            "phase_name": "Movement phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                            "objective_candidates_by_unit": objective_map,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                            uid = self._sm_sort_key(candidates[0])
+                            objective_candidates = list(objective_map.get(uid) or [])
+                            if objective_candidates:
+                                payload["objective_candidates"] = objective_candidates
+                                if len(objective_candidates) == 1:
+                                    payload["objective"] = objective_candidates[0]
+                                    payload["objective_marker"] = objective_candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("RUTHLESS BUTCHERY")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0)
+                    >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates = self._space_marines_hammer_of_avernii_ruthless_butchery_candidates(
+                        phase_name="Shooting phase"
+                    )
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Shooting phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Shooting phase",
+                            "phase_name": "Shooting phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            for stratagem_name in ("RUTHLESS BUTCHERY", "COGITATED FEROCITY"):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None:
+                    continue
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0)
+                    < self._sm_effective_cp_cost(self.player, stratagem)
+                    or str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase
+                ):
+                    continue
+                candidates = self._space_marines_hammer_of_avernii_ruthless_butchery_candidates(
+                    phase_name="Fight phase"
+                )
+                if not candidates:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Fight phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Fight phase",
+                    "phase_name": "Fight phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                if str(stratagem.name or "").strip().upper() == "COGITATED FEROCITY":
+                    payload["keyword_options"] = self._sm_fenris_preytakers_eye_options()
+                self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_hammer_of_avernii_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_hammer_of_avernii_detachment():
+            return
+        if str(action or "").strip().lower() != "charge":
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "charge phase":
+            return
+        if self._sm_owned_by_player(unit, self.player):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None:
+            return
+        stratagem = self.get_by_name("AUGMETIC FORTITUDE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_hammer_of_avernii_augmetic_fortitude_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": enemy_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_hammer_of_avernii_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_hammer_of_avernii_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("DROPSHIP EXTRACTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_terminator_not_engaged_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(self, *, phase: Any = None) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -6270,6 +6568,7 @@ class SpaceMarinesStratagemMixin:
                         "space_marines_heroes_of_the_chapter_hit_bonus",
                         "space_marines_heroes_of_the_chapter_wound_bonus",
                         "space_marines_heroes_of_the_chapter_wound_bonus_below_half_only",
+                        "space_marines_heroes_of_the_chapter_wound_bonus_below_starting_only",
                         "space_marines_heroes_of_the_chapter_expires_phase",
                         "space_marines_heroes_of_the_chapter_turn_owner",
                         "space_marines_heroes_of_the_chapter_turn",
@@ -7518,6 +7817,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_gauntlet_of_the_god_emperor(stratagem, **kwargs)
         if name_u == "UNCOMPROMISING EGRESS":
             return self._use_space_marines_uncompromising_egress(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_hammer_of_avernii_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_hammer_of_avernii_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "AUGMETIC FORTITUDE":
+            return self._use_space_marines_augmetic_fortitude(stratagem, **kwargs)
+        if name_u == "COGITATED FEROCITY":
+            return self._use_space_marines_cogitated_ferocity(stratagem, **kwargs)
+        if name_u == "DOMINATOR BEACON":
+            return self._use_space_marines_dominator_beacon(stratagem, **kwargs)
+        if name_u == "DROPSHIP EXTRACTION":
+            return self._use_space_marines_dropship_extraction(stratagem, **kwargs)
+        if name_u == "RUTHLESS BUTCHERY":
+            return self._use_space_marines_ruthless_butchery(stratagem, **kwargs)
         return None
 
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -10031,6 +10348,70 @@ class SpaceMarinesStratagemMixin:
         logger.info("INFO: DROPSHIP EXTRACTION: %s enters Strategic Reserves.", getattr(root, "name", "Unit"))
         return True
 
+    def _use_space_marines_dominator_beacon(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DOMINATOR BEACON: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DOMINATOR BEACON: not your Movement phase")
+            return False
+
+        unit, candidates, objective, objective_candidates, _attacking_unit, _from_pending = self._space_marines_hammer_of_avernii_context(
+            "DOMINATOR BEACON",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: DOMINATOR BEACON: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: DOMINATOR BEACON: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: DOMINATOR BEACON: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: DOMINATOR BEACON: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_hammer_of_avernii_elite_unit(root):
+            logger.error("ERROR: DOMINATOR BEACON: target must be an eligible Hammer of Avernii unit")
+            return False
+
+        valid_candidates, objective_map = self._space_marines_hammer_of_avernii_dominator_beacon_candidates()
+        if valid_candidates:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in valid_candidates):
+                logger.error("ERROR: DOMINATOR BEACON: selected unit is not currently eligible")
+                return False
+            if not objective_candidates:
+                objective_candidates = list(objective_map.get(root_id) or [])
+        if objective is None:
+            logger.error("ERROR: DOMINATOR BEACON: no objective marker selected")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: DOMINATOR BEACON: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: DOMINATOR BEACON: objective marker location unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="space_marines_dominator_beacon")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "space_marines_dominator_beacon"
+            objective_location.controlling_player = self.player
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: DOMINATOR BEACON: selected objective remains under your control until broken.")
+        return True
+
     def _use_space_marines_duty_and_honour(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "movement phase":
@@ -10165,6 +10546,81 @@ class SpaceMarinesStratagemMixin:
         logger.info("INFO: HEROES OF THE CHAPTER: %s gains +1 to hit this phase.", getattr(root, "name", "Unit"))
         return True
 
+    def _use_space_marines_ruthless_butchery(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            logger.error("ERROR: RUTHLESS BUTCHERY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: RUTHLESS BUTCHERY: not your Shooting phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _attacking_unit, _from_pending = self._space_marines_hammer_of_avernii_context(
+            "RUTHLESS BUTCHERY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RUTHLESS BUTCHERY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_hammer_of_avernii_elite_unit(root):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target must be an eligible Hammer of Avernii unit")
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: RUTHLESS BUTCHERY: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_hammer_of_avernii_ruthless_butchery_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        )
+        if valid_candidates:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in valid_candidates):
+                logger.error("ERROR: RUTHLESS BUTCHERY: selected unit is not currently eligible")
+                return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        can_use = stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label)
+        if not can_use and phase_name == "shooting phase":
+            can_use = stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase")
+        if not can_use:
+            logger.error("ERROR: RUTHLESS BUTCHERY: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_heroes_of_the_chapter_active"] = True
+        sr["space_marines_heroes_of_the_chapter_hit_bonus"] = 1
+        sr["space_marines_heroes_of_the_chapter_wound_bonus"] = 1
+        sr["space_marines_heroes_of_the_chapter_wound_bonus_below_half_only"] = False
+        sr["space_marines_heroes_of_the_chapter_wound_bonus_below_starting_only"] = True
+        sr["space_marines_heroes_of_the_chapter_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr["space_marines_heroes_of_the_chapter_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_heroes_of_the_chapter_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_heroes_of_the_chapter_source"] = str(getattr(stratagem, "name", "") or "RUTHLESS BUTCHERY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: RUTHLESS BUTCHERY: %s gains +1 to hit this phase.", getattr(root, "name", "Unit"))
+        return True
+
     def _use_space_marines_legendary_fortitude(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "charge phase":
@@ -10200,7 +10656,7 @@ class SpaceMarinesStratagemMixin:
             logger.error("ERROR: LEGENDARY FORTITUDE: target must be an eligible 1st Company unit")
             return False
 
-        valid_candidates = self._space_marines_first_company_legendary_fortitude_candidates(enemy_unit=enemy_root)
+        valid_candidates = self._space_marines_hammer_of_avernii_augmetic_fortitude_candidates(enemy_unit=enemy_root)
         if valid_candidates:
             root_id = self._sm_sort_key(root)
             if all(self._sm_sort_key(candidate) != root_id for candidate in valid_candidates):
@@ -10231,6 +10687,77 @@ class SpaceMarinesStratagemMixin:
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: LEGENDARY FORTITUDE: %s reduces incoming melee Damage by 1 until end of turn.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_space_marines_augmetic_fortitude(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: AUGMETIC FORTITUDE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: AUGMETIC FORTITUDE: not opponent's Charge phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, attacking_unit, _from_pending = self._space_marines_hammer_of_avernii_context(
+            "AUGMETIC FORTITUDE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: AUGMETIC FORTITUDE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(attacking_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: AUGMETIC FORTITUDE: missing charging unit context")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: AUGMETIC FORTITUDE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: AUGMETIC FORTITUDE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: AUGMETIC FORTITUDE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_first_company_veteran_unit(root):
+            logger.error("ERROR: AUGMETIC FORTITUDE: target must be an eligible veteran unit")
+            return False
+
+        valid_candidates = self._space_marines_first_company_legendary_fortitude_candidates(enemy_unit=enemy_root)
+        if valid_candidates:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in valid_candidates):
+                logger.error("ERROR: AUGMETIC FORTITUDE: selected unit is not currently eligible")
+                return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: AUGMETIC FORTITUDE: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "melee",
+            "expires_phase": "FIGHT_PHASE",
+            "source": str(getattr(stratagem, "name", "") or "AUGMETIC FORTITUDE"),
+        }
+        if hasattr(self, "_append_defensive_effect"):
+            self._append_defensive_effect(root, "defensive_damage_reductions", entry)
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_damage_reductions", []) or [])
+            items.append(entry)
+            sr["defensive_damage_reductions"] = items
+            root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AUGMETIC FORTITUDE: %s reduces incoming melee Damage by 1 until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
         return True
 
     def _use_space_marines_orbital_teleportarium(self, stratagem: Any, **kwargs) -> bool:
@@ -10304,6 +10831,98 @@ class SpaceMarinesStratagemMixin:
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: ORBITAL TELEPORTARIUM: %s enters Strategic Reserves and returns next Movement phase via Deep Strike.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_space_marines_cogitated_ferocity(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: COGITATED FEROCITY: wrong phase")
+            return False
+
+        choice_payload = (
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+            or kwargs.get("keyword")
+        )
+        choice = self._sm_fenris_preytakers_eye_choice_key(choice_payload)
+        if not choice:
+            logger.error("ERROR: COGITATED FEROCITY: choice must be LETHAL_HITS or SUSTAINED_HITS_1")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _attacking_unit, _from_pending = self._space_marines_hammer_of_avernii_context(
+            "COGITATED FEROCITY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: COGITATED FEROCITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: COGITATED FEROCITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: COGITATED FEROCITY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: COGITATED FEROCITY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_hammer_of_avernii_elite_unit(root):
+            logger.error("ERROR: COGITATED FEROCITY: target must be an eligible Hammer of Avernii unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: COGITATED FEROCITY: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_hammer_of_avernii_ruthless_butchery_candidates(
+            phase_name="Fight phase"
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: COGITATED FEROCITY: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: COGITATED FEROCITY: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "COGITATED FEROCITY").strip() or "COGITATED FEROCITY"
+        keyword = "LETHAL HITS" if choice == "LETHAL_HITS" else "SUSTAINED HITS 1"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_cogitated_ferocity:{choice}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=[keyword],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COGITATED FEROCITY: %s gains [%s] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+            keyword,
+        )
         return True
 
     def _use_space_marines_terrifying_proficiency(self, stratagem: Any, **kwargs) -> bool:
