@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
+    "AGGRESSIVE ONSLAUGHT",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
     "ANGELIC GRACE",
@@ -117,8 +118,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
     "PREYTAKER’S EYE",
+    "RELENTLESS ASSAULT",
     "RIGID DISCIPLINE",
     "RUNES OF CLAIMING",
+    "SAVAGE ECHOES",
     "SHOCK BOMBARDMENT",
     "SITE-TO-SITE TELEPORTATION",
     "STALKING WOLVES",
@@ -204,6 +207,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
     "RAPID REAPPRAISAL",
+    "RED RAMPAGE",
     "REDIRECTED STRIKE",
     "REFUSAL TO BE OUTDONE",
     "MEET FORCE WITH FORCE",
@@ -511,6 +515,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "AGGRESSIVE ONSLAUGHT",
     "ARDENT AUTOMATA",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -575,7 +580,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PINPOINT COUNTER-OFFENSIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
+    "RELENTLESS ASSAULT",
     "REVENGE OF THE RUBRICAE",
+    "SAVAGE ECHOES",
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
     "UNWAVERING PHALANX",
@@ -1721,6 +1728,9 @@ class StratagemManager(
             "LEGENDARY FORTITUDE",
             "HERESY BEGETS RETRIBUTION",
             "WRATHFUL INFERNO",
+            "AGGRESSIVE ONSLAUGHT",
+            "RELENTLESS ASSAULT",
+            "SAVAGE ECHOES",
             "SQUAD TACTICS",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
@@ -5178,6 +5188,7 @@ class StratagemManager(
             return "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks"
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
+            "AGGRESSIVE ONSLAUGHT": "Target: your ADEPTUS ASTARTES unit that just Advanced; choose shoot or charge this turn, or choose Red Thirst to become Battle-shocked and do both",
             "AGGRESSIVE MOBILITY": "Target: your T'AU EMPIRE unit that has not been selected to move; if it Advances this phase, add 6\" instead of rolling",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
             "COMBAT DEBARKATION": "Target: your T'AU EMPIRE INFANTRY unit that disembarked from a friendly TRANSPORT this turn; re-roll Wound rolls against the closest eligible enemy unit this phase",
@@ -5201,7 +5212,10 @@ class StratagemManager(
             "PULSE ONSLAUGHT": "Target: one enemy non-MONSTER/non-VEHICLE unit hit by your non-KROOT T'AU EMPIRE INFANTRY unit that just shot; enemy is shaken (-2 Move, -2 Advance, -2 Charge) until end of opponent's next turn",
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
+            "RELENTLESS ASSAULT": "Target: your ADEPTUS ASTARTES unit that just Fell Back; choose shoot or charge this turn, or choose Red Thirst to become Battle-shocked and do both",
+            "RED RAMPAGE": "Target: your ADEPTUS ASTARTES unit that has not been selected to fight this phase; choose [LANCE], [LETHAL HITS], or Red Thirst for both plus Battle-shock",
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
+            "SAVAGE ECHOES": "Target: your ADEPTUS ASTARTES unit just charged by an enemy unit; choose +1 Strength or +1 Attacks for melee weapons this turn, or choose Red Thirst to become Battle-shocked and gain both",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
@@ -6020,6 +6034,10 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_inner_circle_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_liberator_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9042,6 +9060,7 @@ class StratagemManager(
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_hammer_of_avernii_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
@@ -16512,6 +16531,9 @@ class StratagemManager(
         inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
         if inner_circle_result is not None:
             return inner_circle_result
+        liberator_result = self._use_space_marines_liberator_assault_group_stratagem(s, **kwargs)
+        if liberator_result is not None:
+            return liberator_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

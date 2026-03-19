@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
+from ..units.status_effects import BattleShockEffect
 from .combat_doctrines import COMBAT_DOCTRINE_OPTIONS
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,11 @@ class SpaceMarinesStratagemMixin:
     def _is_inner_circle_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_inner_circle_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_liberator_assault_group_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_liberator_assault_group", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _is_gladius_task_force_detachment(self) -> bool:
@@ -647,6 +653,19 @@ class SpaceMarinesStratagemMixin:
             name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
             if name_u:
                 used.add(name_u)
+
+    def _sm_apply_battleshock_if_needed(self, unit: Any) -> None:
+        root = self._sm_root(unit)
+        if root is None:
+            return
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return
+        apply_effect = getattr(root, "apply_status_effect", None)
+        if not callable(apply_effect):
+            return
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        apply_effect(BattleShockEffect(current_turn))
 
     @staticmethod
     def _sm_merge_phase_move_types(
@@ -1307,6 +1326,104 @@ class SpaceMarinesStratagemMixin:
         if not enemy_candidates:
             return ([], {})
         return ([source_root], {self._sm_sort_key(source_root): list(enemy_candidates)})
+
+    def _space_marines_liberator_move_end_candidates(self, *, moved_unit: Any, action: str) -> list[Any]:
+        if not self._is_liberator_assault_group_detachment():
+            return []
+        root = self._sm_root(moved_unit)
+        if root is None:
+            return []
+        if not self._sm_owned_by_player(root, self.player):
+            return []
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._is_adeptus_astartes_unit(root):
+            return []
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        round_state = getattr(root, "round_state", None)
+        if action_key == "advance" and bool(getattr(round_state, "advanced_this_round", False)):
+            return [root]
+        if action_key in {"fall_back", "fallback"} and bool(getattr(round_state, "fell_back_this_round", False)):
+            return [root]
+        return []
+
+    def _space_marines_liberator_red_rampage_candidates(self) -> list[Any]:
+        if not self._is_liberator_assault_group_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_liberator_savage_echoes_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_liberator_assault_group_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        game_map = self._sm_game_map()
+        if enemy_root is None or game_map is None:
+            return []
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        charged_target_ids = {
+            str(value or "").strip()
+            for value in list(getattr(getattr(enemy_root, "round_state", None), "charge_target_ids", set()) or [])
+            if str(value or "").strip()
+        }
+        if not charged_target_ids:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not uid or uid not in charged_target_ids:
+                continue
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            try:
+                if not bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_ironstorm_ancient_fury_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
         if not self._is_ironstorm_spearhead_detachment():
@@ -3435,6 +3552,61 @@ class SpaceMarinesStratagemMixin:
             return "SUSTAINED_HITS_1"
         if text in {"SUSTAINED_HITS_1", "SUSTAINED_HITS1"}:
             return "SUSTAINED_HITS_1"
+        return ""
+
+    @staticmethod
+    def _sm_liberator_mobility_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "SHOOT", "label": "Shoot"},
+            {"choice_key": "CHARGE", "label": "Charge"},
+            {"choice_key": "RED_THIRST", "label": "Red Thirst"},
+        ]
+
+    @staticmethod
+    def _sm_liberator_red_rampage_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "LANCE", "label": "[LANCE]"},
+            {"choice_key": "LETHAL_HITS", "label": "[LETHAL HITS]"},
+            {"choice_key": "RED_THIRST", "label": "Red Thirst"},
+        ]
+
+    @staticmethod
+    def _sm_liberator_savage_echoes_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "STRENGTH", "label": "+1 Strength"},
+            {"choice_key": "ATTACKS", "label": "+1 Attacks"},
+            {"choice_key": "RED_THIRST", "label": "Red Thirst"},
+        ]
+
+    @staticmethod
+    def _sm_liberator_choice_key(choice: Any, *, kind: str) -> str:
+        if isinstance(choice, dict):
+            choice = choice.get("choice_key") or choice.get("choice") or choice.get("label")
+        text = str(choice or "").strip().upper()
+        text = text.replace("[", "").replace("]", "")
+        text = text.replace("+", "")
+        text = text.replace("-", "_").replace(" ", "_")
+        text = text.replace("__", "_")
+        if "RED_THIRST" in text or text in {"BOTH", "LANCE_AND_LETHAL_HITS", "STRENGTH_AND_ATTACKS"}:
+            return "RED_THIRST"
+        if kind == "mobility":
+            if text in {"SHOOT", "SHOOTING"}:
+                return "SHOOT"
+            if text == "CHARGE":
+                return "CHARGE"
+            return ""
+        if kind == "red_rampage":
+            if text == "LANCE":
+                return "LANCE"
+            if text == "LETHAL_HITS":
+                return "LETHAL_HITS"
+            return ""
+        if kind == "savage_echoes":
+            if text in {"STRENGTH", "S"}:
+                return "STRENGTH"
+            if text in {"ATTACKS", "ATTACK"}:
+                return "ATTACKS"
+            return ""
         return ""
 
     def _sm_blade_active_doctrine_key(self, unit: Any) -> str:
@@ -7185,6 +7357,127 @@ class SpaceMarinesStratagemMixin:
                         payload["target_unit"] = candidates[0]
                     self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_liberator_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_liberator_assault_group_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("RED RAMPAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_liberator_red_rampage_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "choice_options": self._sm_liberator_red_rampage_options(),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_liberator_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_liberator_assault_group_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+
+        if phase_name == "movement phase" and active_player is self.player:
+            if action_key == "advance":
+                candidates = self._space_marines_liberator_move_end_candidates(moved_unit=unit, action="advance")
+                stratagem = self.get_by_name("AGGRESSIVE ONSLAUGHT")
+            elif action_key in {"fall_back", "fallback"}:
+                candidates = self._space_marines_liberator_move_end_candidates(moved_unit=unit, action="fall_back")
+                stratagem = self.get_by_name("RELENTLESS ASSAULT")
+            else:
+                candidates = []
+                stratagem = None
+            if stratagem is None or not candidates:
+                return
+            root = candidates[0]
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="unit_move_ended",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+                target_unit=root,
+            ):
+                return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+                "action": "fall_back" if action_key in {"fall_back", "fallback"} else "advance",
+                "choice_options": self._sm_liberator_mobility_options(),
+            }
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_name != "charge phase" or active_player is self.player:
+            return
+        if action_key not in {"charge", "charge_move"}:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("SAVAGE ECHOES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_liberator_savage_echoes_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+            "action": "charge",
+            "choice_options": self._sm_liberator_savage_echoes_options(),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_space_marines_inner_circle_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if not self._is_inner_circle_task_force_detachment():
             return
@@ -8561,6 +8854,357 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_aggressive_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: not your Movement phase")
+            return False
+
+        unit, candidates, _enemy_unit, _enemy_candidates, choice_payload, action, _from_pending = (
+            self._space_marines_liberator_context("AGGRESSIVE ONSLAUGHT", kwargs)
+        )
+        choice = self._sm_liberator_choice_key(choice_payload, kind="mobility")
+        if not choice:
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: choice must be SHOOT, CHARGE, or RED_THIRST")
+            return False
+        if unit is None:
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key != "advance":
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: wrong trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: target must have Advanced this phase")
+            return False
+        eligible = candidates or self._space_marines_liberator_move_end_candidates(moved_unit=root, action="advance")
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_liberator_aggressive_onslaught", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: Liberator Assault Group detachment manager unavailable")
+            return False
+        mode = "both" if choice == "RED_THIRST" else str(choice).strip().lower()
+        applied = apply_fn(
+            root,
+            mode=mode,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "AGGRESSIVE ONSLAUGHT"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: AGGRESSIVE ONSLAUGHT: failed to apply advance permission")
+            return False
+        if choice == "RED_THIRST":
+            self._sm_apply_battleshock_if_needed(root)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if choice == "RED_THIRST":
+            logger.info(
+                "INFO: AGGRESSIVE ONSLAUGHT: %s can shoot and charge after Advancing this turn and is Battle-shocked.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: AGGRESSIVE ONSLAUGHT: %s can %s after Advancing this turn.",
+                getattr(root, "name", "Unit"),
+                str(choice or "").strip().lower(),
+            )
+        return True
+
+    def _use_space_marines_relentless_assault(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RELENTLESS ASSAULT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RELENTLESS ASSAULT: not your Movement phase")
+            return False
+
+        unit, candidates, _enemy_unit, _enemy_candidates, choice_payload, action, _from_pending = (
+            self._space_marines_liberator_context("RELENTLESS ASSAULT", kwargs)
+        )
+        choice = self._sm_liberator_choice_key(choice_payload, kind="mobility")
+        if not choice:
+            logger.error("ERROR: RELENTLESS ASSAULT: choice must be SHOOT, CHARGE, or RED_THIRST")
+            return False
+        if unit is None:
+            logger.error("ERROR: RELENTLESS ASSAULT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELENTLESS ASSAULT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RELENTLESS ASSAULT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RELENTLESS ASSAULT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: RELENTLESS ASSAULT: wrong trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: RELENTLESS ASSAULT: target must have Fallen Back this phase")
+            return False
+        eligible = candidates or self._space_marines_liberator_move_end_candidates(moved_unit=root, action="fall_back")
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RELENTLESS ASSAULT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_liberator_relentless_assault", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: RELENTLESS ASSAULT: Liberator Assault Group detachment manager unavailable")
+            return False
+        mode = "both" if choice == "RED_THIRST" else str(choice).strip().lower()
+        applied = apply_fn(
+            root,
+            mode=mode,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "RELENTLESS ASSAULT"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: RELENTLESS ASSAULT: failed to apply fall-back permission")
+            return False
+        if choice == "RED_THIRST":
+            self._sm_apply_battleshock_if_needed(root)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if choice == "RED_THIRST":
+            logger.info(
+                "INFO: RELENTLESS ASSAULT: %s can shoot and charge after Falling Back this turn and is Battle-shocked.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: RELENTLESS ASSAULT: %s can %s after Falling Back this turn.",
+                getattr(root, "name", "Unit"),
+                str(choice or "").strip().lower(),
+            )
+        return True
+
+    def _use_space_marines_red_rampage(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RED RAMPAGE: wrong phase")
+            return False
+
+        unit, candidates, _enemy_unit, _enemy_candidates, choice_payload, _action, _from_pending = (
+            self._space_marines_liberator_context("RED RAMPAGE", kwargs)
+        )
+        choice = self._sm_liberator_choice_key(choice_payload, kind="red_rampage")
+        if not choice:
+            logger.error("ERROR: RED RAMPAGE: choice must be LANCE, LETHAL_HITS, or RED_THIRST")
+            return False
+        if unit is None:
+            logger.error("ERROR: RED RAMPAGE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RED RAMPAGE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RED RAMPAGE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RED RAMPAGE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: RED RAMPAGE: target has already been selected to fight this phase")
+            return False
+        eligible = candidates or self._space_marines_liberator_red_rampage_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RED RAMPAGE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "RED RAMPAGE").strip() or "RED RAMPAGE"
+        granted_keywords = ["LANCE", "LETHAL HITS"] if choice == "RED_THIRST" else [choice.replace("_", " ")]
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_liberator_red_rampage:{choice}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=list(granted_keywords),
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+        if choice == "RED_THIRST":
+            self._sm_apply_battleshock_if_needed(root)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if choice == "RED_THIRST":
+            logger.info(
+                "INFO: RED RAMPAGE: %s gains [LANCE] and [LETHAL HITS] on melee weapons this phase and is Battle-shocked.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: RED RAMPAGE: %s gains [%s] on melee weapons this phase.",
+                getattr(root, "name", "Unit"),
+                granted_keywords[0],
+            )
+        return True
+
+    def _use_space_marines_savage_echoes(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: SAVAGE ECHOES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SAVAGE ECHOES: not opponent's Charge phase")
+            return False
+
+        unit, candidates, enemy_unit, _enemy_candidates, choice_payload, action, _from_pending = (
+            self._space_marines_liberator_context("SAVAGE ECHOES", kwargs)
+        )
+        choice = self._sm_liberator_choice_key(choice_payload, kind="savage_echoes")
+        if not choice:
+            logger.error("ERROR: SAVAGE ECHOES: choice must be STRENGTH, ATTACKS, or RED_THIRST")
+            return False
+        if unit is None:
+            logger.error("ERROR: SAVAGE ECHOES: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(enemy_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: SAVAGE ECHOES: missing charging enemy context")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: SAVAGE ECHOES: target unit is not yours")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: SAVAGE ECHOES: charging unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SAVAGE ECHOES: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: SAVAGE ECHOES: charging unit must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: SAVAGE ECHOES: target must be an ADEPTUS ASTARTES unit")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"charge", "charge_move"}:
+            logger.error("ERROR: SAVAGE ECHOES: wrong trigger")
+            return False
+        eligible = candidates or self._space_marines_liberator_savage_echoes_candidates(enemy_unit=enemy_root)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SAVAGE ECHOES: selected unit is not currently eligible")
+            return False
+        game_map = self._sm_game_map()
+        if game_map is None:
+            logger.error("ERROR: SAVAGE ECHOES: map context unavailable")
+            return False
+        try:
+            if not bool(game_map.is_within_engagement_range(root, enemy_root)):
+                logger.error("ERROR: SAVAGE ECHOES: target must be within Engagement Range of the charging enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            logger.error("ERROR: SAVAGE ECHOES: failed to validate Engagement Range")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "SAVAGE ECHOES").strip() or "SAVAGE ECHOES"
+        attacks_bonus = 1 if choice in {"ATTACKS", "RED_THIRST"} else 0
+        strength_bonus = 1 if choice in {"STRENGTH", "RED_THIRST"} else 0
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if callable(set_bonus):
+                    set_bonus(
+                        key=f"space_marines_liberator_savage_echoes:{choice}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        attacks_bonus=attacks_bonus,
+                        strength_bonus=strength_bonus,
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                    )
+        if choice == "RED_THIRST":
+            self._sm_apply_battleshock_if_needed(root)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if choice == "RED_THIRST":
+            logger.info(
+                "INFO: SAVAGE ECHOES: %s gains +1 Strength and +1 Attacks on melee weapons this turn and is Battle-shocked.",
+                getattr(root, "name", "Unit"),
+            )
+        elif choice == "STRENGTH":
+            logger.info(
+                "INFO: SAVAGE ECHOES: %s gains +1 Strength on melee weapons this turn.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: SAVAGE ECHOES: %s gains +1 Attacks on melee weapons this turn.",
+                getattr(root, "name", "Unit"),
+            )
+        return True
+
     def _use_space_marines_blazing_earth(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "charge phase":
@@ -8741,6 +9385,22 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_unbowed_conviction(stratagem, **kwargs)
         if name_u == "VENGEFUL ANIMUS":
             return self._use_space_marines_vengeful_animus(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_liberator_assault_group_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_liberator_assault_group_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "AGGRESSIVE ONSLAUGHT":
+            return self._use_space_marines_aggressive_onslaught(stratagem, **kwargs)
+        if name_u == "RED RAMPAGE":
+            return self._use_space_marines_red_rampage(stratagem, **kwargs)
+        if name_u == "RELENTLESS ASSAULT":
+            return self._use_space_marines_relentless_assault(stratagem, **kwargs)
+        if name_u == "SAVAGE ECHOES":
+            return self._use_space_marines_savage_echoes(stratagem, **kwargs)
         return None
 
     def _use_space_marines_inner_circle_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -10916,6 +11576,55 @@ class SpaceMarinesStratagemMixin:
         if enemy_unit is None and len(enemy_candidates) == 1:
             enemy_unit = enemy_candidates[0]
         return (unit, candidates, attacking_unit, target_units, enemy_unit, enemy_candidates, action, from_pending)
+
+    def _space_marines_liberator_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], Any, str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        choice_payload = (
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+            or kwargs.get("keyword")
+        )
+        action = str(kwargs.get("action") or kwargs.get("trigger") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("source_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or [])
+            if choice_payload is None:
+                choice_payload = (
+                    reaction.get("choice")
+                    or reaction.get("choice_key")
+                    or reaction.get("mode")
+                    or reaction.get("selection")
+                    or reaction.get("keyword")
+                )
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        return (unit, candidates, enemy_unit, enemy_candidates, choice_payload, action, from_pending)
 
     def _sm_fenris_context(
         self,

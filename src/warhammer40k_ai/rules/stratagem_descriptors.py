@@ -4329,6 +4329,85 @@ _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008375006": StratagemToolDescriptor(
+        stratagem_id="000008375006",
+        name="Aggressive Onslaught",
+        timing="your_movement_phase_after_advance",
+        target="adeptus_astartes_unit_that_just_advanced",
+        duration="until_end_of_turn",
+        effect="choose_shoot_or_charge_after_advance_or_both_with_battleshock",
+        cp_cost=1,
+        effect_params={
+            "choices": ["SHOOT", "CHARGE", "RED_THIRST"],
+            "advance_and_shoot_if_choice": {"SHOOT": True, "RED_THIRST": True},
+            "advance_and_charge_if_choice": {"CHARGE": True, "RED_THIRST": True},
+            "battleshock_if_choice": "RED_THIRST",
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+        },
+    ),
+    "000008375005": StratagemToolDescriptor(
+        stratagem_id="000008375005",
+        name="Red Rampage",
+        timing="fight_phase_before_selected",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="choose_lance_or_lethal_hits_or_both_with_battleshock_for_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "choices": ["LANCE", "LETHAL_HITS", "RED_THIRST"],
+            "choice_keywords": {
+                "LANCE": ["LANCE"],
+                "LETHAL_HITS": ["LETHAL HITS"],
+                "RED_THIRST": ["LANCE", "LETHAL HITS"],
+            },
+            "battleshock_if_choice": "RED_THIRST",
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+        },
+    ),
+    "000008375007": StratagemToolDescriptor(
+        stratagem_id="000008375007",
+        name="Relentless Assault",
+        timing="your_movement_phase_after_fall_back",
+        target="adeptus_astartes_unit_that_just_fell_back",
+        duration="until_end_of_turn",
+        effect="choose_shoot_or_charge_after_fall_back_or_both_with_battleshock",
+        cp_cost=1,
+        effect_params={
+            "choices": ["SHOOT", "CHARGE", "RED_THIRST"],
+            "fall_back_and_shoot_if_choice": {"SHOOT": True, "RED_THIRST": True},
+            "fall_back_and_charge_if_choice": {"CHARGE": True, "RED_THIRST": True},
+            "battleshock_if_choice": "RED_THIRST",
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+        },
+    ),
+    "000008375004": StratagemToolDescriptor(
+        stratagem_id="000008375004",
+        name="Savage Echoes",
+        timing="opponent_charge_phase_after_enemy_charge_move_end",
+        target="adeptus_astartes_unit_just_charged_by_enemy",
+        duration="until_end_of_turn",
+        effect="choose_strength_or_attacks_or_both_with_battleshock_for_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "choices": ["STRENGTH", "ATTACKS", "RED_THIRST"],
+            "choice_bonuses": {
+                "STRENGTH": {"strength_bonus": 1, "attacks_bonus": 0},
+                "ATTACKS": {"strength_bonus": 0, "attacks_bonus": 1},
+                "RED_THIRST": {"strength_bonus": 1, "attacks_bonus": 1},
+            },
+            "battleshock_if_choice": "RED_THIRST",
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+        },
+    ),
+}
+
+_LIBERATOR_ASSAULT_GROUP_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008475006": StratagemToolDescriptor(
         stratagem_id="000008475006",
@@ -5894,6 +5973,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6025,6 +6107,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME.get(key)
         or _IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
+        or _LIBERATOR_ASSAULT_GROUP_STRATAGEM_BY_NAME.get(key)
         or _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

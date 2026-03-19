@@ -17607,6 +17607,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if black_spear_fn(self, weapon_profile=profile, game=game):
                     return True
+            liberator_fn = getattr(mgr, "liberator_can_shoot_after_advance_applies", None) if mgr is not None else None
+            if callable(liberator_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if liberator_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:
@@ -17797,6 +17802,11 @@ class ActionsMovementMixin:
             if callable(heresy_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if heresy_fn(self, profile, game=game):
+                    return True
+            liberator_fn = getattr(mgr, "liberator_can_shoot_after_fall_back_applies", None) if mgr is not None else None
+            if callable(liberator_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if liberator_fn(self, weapon_profile=profile, game=game):
                     return True
         except Exception:
             pass
@@ -18147,6 +18157,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if heresy_fn(self, game=game):
                     return True
+            liberator_fn = getattr(mgr, "liberator_can_charge_after_advance_applies", None) if mgr is not None else None
+            if callable(liberator_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if liberator_fn(self, game=game):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()
@@ -18261,6 +18276,11 @@ class ActionsMovementMixin:
             if callable(heresy_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if heresy_fn(self, game=game):
+                    return True
+            liberator_fn = getattr(mgr, "liberator_can_charge_after_fall_back_applies", None) if mgr is not None else None
+            if callable(liberator_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if liberator_fn(self, game=game):
                     return True
         except Exception:
             pass

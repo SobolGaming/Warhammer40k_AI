@@ -9788,6 +9788,209 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.attached_unit_is_adeptus_astartes(unit)
 
+    @staticmethod
+    def _liberator_assault_group_move_effect_keys(effect_name: str) -> tuple[str, ...]:
+        prefix = f"space_marines_liberator_{str(effect_name or '').strip().lower()}"
+        return (
+            f"{prefix}_active",
+            f"{prefix}_mode",
+            f"{prefix}_turn",
+            f"{prefix}_player_id",
+            f"{prefix}_source",
+        )
+
+    @staticmethod
+    def _normalize_liberator_assault_group_mode(mode: str) -> str:
+        text = str(mode or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if text == "red_thirst":
+            return "both"
+        if text in {"shoot", "charge", "both"}:
+            return text
+        return ""
+
+    def _set_liberator_assault_group_move_effect(
+        self,
+        unit,
+        *,
+        effect_name: str,
+        required_move_flag: str,
+        mode: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_liberator_assault_group():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), str(required_move_flag or ""), False)):
+            return False
+        mode_key = self._normalize_liberator_assault_group_mode(mode)
+        if not mode_key:
+            return False
+        active_key, mode_key_name, turn_key, player_key, source_key = self._liberator_assault_group_move_effect_keys(
+            effect_name
+        )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[active_key] = True
+        sr[mode_key_name] = mode_key
+        try:
+            sr[turn_key] = int(battle_round or 0)
+        except Exception:
+            sr[turn_key] = 0
+        owner_id = str(player_id or "").strip()
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        sr[player_key] = owner_id
+        sr[source_key] = str(source or effect_name.replace("_", " ").title()).strip() or effect_name.replace("_", " ").title()
+        root.special_rules = sr
+        return True
+
+    def _liberator_assault_group_move_effect_applies(
+        self,
+        unit,
+        *,
+        effect_name: str,
+        required_move_flag: str,
+        allowed_modes: set[str],
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if not self.is_liberator_assault_group():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), str(required_move_flag or ""), False)):
+            return False
+        active_key, mode_key_name, turn_key, player_key, _source_key = self._liberator_assault_group_move_effect_keys(
+            effect_name
+        )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        mode = self._normalize_liberator_assault_group_mode(str(sr.get(mode_key_name, "") or ""))
+        if mode not in set(allowed_modes or set()):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None:
+                return False
+            if not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_player_id = str(sr.get(player_key, "") or "").strip()
+        if effect_player_id and current_player_id and effect_player_id != current_player_id:
+            return False
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def set_liberator_aggressive_onslaught(
+        self,
+        unit,
+        *,
+        mode: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Aggressive Onslaught",
+    ) -> bool:
+        return self._set_liberator_assault_group_move_effect(
+            unit,
+            effect_name="aggressive_onslaught",
+            required_move_flag="advanced_this_round",
+            mode=mode,
+            battle_round=battle_round,
+            player_id=player_id,
+            source=source,
+        )
+
+    def set_liberator_relentless_assault(
+        self,
+        unit,
+        *,
+        mode: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Relentless Assault",
+    ) -> bool:
+        return self._set_liberator_assault_group_move_effect(
+            unit,
+            effect_name="relentless_assault",
+            required_move_flag="fell_back_this_round",
+            mode=mode,
+            battle_round=battle_round,
+            player_id=player_id,
+            source=source,
+        )
+
+    def liberator_can_shoot_after_advance_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._liberator_assault_group_move_effect_applies(
+            unit,
+            effect_name="aggressive_onslaught",
+            required_move_flag="advanced_this_round",
+            allowed_modes={"shoot", "both"},
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def liberator_can_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._liberator_assault_group_move_effect_applies(
+            unit,
+            effect_name="aggressive_onslaught",
+            required_move_flag="advanced_this_round",
+            allowed_modes={"charge", "both"},
+            game=game,
+        )
+
+    def liberator_can_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._liberator_assault_group_move_effect_applies(
+            unit,
+            effect_name="relentless_assault",
+            required_move_flag="fell_back_this_round",
+            allowed_modes={"shoot", "both"},
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def liberator_can_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        return self._liberator_assault_group_move_effect_applies(
+            unit,
+            effect_name="relentless_assault",
+            required_move_flag="fell_back_this_round",
+            allowed_modes={"charge", "both"},
+            game=game,
+        )
+
     def maddened_ferocity_applies(self, unit) -> bool:
         if unit is None:
             return False
