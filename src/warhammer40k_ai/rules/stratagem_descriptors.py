@@ -3871,6 +3871,106 @@ _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008495005": StratagemToolDescriptor(
+        stratagem_id="000008495005",
+        name="Duty and Honour",
+        timing="your_movement_phase",
+        target="first_company_veteran_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_start_or_end_of_turn",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ]
+        },
+    ),
+    "000008495003": StratagemToolDescriptor(
+        stratagem_id="000008495003",
+        name="Heroes of the Chapter",
+        timing="shooting_or_fight_phase_on_select",
+        target="first_company_veteran_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="hit_bonus_and_conditional_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "hit_bonus": 1,
+            "wound_bonus": 1,
+            "wound_bonus_condition": "below_half_strength",
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+        },
+    ),
+    "000008495007": StratagemToolDescriptor(
+        stratagem_id="000008495007",
+        name="Legendary Fortitude",
+        timing="opponent_charge_phase_after_enemy_charge_move_end",
+        target="first_company_veteran_unit_within_engagement_range_of_charging_enemy",
+        duration="until_end_of_turn",
+        effect="defensive_damage_reduction",
+        cp_cost=1,
+        effect_params={
+            "damage_reduction": 1,
+            "attack_type": "melee",
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+        },
+    ),
+    "000008495006": StratagemToolDescriptor(
+        stratagem_id="000008495006",
+        name="Orbital Teleportarium",
+        timing="end_of_opponent_fight_phase",
+        target="adeptus_astartes_terminator_unit_not_engaged",
+        duration="until_next_reinforcements_step",
+        effect="enter_strategic_reserves_with_temp_deep_strike",
+        cp_cost=1,
+        effect_params={
+            "grant_deep_strike": True,
+            "required_keywords_any": ["TERMINATOR"],
+            "must_arrive_next_movement_phase": True,
+        },
+    ),
+    "000008495004": StratagemToolDescriptor(
+        stratagem_id="000008495004",
+        name="Terrifying Proficiency",
+        timing="your_fight_phase_after_charged_unit_destroys_enemy",
+        target="first_company_veteran_unit_that_charged_and_destroyed_enemy",
+        duration="until_opponents_next_command_phase",
+        effect="delayed_enemy_battleshock_tests_with_conditional_modifier",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_any": [
+                "TERMINATOR",
+                "BLADEGUARD VETERAN SQUAD",
+                "STERNGUARD VETERAN SQUAD",
+                "VANGUARD VETERAN SQUAD",
+            ],
+            "requires_charge_this_turn": True,
+            "requires_destroy_enemy_this_phase": True,
+            "battleshock_range": 6.0,
+            "below_half_modifier": -1,
+            "suppress_other_battleshock_tests_same_phase": True,
+        },
+    ),
+}
+
+_FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
@@ -4513,6 +4613,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4601,6 +4704,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
+        or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

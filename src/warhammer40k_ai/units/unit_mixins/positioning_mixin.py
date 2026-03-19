@@ -9148,6 +9148,23 @@ class PositioningMixin:
                             found = False
                         elif exp_phase and cur_phase and exp_phase != cur_phase:
                             found = False
+                elif sr.get("midgame_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("midgame_temp_deep_strike_turn_owner", "") or "")
+                    turn = int(sr.get("midgame_temp_deep_strike_must_arrive_turn", 0) or 0)
+                    if game is not None:
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            found = False
                 elif sr.get("umbralefic_crystal_temp_deep_strike"):
                     found = True
                     try:

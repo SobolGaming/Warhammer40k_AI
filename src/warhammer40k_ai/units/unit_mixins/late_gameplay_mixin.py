@@ -3138,6 +3138,24 @@ class LateGameplayMixin:
                         return False
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("midgame_temp_deep_strike")):
+                allowed_round = int(sr.get("midgame_temp_deep_strike_must_arrive_turn", 0) or 0)
+                if allowed_round and int(current_turn) != int(allowed_round):
+                    return False
+                owner_id = str(sr.get("midgame_temp_deep_strike_turn_owner", "") or "")
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None:
+                    if not getattr(game, "is_movement_phase", lambda: False)():
+                        return False
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        return False
+        except Exception:
+            pass
         
         allow_turn1 = False
         try:
@@ -3149,6 +3167,15 @@ class LateGameplayMixin:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and bool(sr.get("umbralefic_crystal_temp_deep_strike")):
                     allowed_round = int(sr.get("umbralefic_crystal_must_arrive_turn", 0) or 0)
+                    if not allowed_round or int(current_turn) == int(allowed_round):
+                        allow_turn1 = True
+            except Exception:
+                pass
+        if not allow_turn1:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("midgame_temp_deep_strike")):
+                    allowed_round = int(sr.get("midgame_temp_deep_strike_must_arrive_turn", 0) or 0)
                     if not allowed_round or int(current_turn) == int(allowed_round):
                         allow_turn1 = True
             except Exception:
@@ -3492,6 +3519,14 @@ class LateGameplayMixin:
                         "umbralefic_crystal_must_arrive_turn",
                     ):
                         sr.pop(key, None)
+                if sr.get("midgame_temp_deep_strike") is True or "midgame_temp_deep_strike_must_arrive_turn" in sr:
+                    for key in (
+                        "midgame_temp_deep_strike",
+                        "midgame_temp_deep_strike_turn_owner",
+                        "midgame_temp_deep_strike_must_arrive_turn",
+                        "midgame_temp_deep_strike_source",
+                    ):
+                        sr.pop(key, None)
                 self.special_rules = sr
                 if hasattr(self, "_ability_cache") and isinstance(getattr(self, "_ability_cache", None), dict):
                     self._ability_cache.pop("deep_strike", None)
@@ -3557,6 +3592,25 @@ class LateGameplayMixin:
                 if game is not None and not getattr(game, "is_movement_phase", lambda: False)():
                     return False
                 owner_id = str(sr.get("umbralefic_crystal_must_arrive_turn_owner", "") or "")
+                if owner_id and game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if cur_owner and cur_owner != owner_id:
+                        return False
+                return self.is_in_reserves()
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("midgame_temp_deep_strike")):
+                allowed_round = int(sr.get("midgame_temp_deep_strike_must_arrive_turn", 0) or 0)
+                if not allowed_round or int(current_turn) != int(allowed_round):
+                    return False
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None and not getattr(game, "is_movement_phase", lambda: False)():
+                    return False
+                owner_id = str(sr.get("midgame_temp_deep_strike_turn_owner", "") or "")
                 if owner_id and game is not None:
                     cur_player = getattr(game, "get_current_player", lambda: None)()
                     cur_owner = str(getattr(cur_player, "id", "") or "")

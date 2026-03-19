@@ -11324,6 +11324,41 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Space Marines: Heroes of the Chapter.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and bool(sr.get("space_marines_heroes_of_the_chapter_active")):
+                applies = True
+                exp = str(sr.get("space_marines_heroes_of_the_chapter_expires_phase", "") or "").strip().upper()
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                if exp and phase_key and exp != phase_key:
+                    applies = False
+                effect_turn = int(sr.get("space_marines_heroes_of_the_chapter_turn", 0) or 0)
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if applies and effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                owner_id = str(sr.get("space_marines_heroes_of_the_chapter_turn_owner", "") or "")
+                current_owner_id = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                if applies and owner_id and current_owner_id and owner_id != current_owner_id:
+                    applies = False
+                if applies:
+                    hit_bonus = int(sr.get("space_marines_heroes_of_the_chapter_hit_bonus", 0) or 0)
+                    if hit_bonus:
+                        source_name = (
+                            str(sr.get("space_marines_heroes_of_the_chapter_source", "") or "HEROES OF THE CHAPTER").strip()
+                            or "HEROES OF THE CHAPTER"
+                        )
+                        _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
+        except Exception:
+            pass
         # Adeptus Mechanicus: Explorator Maniple (Logis).
         try:
             unit = attacker.parent_unit
@@ -16586,6 +16621,46 @@ class WargearProfile:
             if mgr is not None and mgr.wound_bonus_applies(attacker.parent_unit, target):
                 dice_modifier += 1
                 wound_result['modifiers'].append("+1 to wound from Oath of Moment")
+        except Exception:
+            pass
+        # Space Marines: Heroes of the Chapter.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and bool(sr.get("space_marines_heroes_of_the_chapter_active")):
+                applies = True
+                exp = str(sr.get("space_marines_heroes_of_the_chapter_expires_phase", "") or "").strip().upper()
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                if exp and phase_key and exp != phase_key:
+                    applies = False
+                effect_turn = int(sr.get("space_marines_heroes_of_the_chapter_turn", 0) or 0)
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if applies and effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                owner_id = str(sr.get("space_marines_heroes_of_the_chapter_turn_owner", "") or "")
+                current_owner_id = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                if applies and owner_id and current_owner_id and owner_id != current_owner_id:
+                    applies = False
+                requires_below_half = bool(sr.get("space_marines_heroes_of_the_chapter_wound_bonus_below_half_only", False))
+                below_half = bool(getattr(root, "is_below_half_strength", lambda: False)()) if root is not None else False
+                if applies and requires_below_half and not below_half:
+                    applies = False
+                if applies:
+                    wound_bonus = int(sr.get("space_marines_heroes_of_the_chapter_wound_bonus", 0) or 0)
+                    if wound_bonus:
+                        source_name = (
+                            str(sr.get("space_marines_heroes_of_the_chapter_source", "") or "HEROES OF THE CHAPTER").strip()
+                            or "HEROES OF THE CHAPTER"
+                        )
+                        dice_modifier += int(wound_bonus)
+                        wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
         except Exception:
             pass
         # Movement phase selected target wound bonus (e.g., Aeldari).

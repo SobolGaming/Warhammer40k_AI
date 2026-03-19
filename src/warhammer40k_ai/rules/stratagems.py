@@ -79,6 +79,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
+    "DUTY AND HONOUR",
+    "HEROES OF THE CHAPTER",
+    "LEGENDARY FORTITUDE",
+    "ORBITAL TELEPORTARIUM",
+    "TERRIFYING PROFICIENCY",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -1646,6 +1651,7 @@ class StratagemManager(
             "ON TO DA NEXT",
             "MORE GITZ OVER 'ERE!",
             "SQUIG FLINGIN'",
+            "LEGENDARY FORTITUDE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
@@ -1673,6 +1679,7 @@ class StratagemManager(
             "DIVINE INTERVENTION",
             "SUSTAINED BY AGONY",
             "ECSTATIC SLAUGHTER",
+            "TERRIFYING PROFICIENCY",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -1918,6 +1925,7 @@ class StratagemManager(
             "INVISIBLE HUNTER",
             "INSTINCTIVE HUNTERS",
             "DED SNEAKY",
+            "ORBITAL TELEPORTARIUM",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2050,6 +2058,7 @@ class StratagemManager(
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
+            "HEROES OF THE CHAPTER",
             "VENOMOUS WRATH",
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
@@ -5851,6 +5860,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_first_company_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6882,6 +6895,7 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -8765,6 +8779,7 @@ class StratagemManager(
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
@@ -13090,6 +13105,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_space_marines_first_company_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         self._queue_shadow_legion_unit_destroyed_reactions(
             unit=unit,
             last_model=last_model,
@@ -16061,6 +16083,9 @@ class StratagemManager(
         cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
         if cult_result is not None:
             return cult_result
+        first_company_result = self._use_space_marines_first_company_task_force_stratagem(s, **kwargs)
+        if first_company_result is not None:
+            return first_company_result
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result
