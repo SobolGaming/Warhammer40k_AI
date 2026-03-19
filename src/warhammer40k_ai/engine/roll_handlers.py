@@ -851,6 +851,25 @@ def handle_charge_roll(game: object, state: DiceRollState):
                 unit.round_state.charge_modifier_choice_targets = list(target_ids or [])
             except Exception:
                 pass
+    try:
+        event_system = getattr(game, "event_system", None)
+        publish = getattr(event_system, "publish", None) if event_system is not None else None
+        if callable(publish):
+            resolved_targets = []
+            for target_id in list(spec.get("target_unit_ids", []) or []):
+                target_unit = _get_unit(game, str(target_id or ""))
+                if target_unit is not None:
+                    resolved_targets.append(target_unit)
+            publish(
+                "charge_roll_resolved",
+                unit=unit,
+                target_units=resolved_targets,
+                base_roll=int(roll_result.total or 0),
+                roll_total=int(getattr(state, "total", roll_result.total) or 0),
+                dice=list(dice_vals),
+            )
+    except Exception:
+        pass
     return {
         "base_roll": int(roll_result.total or 0),
         "dice": list(dice_vals),

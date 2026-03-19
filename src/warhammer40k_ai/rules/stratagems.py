@@ -519,6 +519,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BLAZING EARTH",
+    "FOCUSED HATRED",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
@@ -560,6 +561,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
     "A DEADLY SNARE",
+    "A CEASELESS CAUSE",
     "LYING IN WAIT",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
@@ -1666,6 +1668,8 @@ class StratagemManager(
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
             add("unit_disembarked", self._on_unit_disembarked)
+        if "FOCUSED HATRED" in names:
+            add("charge_roll_resolved", self._on_charge_roll_resolved)
         if "SCINTILLATING TEMPO" in names:
             add("unit_move_started", self._on_unit_move_started)
             add("charge_declared", self._on_charge_declared)
@@ -1971,6 +1975,7 @@ class StratagemManager(
             add("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
 
         phase_end_trigger_names = {
+            "A CEASELESS CAUSE",
             "ANGELIC DESCENT",
             "CRUEL RAIDERS",
             "COST OF VICTORY",
@@ -2013,6 +2018,7 @@ class StratagemManager(
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
             "AGGRESSOR IMPERATIVE",
+            "CONDEMNATORY INFO-SCREED",
             "BALEFUL HALO",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
@@ -2105,6 +2111,8 @@ class StratagemManager(
             "LAYERED WARDS",
             "LYING IN WAIT",
             "EMISSARIES OF YNNEAD",
+            "FOCUSED HATRED",
+            "GAUNTLET OF THE GOD-EMPEROR",
             "MACABRE RESILIENCE",
             "HEROES' FALL",
             "HEROES\u2019 FALL",
@@ -2650,6 +2658,14 @@ class StratagemManager(
             "000010369007",
         }:
             return bool(self._is_forgefathers_seekers_detachment())
+        if stratagem_id in {
+            "000010401002",
+            "000010401003",
+            "000010401004",
+            "000010401005",
+            "000010401006",
+        }:
+            return bool(self._is_godhammer_assault_force_detachment())
         return False
 
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
@@ -6006,6 +6022,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_godhammer_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_company_of_hunters_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7069,6 +7089,7 @@ class StratagemManager(
             self._queue_space_marines_emperors_shield_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_godhammer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
@@ -7210,6 +7231,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_firestorm_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_godhammer_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9016,6 +9041,12 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_space_marines_companions_of_vehemence_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+
+    def _on_charge_roll_resolved(self, unit=None, target_units=None, **_kwargs):
+        self._queue_space_marines_godhammer_charge_roll_resolved_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -16413,6 +16444,9 @@ class StratagemManager(
         forgefathers_result = self._use_space_marines_forgefathers_seekers_stratagem(s, **kwargs)
         if forgefathers_result is not None:
             return forgefathers_result
+        godhammer_result = self._use_space_marines_godhammer_assault_force_stratagem(s, **kwargs)
+        if godhammer_result is not None:
+            return godhammer_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

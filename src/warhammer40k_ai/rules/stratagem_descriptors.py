@@ -4685,6 +4685,92 @@ _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FORGEFATHERS_SEEKERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GODHAMMER_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010401002": StratagemToolDescriptor(
+        stratagem_id="000010401002",
+        name="A Ceaseless Cause",
+        timing="end_of_fight_phase",
+        target="adeptus_astartes_infantry_unit_eligible_to_fight_this_phase_and_not_engaged",
+        duration="immediate",
+        effect="end_of_fight_normal_move_up_to_six_no_embark_if_disembarked",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "requires_eligible_to_fight_this_phase": True,
+            "requires_not_engaged": True,
+            "movement_type": "normal",
+            "max_distance_in": 6.0,
+            "forbid_embark_if_disembarked_this_turn": True,
+        },
+    ),
+    "000010401003": StratagemToolDescriptor(
+        stratagem_id="000010401003",
+        name="Uncompromising Egress",
+        timing="your_movement_phase_before_selected_to_move",
+        target="land_raider_with_embarked_adeptus_astartes_unit",
+        duration="immediate",
+        effect="reactive_disembark_within_six_and_allow_engagement",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "LAND RAIDER"],
+            "passenger_required_keywords_all": ["ADEPTUS ASTARTES"],
+            "max_disembarking_units": 1,
+            "range_in": 6.0,
+            "allow_end_in_engagement_range": True,
+        },
+    ),
+    "000010401004": StratagemToolDescriptor(
+        stratagem_id="000010401004",
+        name="Gauntlet of the God-Emperor",
+        timing="your_movement_phase_before_selected_to_move",
+        target="adeptus_astartes_vehicle_unit_not_yet_selected_to_move",
+        duration="until_end_of_movement_phase",
+        effect="normal_and_advance_move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "VEHICLE"],
+            "movement_types": ["move", "advance"],
+            "can_move_horizontally_through_terrain": True,
+        },
+    ),
+    "000010401005": StratagemToolDescriptor(
+        stratagem_id="000010401005",
+        name="Focused Hatred",
+        timing="your_charge_phase_after_charge_roll",
+        target="adeptus_astartes_unit_that_disembarked_from_transport_this_turn",
+        duration="until_end_of_charge_phase",
+        effect="charge_move_through_models_against_declared_targets_only",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "requires_disembarked_from_transport_this_turn": True,
+            "movement_type": "charge",
+            "can_move_through_models": True,
+            "end_in_engagement_only_of_declared_targets": True,
+        },
+    ),
+    "000010401006": StratagemToolDescriptor(
+        stratagem_id="000010401006",
+        name="Condemnatory Info-screed",
+        timing="your_fight_phase_on_select_to_fight",
+        target="adeptus_astartes_unit_that_disembarked_from_transport_this_turn_and_not_yet_selected_to_fight",
+        duration="until_end_of_fight_phase",
+        effect="disembarked_wound_reroll_ones_or_full_if_land_raider",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "requires_disembarked_from_transport_this_turn": True,
+            "attack_type": "melee",
+            "reroll_wound_values": [1],
+            "upgrade_to_full_if_transport_has_keywords_all": ["LAND RAIDER"],
+        },
+    ),
+}
+
+_GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GODHAMMER_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008523003": StratagemToolDescriptor(
         stratagem_id="000008523003",
@@ -5564,6 +5650,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FORGEFATHERS_SEEKERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GODHAMMER_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5671,6 +5760,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
         or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME.get(key)
+        or _GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)

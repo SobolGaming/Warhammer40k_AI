@@ -20395,6 +20395,36 @@ def _stratagem_support(
             "Start of the opponent Charge phase: one visible enemy unit within 12\" of a selected ADEPTUS ASTARTES unit with a Torrent weapon suffers -2 to Charge rolls this phase, non-cumulative with other negative Charge modifiers.",
             name_u,
         )
+    if stratagem_id == "000010401002":
+        return (
+            "Implemented",
+            "End of the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that was eligible to fight this phase and is no longer engaged can make a Normal move up to 6\".",
+            name_u,
+        )
+    if stratagem_id == "000010401003":
+        return (
+            "Implemented",
+            "Your Movement phase: selected LAND RAIDER can reactively disembark one embarked ADEPTUS ASTARTES unit wholly within 6\", including within Engagement Range of enemy units.",
+            name_u,
+        )
+    if stratagem_id == "000010401004":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES VEHICLE that has not yet moved can move horizontally through terrain features on Normal and Advance moves until the end of the phase.",
+            name_u,
+        )
+    if stratagem_id == "000010401005":
+        return (
+            "Implemented",
+            "Your Charge phase after a Charge roll: selected ADEPTUS ASTARTES unit that disembarked from a Transport this turn can move through models during its Charge move this phase, while still only ending in Engagement Range of declared charge targets.",
+            name_u,
+        )
+    if stratagem_id == "000010401006":
+        return (
+            "Implemented",
+            "Your Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected to fight gains wound re-rolls after disembarking this turn, re-rolling 1s normally or the full Wound roll if it disembarked from a LAND RAIDER.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)

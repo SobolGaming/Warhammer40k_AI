@@ -8066,6 +8066,44 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Godhammer Assault Force: Condemnatory Info-screed.
+        try:
+            if atype in ("any", "melee"):
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("space_marines_condemnatory_info_screed_active"):
+                    active = True
+                    owner_id = str(sr.get("space_marines_condemnatory_info_screed_turn_owner", "") or "")
+                    source = str(
+                        sr.get("space_marines_condemnatory_info_screed_source", "") or "CONDEMNATORY INFO-SCREED"
+                    ).strip() or "CONDEMNATORY INFO-SCREED"
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    expires_phase = str(sr.get("space_marines_condemnatory_info_screed_expires_phase", "") or "").strip().upper()
+                    if expires_phase and phase_name and expires_phase != phase_name:
+                        active = False
+                    try:
+                        effect_turn = int(sr.get("space_marines_condemnatory_info_screed_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        active = False
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        active = False
+                    if active:
+                        mode = str(sr.get("space_marines_condemnatory_info_screed_mode", "ones") or "ones").strip().lower()
+                        if mode == "full":
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                        else:
+                            reroll_wound_values.add(1)
+                            reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+
         # Target buffs: Symphony of Pain (re-roll Wound rolls vs marked target).
         try:
             if target is not None:

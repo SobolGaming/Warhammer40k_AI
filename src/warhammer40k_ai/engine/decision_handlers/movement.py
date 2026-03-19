@@ -2668,6 +2668,7 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
         if max_distance <= 0:
             max_distance = 3.0
         min_enemy_horizontal_distance = None
+        require_not_in_engagement = True
         if "disembark_min_enemy_horizontal_distance" in ctx:
             try:
                 min_enemy_horizontal_distance = float(
@@ -2677,6 +2678,8 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
                 min_enemy_horizontal_distance = None
             if min_enemy_horizontal_distance is not None and min_enemy_horizontal_distance <= 0:
                 min_enemy_horizontal_distance = None
+        if "disembark_require_not_in_engagement" in ctx:
+            require_not_in_engagement = bool(ctx.get("disembark_require_not_in_engagement", True))
         errors = validate_model_positions(game, unit, model_positions, context="Disembark")
         if errors:
             return errors
@@ -2701,7 +2704,7 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
                 transport_unit=transport,
                 game_map=game_map,
                 max_distance=float(max_distance),
-                require_not_in_engagement=True,
+                require_not_in_engagement=bool(require_not_in_engagement),
                 min_enemy_horizontal_distance=min_enemy_horizontal_distance,
             )
             if not bool(check.get("valid", False)):
