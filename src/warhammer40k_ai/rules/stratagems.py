@@ -82,10 +82,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
     "CODEX DISCIPLINE",
+    "COURAGE AND HONOUR!",
     "DISCIPLINED EXTERMINATION",
     "DRAGONFIRE ROUNDS",
     "DROPSHIP EXTRACTION",
     "DUTY AND HONOUR",
+    "EXEMPLARY VIGILANCE",
     "FOCUSED FURY",
     "FURY OF THE FIRST",
     "GUIDED DISRUPTION",
@@ -101,12 +103,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NO THREAT TOO GREAT",
     "NOT ONE BACKWARDS STEP",
     "ORBITAL TELEPORTARIUM",
+    "PRACTICAL TACTICS",
     "RIGID DISCIPLINE",
     "SHOCK BOMBARDMENT",
     "SITE-TO-SITE TELEPORTATION",
     "STRIKE NOW FOR GLORY",
+    "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
     "UNTO THE BURNING SKIES",
+    "ULTRAMARIAN ADAPTIVITY",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -5933,6 +5938,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_blade_of_ultramar_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -8873,6 +8882,7 @@ class StratagemManager(
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
@@ -9904,6 +9914,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_blade_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._capture_space_marines_anvil_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -10929,6 +10946,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_emperors_shield_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_blade_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16221,6 +16245,9 @@ class StratagemManager(
         angelic_result = self._use_space_marines_angelic_inheritors_stratagem(s, **kwargs)
         if angelic_result is not None:
             return angelic_result
+        blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
+        if blade_result is not None:
+            return blade_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

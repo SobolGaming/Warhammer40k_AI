@@ -6606,7 +6606,107 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
 
+    @staticmethod
+    def _normalize_space_marines_unit_doctrine_override(doctrine) -> str:
+        if isinstance(doctrine, dict):
+            doctrine = doctrine.get("choice_key") or doctrine.get("key") or doctrine.get("label")
+        doctrine_key = str(getattr(doctrine, "key", doctrine) or "").strip().upper()
+        if doctrine_key.endswith(" DOCTRINE"):
+            doctrine_key = doctrine_key[: -len(" DOCTRINE")]
+        doctrine_key = doctrine_key.replace("-", "_").replace(" ", "_")
+        if doctrine_key in {"DEVASTATOR", "TACTICAL", "ASSAULT"}:
+            return doctrine_key
+        return ""
+
+    def set_space_marines_unit_doctrine_override(
+        self,
+        unit,
+        doctrine,
+        *,
+        battle_round: int,
+        player_id: str,
+        source: str,
+    ) -> bool:
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        doctrine_key = self._normalize_space_marines_unit_doctrine_override(doctrine)
+        if not doctrine_key:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            current_round = int(battle_round or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        expires_round = int(current_round + 1) if current_round > 0 else 0
+        sr["space_marines_unit_doctrine_override_active"] = True
+        sr["space_marines_unit_doctrine_override_doctrine"] = doctrine_key
+        sr["space_marines_unit_doctrine_override_owner_id"] = str(player_id or "")
+        sr["space_marines_unit_doctrine_override_turn_started"] = int(current_round)
+        sr["space_marines_unit_doctrine_override_expires_round"] = int(expires_round)
+        sr["space_marines_unit_doctrine_override_source"] = str(source or "Unit Doctrine Override").strip() or "Unit Doctrine Override"
+        root.special_rules = sr
+        return True
+
+    def _space_marines_unit_doctrine_override(self, unit, *, game=None) -> str:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_unit_doctrine_override_active", False)):
+            return ""
+        doctrine_key = self._normalize_space_marines_unit_doctrine_override(
+            sr.get("space_marines_unit_doctrine_override_doctrine")
+        )
+        if not doctrine_key:
+            return ""
+
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        if game_obj is None:
+            return doctrine_key
+
+        owner_id = str(sr.get("space_marines_unit_doctrine_override_owner_id", "") or "")
+        try:
+            expires_round = int(sr.get("space_marines_unit_doctrine_override_expires_round", 0) or 0)
+        except (TypeError, ValueError):
+            expires_round = 0
+        try:
+            current_round = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_owner = str(getattr(current_player, "id", "") or "")
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if (
+            expires_round > 0
+            and current_round >= expires_round
+            and owner_id
+            and current_owner == owner_id
+            and phase_name == "COMMAND_PHASE"
+        ):
+            for key in (
+                "space_marines_unit_doctrine_override_active",
+                "space_marines_unit_doctrine_override_doctrine",
+                "space_marines_unit_doctrine_override_owner_id",
+                "space_marines_unit_doctrine_override_turn_started",
+                "space_marines_unit_doctrine_override_expires_round",
+                "space_marines_unit_doctrine_override_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+            return ""
+        return doctrine_key
+
     def blade_of_ultramar_student_of_the_codex_active_doctrine(self, unit, *, game=None) -> str:
+        doctrine_key = self._space_marines_unit_doctrine_override(unit, game=game)
+        if doctrine_key:
+            return doctrine_key
         if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return ""
         root, member, sr = self._blade_of_ultramar_enhancement_source_member(
