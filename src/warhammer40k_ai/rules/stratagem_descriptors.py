@@ -3971,6 +3971,78 @@ _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008475006": StratagemToolDescriptor(
+        stratagem_id="000008475006",
+        name="Battle Drill Recall",
+        timing="your_shooting_phase",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_sustained_hits_and_conditional_crit_hit_threshold",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["SUSTAINED HITS 1"],
+            "critical_hit_threshold_if_remained_stationary": 5,
+        },
+    ),
+    "000008475007": StratagemToolDescriptor(
+        stratagem_id="000008475007",
+        name="Hail of Vengeance",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved",
+        target="adeptus_astartes_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_shooting_against_attacker_after_losing_models",
+        cp_cost=2,
+        effect_params={
+            "force_target_attacker": True,
+            "requires_lost_models": True,
+        },
+    ),
+    "000008475005": StratagemToolDescriptor(
+        stratagem_id="000008475005",
+        name="No Threat Too Great",
+        timing="your_shooting_phase",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_full_wound_rerolls_vs_monsters_vehicles",
+        cp_cost=2,
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_wound_full": True,
+            "target_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000008475004": StratagemToolDescriptor(
+        stratagem_id="000008475004",
+        name="Not One Backwards Step",
+        timing="your_command_phase",
+        target="adeptus_astartes_infantry_unit_within_objective_range",
+        duration="until_end_of_turn",
+        effect="objective_control_multiplier_and_remain_stationary_lock",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["INFANTRY"],
+            "objective_control_multiplier": 2,
+            "movement_lock_mode": "remain_stationary",
+        },
+    ),
+    "000008475003": StratagemToolDescriptor(
+        stratagem_id="000008475003",
+        name="Rigid Discipline",
+        timing="end_of_fight_phase",
+        target="adeptus_astartes_unit_within_engagement_range",
+        duration="immediate",
+        effect="reactive_fall_back_move",
+        cp_cost=1,
+        effect_params={"max_distance": 6},
+    ),
+}
+
+_ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -4684,6 +4756,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4776,6 +4851,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

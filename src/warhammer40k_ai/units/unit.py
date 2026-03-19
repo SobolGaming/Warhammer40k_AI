@@ -1075,6 +1075,31 @@ class Unit(
                         source="enhancement:veiled_blade",
                     )
                 )
+            anvil_multiplier = 1
+            sr_root = getattr(root, "special_rules", None)
+            if isinstance(sr_root, dict) and bool(sr_root.get("space_marines_not_one_backwards_step_active", False)):
+                try:
+                    active_turn = int(sr_root.get("space_marines_not_one_backwards_step_turn", 0) or 0)
+                except Exception:
+                    active_turn = 0
+                active_owner = str(sr_root.get("space_marines_not_one_backwards_step_turn_owner", "") or "").strip()
+                if (not active_turn or not current_turn or active_turn == current_turn) and (
+                    not active_owner or not current_owner_id or active_owner == current_owner_id
+                ):
+                    try:
+                        anvil_multiplier = int(
+                            sr_root.get("space_marines_not_one_backwards_step_objective_control_multiplier", 2) or 2
+                        )
+                    except Exception:
+                        anvil_multiplier = 2
+            if int(anvil_multiplier) > 1:
+                mods.append(
+                    Modifier(
+                        ModifierOp.MUL,
+                        int(max(2, anvil_multiplier)),
+                        source="stratagem:not_one_backwards_step",
+                    )
+                )
             try:
                 ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
                 bonus_fn = getattr(ck_mgr, "tyrannical_court_objective_control_bonus", None) if ck_mgr is not None else None

@@ -79,13 +79,18 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
+    "BATTLE DRILL RECALL",
     "DUTY AND HONOUR",
     "FOCUSED FURY",
+    "HAIL OF VENGEANCE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
     "INSTANT OF GRACE",
     "LEGENDARY FORTITUDE",
+    "NO THREAT TOO GREAT",
+    "NOT ONE BACKWARDS STEP",
     "ORBITAL TELEPORTARIUM",
+    "RIGID DISCIPLINE",
     "STRIKE NOW FOR GLORY",
     "TERRIFYING PROFICIENCY",
     "UNTO THE BURNING SKIES",
@@ -455,6 +460,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HUNTR’S MARK",
     "ORDERED RETREAT",
     "REACTIVE REPRISAL",
+    "HAIL OF VENGEANCE",
+    "RIGID DISCIPLINE",
     "VOID HARDENED",
 }
 
@@ -1723,6 +1730,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
         if "PRAISE THE FALLEN" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
+        if "HAIL OF VENGEANCE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
@@ -1866,6 +1875,8 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
+        elif "HAIL OF VENGEANCE" in names:
+            add("shooting_targets_selected", self._on_shooting_targets_selected)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
             add("fight_targets_selected", self._on_fight_targets_selected)
@@ -1931,6 +1942,7 @@ class StratagemManager(
             "INSTINCTIVE HUNTERS",
             "DED SNEAKY",
             "ORBITAL TELEPORTARIUM",
+            "RIGID DISCIPLINE",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2063,7 +2075,10 @@ class StratagemManager(
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
+            "BATTLE DRILL RECALL",
             "HEROES OF THE CHAPTER",
+            "NO THREAT TOO GREAT",
+            "NOT ONE BACKWARDS STEP",
             "VENOMOUS WRATH",
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
@@ -5869,6 +5884,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_anvil_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_angelic_inheritors_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6905,6 +6924,7 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
@@ -7030,6 +7050,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_anvil_siege_force_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9497,6 +9521,9 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_space_marines_anvil_siege_force(self, attacker_unit=None, **_kwargs):
+        self._queue_space_marines_anvil_shooting_resolved_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
         self._queue_orks_more_dakka_call_dat_dakka_reactions(attacker_unit=attacker_unit)
 
@@ -9799,6 +9826,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_angelic_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._capture_space_marines_anvil_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16106,6 +16140,9 @@ class StratagemManager(
         first_company_result = self._use_space_marines_first_company_task_force_stratagem(s, **kwargs)
         if first_company_result is not None:
             return first_company_result
+        anvil_result = self._use_space_marines_anvil_siege_force_stratagem(s, **kwargs)
+        if anvil_result is not None:
+            return anvil_result
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result

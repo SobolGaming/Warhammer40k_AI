@@ -145,10 +145,10 @@ class ActionsMovementMixin:
         else:
             actions = [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
 
-        stasis_mode = self._stasis_bomb_movement_lock_mode()
-        if stasis_mode == "remain_stationary":
+        movement_lock_mode, _movement_lock_source = self._movement_lock_mode_and_source()
+        if movement_lock_mode == "remain_stationary":
             return [MovementAction.REMAIN_STATIONARY.value]
-        if stasis_mode == "no_advance_fall_back":
+        if movement_lock_mode == "no_advance_fall_back":
             actions = [
                 action for action in list(actions or [])
                 if action not in (MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value)
@@ -187,6 +187,44 @@ class ActionsMovementMixin:
             if owner_id and current_owner and owner_id != current_owner:
                 return ""
         return mode
+
+    def _anvil_not_one_backwards_step_movement_lock_mode(self) -> tuple[str, str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return ("", "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_not_one_backwards_step_active", False)):
+            return ("", "")
+        mode = str(sr.get("space_marines_not_one_backwards_step_movement_lock_mode", "") or "").strip().lower()
+        if mode != "remain_stationary":
+            return ("", "")
+        army = None
+        get_parent_army = getattr(root, "get_parent_army", None)
+        if callable(get_parent_army):
+            army = get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            effect_owner = str(sr.get("space_marines_not_one_backwards_step_turn_owner", "") or "").strip()
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return ("", "")
+            effect_turn = int(sr.get("space_marines_not_one_backwards_step_turn", 0) or 0)
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return ("", "")
+        source = str(sr.get("space_marines_not_one_backwards_step_source", "") or "NOT ONE BACKWARDS STEP").strip()
+        return (mode, source or "NOT ONE BACKWARDS STEP")
+
+    def _movement_lock_mode_and_source(self) -> tuple[str, str]:
+        stasis_mode = self._stasis_bomb_movement_lock_mode()
+        if stasis_mode:
+            return (stasis_mode, "Stasis Bomb")
+        return self._anvil_not_one_backwards_step_movement_lock_mode()
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
         """Execute a movement action for the unit."""
@@ -7029,6 +7067,41 @@ class ActionsMovementMixin:
                     crit_hit_on_successful_hit = True
                     crit_hit_reasons.append(f"{source}: critical hit on successful hit")
 
+        if atype in ("any", "ranged"):
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("space_marines_battle_drill_recall_active", False)):
+                army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                player_local = getattr(army_local, "player", None) if army_local is not None else None
+                game_local = getattr(player_local, "game", None) if player_local is not None else None
+                effect_owner = str(sr.get("space_marines_battle_drill_recall_turn_owner", "") or "").strip()
+                current_owner = ""
+                current_phase = ""
+                current_turn = 0
+                if game_local is not None:
+                    current_player = getattr(game_local, "get_current_player", lambda: None)()
+                    current_owner = str(getattr(current_player, "id", "") or "").strip()
+                    current_phase = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    current_turn = int(getattr(game_local, "turn", 0) or 0)
+                effect_turn = int(sr.get("space_marines_battle_drill_recall_turn", 0) or 0)
+                effect_phase = str(sr.get("space_marines_battle_drill_recall_expires_phase", "") or "").strip().upper()
+                active = True
+                if effect_owner and current_owner and effect_owner != current_owner:
+                    active = False
+                if active and effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+                if active and effect_phase and current_phase and effect_phase != current_phase:
+                    active = False
+                if active:
+                    threshold = int(sr.get("space_marines_battle_drill_recall_crit_hit_threshold", 0) or 0)
+                    if threshold > 0:
+                        threshold = max(2, min(6, int(threshold)))
+                        crit_hit_threshold = threshold if crit_hit_threshold is None else min(int(crit_hit_threshold), threshold)
+                        source = (
+                            str(sr.get("space_marines_battle_drill_recall_source", "") or "BATTLE DRILL RECALL").strip()
+                            or "BATTLE DRILL RECALL"
+                        )
+                        crit_hit_reasons.append(f"{source}: critical hit on {threshold}+")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -8422,6 +8495,44 @@ class ActionsMovementMixin:
                 elif reroll_mode == "ones":
                     reroll_wound_values.add(1)
                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+
+        if atype in ("any", "ranged") and target is not None:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("space_marines_no_threat_too_great_active", False)):
+                army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                player_local = getattr(army_local, "player", None) if army_local is not None else None
+                game_local = getattr(player_local, "game", None) if player_local is not None else None
+                effect_owner = str(sr.get("space_marines_no_threat_too_great_turn_owner", "") or "").strip()
+                current_owner = ""
+                current_phase = ""
+                current_turn = 0
+                if game_local is not None:
+                    current_player = getattr(game_local, "get_current_player", lambda: None)()
+                    current_owner = str(getattr(current_player, "id", "") or "").strip()
+                    current_phase = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    current_turn = int(getattr(game_local, "turn", 0) or 0)
+                effect_turn = int(sr.get("space_marines_no_threat_too_great_turn", 0) or 0)
+                effect_phase = str(sr.get("space_marines_no_threat_too_great_expires_phase", "") or "").strip().upper()
+                active = True
+                if effect_owner and current_owner and effect_owner != current_owner:
+                    active = False
+                if active and effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+                if active and effect_phase and current_phase and effect_phase != current_phase:
+                    active = False
+                if active:
+                    target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                    target_has_keyword = getattr(target_root, "has_any_keyword", None)
+                    if not callable(target_has_keyword):
+                        target_has_keyword = getattr(target_root, "has_keyword", None)
+                    if callable(target_has_keyword):
+                        if bool(target_has_keyword("MONSTER")) or bool(target_has_keyword("VEHICLE")):
+                            mods["reroll_wound_full"] = True
+                            source = (
+                                str(sr.get("space_marines_no_threat_too_great_source", "") or "NO THREAT TOO GREAT").strip()
+                                or "NO THREAT TOO GREAT"
+                            )
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs MONSTER/VEHICLE target")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
@@ -13939,16 +14050,17 @@ class ActionsMovementMixin:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot Advance (AIRCRAFT)")
             return False
-        stasis_mode = self._stasis_bomb_movement_lock_mode()
-        if stasis_mode in ("no_advance_fall_back", "remain_stationary"):
-            if stasis_mode == "remain_stationary":
-                logger.info(f"{self.name} cannot Advance - must remain stationary (Stasis Bomb)")
+        movement_lock_mode, movement_lock_source = self._movement_lock_mode_and_source()
+        if movement_lock_mode in ("no_advance_fall_back", "remain_stationary"):
+            source_name = movement_lock_source or "movement lock"
+            if movement_lock_mode == "remain_stationary":
+                logger.info(f"{self.name} cannot Advance - must remain stationary ({source_name})")
                 try:
                     self.round_state.remained_stationary_this_round = True
                 except Exception:
                     pass
             else:
-                logger.info(f"{self.name} cannot Advance (Stasis Bomb)")
+                logger.info(f"{self.name} cannot Advance ({source_name})")
             return False
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
@@ -14262,9 +14374,10 @@ class ActionsMovementMixin:
         """
         if bool(getattr(self, "is_aircraft", False)):
             return self._aircraft_normal_move(destination, game_map, pivot_degrees=aircraft_pivot_degrees)
-        stasis_mode = self._stasis_bomb_movement_lock_mode()
-        if stasis_mode == "remain_stationary":
-            logger.info(f"{self.name} cannot move - must remain stationary (Stasis Bomb)")
+        movement_lock_mode, movement_lock_source = self._movement_lock_mode_and_source()
+        if movement_lock_mode == "remain_stationary":
+            source_name = movement_lock_source or "movement lock"
+            logger.info(f"{self.name} cannot move - must remain stationary ({source_name})")
             try:
                 self.round_state.remained_stationary_this_round = True
             except Exception:
@@ -15686,16 +15799,17 @@ class ActionsMovementMixin:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot Fall Back (AIRCRAFT)")
             return False
-        stasis_mode = self._stasis_bomb_movement_lock_mode()
-        if stasis_mode in ("no_advance_fall_back", "remain_stationary"):
-            if stasis_mode == "remain_stationary":
-                logger.info(f"{self.name} cannot Fall Back - must remain stationary (Stasis Bomb)")
+        movement_lock_mode, movement_lock_source = self._movement_lock_mode_and_source()
+        if movement_lock_mode in ("no_advance_fall_back", "remain_stationary"):
+            source_name = movement_lock_source or "movement lock"
+            if movement_lock_mode == "remain_stationary":
+                logger.info(f"{self.name} cannot Fall Back - must remain stationary ({source_name})")
                 try:
                     self.round_state.remained_stationary_this_round = True
                 except Exception:
                     pass
             else:
-                logger.info(f"{self.name} cannot Fall Back (Stasis Bomb)")
+                logger.info(f"{self.name} cannot Fall Back ({source_name})")
             return False
         root_getter = getattr(self, "get_attached_unit_root", None)
         self_root = root_getter() if callable(root_getter) else self
