@@ -81,6 +81,14 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_forgefathers_seekers", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_gladius_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_gladius_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_blade_or_gladius_task_force_detachment(self) -> bool:
+        return self._is_blade_of_ultramar_detachment() or self._is_gladius_task_force_detachment()
+
     def _is_emperors_shield_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_emperors_shield", None) if mgr is not None else None
@@ -2731,7 +2739,7 @@ class SpaceMarinesStratagemMixin:
         return str(getattr(active, "key", "") or "").strip().upper()
 
     def _space_marines_blade_phase_candidates(self, *, phase_name: str, require_not_selected: bool) -> list[Any]:
-        if not self._is_blade_of_ultramar_detachment():
+        if not self._is_blade_or_gladius_task_force_detachment():
             return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -2765,7 +2773,7 @@ class SpaceMarinesStratagemMixin:
         return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_blade_ultramarian_adaptivity_candidates(self) -> list[Any]:
-        if not self._is_blade_of_ultramar_detachment():
+        if not self._is_blade_or_gladius_task_force_detachment():
             return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -2792,7 +2800,7 @@ class SpaceMarinesStratagemMixin:
         return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_blade_practical_tactics_candidates(self, *, enemy_unit: Any) -> list[Any]:
-        if not self._is_blade_of_ultramar_detachment():
+        if not self._is_blade_or_gladius_task_force_detachment():
             return []
         enemy_root = self._sm_root(enemy_unit)
         if enemy_root is None or not self._sm_is_alive(enemy_root):
@@ -2831,7 +2839,7 @@ class SpaceMarinesStratagemMixin:
         return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_blade_tactical_foresight_candidates(self, *, target_units: list[Any]) -> list[Any]:
-        if not self._is_blade_of_ultramar_detachment():
+        if not self._is_blade_or_gladius_task_force_detachment():
             return []
         out: list[Any] = []
         seen: set[str] = set()
@@ -2944,6 +2952,97 @@ class SpaceMarinesStratagemMixin:
                         payload["target_unit"] = candidates[0]
                     self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_gladius_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_gladius_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "COMMAND_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("ADAPTIVE STRATEGY")
+            candidates = self._space_marines_blade_ultramarian_adaptivity_candidates()
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Command phase",
+                        "phase_name": "Command phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                        "doctrine_options": self._sm_blade_doctrine_options(),
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("STORM OF FIRE")
+            candidates = self._space_marines_blade_phase_candidates(
+                phase_name="Shooting phase",
+                require_not_selected=True,
+            )
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Shooting phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Shooting phase",
+                        "phase_name": "Shooting phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("HONOUR THE CHAPTER")
+            candidates = self._space_marines_blade_phase_candidates(
+                phase_name="Fight phase",
+                require_not_selected=False,
+            )
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Fight phase",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
     def _queue_space_marines_blade_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if not self._is_blade_of_ultramar_detachment():
             return
@@ -2959,6 +3058,53 @@ class SpaceMarinesStratagemMixin:
         if action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
             return
         stratagem = self.get_by_name("PRACTICAL TACTICS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_blade_practical_tactics_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": action,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_gladius_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_gladius_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
+            return
+        stratagem = self.get_by_name("SQUAD TACTICS")
         if stratagem is None:
             return
         if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
@@ -3054,6 +3200,53 @@ class SpaceMarinesStratagemMixin:
         if self._sm_owned_by_player(attacking_root, self.player):
             return
         stratagem = self.get_by_name("TACTICAL FORESIGHT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_blade_tactical_foresight_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_gladius_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_gladius_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("ONLY IN DEATH DOES DUTY END")
         if stratagem is None:
             return
         if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
@@ -6605,6 +6798,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_ultramarian_adaptivity(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_gladius_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_gladius_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "HONOUR THE CHAPTER":
+            return self._use_space_marines_courage_and_honour(stratagem, **kwargs)
+        if name_u == "STORM OF FIRE":
+            return self._use_space_marines_exemplary_vigilance(stratagem, **kwargs)
+        if name_u == "SQUAD TACTICS":
+            return self._use_space_marines_practical_tactics(stratagem, **kwargs)
+        if name_u == "ADAPTIVE STRATEGY":
+            return self._use_space_marines_ultramarian_adaptivity(stratagem, **kwargs)
+        if name_u == "ONLY IN DEATH DOES DUTY END":
+            return self._use_space_marines_only_in_death_does_duty_end(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_champions_of_fenris_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -8031,29 +8242,30 @@ class SpaceMarinesStratagemMixin:
         return True
 
     def _use_space_marines_courage_and_honour(self, stratagem: Any, **kwargs) -> bool:
+        ability_name = str(getattr(stratagem, "name", "") or "COURAGE AND HONOUR!").strip() or "COURAGE AND HONOUR!"
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "fight phase":
-            logger.error("ERROR: COURAGE AND HONOUR!: wrong phase")
+            logger.error("ERROR: %s: wrong phase", ability_name)
             return False
 
         unit, candidates, _trigger_unit, _target_units, _choice, _action, _from_pending = self._sm_blade_context(
-            "COURAGE AND HONOUR!",
+            ability_name,
             kwargs,
         )
         if unit is None:
-            logger.error("ERROR: COURAGE AND HONOUR!: no target unit provided")
+            logger.error("ERROR: %s: no target unit provided", ability_name)
             return False
         root = self._sm_root(unit)
         if root is None:
             return False
         if not self._sm_owned_by_player(root, self.player):
-            logger.error("ERROR: COURAGE AND HONOUR!: target unit is not yours")
+            logger.error("ERROR: %s: target unit is not yours", ability_name)
             return False
         if not self._sm_on_battlefield(root, require_targetable=True):
-            logger.error("ERROR: COURAGE AND HONOUR!: target must be on the battlefield and targetable")
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", ability_name)
             return False
         if not self._is_adeptus_astartes_unit(root):
-            logger.error("ERROR: COURAGE AND HONOUR!: target must be an ADEPTUS ASTARTES unit")
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", ability_name)
             return False
 
         valid_candidates = candidates or self._space_marines_blade_phase_candidates(
@@ -8061,12 +8273,12 @@ class SpaceMarinesStratagemMixin:
             require_not_selected=False,
         )
         if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
-            logger.error("ERROR: COURAGE AND HONOUR!: selected unit is not currently eligible")
+            logger.error("ERROR: %s: selected unit is not currently eligible", ability_name)
             return False
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        source = str(getattr(stratagem, "name", "") or "COURAGE AND HONOUR!").strip() or "COURAGE AND HONOUR!"
+        source = ability_name
         assault_doctrine_active = self._sm_blade_active_doctrine_key(root) == "ASSAULT"
         for model in self._sm_unit_models(root):
             is_alive_attr = getattr(model, "is_alive", True)
@@ -8106,43 +8318,45 @@ class SpaceMarinesStratagemMixin:
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
-            "INFO: COURAGE AND HONOUR!: %s gains [LANCE]%s on melee weapons this phase.",
+            "INFO: %s: %s gains [LANCE]%s on melee weapons this phase.",
+            ability_name,
             getattr(root, "name", "Unit"),
             " and +1 AP" if assault_doctrine_active else "",
         )
         return True
 
     def _use_space_marines_exemplary_vigilance(self, stratagem: Any, **kwargs) -> bool:
+        ability_name = str(getattr(stratagem, "name", "") or "EXEMPLARY VIGILANCE").strip() or "EXEMPLARY VIGILANCE"
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "shooting phase":
-            logger.error("ERROR: EXEMPLARY VIGILANCE: wrong phase")
+            logger.error("ERROR: %s: wrong phase", ability_name)
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is not self.player:
-            logger.error("ERROR: EXEMPLARY VIGILANCE: not your Shooting phase")
+            logger.error("ERROR: %s: not your Shooting phase", ability_name)
             return False
 
         unit, candidates, _trigger_unit, _target_units, _choice, _action, _from_pending = self._sm_blade_context(
-            "EXEMPLARY VIGILANCE",
+            ability_name,
             kwargs,
         )
         if unit is None:
-            logger.error("ERROR: EXEMPLARY VIGILANCE: no target unit provided")
+            logger.error("ERROR: %s: no target unit provided", ability_name)
             return False
         root = self._sm_root(unit)
         if root is None:
             return False
         if not self._sm_owned_by_player(root, self.player):
-            logger.error("ERROR: EXEMPLARY VIGILANCE: target unit is not yours")
+            logger.error("ERROR: %s: target unit is not yours", ability_name)
             return False
         if not self._sm_on_battlefield(root, require_targetable=True):
-            logger.error("ERROR: EXEMPLARY VIGILANCE: target must be on the battlefield and targetable")
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", ability_name)
             return False
         if not self._is_adeptus_astartes_unit(root):
-            logger.error("ERROR: EXEMPLARY VIGILANCE: target must be an ADEPTUS ASTARTES unit")
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", ability_name)
             return False
         if self._sm_selected_to_shoot_this_phase(root):
-            logger.error("ERROR: EXEMPLARY VIGILANCE: target has already been selected to shoot this phase")
+            logger.error("ERROR: %s: target has already been selected to shoot this phase", ability_name)
             return False
 
         valid_candidates = candidates or self._space_marines_blade_phase_candidates(
@@ -8150,12 +8364,12 @@ class SpaceMarinesStratagemMixin:
             require_not_selected=True,
         )
         if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
-            logger.error("ERROR: EXEMPLARY VIGILANCE: selected unit is not currently eligible")
+            logger.error("ERROR: %s: selected unit is not currently eligible", ability_name)
             return False
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
 
-        source = str(getattr(stratagem, "name", "") or "EXEMPLARY VIGILANCE").strip() or "EXEMPLARY VIGILANCE"
+        source = ability_name
         devastator_doctrine_active = self._sm_blade_active_doctrine_key(root) == "DEVASTATOR"
         for model in self._sm_unit_models(root):
             is_alive_attr = getattr(model, "is_alive", True)
@@ -8195,67 +8409,69 @@ class SpaceMarinesStratagemMixin:
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
-            "INFO: EXEMPLARY VIGILANCE: %s gains [IGNORES COVER]%s on ranged weapons this phase.",
+            "INFO: %s: %s gains [IGNORES COVER]%s on ranged weapons this phase.",
+            ability_name,
             getattr(root, "name", "Unit"),
             " and +1 AP" if devastator_doctrine_active else "",
         )
         return True
 
     def _use_space_marines_practical_tactics(self, stratagem: Any, **kwargs) -> bool:
+        ability_name = str(getattr(stratagem, "name", "") or "PRACTICAL TACTICS").strip() or "PRACTICAL TACTICS"
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "movement phase":
-            logger.error("ERROR: PRACTICAL TACTICS: wrong phase")
+            logger.error("ERROR: %s: wrong phase", ability_name)
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is self.player:
-            logger.error("ERROR: PRACTICAL TACTICS: not opponent's Movement phase")
+            logger.error("ERROR: %s: not opponent's Movement phase", ability_name)
             return False
 
         unit, candidates, trigger_unit, _target_units, _choice, action, from_pending = self._sm_blade_context(
-            "PRACTICAL TACTICS",
+            ability_name,
             kwargs,
         )
         if unit is None:
-            logger.error("ERROR: PRACTICAL TACTICS: no target unit provided")
+            logger.error("ERROR: %s: no target unit provided", ability_name)
             return False
         root = self._sm_root(unit)
         enemy_root = self._sm_root(trigger_unit)
         if root is None or enemy_root is None:
-            logger.error("ERROR: PRACTICAL TACTICS: missing enemy movement trigger")
+            logger.error("ERROR: %s: missing enemy movement trigger", ability_name)
             return False
         action_key = str(action or "").strip().lower().replace(" ", "_")
         if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
-            logger.error("ERROR: PRACTICAL TACTICS: invalid trigger action")
+            logger.error("ERROR: %s: invalid trigger action", ability_name)
             return False
         if self._sm_owned_by_player(enemy_root, self.player):
-            logger.error("ERROR: PRACTICAL TACTICS: trigger unit must be enemy")
+            logger.error("ERROR: %s: trigger unit must be enemy", ability_name)
             return False
         if not self._sm_on_battlefield(enemy_root, require_targetable=False):
-            logger.error("ERROR: PRACTICAL TACTICS: trigger unit is not on the battlefield")
+            logger.error("ERROR: %s: trigger unit is not on the battlefield", ability_name)
             return False
         if not self._sm_owned_by_player(root, self.player):
-            logger.error("ERROR: PRACTICAL TACTICS: target unit is not yours")
+            logger.error("ERROR: %s: target unit is not yours", ability_name)
             return False
         if not self._sm_on_battlefield(root, require_targetable=True):
-            logger.error("ERROR: PRACTICAL TACTICS: target must be on the battlefield and targetable")
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", ability_name)
             return False
         if not self._is_adeptus_astartes_unit(root):
-            logger.error("ERROR: PRACTICAL TACTICS: target must be an ADEPTUS ASTARTES unit")
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", ability_name)
             return False
         if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
-            logger.error("ERROR: PRACTICAL TACTICS: target must be an ADEPTUS ASTARTES INFANTRY or MOUNTED unit")
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES INFANTRY or MOUNTED unit", ability_name)
             return False
         if self._sm_unit_is_engaged(root):
-            logger.error("ERROR: PRACTICAL TACTICS: target must not be within Engagement Range")
+            logger.error("ERROR: %s: target must not be within Engagement Range", ability_name)
             return False
 
         valid_candidates = candidates or self._space_marines_blade_practical_tactics_candidates(enemy_unit=enemy_root)
         if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
-            logger.error("ERROR: PRACTICAL TACTICS: selected unit is not currently eligible")
+            logger.error("ERROR: %s: selected unit is not currently eligible", ability_name)
             return False
         queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
         if not callable(queue_move):
-            logger.error("ERROR: PRACTICAL TACTICS: reactive move queue unavailable")
+            logger.error("ERROR: %s: reactive move queue unavailable", ability_name)
             return False
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
@@ -8266,27 +8482,29 @@ class SpaceMarinesStratagemMixin:
         else:
             max_distance = max(0, int(dice_module.get_roll("D6") or 0))
         if max_distance <= 0:
-            logger.error("ERROR: PRACTICAL TACTICS: invalid reactive move distance")
+            logger.error("ERROR: %s: invalid reactive move distance", ability_name)
             return False
+        move_kind = "squad_tactics" if ability_name.upper() == "SQUAD TACTICS" else "practical_tactics"
         request = queue_move(
             player=self.player,
             unit=root,
             max_distance=int(max_distance),
-            kind="practical_tactics",
+            kind=move_kind,
             movement_type="reactive",
             reactive_movement_type="move",
-            source=str(getattr(stratagem, "name", "") or "PRACTICAL TACTICS"),
+            source=ability_name,
             moving_unit=enemy_root,
             range_value=9,
             allow_skip=True,
         )
         if request is None:
-            logger.error("ERROR: PRACTICAL TACTICS: failed to queue reactive move")
+            logger.error("ERROR: %s: failed to queue reactive move", ability_name)
             return False
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
-            "INFO: PRACTICAL TACTICS: %s can make a Normal move up to %d\".",
+            "INFO: %s: %s can make a Normal move up to %d\".",
+            ability_name,
             getattr(root, "name", "Unit"),
             int(max_distance),
         )
@@ -8357,42 +8575,43 @@ class SpaceMarinesStratagemMixin:
         return True
 
     def _use_space_marines_ultramarian_adaptivity(self, stratagem: Any, **kwargs) -> bool:
+        ability_name = str(getattr(stratagem, "name", "") or "ULTRAMARIAN ADAPTIVITY").strip() or "ULTRAMARIAN ADAPTIVITY"
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "command phase":
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: wrong phase")
+            logger.error("ERROR: %s: wrong phase", ability_name)
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is not self.player:
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: not your Command phase")
+            logger.error("ERROR: %s: not your Command phase", ability_name)
             return False
 
         unit, candidates, _trigger_unit, _target_units, choice_payload, _action, _from_pending = self._sm_blade_context(
-            "ULTRAMARIAN ADAPTIVITY",
+            ability_name,
             kwargs,
         )
         if unit is None:
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: no target unit provided")
+            logger.error("ERROR: %s: no target unit provided", ability_name)
             return False
         root = self._sm_root(unit)
         if root is None:
             return False
         if not self._sm_owned_by_player(root, self.player):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: target unit is not yours")
+            logger.error("ERROR: %s: target unit is not yours", ability_name)
             return False
         if not self._sm_is_alive(root):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: target unit is not alive")
+            logger.error("ERROR: %s: target unit is not alive", ability_name)
             return False
         if not self._is_adeptus_astartes_unit(root):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: target must be an ADEPTUS ASTARTES unit")
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", ability_name)
             return False
 
         valid_candidates = candidates or self._space_marines_blade_ultramarian_adaptivity_candidates()
         if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: selected unit is not currently eligible")
+            logger.error("ERROR: %s: selected unit is not currently eligible", ability_name)
             return False
         doctrine_key = self._sm_blade_doctrine_key(choice_payload)
         if not doctrine_key:
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: a valid Combat Doctrine choice is required")
+            logger.error("ERROR: %s: a valid Combat Doctrine choice is required", ability_name)
             return False
         if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
             return False
@@ -8400,24 +8619,82 @@ class SpaceMarinesStratagemMixin:
         mgr = self._sm_detachment_mgr()
         apply_fn = getattr(mgr, "set_space_marines_unit_doctrine_override", None) if mgr is not None else None
         if not callable(apply_fn):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: doctrine override manager unavailable")
+            logger.error("ERROR: %s: doctrine override manager unavailable", ability_name)
             return False
         applied = apply_fn(
             root,
             doctrine_key,
             battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
             player_id=str(getattr(self.player, "id", "") or ""),
-            source=str(getattr(stratagem, "name", "") or "ULTRAMARIAN ADAPTIVITY"),
+            source=ability_name,
         )
         if not bool(applied):
-            logger.error("ERROR: ULTRAMARIAN ADAPTIVITY: failed to apply selected Combat Doctrine")
+            logger.error("ERROR: %s: failed to apply selected Combat Doctrine", ability_name)
             return False
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
-            "INFO: ULTRAMARIAN ADAPTIVITY: %s now uses %s Doctrine until your next Command phase.",
+            "INFO: %s: %s now uses %s Doctrine until your next Command phase.",
+            ability_name,
             getattr(root, "name", "Unit"),
             doctrine_key.title(),
+        )
+        return True
+
+    def _use_space_marines_only_in_death_does_duty_end(self, stratagem: Any, **kwargs) -> bool:
+        ability_name = str(getattr(stratagem, "name", "") or "ONLY IN DEATH DOES DUTY END").strip() or "ONLY IN DEATH DOES DUTY END"
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: %s: wrong phase", ability_name)
+            return False
+
+        unit, candidates, trigger_unit, target_units, _choice, _action, _from_pending = self._sm_blade_context(
+            ability_name,
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: %s: no target unit provided", ability_name)
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(trigger_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: %s: missing attacking unit context", ability_name)
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: %s: attacking unit must be enemy", ability_name)
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", ability_name)
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", ability_name)
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", ability_name)
+            return False
+
+        valid_candidates = candidates or self._space_marines_blade_tactical_foresight_candidates(
+            target_units=list(target_units or []),
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: %s: target unit was not selected as an attack target", ability_name)
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["deathless_duty_active"] = True
+        sr["deathless_duty_expires_phase"] = "FIGHT_PHASE"
+        sr["deathless_duty_source"] = ability_name
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s will fight on death after attacks resolve this phase.",
+            ability_name,
+            getattr(root, "name", "Unit"),
         )
         return True
 

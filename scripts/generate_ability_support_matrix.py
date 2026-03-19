@@ -20311,6 +20311,36 @@ def _stratagem_support(
             "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet been selected gains +1 to wound against the closest eligible target within 6\" until end of phase.",
             name_u,
         )
+    if stratagem_id == "000008352005":
+        return (
+            "Implemented",
+            "Your Command phase: selected ADEPTUS ASTARTES unit gains a chosen Devastator, Tactical, or Assault Doctrine override until the start of your next Command phase, even if that doctrine has already been used by the army this battle.",
+            name_u,
+        )
+    if stratagem_id == "000008352004":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES unit gains [LANCE] on melee weapons until end of phase, and if it is under Assault Doctrine those melee weapons also improve AP by 1.",
+            name_u,
+        )
+    if stratagem_id == "000008352003":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES unit fights on death after the attacking unit finishes its attacks this phase.",
+            name_u,
+        )
+    if stratagem_id == "000008352007":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" can make a reactive Normal move up to D6\", or up to 6\" while under Tactical Doctrine.",
+            name_u,
+        )
+    if stratagem_id == "000008352006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected to shoot gains [IGNORES COVER] on ranged weapons until end of phase, and if it is under Devastator Doctrine those ranged weapons also improve AP by 1.",
+            name_u,
+        )
     if stratagem_id == "000008483004":
         return (
             "Implemented",

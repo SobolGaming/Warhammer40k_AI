@@ -4216,6 +4216,80 @@ _BASTION_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GLADIUS_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008352005": StratagemToolDescriptor(
+        stratagem_id="000008352005",
+        name="Adaptive Strategy",
+        timing="your_command_phase",
+        target="adeptus_astartes_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="unit_specific_combat_doctrine_override",
+        cp_cost=1,
+        effect_params={
+            "choices": ["DEVASTATOR", "TACTICAL", "ASSAULT"],
+            "override_even_if_already_selected_this_battle": True,
+        },
+    ),
+    "000008352004": StratagemToolDescriptor(
+        stratagem_id="000008352004",
+        name="Honour the Chapter",
+        timing="fight_phase",
+        target="adeptus_astartes_unit",
+        duration="until_end_of_phase",
+        effect="melee_weapons_gain_lance_and_conditional_assault_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "grant_keywords": ["LANCE"],
+            "conditional_ap_bonus_if_doctrine": {"ASSAULT": 1},
+        },
+    ),
+    "000008352003": StratagemToolDescriptor(
+        stratagem_id="000008352003",
+        name="Only in Death Does Duty End",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_astartes_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=2,
+        effect_params={"attack_type": "melee", "fight_on_death_after_attacks": True, "automatic": True},
+    ),
+    "000008352007": StratagemToolDescriptor(
+        stratagem_id="000008352007",
+        name="Squad Tactics",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="adeptus_astartes_infantry_or_mounted_unit_not_engaged_within_9_of_enemy_that_ended_normal_advance_or_fall_back_move",
+        duration="immediate",
+        effect="reactive_normal_move_with_tactical_fixed_six",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "movement_type": "normal",
+            "reactive_move_distance": "D6",
+            "fixed_distance_if_doctrine": {"TACTICAL": 6},
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+    "000008352006": StratagemToolDescriptor(
+        stratagem_id="000008352006",
+        name="Storm of Fire",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_weapons_gain_ignores_cover_and_conditional_devastator_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["IGNORES COVER"],
+            "conditional_ap_bonus_if_doctrine": {"DEVASTATOR": 1},
+        },
+    ),
+}
+
+_GLADIUS_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GLADIUS_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLADE_OF_ULTRAMAR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010634004": StratagemToolDescriptor(
         stratagem_id="000010634004",
@@ -5472,6 +5546,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GLADIUS_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLADE_OF_ULTRAMAR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5588,6 +5665,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _GLADIUS_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)

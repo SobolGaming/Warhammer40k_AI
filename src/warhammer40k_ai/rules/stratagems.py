@@ -529,6 +529,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "ONLY IN DEATH DOES DUTY END",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
     "EMBRACE THE PAIN",
@@ -566,6 +567,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
     "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
@@ -1708,6 +1710,7 @@ class StratagemManager(
             "LEGENDARY FORTITUDE",
             "HERESY BEGETS RETRIBUTION",
             "WRATHFUL INFERNO",
+            "SQUAD TACTICS",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1911,6 +1914,7 @@ class StratagemManager(
             "WRATH UNDENIABLE",
             "OVERWHELMING EXCESS",
             "ARMOUR OF CONTEMPT",
+            "ONLY IN DEATH DOES DUTY END",
             "THE FOE FORESEEN",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
@@ -2167,6 +2171,7 @@ class StratagemManager(
             "VOID HARDENED",
             "WRATHFUL INFERNO",
             "BLAZING EARTH",
+            "ONLY IN DEATH DOES DUTY END",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2621,6 +2626,14 @@ class StratagemManager(
 
     def _is_custom_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
+        if stratagem_id in {
+            "000008352003",
+            "000008352004",
+            "000008352005",
+            "000008352006",
+            "000008352007",
+        }:
+            return bool(self._is_gladius_task_force_detachment())
         if stratagem_id in {
             "000008483003",
             "000008483004",
@@ -6009,6 +6022,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_gladius_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_champions_of_fenris_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -8969,6 +8986,7 @@ class StratagemManager(
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_gladius_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
@@ -11071,6 +11089,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_blade_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_gladius_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16373,6 +16398,9 @@ class StratagemManager(
         blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
         if blade_result is not None:
             return blade_result
+        gladius_result = self._use_space_marines_gladius_task_force_stratagem(s, **kwargs)
+        if gladius_result is not None:
+            return gladius_result
         fenris_result = self._use_space_marines_champions_of_fenris_stratagem(s, **kwargs)
         if fenris_result is not None:
             return fenris_result
