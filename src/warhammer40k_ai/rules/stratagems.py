@@ -96,6 +96,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FURY OF THE FIRST",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
+    "ANCIENT FURY",
     "HELLFIRE ROUNDS",
     "HEARTS HARDENED TO DUTY",
     "HERESY BEGETS RETRIBUTION",
@@ -106,10 +107,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
     "LIGHT OF VENGEANCE",
+    "MERCY IS WEAKNESS",
     "NO THREAT TOO GREAT",
     "NOT ONE BACKWARDS STEP",
     "ONRUSHING STORM",
     "ORBITAL TELEPORTARIUM",
+    "POWER OF THE MACHINE SPIRIT",
     "PIOUS ENMITY",
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
@@ -122,8 +125,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "STRIKE NOW FOR GLORY",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
+    "UNBOWED CONVICTION",
     "UNTO THE BURNING SKIES",
     "ULTRAMARIAN ADAPTIVITY",
+    "VENGEFUL ANIMUS",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -497,7 +502,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORDERED RETREAT",
     "REACTIVE REPRISAL",
     "HAIL OF VENGEANCE",
+    "POWER OF THE MACHINE SPIRIT",
     "RIGID DISCIPLINE",
+    "VENGEFUL ANIMUS",
     "VOID HARDENED",
 }
 
@@ -1756,7 +1763,7 @@ class StratagemManager(
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION", "REVENGE OF THE RUBRICAE"}:
             add("model_destroyed", self._on_model_destroyed)
 
-        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH"}:
+        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH", "VENGEFUL ANIMUS"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
             "ANGELIC GRACE",
@@ -1790,6 +1797,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "HAIL OF VENGEANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
+        if "POWER OF THE MACHINE SPIRIT" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "DEATH ON THE WIND" in names:
@@ -1944,7 +1953,7 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
-        elif "HAIL OF VENGEANCE" in names:
+        elif names & {"HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
@@ -6006,6 +6015,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_ironstorm_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_inner_circle_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9750,6 +9763,9 @@ class StratagemManager(
     def _on_unit_shooting_resolved_space_marines_anvil_siege_force(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_anvil_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_space_marines_ironstorm_spearhead(self, attacker_unit=None, **_kwargs):
+        self._queue_space_marines_ironstorm_shooting_resolved_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_bastion_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -10111,6 +10127,13 @@ class StratagemManager(
             raise
         try:
             self._capture_space_marines_anvil_shooting_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._capture_space_marines_ironstorm_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13241,6 +13264,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_ghosts_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_ironstorm_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 
@@ -16479,6 +16506,9 @@ class StratagemManager(
         hammer_of_avernii_result = self._use_space_marines_hammer_of_avernii_stratagem(s, **kwargs)
         if hammer_of_avernii_result is not None:
             return hammer_of_avernii_result
+        ironstorm_result = self._use_space_marines_ironstorm_spearhead_stratagem(s, **kwargs)
+        if ironstorm_result is not None:
+            return ironstorm_result
         inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
         if inner_circle_result is not None:
             return inner_circle_result

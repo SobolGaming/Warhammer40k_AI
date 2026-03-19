@@ -9323,6 +9323,24 @@ class WargearProfile:
                 telepathy_rule = None
             if isinstance(telepathy_rule, dict) and telepathy_rule:
                 return telepathy_rule
+        ironstorm_rule_fn = (
+            getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(ironstorm_rule_fn):
+            try:
+                ironstorm_rule = ironstorm_rule_fn(kind="hit")
+            except Exception:
+                ironstorm_rule = None
+            if isinstance(ironstorm_rule, dict) and ironstorm_rule:
+                return {
+                    "name": str(ironstorm_rule.get("source", "") or "Unbowed Conviction").strip() or "Unbowed Conviction",
+                    "attack_type": "any",
+                    "skill_kinds": {"ballistic", "weapon"},
+                    "allow_hit": True,
+                    "default_choice": str(ironstorm_rule.get("default_choice", "") or "").strip(),
+                }
 
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         patient_rule_fn = (
@@ -9472,6 +9490,23 @@ class WargearProfile:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         except Exception:
             is_melee = False
+        ironstorm_rule_fn = (
+            getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(ironstorm_rule_fn):
+            try:
+                ironstorm_rule = ironstorm_rule_fn(kind="wound")
+            except Exception:
+                ironstorm_rule = None
+            if isinstance(ironstorm_rule, dict) and ironstorm_rule:
+                return {
+                    "name": str(ironstorm_rule.get("source", "") or "Unbowed Conviction").strip() or "Unbowed Conviction",
+                    "attack_type": "any",
+                    "allow_wound": True,
+                    "default_choice": str(ironstorm_rule.get("default_choice", "") or "").strip(),
+                }
         if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="wound"):
             return {
                 "name": "Champion of Humanity",
@@ -10071,6 +10106,20 @@ class WargearProfile:
                         _set_bonus_sustained(
                             int(veteran_sustained or 0),
                             str(veteran_source or "Veteran of Behemoth"),
+                        )
+                mercy_sustained_fn = getattr(sm_mgr, "ironstorm_mercy_is_weakness_sustained_hits_value", None)
+                if callable(mercy_sustained_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    mercy_sustained, mercy_source = mercy_sustained_fn(
+                        attacker,
+                        target_unit=target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(mercy_sustained or 0) > 0:
+                        _set_bonus_sustained(
+                            int(mercy_sustained or 0),
+                            str(mercy_source or "Mercy Is Weakness"),
                         )
         except Exception:
             pass
@@ -10892,6 +10941,20 @@ class WargearProfile:
                 )
                 if bonus:
                     source_name = str(source or "Onslaught of Fire").strip() or "Onslaught of Fire"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
+        # Space Marines: Ironstorm Spearhead (Ancient Fury) +1 to hit for the selected WALKER model.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "ironstorm_ancient_fury_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if bonus:
+                    source_name = str(source or "Ancient Fury").strip() or "Ancient Fury"
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
@@ -14657,6 +14720,25 @@ class WargearProfile:
                         crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            threshold_fn = getattr(sm_mgr, "ironstorm_mercy_is_weakness_crit_hit_threshold", None) if sm_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                threshold, source = threshold_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(threshold or 0):
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    source_name = str(source or "Mercy Is Weakness").strip() or "Mercy Is Weakness"
+                    crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         attacker_army = get_parent_army() if callable(get_parent_army) else None
@@ -17851,6 +17933,7 @@ class WargearProfile:
             pass
 
         from ..utility.modifier_choice import (
+            CHOICE_IGNORE_NEGATIVE,
             CHOICE_KEEP_ALL,
             filter_signed_modifiers,
             options_for_signed_pairs,
@@ -17915,6 +17998,9 @@ class WargearProfile:
             residual_unparsed_total = int(dice_modifier) - int(parsed_total)
             choice = attack_instance.get("wound_modifier_choice")
             options = list(wound_result.get("wound_modifier_options", []) or [])
+            default_choice = CHOICE_KEEP_ALL
+            if str(ignore_wound_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                default_choice = CHOICE_IGNORE_NEGATIVE
             if choice is None and roll_value is None:
                 if options:
                     player = None
@@ -17941,10 +18027,10 @@ class WargearProfile:
                         except Exception:
                             choice = None
                 if choice not in options:
-                    choice = CHOICE_KEEP_ALL
+                    choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
                 attack_instance["wound_modifier_choice"] = choice
             if choice is None:
-                choice = CHOICE_KEEP_ALL
+                choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
             if choice != CHOICE_KEEP_ALL and parsed_wound_mods:
                 kept_mods, ignored_mods = filter_signed_modifiers(parsed_wound_mods, str(choice or CHOICE_KEEP_ALL))
                 dice_modifier = int(residual_unparsed_total) + sum(int(val) for val, _reason in list(kept_mods or []))

@@ -9772,6 +9772,12 @@ class ActionsMovementMixin:
          to Advance and Charge rolls made for this unit."
         """
         try:
+            ironstorm_rule = self._ironstorm_unbowed_conviction_ignore_modifiers_rule(kind="move")
+        except Exception:
+            ironstorm_rule = None
+        if isinstance(ironstorm_rule, dict) and ironstorm_rule:
+            return ironstorm_rule
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
@@ -9839,6 +9845,40 @@ class ActionsMovementMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def _ironstorm_unbowed_conviction_ignore_modifiers_rule(self, *, kind: str) -> Optional[dict]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+        }:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        rule_fn = getattr(sm_mgr, "ironstorm_unbowed_conviction_ignore_modifier_rule", None) if sm_mgr is not None else None
+        if not callable(rule_fn):
+            return None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            rule = rule_fn(root, kind=kind_key, game=game)
+        except Exception:
+            rule = None
+        return rule if isinstance(rule, dict) and rule else None
+
     def _move_advance_charge_modifier_ignore_active(self, *, kind: str) -> tuple[bool, str]:
         kind_key = str(kind or "").strip().lower()
         if kind_key not in {"move", "advance", "charge"}:
@@ -9871,12 +9911,14 @@ class ActionsMovementMixin:
             CHOICE_IGNORE_ALL,
             filter_numeric_modifiers,
         )
+        rule = self.get_move_advance_charge_modifier_ignore_rule()
         try:
             choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
         except Exception:
             choice = ""
         if not choice:
-            choice = CHOICE_KEEP_ALL
+            default_choice = str(rule.get("default_choice", "") or "").strip().lower() if isinstance(rule, dict) else ""
+            choice = CHOICE_IGNORE_NEGATIVE if default_choice == "ignore_negative" else CHOICE_KEEP_ALL
         if choice == CHOICE_KEEP_ALL:
             return list(modifiers or [])
 
@@ -9929,12 +9971,14 @@ class ActionsMovementMixin:
             CHOICE_IGNORE_ALL,
             filter_signed_modifiers,
         )
+        rule = self.get_move_advance_charge_modifier_ignore_rule()
         try:
             choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
         except Exception:
             choice = None
         if not choice:
-            choice = CHOICE_KEEP_ALL
+            default_choice = str(rule.get("default_choice", "") or "").strip().lower() if isinstance(rule, dict) else ""
+            choice = CHOICE_IGNORE_NEGATIVE if default_choice == "ignore_negative" else CHOICE_KEEP_ALL
         if choice == CHOICE_KEEP_ALL:
             return list(modifiers or [])
 

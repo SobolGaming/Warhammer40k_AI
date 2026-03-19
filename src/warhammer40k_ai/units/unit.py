@@ -542,6 +542,17 @@ class Unit(
                             continue
                     if bonus:
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:eager_to_prove_favoured"))
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "ironstorm_ancient_fury_movement_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                except Exception:
+                    bonus, source = 0, ""
+                if int(bonus or 0):
+                    source_name = str(source or "Ancient Fury").strip() or "Ancient Fury"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
 
         # OC: strict "leading" bonus (e.g. Astartes Banner) from attached leaders.
         if ckey == "objective_control":
@@ -615,6 +626,17 @@ class Unit(
                 if int(fenris_bonus or 0) > 0:
                     source = str(fenris_source or "The Great Wolf Watches").strip() or "The Great Wolf Watches"
                     mods.append(Modifier(ModifierOp.ADD, int(fenris_bonus), source=f"detachment:{source}"))
+                try:
+                    ironstorm_bonus, ironstorm_source = sm_mgr.ironstorm_ancient_fury_objective_control_bonus(
+                        model,
+                        unit=self,
+                        game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                    )
+                except Exception:
+                    ironstorm_bonus, ironstorm_source = 0, ""
+                if int(ironstorm_bonus or 0):
+                    source = str(ironstorm_source or "Ancient Fury").strip() or "Ancient Fury"
+                    mods.append(Modifier(ModifierOp.ADD, int(ironstorm_bonus), source=f"detachment:{source}"))
 
             # Stoic Defender (Anvil Siege Force): while leading, Battle-shocked models in the
             # bearer's unit halve Objective Control instead of setting it to 0.
@@ -1745,6 +1767,17 @@ class Unit(
             except Exception:
                 pass
             try:
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                bonus_fn = getattr(sm_mgr, "ironstorm_ancient_fury_toughness_bonus", None) if sm_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Ancient Fury").strip() or "Ancient Fury"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
+            try:
                 mode_active_fn = getattr(self, "battle_protocols_mode_active", None)
                 if callable(mode_active_fn) and bool(mode_active_fn("aegis_protocol")):
                     is_kastelan_model = False
@@ -1848,6 +1881,17 @@ class Unit(
                 if int(bonus or 0):
                     source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            try:
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                bonus_fn = getattr(sm_mgr, "ironstorm_ancient_fury_leadership_bonus", None) if sm_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Ancient Fury").strip() or "Ancient Fury"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
             try:
                 ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
                 bonus_fn = getattr(ia_mgr, "at_all_costs_acquire_leadership_bonus", None) if ia_mgr is not None else None
@@ -2595,6 +2639,43 @@ class Unit(
                     mods = list(filt(mods, kind="move", base_val=int(base_val or 0)))
             except Exception:
                 pass
+        if ckey in {"toughness", "leadership", "objective_control"}:
+            try:
+                rule_fn = getattr(self, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
+                rule = rule_fn(kind=ckey) if callable(rule_fn) else None
+            except Exception:
+                rule = None
+            if isinstance(rule, dict) and mods:
+                try:
+                    from ..utility.modifier_choice import (
+                        CHOICE_IGNORE_NEGATIVE,
+                        _numeric_modifier_polarity,
+                        filter_numeric_modifiers,
+                    )
+                    if str(rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                        if ckey == "leadership":
+                            kept = []
+                            for mod in list(mods or []):
+                                try:
+                                    val = float(getattr(mod, "value", 0) or 0)
+                                except Exception:
+                                    val = 0.0
+                                try:
+                                    op = getattr(mod, "op", None)
+                                except Exception:
+                                    op = None
+                                polarity = _numeric_modifier_polarity(val, op, base_val=float(base_val or 0))
+                                if polarity is None or int(polarity) <= 0:
+                                    kept.append(mod)
+                            mods = kept
+                        else:
+                            mods, _ignored = filter_numeric_modifiers(
+                                mods,
+                                CHOICE_IGNORE_NEGATIVE,
+                                base_val=int(base_val or 0),
+                            )
+                except Exception:
+                    pass
 
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)

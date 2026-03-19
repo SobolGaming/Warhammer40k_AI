@@ -46,6 +46,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_anvil_siege_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_ironstorm_spearhead_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_ironstorm_spearhead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_bastion_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
@@ -419,6 +424,9 @@ class SpaceMarinesStratagemMixin:
     def _sm_is_vehicle_unit(self, unit: Any) -> bool:
         return self._sm_has_keyword(unit, "VEHICLE")
 
+    def _sm_is_walker_unit(self, unit: Any) -> bool:
+        return self._sm_has_keyword(unit, "WALKER")
+
     def _sm_is_transport_unit(self, unit: Any) -> bool:
         root = self._sm_root(unit)
         if root is None:
@@ -777,6 +785,14 @@ class SpaceMarinesStratagemMixin:
             return snapshots
         snapshots = {}
         setattr(self, "_space_marines_anvil_hail_loss_snapshots_cache", snapshots)
+        return snapshots
+
+    def _space_marines_ironstorm_power_shooting_snapshots(self) -> dict[str, dict[str, dict[str, Any]]]:
+        snapshots = getattr(self, "_space_marines_ironstorm_power_shooting_snapshots_cache", None)
+        if isinstance(snapshots, dict):
+            return snapshots
+        snapshots = {}
+        setattr(self, "_space_marines_ironstorm_power_shooting_snapshots_cache", snapshots)
         return snapshots
 
     def _sm_unit_is_engaged(self, unit: Any) -> bool:
@@ -1291,6 +1307,105 @@ class SpaceMarinesStratagemMixin:
         if not enemy_candidates:
             return ([], {})
         return ([source_root], {self._sm_sort_key(source_root): list(enemy_candidates)})
+
+    def _space_marines_ironstorm_ancient_fury_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_ironstorm_spearhead_detachment():
+            return ([], {})
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ([], {})
+        candidates: list[Any] = []
+        model_map: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_walker_unit(root):
+                continue
+            models = [model for model in self._sm_unit_models(root) if bool(getattr(model, "is_alive", True))]
+            if not models:
+                continue
+            candidates.append(root)
+            if uid:
+                model_map[uid] = list(models)
+        return (sorted(candidates, key=self._sm_sort_key), model_map)
+
+    def _space_marines_ironstorm_mercy_is_weakness_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_ironstorm_spearhead_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if phase_key == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_ironstorm_unbowed_conviction_candidates(self) -> list[Any]:
+        if not self._is_ironstorm_spearhead_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            is_below = getattr(root, "is_below_starting_strength", None)
+            if not callable(is_below) or not bool(is_below()):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_veteran_objective_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
         get_army = getattr(self.player, "get_army", None)
@@ -2742,6 +2857,199 @@ class SpaceMarinesStratagemMixin:
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _capture_space_marines_ironstorm_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_ironstorm_spearhead_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacking_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("POWER OF THE MACHINE SPIRIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_id = self._sm_sort_key(attacker_root)
+        if not attacker_id:
+            return
+
+        snapshot_by_unit: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_vehicle_unit(root):
+                continue
+            is_below = getattr(root, "is_below_half_strength", None)
+            was_below_half = bool(is_below()) if callable(is_below) else False
+            snapshot_by_unit[uid] = {
+                "unit": root,
+                "was_below_half": bool(was_below_half),
+            }
+        if not snapshot_by_unit:
+            return
+        self._space_marines_ironstorm_power_shooting_snapshots()[attacker_id] = snapshot_by_unit
+
+    def _queue_space_marines_ironstorm_shooting_resolved_reactions(self, *, attacker_unit: Any) -> None:
+        if not self._is_ironstorm_spearhead_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("POWER OF THE MACHINE SPIRIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_id = self._sm_sort_key(attacker_root)
+        if not attacker_id:
+            return
+
+        snapshots = self._space_marines_ironstorm_power_shooting_snapshots()
+        snapshot_by_unit = dict(snapshots.pop(attacker_id, {}) or {})
+        if not snapshot_by_unit:
+            return
+
+        can_shoot_fn = getattr(getattr(self, "game", None), "_setup_reactive_can_shoot_target", None)
+        if not callable(can_shoot_fn):
+            return
+
+        candidates: list[Any] = []
+        for unit_id in sorted(snapshot_by_unit):
+            entry = snapshot_by_unit.get(unit_id)
+            if not isinstance(entry, dict):
+                continue
+            root = self._sm_root(entry.get("unit"))
+            if root is None:
+                continue
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_vehicle_unit(root):
+                continue
+            was_below_half = bool(entry.get("was_below_half", False))
+            is_below = getattr(root, "is_below_half_strength", None)
+            is_below_half = bool(is_below()) if callable(is_below) else False
+            if was_below_half or not is_below_half:
+                continue
+            if not can_shoot_fn(root, attacker_root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._sm_sort_key)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_ironstorm_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if not self._is_ironstorm_spearhead_detachment():
+            return
+        root = self._sm_root(unit)
+        if root is None or model is None:
+            return
+        if not self._sm_owned_by_player(root, self.player):
+            return
+        if not self._is_adeptus_astartes_unit(root):
+            return
+        if not self._sm_is_vehicle_unit(root):
+            return
+        has_deadly_demise = getattr(root, "has_deadly_demise", None)
+        if not callable(has_deadly_demise):
+            return
+        try:
+            has_deadly, _damage = has_deadly_demise()
+        except Exception:
+            has_deadly = False
+        if not has_deadly:
+            return
+        stratagem = self.get_by_name("VENGEFUL ANIMUS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        destroyed_model_id = str(get_entity_id(model) or "")
+        if self._sm_reaction_already_queued(
+            event_name="model_destroyed_before_removal",
+            stratagem_name=stratagem.name,
+            phase_name=str(getattr(self, "_current_phase_name", "") or ""),
+            target_unit=root,
+        ):
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                    continue
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                    continue
+                if str(reaction.get("destroyed_model_id", "") or "") == destroyed_model_id:
+                    return
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_id": destroyed_model_id,
+            "unit": root,
+            "target_unit": root,
+        }
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_space_marines_anvil_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
@@ -6702,6 +7010,123 @@ class SpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_ironstorm_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_ironstorm_spearhead_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "COMMAND_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("ANCIENT FURY")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates, model_map = self._space_marines_ironstorm_ancient_fury_candidates()
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    ):
+                        payload: dict[str, Any] = {
+                            "event": "phase_start",
+                            "phase": "Command phase",
+                            "phase_name": "Command phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                            "model_candidates_by_unit": model_map,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                            model_candidates = list(model_map.get(self._sm_sort_key(candidates[0])) or [])
+                            if model_candidates:
+                                payload["model_candidates"] = model_candidates
+                                if len(model_candidates) == 1:
+                                    payload["model"] = model_candidates[0]
+                                    payload["target_model"] = model_candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "COMMAND_PHASE":
+            stratagem = self.get_by_name("UNBOWED CONVICTION")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates = self._space_marines_ironstorm_unbowed_conviction_candidates()
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Command phase",
+                            "phase_name": "Command phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("MERCY IS WEAKNESS")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates = self._space_marines_ironstorm_mercy_is_weakness_candidates(phase_name="Shooting phase")
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Shooting phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Shooting phase",
+                            "phase_name": "Shooting phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("MERCY IS WEAKNESS")
+            if stratagem is not None:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates = self._space_marines_ironstorm_mercy_is_weakness_candidates(phase_name="Fight phase")
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    ):
+                        payload = {
+                            "event": "phase_start",
+                            "phase": "Fight phase",
+                            "phase_name": "Fight phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
     def _queue_space_marines_inner_circle_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_inner_circle_task_force_detachment():
             return
@@ -8300,6 +8725,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_ruthless_butchery(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_ironstorm_spearhead_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_ironstorm_spearhead_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ANCIENT FURY":
+            return self._use_space_marines_ancient_fury(stratagem, **kwargs)
+        if name_u == "MERCY IS WEAKNESS":
+            return self._use_space_marines_mercy_is_weakness(stratagem, **kwargs)
+        if name_u == "POWER OF THE MACHINE SPIRIT":
+            return self._use_space_marines_power_of_the_machine_spirit(stratagem, **kwargs)
+        if name_u == "UNBOWED CONVICTION":
+            return self._use_space_marines_unbowed_conviction(stratagem, **kwargs)
+        if name_u == "VENGEFUL ANIMUS":
+            return self._use_space_marines_vengeful_animus(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_inner_circle_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -8636,6 +9079,49 @@ class SpaceMarinesStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         return (unit, candidates, attacking_unit, from_pending)
+
+    def _sm_ironstorm_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, Any, list[Any], bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        target_model = kwargs.get("model") or kwargs.get("target_model")
+        model_candidates = list(kwargs.get("model_candidates") or [])
+        model_map = kwargs.get("model_candidates_by_unit")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = reaction.get("attacking_unit") or reaction.get("attacker_unit") or reaction.get("enemy_unit")
+            if target_model is None:
+                target_model = reaction.get("model") or reaction.get("target_model")
+            if not model_candidates:
+                model_candidates = list(reaction.get("model_candidates") or [])
+            if model_map is None:
+                model_map = reaction.get("model_candidates_by_unit")
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        root = self._sm_root(unit)
+        if root is not None and not model_candidates and hasattr(model_map, "get"):
+            model_candidates = list(model_map.get(self._sm_sort_key(root)) or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+            root = self._sm_root(unit)
+            if root is not None and not model_candidates and hasattr(model_map, "get"):
+                model_candidates = list(model_map.get(self._sm_sort_key(root)) or [])
+        if target_model is None and len(model_candidates) == 1:
+            target_model = model_candidates[0]
+        return (unit, candidates, attacking_unit, target_model, model_candidates, from_pending)
 
     def _sm_angelic_context(
         self,
@@ -11443,6 +11929,366 @@ class SpaceMarinesStratagemMixin:
             "INFO: COGITATED FEROCITY: %s gains [%s] on melee weapons this phase.",
             getattr(root, "name", "Unit"),
             keyword,
+        )
+        return True
+
+    def _use_space_marines_ancient_fury(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: ANCIENT FURY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ANCIENT FURY: not your Command phase")
+            return False
+
+        unit, candidates, _attacking_unit, target_model, model_candidates, _from_pending = self._sm_ironstorm_context(
+            "ANCIENT FURY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: ANCIENT FURY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: ANCIENT FURY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: ANCIENT FURY: target unit must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: ANCIENT FURY: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_walker_unit(root):
+            logger.error("ERROR: ANCIENT FURY: target unit must be a WALKER unit")
+            return False
+
+        valid_candidates, valid_model_map = self._space_marines_ironstorm_ancient_fury_candidates()
+        if (candidates or valid_candidates) and not self._sm_unit_in_candidates(root, candidates or valid_candidates):
+            logger.error("ERROR: ANCIENT FURY: selected unit is not currently eligible")
+            return False
+        if not model_candidates:
+            model_candidates = list(valid_model_map.get(self._sm_sort_key(root)) or [])
+        if target_model is None and len(model_candidates) == 1:
+            target_model = model_candidates[0]
+        if target_model is None:
+            logger.error("ERROR: ANCIENT FURY: no target model provided")
+            return False
+        if model_candidates and all(candidate is not target_model for candidate in model_candidates):
+            logger.error("ERROR: ANCIENT FURY: selected model is not currently eligible")
+            return False
+        if all(model is not target_model for model in self._sm_unit_models(root)):
+            logger.error("ERROR: ANCIENT FURY: selected model is not part of the target unit")
+            return False
+        is_alive_attr = getattr(target_model, "is_alive", True)
+        is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+        if not is_alive:
+            logger.error("ERROR: ANCIENT FURY: selected model is not alive")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sm_mgr = self._sm_detachment_mgr()
+        clear_fn = getattr(sm_mgr, "clear_ironstorm_ancient_fury", None) if sm_mgr is not None else None
+        if callable(clear_fn):
+            clear_fn(root)
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ironstorm_ancient_fury_active"] = True
+        sr["space_marines_ironstorm_ancient_fury_round"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ironstorm_ancient_fury_owner_id"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_ironstorm_ancient_fury_model_id"] = str(get_entity_id(target_model) or "")
+        sr["space_marines_ironstorm_ancient_fury_source"] = str(getattr(stratagem, "name", "") or "ANCIENT FURY")
+        sr["space_marines_ironstorm_ancient_fury_move_bonus"] = 1
+        sr["space_marines_ironstorm_ancient_fury_toughness_bonus"] = 1
+        sr["space_marines_ironstorm_ancient_fury_leadership_bonus"] = -1
+        sr["space_marines_ironstorm_ancient_fury_objective_control_bonus"] = 1
+        sr["space_marines_ironstorm_ancient_fury_hit_bonus"] = 1
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANCIENT FURY: %s gains +1 Move/Toughness/OC, improves Leadership by 1, and gains +1 to Hit until your next Command phase.",
+            getattr(target_model, "name", getattr(root, "name", "Model")),
+        )
+        return True
+
+    def _use_space_marines_mercy_is_weakness(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MERCY IS WEAKNESS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: MERCY IS WEAKNESS: not your Shooting phase")
+            return False
+
+        unit, candidates, _attacking_unit, _target_model, _model_candidates, _from_pending = self._sm_ironstorm_context(
+            "MERCY IS WEAKNESS",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: MERCY IS WEAKNESS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MERCY IS WEAKNESS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: MERCY IS WEAKNESS: target unit must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: MERCY IS WEAKNESS: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: MERCY IS WEAKNESS: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: MERCY IS WEAKNESS: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_ironstorm_mercy_is_weakness_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: MERCY IS WEAKNESS: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sm_mgr = self._sm_detachment_mgr()
+        clear_fn = getattr(sm_mgr, "clear_ironstorm_mercy_is_weakness", None) if sm_mgr is not None else None
+        if callable(clear_fn):
+            clear_fn(root)
+
+        expires_phase = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ironstorm_mercy_is_weakness_active"] = True
+        sr["space_marines_ironstorm_mercy_is_weakness_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ironstorm_mercy_is_weakness_expires_phase"] = expires_phase
+        sr["space_marines_ironstorm_mercy_is_weakness_source"] = str(
+            getattr(stratagem, "name", "") or "MERCY IS WEAKNESS"
+        )
+        sr["space_marines_ironstorm_mercy_is_weakness_sustained_hits"] = 1
+        sr["space_marines_ironstorm_mercy_is_weakness_vehicle_crit_threshold"] = 5
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MERCY IS WEAKNESS: %s gains conditional [SUSTAINED HITS 1], and its VEHICLE models score Critical Hits on 5+ against Below Starting Strength targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_power_of_the_machine_spirit(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, attacking_unit, _target_model, _model_candidates, from_pending = self._sm_ironstorm_context(
+            "POWER OF THE MACHINE SPIRIT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: missing attacking unit context")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: target unit is not yours")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: attacking unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: target unit must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_vehicle_unit(root):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: target unit must be a VEHICLE unit")
+            return False
+        if candidates:
+            if not self._sm_unit_in_candidates(root, candidates):
+                logger.error("ERROR: POWER OF THE MACHINE SPIRIT: selected unit is not currently eligible")
+                return False
+        elif not from_pending:
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: missing Below Half-strength trigger context")
+            return False
+
+        setup_can_shoot = getattr(self.game, "_setup_reactive_can_shoot_target", None) if self.game is not None else None
+        if not callable(setup_can_shoot) or not bool(setup_can_shoot(root, attacker_root)):
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: target cannot shoot the attacking unit")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        request = None
+        if self.game is not None:
+            request = self.game._queue_setup_reactive_shooting_decision(
+                player=self.player,
+                unit=root,
+                target_unit=attacker_root,
+                source=str(getattr(stratagem, "name", "") or "POWER OF THE MACHINE SPIRIT"),
+            )
+        if request is None:
+            logger.error("ERROR: POWER OF THE MACHINE SPIRIT: failed to queue reactive shooting decision")
+            return False
+        request.context["power_of_the_machine_spirit_flow"] = True
+        request.context["power_of_the_machine_spirit_source"] = str(
+            getattr(stratagem, "name", "") or "POWER OF THE MACHINE SPIRIT"
+        )
+        request.context["power_of_the_machine_spirit_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
+        request.context["power_of_the_machine_spirit_unit_id"] = str(get_entity_id(root) or "")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POWER OF THE MACHINE SPIRIT: %s can make a reactive shooting attack against %s.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_space_marines_unbowed_conviction(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: UNBOWED CONVICTION: wrong phase")
+            return False
+
+        unit, candidates, _attacking_unit, _target_model, _model_candidates, _from_pending = self._sm_ironstorm_context(
+            "UNBOWED CONVICTION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: UNBOWED CONVICTION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNBOWED CONVICTION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNBOWED CONVICTION: target unit must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: UNBOWED CONVICTION: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        is_below = getattr(root, "is_below_starting_strength", None)
+        if not callable(is_below) or not bool(is_below()):
+            logger.error("ERROR: UNBOWED CONVICTION: target unit must be Below Starting Strength")
+            return False
+
+        valid_candidates = candidates or self._space_marines_ironstorm_unbowed_conviction_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: UNBOWED CONVICTION: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sm_mgr = self._sm_detachment_mgr()
+        clear_fn = getattr(sm_mgr, "clear_ironstorm_unbowed_conviction", None) if sm_mgr is not None else None
+        if callable(clear_fn):
+            clear_fn(root)
+
+        current_owner = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_ironstorm_unbowed_conviction_active"] = True
+        sr["space_marines_ironstorm_unbowed_conviction_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_ironstorm_unbowed_conviction_turn_owner"] = str(getattr(current_owner, "id", "") or "")
+        sr["space_marines_ironstorm_unbowed_conviction_source"] = str(
+            getattr(stratagem, "name", "") or "UNBOWED CONVICTION"
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNBOWED CONVICTION: %s can ignore negative modifiers to its characteristics and rolls/tests this turn, excluding saving throws.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_vengeful_animus(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        model = kwargs.get("destroyed_model") or kwargs.get("model") or kwargs.get("target_model")
+        if unit is None or model is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "VENGEFUL ANIMUS":
+                    continue
+                unit = unit or reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                model = model or reaction.get("destroyed_model") or reaction.get("model") or reaction.get("target_model")
+                if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None or model is None:
+            logger.error("ERROR: VENGEFUL ANIMUS: missing destroyed model context")
+            return False
+
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: VENGEFUL ANIMUS: target unit is not yours")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: VENGEFUL ANIMUS: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_vehicle_unit(root):
+            logger.error("ERROR: VENGEFUL ANIMUS: target unit must be a VEHICLE unit")
+            return False
+        has_deadly_demise = getattr(root, "has_deadly_demise", None)
+        if not callable(has_deadly_demise):
+            logger.error("ERROR: VENGEFUL ANIMUS: target unit does not have Deadly Demise")
+            return False
+        try:
+            has_deadly, _damage = has_deadly_demise()
+        except Exception:
+            has_deadly = False
+        if not has_deadly:
+            logger.error("ERROR: VENGEFUL ANIMUS: target unit does not have Deadly Demise")
+            return False
+        model_alive_attr = getattr(model, "is_alive", None)
+        model_alive = bool(model_alive_attr()) if callable(model_alive_attr) else bool(model_alive_attr)
+        if model_alive:
+            logger.error("ERROR: VENGEFUL ANIMUS: target model is not destroyed")
+            return False
+
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            logger.error("ERROR: VENGEFUL ANIMUS: map context unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        setattr(model, "_vengeful_animus_auto_trigger_once", True)
+        setattr(model, "_skip_deadly_demise_once", True)
+
+        trigger_fn = getattr(root, "trigger_deadly_demise_manually", None)
+        if callable(trigger_fn):
+            trigger_fn(model, game_map)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VENGEFUL ANIMUS: %s automatically triggers Deadly Demise.",
+            getattr(root, "name", "Unit"),
         )
         return True
 

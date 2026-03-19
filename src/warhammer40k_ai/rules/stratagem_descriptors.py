@@ -4165,6 +4165,85 @@ _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HAMMER_OF_AVERNII_STRATAGEM_DESCRIPTORS.values()
 }
 
+_IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008479006": StratagemToolDescriptor(
+        stratagem_id="000008479006",
+        name="Ancient Fury",
+        timing="your_command_phase",
+        target="adeptus_astartes_walker_model",
+        duration="until_start_of_your_next_command_phase",
+        effect="walker_characteristics_and_hit_bonus_until_next_command_phase",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "WALKER"],
+            "movement_bonus": 1,
+            "toughness_bonus": 1,
+            "leadership_bonus": -1,
+            "objective_control_bonus": 1,
+            "hit_bonus": 1,
+        },
+    ),
+    "000008479004": StratagemToolDescriptor(
+        stratagem_id="000008479004",
+        name="Mercy Is Weakness",
+        timing="shooting_or_fight_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_sustained_hits_and_vehicle_critical_hits_vs_damaged_target",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "target_condition": "below_starting_strength",
+            "sustained_hits": 1,
+            "vehicle_critical_hit_threshold": 5,
+        },
+    ),
+    "000008479007": StratagemToolDescriptor(
+        stratagem_id="000008479007",
+        name="Power of the Machine Spirit",
+        timing="opponent_shooting_phase_after_shooting",
+        target="adeptus_astartes_vehicle_unit_reduced_to_below_half_strength_by_attacker",
+        duration="immediate",
+        effect="reactive_shooting_restricted_to_attacker",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "VEHICLE"],
+            "requires_target_became_below_half_strength": True,
+        },
+    ),
+    "000008479002": StratagemToolDescriptor(
+        stratagem_id="000008479002",
+        name="Unbowed Conviction",
+        timing="command_phase",
+        target="adeptus_astartes_unit_below_starting_strength",
+        duration="until_end_of_turn",
+        effect="ignore_characteristic_and_roll_modifiers_except_saves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "requires_below_starting_strength": True,
+            "excludes_saving_throws": True,
+        },
+    ),
+    "000008479005": StratagemToolDescriptor(
+        stratagem_id="000008479005",
+        name="Vengeful Animus",
+        timing="any_phase_on_destroyed",
+        target="destroyed_adeptus_astartes_vehicle_model_with_deadly_demise",
+        duration="immediate",
+        effect="auto_trigger_deadly_demise",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "VEHICLE"],
+            "requires_deadly_demise": True,
+        },
+    ),
+}
+
+_IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008775004": StratagemToolDescriptor(
         stratagem_id="000008775004",
@@ -5812,6 +5891,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HAMMER_OF_AVERNII_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _IRONSTORM_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5942,6 +6024,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME.get(key)
+        or _IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
         or _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

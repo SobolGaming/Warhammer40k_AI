@@ -2107,6 +2107,10 @@ class DamageDeathMixin:
         except Exception:
             sanctified_auto_trigger = False
         try:
+            vengeful_auto_trigger = bool(getattr(dying_model, "_vengeful_animus_auto_trigger_once", False))
+        except Exception:
+            vengeful_auto_trigger = False
+        try:
             army = self.get_parent_army()
         except Exception:
             army = None
@@ -2122,7 +2126,7 @@ class DamageDeathMixin:
             except Exception:
                 emotionless_auto_trigger = False
                 emotionless_source = ""
-        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger or emotionless_auto_trigger)
+        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger or vengeful_auto_trigger or emotionless_auto_trigger)
         if putrid_auto_trigger:
             try:
                 setattr(dying_model, "_putrid_detonation_auto_trigger_once", False)
@@ -2131,6 +2135,11 @@ class DamageDeathMixin:
         if sanctified_auto_trigger:
             try:
                 setattr(dying_model, "_sanctified_immolation_auto_trigger_once", False)
+            except Exception:
+                pass
+        if vengeful_auto_trigger:
+            try:
+                setattr(dying_model, "_vengeful_animus_auto_trigger_once", False)
             except Exception:
                 pass
 
@@ -2152,6 +2161,8 @@ class DamageDeathMixin:
         else:
             if sanctified_auto_trigger and not putrid_auto_trigger:
                 logger.info("Deadly Demise auto-triggered (Sanctified Immolation).")
+            elif vengeful_auto_trigger:
+                logger.info("Deadly Demise auto-triggered (Vengeful Animus).")
             elif emotionless_auto_trigger:
                 logger.info(f"Deadly Demise auto-triggered ({str(emotionless_source or 'Emotionless Clarity')}).")
             else:

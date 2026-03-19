@@ -4603,6 +4603,354 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.armoured_wrath_used_phase_key_by_unit_id[unit_id] = phase_key
         return True
 
+    @staticmethod
+    def _ironstorm_ancient_fury_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_ironstorm_ancient_fury_active",
+            "space_marines_ironstorm_ancient_fury_round",
+            "space_marines_ironstorm_ancient_fury_owner_id",
+            "space_marines_ironstorm_ancient_fury_model_id",
+            "space_marines_ironstorm_ancient_fury_source",
+            "space_marines_ironstorm_ancient_fury_move_bonus",
+            "space_marines_ironstorm_ancient_fury_toughness_bonus",
+            "space_marines_ironstorm_ancient_fury_leadership_bonus",
+            "space_marines_ironstorm_ancient_fury_objective_control_bonus",
+            "space_marines_ironstorm_ancient_fury_hit_bonus",
+        )
+
+    @staticmethod
+    def _ironstorm_mercy_is_weakness_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_ironstorm_mercy_is_weakness_active",
+            "space_marines_ironstorm_mercy_is_weakness_turn",
+            "space_marines_ironstorm_mercy_is_weakness_expires_phase",
+            "space_marines_ironstorm_mercy_is_weakness_source",
+            "space_marines_ironstorm_mercy_is_weakness_sustained_hits",
+            "space_marines_ironstorm_mercy_is_weakness_vehicle_crit_threshold",
+        )
+
+    @staticmethod
+    def _ironstorm_unbowed_conviction_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_ironstorm_unbowed_conviction_active",
+            "space_marines_ironstorm_unbowed_conviction_turn",
+            "space_marines_ironstorm_unbowed_conviction_turn_owner",
+            "space_marines_ironstorm_unbowed_conviction_source",
+        )
+
+    def clear_ironstorm_ancient_fury(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._ironstorm_ancient_fury_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def clear_ironstorm_mercy_is_weakness(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._ironstorm_mercy_is_weakness_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def clear_ironstorm_unbowed_conviction(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._ironstorm_unbowed_conviction_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _ironstorm_ancient_fury_context(self, model, *, unit=None, game=None) -> tuple[bool, str]:
+        if not self.is_ironstorm_spearhead():
+            return False, ""
+        if model is None:
+            return False, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        if root is None:
+            return False, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return False, ""
+        except Exception:
+            return False, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, ""
+        if not self._attached_unit_has_keyword(root, "WALKER"):
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_ironstorm_ancient_fury_active"))):
+            return False, ""
+        model_id = str(sr.get("space_marines_ironstorm_ancient_fury_model_id", "") or "").strip()
+        if model_id and model_id != str(get_entity_id(model) or "").strip():
+            return False, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            try:
+                marked_round = int(sr.get("space_marines_ironstorm_ancient_fury_round", 0) or 0)
+            except (TypeError, ValueError):
+                marked_round = 0
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            owner_id = str(sr.get("space_marines_ironstorm_ancient_fury_owner_id", "") or "")
+            active = False
+            if marked_round and current_round == marked_round:
+                active = True
+            elif marked_round and current_round == marked_round + 1:
+                active = bool(not owner_id or not current_owner_id or current_owner_id != owner_id)
+            if not active:
+                self.clear_ironstorm_ancient_fury(root)
+                return False, ""
+
+        source = str(sr.get("space_marines_ironstorm_ancient_fury_source", "") or "Ancient Fury").strip()
+        if not source:
+            source = "Ancient Fury"
+        return True, source
+
+    def ironstorm_ancient_fury_movement_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        active, source = self._ironstorm_ancient_fury_context(model, unit=unit, game=game)
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_ancient_fury_move_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def ironstorm_ancient_fury_toughness_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        active, source = self._ironstorm_ancient_fury_context(model, unit=unit, game=game)
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_ancient_fury_toughness_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def ironstorm_ancient_fury_leadership_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        active, source = self._ironstorm_ancient_fury_context(model, unit=unit, game=game)
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_ancient_fury_leadership_bonus", -1) or -1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = -1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def ironstorm_ancient_fury_objective_control_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        active, source = self._ironstorm_ancient_fury_context(model, unit=unit, game=game)
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_ancient_fury_objective_control_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def ironstorm_ancient_fury_hit_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = weapon_profile
+        active, source = self._ironstorm_ancient_fury_context(attacker_model, game=game)
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(getattr(attacker_model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_ancient_fury_hit_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def _ironstorm_mercy_is_weakness_context(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if not self.is_ironstorm_spearhead():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        root = self._attached_unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return False, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return False, ""
+        except Exception:
+            return False, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_ironstorm_mercy_is_weakness_active"))):
+            return False, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            phase_key = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            expected_phase = str(
+                sr.get("space_marines_ironstorm_mercy_is_weakness_expires_phase", "") or ""
+            ).strip().upper()
+            if expected_phase and phase_key and phase_key != expected_phase:
+                self.clear_ironstorm_mercy_is_weakness(root)
+                return False, ""
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("space_marines_ironstorm_mercy_is_weakness_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            if marked_turn and current_turn and current_turn != marked_turn:
+                self.clear_ironstorm_mercy_is_weakness(root)
+                return False, ""
+
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        is_below_starting = getattr(target_root, "is_below_starting_strength", None)
+        if not callable(is_below_starting) or not bool(is_below_starting()):
+            return False, ""
+        source = str(sr.get("space_marines_ironstorm_mercy_is_weakness_source", "") or "Mercy Is Weakness").strip()
+        if not source:
+            source = "Mercy Is Weakness"
+        return True, source
+
+    def ironstorm_mercy_is_weakness_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        active, source = self._ironstorm_mercy_is_weakness_context(
+            attacker_model,
+            target_unit=target_unit,
+            game=game,
+        )
+        if not active:
+            return 0, ""
+        root = self._attached_unit_root(getattr(attacker_model, "parent_unit", None))
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_ironstorm_mercy_is_weakness_sustained_hits", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def ironstorm_mercy_is_weakness_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        active, source = self._ironstorm_mercy_is_weakness_context(
+            attacker_model,
+            target_unit=target_unit,
+            game=game,
+        )
+        if not active:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None or not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        try:
+            threshold = int(sr.get("space_marines_ironstorm_mercy_is_weakness_vehicle_crit_threshold", 5) or 5)
+        except (TypeError, ValueError, AttributeError):
+            threshold = 5
+        return (int(max(2, threshold)), source)
+
+    def ironstorm_unbowed_conviction_ignore_modifier_rule(
+        self,
+        unit,
+        *,
+        kind: str,
+        game=None,
+    ) -> Optional[dict]:
+        if not self.is_ironstorm_spearhead():
+            return None
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+        }:
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None
+        except Exception:
+            return None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_ironstorm_unbowed_conviction_active"))):
+            return None
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("space_marines_ironstorm_unbowed_conviction_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            if marked_turn and current_turn and current_turn != marked_turn:
+                self.clear_ironstorm_unbowed_conviction(root)
+                return None
+            owner_id = str(sr.get("space_marines_ironstorm_unbowed_conviction_turn_owner", "") or "")
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                self.clear_ironstorm_unbowed_conviction(root)
+                return None
+        source = str(sr.get("space_marines_ironstorm_unbowed_conviction_source", "") or "Unbowed Conviction").strip()
+        if not source:
+            source = "Unbowed Conviction"
+        return {
+            "source": source,
+            "default_choice": "ignore_negative",
+        }
+
     def in_the_lions_claws_ravenwing_source_applies(self, source_unit, enemy_unit=None, *, game=None) -> bool:
         if not self.is_lions_blade_task_force():
             return False
