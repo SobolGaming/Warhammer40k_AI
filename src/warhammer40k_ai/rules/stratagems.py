@@ -81,6 +81,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARMOUR OF CONTEMPT",
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
+    "CHILLING HOWL",
     "CODEX DISCIPLINE",
     "COURAGE AND HONOUR!",
     "DISCIPLINED EXTERMINATION",
@@ -102,11 +103,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LIGHT OF VENGEANCE",
     "NO THREAT TOO GREAT",
     "NOT ONE BACKWARDS STEP",
+    "ONRUSHING STORM",
     "ORBITAL TELEPORTARIUM",
     "PRACTICAL TACTICS",
+    "PREYTAKER'S EYE",
+    "PREYTAKER’S EYE",
     "RIGID DISCIPLINE",
+    "RUNES OF CLAIMING",
     "SHOCK BOMBARDMENT",
     "SITE-TO-SITE TELEPORTATION",
+    "STALKING WOLVES",
     "STRIKE NOW FOR GLORY",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
@@ -5942,6 +5948,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_champions_of_fenris_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6979,6 +6989,7 @@ class StratagemManager(
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9915,6 +9926,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_blade_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_champions_of_fenris_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16248,6 +16266,9 @@ class StratagemManager(
         blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
         if blade_result is not None:
             return blade_result
+        fenris_result = self._use_space_marines_champions_of_fenris_stratagem(s, **kwargs)
+        if fenris_result is not None:
+            return fenris_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

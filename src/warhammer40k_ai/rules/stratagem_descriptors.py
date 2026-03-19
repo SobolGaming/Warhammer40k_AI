@@ -4294,6 +4294,80 @@ _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BLADE_OF_ULTRAMAR_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CHAMPIONS_OF_FENRIS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009852005": StratagemToolDescriptor(
+        stratagem_id="000009852005",
+        name="Chilling Howl",
+        timing="opponent_command_phase",
+        target="adeptus_astartes_terminator_unit",
+        duration="immediate",
+        effect="force_battleshock_test_with_below_half_modifier",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["TERMINATOR"],
+            "test_radius_in": 6.0,
+            "below_half_strength_modifier": -1,
+        },
+    ),
+    "000009852007": StratagemToolDescriptor(
+        stratagem_id="000009852007",
+        name="Onrushing Storm",
+        timing="end_of_opponent_fight_phase",
+        target="adeptus_astartes_terminator_unit_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TERMINATOR"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000009852002": StratagemToolDescriptor(
+        stratagem_id="000009852002",
+        name="Preytaker's Eye",
+        timing="shooting_or_fight_phase_before_selected",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="choose_lethal_hits_or_sustained_hits_1_for_weapons",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["INFANTRY"],
+            "choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+        },
+    ),
+    "000009852004": StratagemToolDescriptor(
+        stratagem_id="000009852004",
+        name="Runes of Claiming",
+        timing="end_of_your_command_phase",
+        target="adeptus_astartes_infantry_or_walker_unit_within_range_of_objective_you_control",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["INFANTRY", "WALKER"],
+            "requires_controlled_objective": True,
+        },
+    ),
+    "000009852006": StratagemToolDescriptor(
+        stratagem_id="000009852006",
+        name="Stalking Wolves",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="adeptus_astartes_infantry_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="grant_stealth",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["INFANTRY"],
+            "granted_keywords": ["STEALTH"],
+        },
+    ),
+}
+
+_CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_FENRIS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008523003": StratagemToolDescriptor(
         stratagem_id="000008523003",
@@ -5158,6 +5232,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BLADE_OF_ULTRAMAR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CHAMPIONS_OF_FENRIS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5260,6 +5337,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
+        or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
