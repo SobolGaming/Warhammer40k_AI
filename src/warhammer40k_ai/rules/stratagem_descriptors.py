@@ -4447,6 +4447,91 @@ _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008483003": StratagemToolDescriptor(
+        stratagem_id="000008483003",
+        name="Crucible of Battle",
+        timing="shooting_or_fight_phase_before_selected",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="closest_eligible_target_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "wound_bonus": 1,
+            "max_distance_in": 6.0,
+        },
+    ),
+    "000008483004": StratagemToolDescriptor(
+        stratagem_id="000008483004",
+        name="Rapid Embarkation",
+        timing="end_of_fight_phase",
+        target="adeptus_astartes_transport_and_nearby_eligible_infantry_unit",
+        duration="immediate",
+        effect="end_of_fight_embark",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "TRANSPORT"],
+            "passenger_required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "range_in": 6.0,
+            "requires_empty_transport": True,
+            "passenger_requires_not_engaged": True,
+            "passenger_requires_not_disembarked_this_turn": True,
+        },
+    ),
+    "000008483005": StratagemToolDescriptor(
+        stratagem_id="000008483005",
+        name="Immolation Protocols",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="grant_devastating_wounds_to_torrent_ranged_weapons",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attack_type": "ranged",
+            "required_weapon_keywords_any": ["TORRENT"],
+            "granted_weapon_keywords": ["DEVASTATING WOUNDS"],
+        },
+    ),
+    "000008483006": StratagemToolDescriptor(
+        stratagem_id="000008483006",
+        name="Onslaught of Fire",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_that_disembarked_this_turn_and_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="closest_eligible_target_ranged_hit_bonus_with_post_shoot_battleshock",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attack_type": "ranged",
+            "requires_disembarked_from_transport_this_turn": True,
+            "hit_bonus": 1,
+            "max_distance_in": 12.0,
+            "post_shoot_battleshock_on_destroyed_model_unit": True,
+        },
+    ),
+    "000008483007": StratagemToolDescriptor(
+        stratagem_id="000008483007",
+        name="Burning Vengeance",
+        timing="opponent_shooting_phase_after_enemy_unit_resolves_attacks",
+        target="adeptus_astartes_transport_targeted_by_attacking_enemy_unit",
+        duration="immediate",
+        effect="reactive_disembark_then_forced_shoot_attacker",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "TRANSPORT"],
+            "max_disembarking_units": 1,
+            "requires_transport_with_embarked_units": True,
+            "forced_shooting_target": "attacking_unit",
+        },
+    ),
+}
+
+_FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008523003": StratagemToolDescriptor(
         stratagem_id="000008523003",
@@ -5317,6 +5402,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5421,6 +5509,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
+        or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)

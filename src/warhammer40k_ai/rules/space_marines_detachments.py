@@ -8431,6 +8431,301 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         source = str(sr.get("space_marines_company_of_hunters_talon_strike_source", "") or "Talon Strike").strip() or "Talon Strike"
         return int(bonus), source
 
+    @staticmethod
+    def _firestorm_crucible_of_battle_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_firestorm_crucible_of_battle_active",
+            "space_marines_firestorm_crucible_of_battle_turn",
+            "space_marines_firestorm_crucible_of_battle_expires_phase",
+            "space_marines_firestorm_crucible_of_battle_source",
+            "space_marines_firestorm_crucible_of_battle_wound_bonus",
+            "space_marines_firestorm_crucible_of_battle_player_id",
+        )
+
+    def clear_firestorm_crucible_of_battle(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._firestorm_crucible_of_battle_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_firestorm_crucible_of_battle(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Crucible of Battle",
+    ) -> bool:
+        if not self.is_firestorm_assault_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        expires_phase = str(phase_name or "").strip().upper().replace(" ", "_")
+        if expires_phase not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_firestorm_crucible_of_battle_active"] = True
+        sr["space_marines_firestorm_crucible_of_battle_expires_phase"] = expires_phase
+        try:
+            sr["space_marines_firestorm_crucible_of_battle_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_firestorm_crucible_of_battle_turn"] = 0
+        sr["space_marines_firestorm_crucible_of_battle_player_id"] = str(player_id or "").strip()
+        sr["space_marines_firestorm_crucible_of_battle_wound_bonus"] = 1
+        sr["space_marines_firestorm_crucible_of_battle_source"] = (
+            str(source or "Crucible of Battle").strip() or "Crucible of Battle"
+        )
+        root.special_rules = sr
+        return True
+
+    def firestorm_crucible_of_battle_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.is_firestorm_assault_force():
+            return 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_firestorm_crucible_of_battle_active")):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+        expected_phase = str(
+            sr.get("space_marines_firestorm_crucible_of_battle_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase and current_phase and current_phase != expected_phase:
+            self.clear_firestorm_crucible_of_battle(root)
+            return 0, ""
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            marked_turn = int(sr.get("space_marines_firestorm_crucible_of_battle_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn and current_turn and current_turn != marked_turn:
+            self.clear_firestorm_crucible_of_battle(root)
+            return 0, ""
+        game_map = getattr(game_obj, "map", None)
+        is_closest = getattr(root, "is_target_closest_eligible", None)
+        if game_map is None or not callable(is_closest):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        try:
+            applies = bool(
+                is_closest(
+                    attacker_model,
+                    weapon_profile,
+                    target_root,
+                    game_map,
+                    max_distance=6.0,
+                )
+            )
+        except Exception:
+            applies = False
+        if not applies:
+            return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_firestorm_crucible_of_battle_wound_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("space_marines_firestorm_crucible_of_battle_source", "") or "Crucible of Battle"
+        ).strip() or "Crucible of Battle"
+        return int(bonus), source
+
+    @staticmethod
+    def _firestorm_onslaught_of_fire_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_firestorm_onslaught_of_fire_active",
+            "space_marines_firestorm_onslaught_of_fire_turn",
+            "space_marines_firestorm_onslaught_of_fire_expires_phase",
+            "space_marines_firestorm_onslaught_of_fire_source",
+            "space_marines_firestorm_onslaught_of_fire_hit_bonus",
+            "space_marines_firestorm_onslaught_of_fire_player_id",
+            "space_marines_firestorm_onslaught_of_fire_qualified_target_ids",
+        )
+
+    def clear_firestorm_onslaught_of_fire(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._firestorm_onslaught_of_fire_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_firestorm_onslaught_of_fire(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Onslaught of Fire",
+    ) -> bool:
+        if not self.is_firestorm_assault_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_firestorm_onslaught_of_fire_active"] = True
+        sr["space_marines_firestorm_onslaught_of_fire_expires_phase"] = "SHOOTING_PHASE"
+        try:
+            sr["space_marines_firestorm_onslaught_of_fire_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_firestorm_onslaught_of_fire_turn"] = 0
+        sr["space_marines_firestorm_onslaught_of_fire_player_id"] = str(player_id or "").strip()
+        sr["space_marines_firestorm_onslaught_of_fire_hit_bonus"] = 1
+        sr["space_marines_firestorm_onslaught_of_fire_qualified_target_ids"] = []
+        sr["space_marines_firestorm_onslaught_of_fire_source"] = (
+            str(source or "Onslaught of Fire").strip() or "Onslaught of Fire"
+        )
+        root.special_rules = sr
+        return True
+
+    def firestorm_onslaught_of_fire_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.is_firestorm_assault_force():
+            return 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, ""
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return 0, ""
+        is_ranged = getattr(parent, "is_ranged", None)
+        if not callable(is_ranged) or not bool(is_ranged()):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_firestorm_onslaught_of_fire_active")):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+        expected_phase = str(
+            sr.get("space_marines_firestorm_onslaught_of_fire_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase and current_phase and current_phase != expected_phase:
+            self.clear_firestorm_onslaught_of_fire(root)
+            return 0, ""
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            marked_turn = int(sr.get("space_marines_firestorm_onslaught_of_fire_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn and current_turn and current_turn != marked_turn:
+            self.clear_firestorm_onslaught_of_fire(root)
+            return 0, ""
+        game_map = getattr(game_obj, "map", None)
+        is_closest = getattr(root, "is_target_closest_eligible", None)
+        if game_map is None or not callable(is_closest):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        try:
+            applies = bool(
+                is_closest(
+                    attacker_model,
+                    weapon_profile,
+                    target_root,
+                    game_map,
+                    max_distance=12.0,
+                )
+            )
+        except Exception:
+            applies = False
+        if not applies:
+            return 0, ""
+        target_id = str(get_entity_id(target_root) or "")
+        if target_id:
+            qualified_ids = [
+                str(value or "").strip()
+                for value in list(sr.get("space_marines_firestorm_onslaught_of_fire_qualified_target_ids", []) or [])
+                if str(value or "").strip()
+            ]
+            if target_id not in qualified_ids:
+                qualified_ids.append(target_id)
+                sr["space_marines_firestorm_onslaught_of_fire_qualified_target_ids"] = qualified_ids
+                root.special_rules = sr
+        try:
+            bonus = int(sr.get("space_marines_firestorm_onslaught_of_fire_hit_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("space_marines_firestorm_onslaught_of_fire_source", "") or "Onslaught of Fire"
+        ).strip() or "Onslaught of Fire"
+        return int(bonus), source
+
     def close_range_eradication_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_firestorm_assault_force():
             return False

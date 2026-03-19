@@ -71,6 +71,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_company_of_hunters", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_firestorm_assault_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_firestorm_assault_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_emperors_shield_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_emperors_shield", None) if mgr is not None else None
@@ -302,6 +307,14 @@ class SpaceMarinesStratagemMixin:
         if callable(has_any):
             return bool(has_any("INFANTRY"))
         return False
+
+    def _sm_is_transport_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if self._sm_has_keyword(root, "TRANSPORT"):
+            return True
+        return bool(getattr(root, "is_transport", False))
 
     def _sm_is_battleline_unit(self, unit: Any) -> bool:
         root = self._sm_root(unit)
@@ -4127,6 +4140,492 @@ class SpaceMarinesStratagemMixin:
                 seen.add(uid)
             clear_fn(root)
 
+    def _sm_firestorm_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], dict[str, list[Any]] | None, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        embark_candidates = list(
+            kwargs.get("embark_candidates")
+            or kwargs.get("passenger_candidates")
+            or kwargs.get("infantry_candidates")
+            or []
+        )
+        embark_candidate_map = kwargs.get("embark_candidates_by_transport") or kwargs.get("passenger_candidates_by_transport")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = (
+                    reaction.get("unit")
+                    or reaction.get("target_unit")
+                    or reaction.get("transport_unit")
+                    or reaction.get("transport")
+                )
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+            if not embark_candidates:
+                embark_candidates = list(
+                    reaction.get("embark_candidates")
+                    or reaction.get("passenger_candidates")
+                    or reaction.get("infantry_candidates")
+                    or []
+                )
+            if embark_candidate_map is None:
+                embark_candidate_map = (
+                    reaction.get("embark_candidates_by_transport")
+                    or reaction.get("passenger_candidates_by_transport")
+                )
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._sm_root(unit)
+        if root is not None and not embark_candidates and hasattr(embark_candidate_map, "get"):
+            embark_candidates = list(embark_candidate_map.get(self._sm_sort_key(root)) or [])
+        return (unit, candidates, enemy_unit, embark_candidates, embark_candidate_map, from_pending)
+
+    def _space_marines_firestorm_phase_unit_candidates(
+        self,
+        *,
+        phase_name: str,
+        require_infantry: bool = False,
+        require_transport: bool = False,
+        require_empty_transport: bool = False,
+        require_disembarked_from_transport: bool = False,
+    ) -> list[Any]:
+        if not self._is_firestorm_assault_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if require_infantry and not self._sm_is_infantry_unit(root):
+                continue
+            if require_transport and not self._sm_is_transport_unit(root):
+                continue
+            if require_empty_transport and list(getattr(root, "transport_passengers", []) or []):
+                continue
+            if require_disembarked_from_transport:
+                transport_id = str(getattr(getattr(root, "round_state", None), "disembarked_from_transport_id", "") or "").strip()
+                if not transport_id:
+                    continue
+            if phase_key == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_firestorm_rapid_embarkation_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_firestorm_assault_force_detachment():
+            return ([], {})
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ([], {})
+        game_map = self._sm_game_map()
+        if game_map is None:
+            return ([], {})
+
+        infantry_units = self._space_marines_firestorm_phase_unit_candidates(
+            phase_name="Fight phase",
+            require_infantry=True,
+        )
+        infantry_by_id = {self._sm_sort_key(unit): unit for unit in infantry_units if unit is not None}
+        candidates: list[Any] = []
+        infantry_map: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            transport_root = self._sm_root(unit)
+            if transport_root is None:
+                continue
+            transport_id = self._sm_sort_key(transport_root)
+            if transport_id and transport_id in seen:
+                continue
+            if transport_id:
+                seen.add(transport_id)
+            if not self._sm_owned_by_player(transport_root, self.player):
+                continue
+            if not self._sm_on_battlefield(transport_root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(transport_root):
+                continue
+            if not self._sm_is_transport_unit(transport_root):
+                continue
+            if list(getattr(transport_root, "transport_passengers", []) or []):
+                continue
+
+            embarkable: list[Any] = []
+            for infantry_root in list(infantry_by_id.values()):
+                if infantry_root is None or infantry_root is transport_root:
+                    continue
+                if not self._sm_on_battlefield(infantry_root, require_targetable=True):
+                    continue
+                if self._sm_unit_is_engaged(infantry_root):
+                    continue
+                if bool(getattr(getattr(infantry_root, "round_state", None), "disembarked_this_round", False)):
+                    continue
+                distance = self._sm_distance_between_units(transport_root, infantry_root)
+                if distance is None or float(distance) > 6.0 + 1e-6:
+                    continue
+                can_transport = getattr(transport_root, "can_transport", None)
+                if callable(can_transport) and not bool(can_transport(infantry_root)):
+                    continue
+                embarkable.append(infantry_root)
+            embarkable.sort(key=self._sm_sort_key)
+            if not embarkable:
+                continue
+            candidates.append(transport_root)
+            infantry_map[transport_id] = embarkable
+        candidates.sort(key=self._sm_sort_key)
+        return (candidates, infantry_map)
+
+    def _space_marines_firestorm_burning_vengeance_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        hits_by_target: Any,
+    ) -> list[Any]:
+        if not self._is_firestorm_assault_force_detachment():
+            return []
+        attacker_root = self._sm_root(attacking_unit)
+        if attacker_root is None or self._sm_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for target_unit in list((hits_by_target or {}).keys() if isinstance(hits_by_target, dict) else []):
+            root = self._sm_root(target_unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_transport_unit(root):
+                continue
+            if not list(getattr(root, "transport_passengers", []) or []):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _queue_space_marines_firestorm_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_firestorm_assault_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            phase_reactions = (
+                (
+                    "CRUCIBLE OF BATTLE",
+                    self._space_marines_firestorm_phase_unit_candidates(
+                        phase_name="Shooting phase",
+                        require_infantry=True,
+                    ),
+                ),
+                (
+                    "IMMOLATION PROTOCOLS",
+                    self._space_marines_firestorm_phase_unit_candidates(phase_name="Shooting phase"),
+                ),
+                (
+                    "ONSLAUGHT OF FIRE",
+                    self._space_marines_firestorm_phase_unit_candidates(
+                        phase_name="Shooting phase",
+                        require_disembarked_from_transport=True,
+                    ),
+                ),
+            )
+            for stratagem_name, candidates in phase_reactions:
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Shooting phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("CRUCIBLE OF BATTLE")
+            candidates = self._space_marines_firestorm_phase_unit_candidates(
+                phase_name="Fight phase",
+                require_infantry=True,
+            )
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Fight phase",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_firestorm_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_firestorm_assault_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("RAPID EMBARKATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, embark_candidate_map = self._space_marines_firestorm_rapid_embarkation_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "embark_candidates_by_transport": embark_candidate_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            uid = self._sm_sort_key(candidates[0])
+            embark_candidates = list(embark_candidate_map.get(uid) or [])
+            if embark_candidates:
+                payload["embark_candidates"] = embark_candidates
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_firestorm_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        if not self._is_firestorm_assault_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+
+        if active_player is self.player:
+            if not self._sm_owned_by_player(attacker_root, self.player):
+                return
+            sr = getattr(attacker_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("space_marines_firestorm_onslaught_of_fire_active")):
+                return
+            qualified_target_ids = {
+                str(value or "").strip()
+                for value in list(sr.get("space_marines_firestorm_onslaught_of_fire_qualified_target_ids", []) or [])
+                if str(value or "").strip()
+            }
+            if not qualified_target_ids:
+                return
+            from ..engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+            attacker_id = str(get_entity_id(attacker_root) or "")
+            ability_name = (
+                str(sr.get("space_marines_firestorm_onslaught_of_fire_source", "") or "Onslaught of Fire").strip()
+                or "Onslaught of Fire"
+            )
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+                        continue
+                    if str(ctx.get("ability_name", "") or "").strip() != ability_name:
+                        continue
+                    return
+
+            candidates: list[Any] = []
+            seen: set[str] = set()
+            for target_unit, killed_models in list((killing_models_by_target or {}).items() if isinstance(killing_models_by_target, dict) else []):
+                if not killed_models:
+                    continue
+                target_root = self._sm_root(target_unit)
+                if target_root is None:
+                    continue
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id in seen:
+                    continue
+                seen.add(target_id)
+                if target_id not in qualified_target_ids:
+                    continue
+                if self._sm_owned_by_player(target_root, self.player):
+                    continue
+                if not self._sm_is_alive(target_root):
+                    continue
+                candidates.append(target_root)
+            candidates.sort(key=self._sm_sort_key)
+            if not candidates:
+                return
+
+            options = [
+                DecisionOption.create(
+                    str(getattr(target_root, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(target_root)},
+                )
+                for target_root in list(candidates)
+            ]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                f"{ability_name}: select a unit to take a Battle-shock test.",
+                player_id=getattr(self.player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": attacker_id,
+                    "ability_name": ability_name,
+                },
+            )
+            if self.game is not None and hasattr(self.game, "request_decision"):
+                self.game.request_decision(request)
+            return
+
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("BURNING VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_firestorm_burning_vengeance_candidates(
+            attacking_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_firestorm_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_firestorm_assault_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return
+        clear_crucible = getattr(mgr, "clear_firestorm_crucible_of_battle", None)
+        clear_onslaught = getattr(mgr, "clear_firestorm_onslaught_of_fire", None)
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if callable(clear_crucible):
+                clear_crucible(root)
+            if phase_key == "SHOOTING_PHASE" and callable(clear_onslaught):
+                clear_onslaught(root)
+
     def _queue_space_marines_emperors_shield_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_emperors_shield_detachment():
             return
@@ -5028,6 +5527,397 @@ class SpaceMarinesStratagemMixin:
             getattr(root, "name", "Unit"),
         )
         return True
+
+    def _use_space_marines_burning_vengeance(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BURNING VENGEANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: BURNING VENGEANCE: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, enemy_unit, _embark_candidates, _embark_candidate_map, from_pending = self._sm_firestorm_context(
+            "BURNING VENGEANCE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: BURNING VENGEANCE: no target transport provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(enemy_unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: BURNING VENGEANCE: target transport is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BURNING VENGEANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_transport_unit(root):
+            logger.error("ERROR: BURNING VENGEANCE: target must be an ADEPTUS ASTARTES TRANSPORT")
+            return False
+        if candidates and not self._sm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BURNING VENGEANCE: target is not currently eligible")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: BURNING VENGEANCE: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: BURNING VENGEANCE: attacking unit must be an enemy unit")
+            return False
+        embarked = list(getattr(root, "transport_passengers", []) or [])
+        if not embarked:
+            logger.error("ERROR: BURNING VENGEANCE: no embarked units")
+            return False
+        if not from_pending and not isinstance(kwargs.get("hits_by_target"), dict):
+            kwargs.setdefault("trigger", "unit_shooting_resolved")
+
+        queue_fn = getattr(self.game, "_queue_transport_reactive_disembark_decisions", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: BURNING VENGEANCE: reactive disembark decision queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        requests = list(
+            queue_fn(
+                player=self.player,
+                transport=root,
+                enemy_unit=attacker_root,
+                ability={"name": str(stratagem.name or "BURNING VENGEANCE")},
+                trigger="unit_shooting_resolved",
+                max_units=1,
+            )
+            or []
+        )
+        if not requests:
+            logger.error("ERROR: BURNING VENGEANCE: no disembark decision was queued")
+            return False
+        enemy_id = str(get_entity_id(attacker_root) or "")
+        for req in requests:
+            req_ctx = dict(getattr(req, "context", {}) or {})
+            req_ctx["reactive_disembark_then_shoot_enemy_only"] = True
+            req_ctx["reactive_disembark_shoot_enemy_id"] = enemy_id
+            req_ctx["reactive_disembark_shoot_source"] = str(stratagem.name or "BURNING VENGEANCE")
+            req.context = req_ctx
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BURNING VENGEANCE: queued disembark decision and follow-up reactive shooting into the attacking unit."
+        )
+        return True
+
+    def _use_space_marines_crucible_of_battle(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CRUCIBLE OF BATTLE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: CRUCIBLE OF BATTLE: not your Shooting phase")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "CRUCIBLE OF BATTLE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: CRUCIBLE OF BATTLE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target must be an INFANTRY unit")
+            return False
+        eligible = candidates or self._space_marines_firestorm_phase_unit_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+            require_infantry=True,
+        )
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: selected unit is not currently eligible")
+            return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: target has already been selected to fight this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_firestorm_crucible_of_battle", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: Firestorm detachment manager unavailable")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        applied = apply_fn(
+            root,
+            phase_name=phase_label,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "CRUCIBLE OF BATTLE"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: CRUCIBLE OF BATTLE: failed to apply wound bonus")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRUCIBLE OF BATTLE: %s gains +1 to wound against the closest eligible target within 6\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_immolation_protocols(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: IMMOLATION PROTOCOLS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: IMMOLATION PROTOCOLS: not your Shooting phase")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "IMMOLATION PROTOCOLS",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: IMMOLATION PROTOCOLS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: IMMOLATION PROTOCOLS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: IMMOLATION PROTOCOLS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: IMMOLATION PROTOCOLS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        eligible = candidates or self._space_marines_firestorm_phase_unit_candidates(phase_name="Shooting phase")
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: IMMOLATION PROTOCOLS: selected unit is not currently eligible")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: IMMOLATION PROTOCOLS: target has already been selected to shoot this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "IMMOLATION PROTOCOLS").strip() or "IMMOLATION PROTOCOLS"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                is_torrent = getattr(wargear, "is_torrent", None)
+                has_torrent = bool(callable(is_torrent) and is_torrent())
+                if not has_torrent:
+                    get_keywords = getattr(wargear, "get_keywords", None)
+                    if callable(get_keywords):
+                        keywords = {
+                            str(keyword or "").strip().upper()
+                            for keyword in list(get_keywords() or [])
+                            if str(keyword or "").strip()
+                        }
+                        has_torrent = "TORRENT" in keywords
+                if not has_torrent:
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_immolation_protocols:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["DEVASTATING WOUNDS"],
+                        source=source,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: IMMOLATION PROTOCOLS: %s grants [DEVASTATING WOUNDS] to Torrent ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_onslaught_of_fire(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ONSLAUGHT OF FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ONSLAUGHT OF FIRE: not your Shooting phase")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "ONSLAUGHT OF FIRE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: ONSLAUGHT OF FIRE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        transport_id = str(getattr(getattr(root, "round_state", None), "disembarked_from_transport_id", "") or "").strip()
+        if not transport_id:
+            logger.error("ERROR: ONSLAUGHT OF FIRE: target must have disembarked from a Transport this turn")
+            return False
+        eligible = candidates or self._space_marines_firestorm_phase_unit_candidates(
+            phase_name="Shooting phase",
+            require_disembarked_from_transport=True,
+        )
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: selected unit is not currently eligible")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: target has already been selected to shoot this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_firestorm_onslaught_of_fire", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: Firestorm detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "ONSLAUGHT OF FIRE"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: ONSLAUGHT OF FIRE: failed to apply hit bonus")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ONSLAUGHT OF FIRE: %s gains +1 to hit against the closest eligible target within 12\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_rapid_embarkation(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RAPID EMBARKATION: wrong phase")
+            return False
+
+        unit, candidates, _enemy_unit, embark_candidates, embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "RAPID EMBARKATION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RAPID EMBARKATION: no target transport provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RAPID EMBARKATION: target transport is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RAPID EMBARKATION: target transport must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_transport_unit(root):
+            logger.error("ERROR: RAPID EMBARKATION: target must be an ADEPTUS ASTARTES TRANSPORT")
+            return False
+        if list(getattr(root, "transport_passengers", []) or []):
+            logger.error("ERROR: RAPID EMBARKATION: target transport must have no embarked models")
+            return False
+        eligible_transports, embark_map = self._space_marines_firestorm_rapid_embarkation_candidates()
+        if not candidates:
+            candidates = eligible_transports
+        if candidates and not self._sm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: RAPID EMBARKATION: selected transport is not currently eligible")
+            return False
+        if not embark_candidates:
+            candidate_map = embark_candidate_map if embark_candidate_map is not None else embark_map
+            embark_candidates = list(candidate_map.get(self._sm_sort_key(root)) or []) if hasattr(candidate_map, "get") else []
+        if not embark_candidates:
+            logger.error("ERROR: RAPID EMBARKATION: no eligible Infantry units can embark")
+            return False
+
+        queue_fn = getattr(self.game, "_queue_end_of_fight_embark_decision", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: RAPID EMBARKATION: end-of-fight embark decision queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            transport=root,
+            candidates=embark_candidates,
+            spec={
+                "source": str(getattr(stratagem, "name", "") or "RAPID EMBARKATION"),
+                "range": 6,
+                "keyword": "ADEPTUS ASTARTES",
+            },
+        )
+        if request is None:
+            logger.error("ERROR: RAPID EMBARKATION: no embark decision was queued")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RAPID EMBARKATION: queued embark decision for a nearby eligible Infantry unit."
+        )
+        return True
+
+    def _use_space_marines_firestorm_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_firestorm_assault_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BURNING VENGEANCE":
+            return self._use_space_marines_burning_vengeance(stratagem, **kwargs)
+        if name_u == "CRUCIBLE OF BATTLE":
+            return self._use_space_marines_crucible_of_battle(stratagem, **kwargs)
+        if name_u == "IMMOLATION PROTOCOLS":
+            return self._use_space_marines_immolation_protocols(stratagem, **kwargs)
+        if name_u == "ONSLAUGHT OF FIRE":
+            return self._use_space_marines_onslaught_of_fire(stratagem, **kwargs)
+        if name_u == "RAPID EMBARKATION":
+            return self._use_space_marines_rapid_embarkation(stratagem, **kwargs)
+        return None
 
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()

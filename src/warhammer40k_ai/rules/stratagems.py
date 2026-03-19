@@ -520,6 +520,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
+    "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
@@ -551,6 +552,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
     "NEW ORDERS",
     "PEERLESS WARRIOR",
+    "RAPID EMBARKATION",
     "RAPID INGRESS",
     "FIRE AND FADE",
     "MURDER-CALL",
@@ -1782,6 +1784,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "DEATH ON THE WIND" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_company_of_hunters)
+        if names & {"BURNING VENGEANCE", "ONSLAUGHT OF FIRE"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_firestorm)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
@@ -1988,6 +1992,7 @@ class StratagemManager(
             "PROFANE SYMBIOSIS",
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
+            "RAPID EMBARKATION",
             "RETURN TO THE SHADOWS",
             "WALL OF MIRRORS",
             "INVISIBLE HUNTER",
@@ -2024,6 +2029,8 @@ class StratagemManager(
             "HACK AND SLASH",
             "FRENZIED RESILIENCE",
             "DEFIANT TO THE LAST",
+            "CRUCIBLE OF BATTLE",
+            "ONSLAUGHT OF FIRE",
             "PEERLESS WARRIOR",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
@@ -2604,7 +2611,22 @@ class StratagemManager(
             return None
         ts = self._now() if now is None else float(now)
         return max(0.0, float(expires_at) - ts)
+
+    def _is_custom_implemented_stratagem(self, stratagem: Stratagem) -> bool:
+        stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
+        if stratagem_id in {
+            "000008483003",
+            "000008483004",
+            "000008483005",
+            "000008483006",
+            "000008483007",
+        }:
+            return bool(self._is_firestorm_assault_force_detachment())
+        return False
+
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
+        if self._is_custom_implemented_stratagem(stratagem):
+            return True
         name_u = (stratagem.name or "").strip().upper()
         if name_u in IMPLEMENTED_STRATAGEM_NAMES:
             return True
@@ -5948,6 +5970,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_firestorm_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_company_of_hunters_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7006,6 +7032,7 @@ class StratagemManager(
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_emperors_shield_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
@@ -7143,6 +7170,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_anvil_siege_force_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_firestorm_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9641,6 +9672,19 @@ class StratagemManager(
         self._queue_space_marines_company_of_hunters_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
             hits_by_target=hits_by_target,
+        )
+
+    def _on_unit_shooting_resolved_space_marines_firestorm(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        killing_models_by_target=None,
+        **_kwargs,
+    ):
+        self._queue_space_marines_firestorm_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+            killing_models_by_target=killing_models_by_target,
         )
 
     def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
@@ -16305,6 +16349,9 @@ class StratagemManager(
         vehemence_result = self._use_space_marines_companions_of_vehemence_stratagem(s, **kwargs)
         if vehemence_result is not None:
             return vehemence_result
+        firestorm_result = self._use_space_marines_firestorm_assault_force_stratagem(s, **kwargs)
+        if firestorm_result is not None:
+            return firestorm_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

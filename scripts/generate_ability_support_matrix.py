@@ -20305,6 +20305,37 @@ def _stratagem_support(
             return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
         return ("Not implemented", "Not implemented in engine.", name_u)
 
+    if stratagem_id == "000008483003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet been selected gains +1 to wound against the closest eligible target within 6\" until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008483004":
+        return (
+            "Implemented",
+            "End of the Fight phase: selected empty ADEPTUS ASTARTES Transport can embark one nearby eligible ADEPTUS ASTARTES INFANTRY unit within 6\".",
+            name_u,
+        )
+    if stratagem_id == "000008483005":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected grants [DEVASTATING WOUNDS] to its Torrent ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008483006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that disembarked from a Transport this turn gains +1 to hit against the closest eligible target within 12\" and can force a post-shoot Battle-shock test on an enemy unit that lost models to those attacks.",
+            name_u,
+        )
+    if stratagem_id == "000008483007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction: selected ADEPTUS ASTARTES Transport can reactively disembark one embarked unit, which then shoots only the attacking enemy unit if it remains an eligible target.",
+            name_u,
+        )
+
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
     spec = parse_defensive_reaction_stratagem(name, description or "")

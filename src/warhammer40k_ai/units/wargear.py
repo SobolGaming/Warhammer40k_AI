@@ -10874,6 +10874,27 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Space Marines: Firestorm Assault Force (Onslaught of Fire) +1 to hit
+        # for ranged attacks against the closest eligible target within 12".
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "firestorm_onslaught_of_fire_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if bonus:
+                    source_name = str(source or "Onslaught of Fire").strip() or "Onslaught of Fire"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
         # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to hit vs targets below starting strength.
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -17651,6 +17672,30 @@ class WargearProfile:
                 )
                 if wound_bonus:
                     source_name = str(source or "Talon Strike").strip() or "Talon Strike"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Space Marines: Firestorm Assault Force (Crucible of Battle) +1 to wound
+        # for attacks that target the closest eligible target within 6".
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            bonus_fn = getattr(sm_mgr, "firestorm_crucible_of_battle_wound_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Crucible of Battle").strip() or "Crucible of Battle"
                     dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"
