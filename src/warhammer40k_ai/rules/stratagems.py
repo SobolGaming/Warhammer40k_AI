@@ -518,6 +518,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLOODY VENGEANCE",
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
+    "BLAZING EARTH",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
@@ -628,6 +629,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "WRATHFUL INFERNO",
     "CRUSHING IMPACT",
     "UNSTOPPABLE MOMENTUM",
     "KRUNCHIN' DESCENT",
@@ -1705,6 +1707,7 @@ class StratagemManager(
             "SQUIG FLINGIN'",
             "LEGENDARY FORTITUDE",
             "HERESY BEGETS RETRIBUTION",
+            "WRATHFUL INFERNO",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1786,6 +1789,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_company_of_hunters)
         if names & {"BURNING VENGEANCE", "ONSLAUGHT OF FIRE"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_firestorm)
+        if "BURNING VENGEANCE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_forgefathers)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
@@ -2160,6 +2165,8 @@ class StratagemManager(
             "WILL-SAPPING SALVO",
             "WILL‑SAPPING SALVO",
             "VOID HARDENED",
+            "WRATHFUL INFERNO",
+            "BLAZING EARTH",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2622,6 +2629,14 @@ class StratagemManager(
             "000008483007",
         }:
             return bool(self._is_firestorm_assault_force_detachment())
+        if stratagem_id in {
+            "000010369003",
+            "000010369004",
+            "000010369005",
+            "000010369006",
+            "000010369007",
+        }:
+            return bool(self._is_forgefathers_seekers_detachment())
         return False
 
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
@@ -5974,6 +5989,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_forgefathers_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_company_of_hunters_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7174,6 +7193,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_firestorm_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_forgefathers_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8948,6 +8971,7 @@ class StratagemManager(
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
@@ -9685,6 +9709,12 @@ class StratagemManager(
             attacker_unit=attacker_unit,
             hits_by_target=hits_by_target,
             killing_models_by_target=killing_models_by_target,
+        )
+
+    def _on_unit_shooting_resolved_space_marines_forgefathers(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        self._queue_space_marines_forgefathers_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
         )
 
     def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
@@ -16352,6 +16382,9 @@ class StratagemManager(
         firestorm_result = self._use_space_marines_firestorm_assault_force_stratagem(s, **kwargs)
         if firestorm_result is not None:
             return firestorm_result
+        forgefathers_result = self._use_space_marines_forgefathers_seekers_stratagem(s, **kwargs)
+        if forgefathers_result is not None:
+            return forgefathers_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

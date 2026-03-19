@@ -4532,6 +4532,85 @@ _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FORGEFATHERS_SEEKERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010369003": StratagemToolDescriptor(
+        stratagem_id="000010369003",
+        name="Crucible of Battle",
+        timing="shooting_or_fight_phase_before_selected",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="closest_eligible_target_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "wound_bonus": 1,
+            "max_distance_in": 6.0,
+        },
+    ),
+    "000010369004": StratagemToolDescriptor(
+        stratagem_id="000010369004",
+        name="Wrathful Inferno",
+        timing="movement_phase_after_fall_back",
+        target="adeptus_astartes_infantry_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+        },
+    ),
+    "000010369005": StratagemToolDescriptor(
+        stratagem_id="000010369005",
+        name="Immolation Protocols",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="grant_devastating_wounds_to_torrent_ranged_weapons",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attack_type": "ranged",
+            "required_weapon_keywords_any": ["TORRENT"],
+            "granted_weapon_keywords": ["DEVASTATING WOUNDS"],
+        },
+    ),
+    "000010369006": StratagemToolDescriptor(
+        stratagem_id="000010369006",
+        name="Burning Vengeance",
+        timing="opponent_shooting_phase_after_enemy_unit_resolves_attacks",
+        target="adeptus_astartes_transport_targeted_by_attacking_enemy_unit",
+        duration="immediate",
+        effect="reactive_disembark_then_forced_shoot_attacker",
+        cp_cost=1,
+        effect_params={
+            "transport_required_keywords_all": ["ADEPTUS ASTARTES", "TRANSPORT"],
+            "max_disembarking_units": 1,
+            "requires_transport_with_embarked_units": True,
+            "forced_shooting_target": "attacking_unit",
+        },
+    ),
+    "000010369007": StratagemToolDescriptor(
+        stratagem_id="000010369007",
+        name="Blazing Earth",
+        timing="start_of_opponent_charge_phase",
+        target="adeptus_astartes_unit_with_torrent_weapon_then_visible_non_monster_non_vehicle_non_fly_enemy_within_12",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_modifier_non_cumulative_negative",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "required_weapon_keywords_any": ["TORRENT"],
+            "charge_roll_modifier": -2,
+            "range_inches": 12,
+            "exclude_keywords_any": ["MONSTER", "VEHICLE", "FLY"],
+        },
+    ),
+}
+
+_FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FORGEFATHERS_SEEKERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008523003": StratagemToolDescriptor(
         stratagem_id="000008523003",
@@ -5405,6 +5484,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FORGEFATHERS_SEEKERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5510,6 +5592,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
         or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)

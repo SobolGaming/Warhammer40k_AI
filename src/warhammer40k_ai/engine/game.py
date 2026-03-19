@@ -14438,12 +14438,16 @@ class Game(
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
 
-        # IMPEDING FIRE / IMPERIALIS OF THE ETERNAL CRUSADE:
+        # IMPEDING FIRE / IMPERIALIS OF THE ETERNAL CRUSADE / BLAZING EARTH:
         # these are not cumulative with other negative charge modifiers.
         has_non_cumulative_negative = False
         for _val, source in list(modifiers or []):
             norm_source = str(source or "").replace("\u2019", "'").strip().upper()
-            if "IMPEDING FIRE" in norm_source or "IMPERIALIS OF THE ETERNAL CRUSADE" in norm_source:
+            if (
+                "IMPEDING FIRE" in norm_source
+                or "IMPERIALIS OF THE ETERNAL CRUSADE" in norm_source
+                or "BLAZING EARTH" in norm_source
+            ):
                 has_non_cumulative_negative = True
                 break
         if has_non_cumulative_negative:

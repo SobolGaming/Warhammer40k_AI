@@ -17737,6 +17737,20 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(
+                mgr,
+                "forgefathers_seekers_wrathful_inferno_shoot_after_fall_back_applies",
+                None,
+            ) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if apply_fn(self, weapon_profile=profile, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "legacy_of_the_angel_sanguinary_grace_applies", None):
                 if mgr.legacy_of_the_angel_sanguinary_grace_applies(self):
                     return True

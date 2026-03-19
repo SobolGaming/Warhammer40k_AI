@@ -76,6 +76,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_firestorm_assault_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_forgefathers_seekers_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_forgefathers_seekers", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_emperors_shield_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_emperors_shield", None) if mgr is not None else None
@@ -258,6 +263,56 @@ class SpaceMarinesStratagemMixin:
         if callable(get_models):
             return list(get_models() or [])
         return list(getattr(unit, "models", []) or [])
+
+    def _sm_unit_has_torrent_ranged_weapon(self, unit: Any) -> bool:
+        for model in self._sm_unit_models(unit):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                is_torrent = getattr(wargear, "is_torrent", None)
+                has_torrent = bool(callable(is_torrent) and is_torrent())
+                if not has_torrent:
+                    get_keywords = getattr(wargear, "get_keywords", None)
+                    if callable(get_keywords):
+                        keywords = {
+                            str(keyword or "").strip().upper()
+                            for keyword in list(get_keywords() or [])
+                            if str(keyword or "").strip()
+                        }
+                        has_torrent = "TORRENT" in keywords
+                if has_torrent:
+                    return True
+        return False
+
+    def _sm_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._sm_root(source_unit)
+        target_root = self._sm_root(target_unit)
+        game_map = self._sm_game_map()
+        if source_root is None or target_root is None:
+            return False
+        if game_map is None:
+            return True
+        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if not callable(has_los):
+            return True
+        for model in self._sm_unit_models(source_root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            try:
+                if bool(has_los(model, target_root, game_map)):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _sm_alive_model_count(self, unit: Any) -> int:
         count = 0
@@ -4202,7 +4257,7 @@ class SpaceMarinesStratagemMixin:
         require_empty_transport: bool = False,
         require_disembarked_from_transport: bool = False,
     ) -> list[Any]:
-        if not self._is_firestorm_assault_force_detachment():
+        if not (self._is_firestorm_assault_force_detachment() or self._is_forgefathers_seekers_detachment()):
             return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -4313,7 +4368,7 @@ class SpaceMarinesStratagemMixin:
         attacking_unit: Any,
         hits_by_target: Any,
     ) -> list[Any]:
-        if not self._is_firestorm_assault_force_detachment():
+        if not (self._is_firestorm_assault_force_detachment() or self._is_forgefathers_seekers_detachment()):
             return []
         attacker_root = self._sm_root(attacking_unit)
         if attacker_root is None or self._sm_owned_by_player(attacker_root, self.player):
@@ -4340,6 +4395,83 @@ class SpaceMarinesStratagemMixin:
             if not list(getattr(root, "transport_passengers", []) or []):
                 continue
             out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_forgefathers_wrathful_inferno_candidates(self, *, moved_unit: Any = None) -> list[Any]:
+        if not self._is_forgefathers_seekers_detachment():
+            return []
+        if moved_unit is not None:
+            root = self._sm_root(moved_unit)
+            if root is None:
+                return []
+            if not self._sm_owned_by_player(root, self.player):
+                return []
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                return []
+            if not self._is_adeptus_astartes_unit(root):
+                return []
+            if not self._sm_is_infantry_unit(root):
+                return []
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                return []
+            return [root]
+        out: list[Any] = []
+        for root in self._space_marines_firestorm_phase_unit_candidates(
+            phase_name="Movement phase",
+            require_infantry=True,
+        ):
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_forgefathers_blazing_earth_source_candidates(self) -> list[Any]:
+        if not self._is_forgefathers_seekers_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._space_marines_firestorm_phase_unit_candidates(phase_name="Charge phase"):
+            if not self._sm_unit_has_torrent_ranged_weapon(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_forgefathers_blazing_earth_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_forgefathers_seekers_detachment():
+            return []
+        source_root = self._sm_root(source_unit)
+        if source_root is None:
+            return []
+        game_map = self._sm_game_map()
+        if game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(source_root) or []):
+            enemy_root = self._sm_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._sm_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._sm_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._sm_on_battlefield(enemy_root, require_targetable=True):
+                continue
+            if self._sm_has_keyword(enemy_root, "MONSTER") or self._sm_has_keyword(enemy_root, "VEHICLE"):
+                continue
+            if self._sm_has_keyword(enemy_root, "FLY"):
+                continue
+            distance = self._sm_distance_between_units(source_root, enemy_root)
+            if distance is None or float(distance) > 12.0 + 1e-6:
+                continue
+            if not self._sm_unit_visible_to_unit(source_root, enemy_root):
+                continue
+            out.append(enemy_root)
         return sorted(out, key=self._sm_sort_key)
 
     def _queue_space_marines_firestorm_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
@@ -4467,6 +4599,218 @@ class SpaceMarinesStratagemMixin:
                 payload["embark_candidates"] = embark_candidates
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_forgefathers_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_forgefathers_seekers_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            phase_reactions = (
+                (
+                    "CRUCIBLE OF BATTLE",
+                    self._space_marines_firestorm_phase_unit_candidates(
+                        phase_name="Shooting phase",
+                        require_infantry=True,
+                    ),
+                ),
+                (
+                    "IMMOLATION PROTOCOLS",
+                    self._space_marines_firestorm_phase_unit_candidates(phase_name="Shooting phase"),
+                ),
+            )
+            for stratagem_name, candidates in phase_reactions:
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Shooting phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("CRUCIBLE OF BATTLE")
+            candidates = self._space_marines_firestorm_phase_unit_candidates(
+                phase_name="Fight phase",
+                require_infantry=True,
+            )
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Fight phase",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "CHARGE_PHASE" and active_player is not self.player:
+            stratagem = self.get_by_name("BLAZING EARTH")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            candidates = self._space_marines_forgefathers_blazing_earth_source_candidates()
+            if not candidates:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Charge phase",
+            ):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Charge phase",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+                enemy_candidates = self._space_marines_forgefathers_blazing_earth_enemy_candidates(candidates[0])
+                if enemy_candidates:
+                    payload["enemy_candidates"] = enemy_candidates
+                    if len(enemy_candidates) == 1:
+                        payload["enemy_unit"] = enemy_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_forgefathers_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_forgefathers_seekers_detachment():
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        root = self._sm_root(unit)
+        if root is None:
+            return
+        if not self._sm_owned_by_player(root, self.player):
+            return
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_infantry_unit(root):
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        stratagem = self.get_by_name("WRATHFUL INFERNO")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "action": "fall_back",
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_space_marines_flame_burning_vengeance_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not (self._is_firestorm_assault_force_detachment() or self._is_forgefathers_seekers_detachment()):
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_is_alive(attacker_root):
+            return
+        if self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("BURNING VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_firestorm_burning_vengeance_candidates(
+            attacking_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_space_marines_firestorm_shooting_resolved_reactions(
         self,
         *,
@@ -4560,41 +4904,23 @@ class SpaceMarinesStratagemMixin:
                 self.game.request_decision(request)
             return
 
-        if self._sm_owned_by_player(attacker_root, self.player):
-            return
-        stratagem = self.get_by_name("BURNING VENGEANCE")
-        if stratagem is None:
-            return
-        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
-            return
-        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
-            return
-        candidates = self._space_marines_firestorm_burning_vengeance_candidates(
-            attacking_unit=attacker_root,
+        self._queue_space_marines_flame_burning_vengeance_shooting_resolved_reactions(
+            attacker_unit=attacker_root,
             hits_by_target=hits_by_target,
         )
-        if not candidates:
+
+    def _queue_space_marines_forgefathers_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_forgefathers_seekers_detachment():
             return
-        if self._sm_reaction_already_queued(
-            event_name="unit_shooting_resolved",
-            stratagem_name=stratagem.name,
-            phase_name="Shooting phase",
-            attacking_unit=attacker_root,
-        ):
-            return
-        payload = {
-            "event": "unit_shooting_resolved",
-            "phase_name": "Shooting phase",
-            "stratagem": stratagem.name,
-            "cp_cost": stratagem.cp_cost,
-            "attacking_unit": attacker_root,
-            "enemy_unit": attacker_root,
-            "candidates": candidates,
-        }
-        if len(candidates) == 1:
-            payload["unit"] = candidates[0]
-            payload["target_unit"] = candidates[0]
-        self._queue_reaction(payload, use_timer=False)
+        self._queue_space_marines_flame_burning_vengeance_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
 
     def _cleanup_space_marines_firestorm_phase_end_effects(self, *, phase: Any) -> None:
         if not self._is_firestorm_assault_force_detachment():
@@ -4625,6 +4951,75 @@ class SpaceMarinesStratagemMixin:
                 clear_crucible(root)
             if phase_key == "SHOOTING_PHASE" and callable(clear_onslaught):
                 clear_onslaught(root)
+
+    def _cleanup_space_marines_forgefathers_phase_end_effects(self, *, player: Any = None, phase: Any = None) -> None:
+        if not self._is_forgefathers_seekers_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE", "CHARGE_PHASE"}:
+            return
+        mgr = self._sm_detachment_mgr()
+        armies: list[Any] = []
+        if phase_key == "CHARGE_PHASE" and self.game is not None:
+            for roster_player in list(getattr(self.game, "players", []) or []):
+                get_army = getattr(roster_player, "get_army", None)
+                army = get_army() if callable(get_army) else getattr(roster_player, "army", None)
+                if army is not None:
+                    armies.append(army)
+        else:
+            get_army = getattr(self.player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+            if army is not None:
+                armies.append(army)
+        if not armies:
+            return
+        seen: set[str] = set()
+        for army in armies:
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._sm_root(unit)
+                if root is None:
+                    continue
+                uid = self._sm_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                    clear_crucible = getattr(mgr, "clear_forgefathers_seekers_crucible_of_battle", None) if mgr is not None else None
+                    if callable(clear_crucible):
+                        clear_crucible(root)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                if phase_key == "CHARGE_PHASE":
+                    mods = list(sr.get("charge_roll_modifiers", []) or [])
+                    kept = []
+                    removed = False
+                    for item in mods:
+                        if not isinstance(item, dict):
+                            kept.append(item)
+                            continue
+                        if str(item.get("source_key", "") or "") != "space_marines_forgefathers_blazing_earth":
+                            kept.append(item)
+                            continue
+                        exp = str(item.get("expires_phase", "") or "").strip().upper()
+                        if exp and exp != phase_key:
+                            kept.append(item)
+                            continue
+                        removed = True
+                    if removed:
+                        if kept:
+                            sr["charge_roll_modifiers"] = kept
+                        else:
+                            sr.pop("charge_roll_modifiers", None)
+                        root.special_rules = sr
+                if phase_key == "FIGHT_PHASE" and player is self.player:
+                    clear_wrathful = getattr(mgr, "clear_forgefathers_seekers_wrathful_inferno", None) if mgr is not None else None
+                    if callable(clear_wrathful):
+                        clear_wrathful(root)
 
     def _queue_space_marines_emperors_shield_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_emperors_shield_detachment():
@@ -5657,9 +6052,17 @@ class SpaceMarinesStratagemMixin:
             return False
 
         mgr = self._sm_detachment_mgr()
-        apply_fn = getattr(mgr, "set_firestorm_crucible_of_battle", None) if mgr is not None else None
+        if self._is_firestorm_assault_force_detachment():
+            apply_fn = getattr(mgr, "set_firestorm_crucible_of_battle", None) if mgr is not None else None
+            detachment_label = "Firestorm Assault Force"
+        elif self._is_forgefathers_seekers_detachment():
+            apply_fn = getattr(mgr, "set_forgefathers_seekers_crucible_of_battle", None) if mgr is not None else None
+            detachment_label = "Forgefather's Seekers"
+        else:
+            apply_fn = None
+            detachment_label = "Space Marines"
         if not callable(apply_fn):
-            logger.error("ERROR: CRUCIBLE OF BATTLE: Firestorm detachment manager unavailable")
+            logger.error("ERROR: CRUCIBLE OF BATTLE: %s detachment manager unavailable", detachment_label)
             return False
         phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
         applied = apply_fn(
@@ -5901,6 +6304,163 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_wrathful_inferno(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WRATHFUL INFERNO: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: WRATHFUL INFERNO: not your Movement phase")
+            return False
+        action_key = str(kwargs.get("action", "") or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: WRATHFUL INFERNO: wrong trigger")
+            return False
+
+        unit, candidates, _enemy_unit, _embark_candidates, _embark_candidate_map, _from_pending = self._sm_firestorm_context(
+            "WRATHFUL INFERNO",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: WRATHFUL INFERNO: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: WRATHFUL INFERNO: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: WRATHFUL INFERNO: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root) or not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: WRATHFUL INFERNO: target must be an ADEPTUS ASTARTES INFANTRY unit")
+            return False
+        eligible = candidates or self._space_marines_forgefathers_wrathful_inferno_candidates(moved_unit=root)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: WRATHFUL INFERNO: selected unit is not currently eligible")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: WRATHFUL INFERNO: target must have Fallen Back this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_forgefathers_seekers_wrathful_inferno", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: WRATHFUL INFERNO: Forgefather's Seekers detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "WRATHFUL INFERNO"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: WRATHFUL INFERNO: failed to apply fall-back shooting permission")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WRATHFUL INFERNO: %s can shoot after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_blazing_earth(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: BLAZING EARTH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: BLAZING EARTH: not opponent's Charge phase")
+            return False
+
+        context = self._sm_firestorm_context("BLAZING EARTH", kwargs)
+        unit, candidates, enemy_unit, _embark_candidates, _embark_candidate_map, _from_pending = context
+        target_root = self._sm_root(unit)
+        if not candidates:
+            candidates = self._space_marines_forgefathers_blazing_earth_source_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: BLAZING EARTH: missing source unit")
+                return False
+        if not self._sm_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: BLAZING EARTH: source unit must be currently eligible")
+            return False
+        if not self._sm_owned_by_player(target_root, self.player):
+            logger.error("ERROR: BLAZING EARTH: source unit is not yours")
+            return False
+        if not self._sm_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: BLAZING EARTH: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(target_root):
+            logger.error("ERROR: BLAZING EARTH: source unit must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_unit_has_torrent_ranged_weapon(target_root):
+            logger.error("ERROR: BLAZING EARTH: source unit must be equipped with one or more Torrent weapons")
+            return False
+
+        enemy_root = self._sm_root(enemy_unit)
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BLAZING EARTH":
+                    continue
+                enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                if enemy_root is None:
+                    enemy_root = self._sm_root(reaction.get("enemy_unit") or reaction.get("target_enemy_unit"))
+                break
+        if not enemy_candidates:
+            enemy_candidates = self._space_marines_forgefathers_blazing_earth_enemy_candidates(target_root)
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = self._sm_root(enemy_candidates[0])
+            else:
+                logger.error("ERROR: BLAZING EARTH: missing enemy target")
+                return False
+        if enemy_candidates and not self._sm_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: BLAZING EARTH: selected enemy is not visible and within 12\" of the source unit")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: BLAZING EARTH: enemy target must be an enemy unit")
+            return False
+        if self._sm_has_keyword(enemy_root, "MONSTER") or self._sm_has_keyword(enemy_root, "VEHICLE"):
+            logger.error("ERROR: BLAZING EARTH: MONSTER and VEHICLE units are ineligible")
+            return False
+        if self._sm_has_keyword(enemy_root, "FLY"):
+            logger.error("ERROR: BLAZING EARTH: units with FLY are ineligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        mods.append(
+            {
+                "value": -2,
+                "source": str(getattr(stratagem, "name", "BLAZING EARTH") or "BLAZING EARTH"),
+                "source_key": "space_marines_forgefathers_blazing_earth",
+                "expires_phase": "CHARGE_PHASE",
+            }
+        )
+        sr["charge_roll_modifiers"] = mods
+        enemy_root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLAZING EARTH: %s suffers -2 to Charge rolls this phase (non-cumulative with other negative modifiers).",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
     def _use_space_marines_firestorm_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -5917,6 +6477,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_onslaught_of_fire(stratagem, **kwargs)
         if name_u == "RAPID EMBARKATION":
             return self._use_space_marines_rapid_embarkation(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_forgefathers_seekers_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_forgefathers_seekers_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BURNING VENGEANCE":
+            return self._use_space_marines_burning_vengeance(stratagem, **kwargs)
+        if name_u == "CRUCIBLE OF BATTLE":
+            return self._use_space_marines_crucible_of_battle(stratagem, **kwargs)
+        if name_u == "IMMOLATION PROTOCOLS":
+            return self._use_space_marines_immolation_protocols(stratagem, **kwargs)
+        if name_u == "WRATHFUL INFERNO":
+            return self._use_space_marines_wrathful_inferno(stratagem, **kwargs)
+        if name_u == "BLAZING EARTH":
+            return self._use_space_marines_blazing_earth(stratagem, **kwargs)
         return None
 
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

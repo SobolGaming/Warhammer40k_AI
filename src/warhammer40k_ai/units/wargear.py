@@ -17702,6 +17702,34 @@ class WargearProfile:
                     )
         except Exception:
             pass
+        # Space Marines: Forgefather's Seekers (Crucible of Battle) +1 to wound
+        # for attacks that target the closest eligible target within 6".
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            bonus_fn = (
+                getattr(sm_mgr, "forgefathers_seekers_crucible_of_battle_wound_bonus", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Crucible of Battle").strip() or "Crucible of Battle"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
 
         # Chaos Daemons: Legion of Excess - Archagonists (+1 to wound in melee).
         is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())

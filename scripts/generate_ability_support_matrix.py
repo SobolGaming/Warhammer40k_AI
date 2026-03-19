@@ -20335,6 +20335,36 @@ def _stratagem_support(
             "Opponent Shooting phase reaction: selected ADEPTUS ASTARTES Transport can reactively disembark one embarked unit, which then shoots only the attacking enemy unit if it remains an eligible target.",
             name_u,
         )
+    if stratagem_id == "000010369003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet been selected gains +1 to wound against the closest eligible target within 6\" until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010369004":
+        return (
+            "Implemented",
+            "Your Movement phase after an ADEPTUS ASTARTES INFANTRY unit Falls Back: that unit can shoot after Falling Back until the end of the turn.",
+            name_u,
+        )
+    if stratagem_id == "000010369005":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected grants [DEVASTATING WOUNDS] to its Torrent ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010369006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction: selected ADEPTUS ASTARTES Transport can reactively disembark one embarked unit, which then shoots only the attacking enemy unit if it remains an eligible target.",
+            name_u,
+        )
+    if stratagem_id == "000010369007":
+        return (
+            "Implemented",
+            "Start of the opponent Charge phase: one visible enemy unit within 12\" of a selected ADEPTUS ASTARTES unit with a Torrent weapon suffers -2 to Charge rolls this phase, non-cumulative with other negative Charge modifiers.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)

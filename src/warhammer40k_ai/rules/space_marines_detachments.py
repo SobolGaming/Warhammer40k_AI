@@ -8726,6 +8726,243 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         ).strip() or "Onslaught of Fire"
         return int(bonus), source
 
+    @staticmethod
+    def _forgefathers_seekers_crucible_of_battle_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_forgefathers_crucible_of_battle_active",
+            "space_marines_forgefathers_crucible_of_battle_turn",
+            "space_marines_forgefathers_crucible_of_battle_expires_phase",
+            "space_marines_forgefathers_crucible_of_battle_source",
+            "space_marines_forgefathers_crucible_of_battle_wound_bonus",
+            "space_marines_forgefathers_crucible_of_battle_player_id",
+        )
+
+    def clear_forgefathers_seekers_crucible_of_battle(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._forgefathers_seekers_crucible_of_battle_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_forgefathers_seekers_crucible_of_battle(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Crucible of Battle",
+    ) -> bool:
+        if not self.is_forgefathers_seekers():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        expires_phase = str(phase_name or "").strip().upper().replace(" ", "_")
+        if expires_phase not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_forgefathers_crucible_of_battle_active"] = True
+        sr["space_marines_forgefathers_crucible_of_battle_expires_phase"] = expires_phase
+        try:
+            sr["space_marines_forgefathers_crucible_of_battle_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_forgefathers_crucible_of_battle_turn"] = 0
+        sr["space_marines_forgefathers_crucible_of_battle_player_id"] = str(player_id or "").strip()
+        sr["space_marines_forgefathers_crucible_of_battle_wound_bonus"] = 1
+        sr["space_marines_forgefathers_crucible_of_battle_source"] = (
+            str(source or "Crucible of Battle").strip() or "Crucible of Battle"
+        )
+        root.special_rules = sr
+        return True
+
+    def forgefathers_seekers_crucible_of_battle_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.is_forgefathers_seekers():
+            return 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_forgefathers_crucible_of_battle_active")):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+        expected_phase = str(
+            sr.get("space_marines_forgefathers_crucible_of_battle_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase and current_phase and current_phase != expected_phase:
+            self.clear_forgefathers_seekers_crucible_of_battle(root)
+            return 0, ""
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            marked_turn = int(sr.get("space_marines_forgefathers_crucible_of_battle_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn and current_turn and current_turn != marked_turn:
+            self.clear_forgefathers_seekers_crucible_of_battle(root)
+            return 0, ""
+        game_map = getattr(game_obj, "map", None)
+        is_closest = getattr(root, "is_target_closest_eligible", None)
+        if game_map is None or not callable(is_closest):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        try:
+            applies = bool(
+                is_closest(
+                    attacker_model,
+                    weapon_profile,
+                    target_root,
+                    game_map,
+                    max_distance=6.0,
+                )
+            )
+        except Exception:
+            applies = False
+        if not applies:
+            return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_forgefathers_crucible_of_battle_wound_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("space_marines_forgefathers_crucible_of_battle_source", "") or "Crucible of Battle"
+        ).strip() or "Crucible of Battle"
+        return int(bonus), source
+
+    @staticmethod
+    def _forgefathers_seekers_wrathful_inferno_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_forgefathers_wrathful_inferno_active",
+            "space_marines_forgefathers_wrathful_inferno_turn",
+            "space_marines_forgefathers_wrathful_inferno_player_id",
+            "space_marines_forgefathers_wrathful_inferno_source",
+        )
+
+    def clear_forgefathers_seekers_wrathful_inferno(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._forgefathers_seekers_wrathful_inferno_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_forgefathers_seekers_wrathful_inferno(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Wrathful Inferno",
+    ) -> bool:
+        if not self.is_forgefathers_seekers():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "INFANTRY"):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_forgefathers_wrathful_inferno_active"] = True
+        try:
+            sr["space_marines_forgefathers_wrathful_inferno_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_forgefathers_wrathful_inferno_turn"] = 0
+        sr["space_marines_forgefathers_wrathful_inferno_player_id"] = str(player_id or "").strip()
+        sr["space_marines_forgefathers_wrathful_inferno_source"] = (
+            str(source or "Wrathful Inferno").strip() or "Wrathful Inferno"
+        )
+        root.special_rules = sr
+        return True
+
+    def forgefathers_seekers_wrathful_inferno_shoot_after_fall_back_applies(
+        self,
+        unit,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> bool:
+        _ = weapon_profile
+        if not self.is_forgefathers_seekers():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_forgefathers_wrathful_inferno_active")):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_player_id = str(sr.get("space_marines_forgefathers_wrathful_inferno_player_id", "") or "").strip()
+        if effect_player_id and current_player_id and effect_player_id != current_player_id:
+            return False
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            effect_turn = int(sr.get("space_marines_forgefathers_wrathful_inferno_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
     def close_range_eradication_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_firestorm_assault_force():
             return False
