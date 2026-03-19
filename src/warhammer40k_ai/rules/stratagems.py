@@ -6006,6 +6006,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_inner_circle_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_emperors_shield_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7228,6 +7232,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_emperors_shield_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_inner_circle_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9020,6 +9028,7 @@ class StratagemManager(
         self._queue_space_marines_companions_of_vehemence_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_hammer_of_avernii_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
@@ -10087,6 +10096,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_inner_circle_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_champions_of_fenris_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -11126,6 +11142,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_blade_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_inner_circle_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16456,6 +16479,9 @@ class StratagemManager(
         hammer_of_avernii_result = self._use_space_marines_hammer_of_avernii_stratagem(s, **kwargs)
         if hammer_of_avernii_result is not None:
             return hammer_of_avernii_result
+        inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
+        if inner_circle_result is not None:
+            return inner_circle_result
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result

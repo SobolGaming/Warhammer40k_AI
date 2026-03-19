@@ -5186,6 +5186,74 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return self._inner_circle_model_within_vowed_objective_range(model, game=game)
         return False
 
+    def inner_circle_unit_within_vowed_objective(self, unit, *, game=None) -> bool:
+        if not self.is_inner_circle_task_force():
+            return False
+        if not self.vowed_objective_ids:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return False
+        objective_locations = self.vowed_target_objective_locations(game=game)
+        for location in list(objective_locations or []):
+            if location is None:
+                continue
+            try:
+                if bool(is_within(location)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def inner_circle_martial_mastery_wound_reroll_mode(self, attacker_model, *, game=None) -> tuple[str, str]:
+        if not self.is_inner_circle_task_force():
+            return "", ""
+        if attacker_model is None:
+            return "", ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None or not self.attached_unit_is_adeptus_astartes(root):
+            return "", ""
+        if not self._attached_unit_has_keyword(root, "DEATHWING"):
+            return "", ""
+        if not self._attached_unit_has_keyword(root, "INFANTRY"):
+            return "", ""
+
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_inner_circle_martial_mastery_active"))):
+            return "", ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "FIGHT_PHASE":
+                return "", ""
+            owner_id = str(sr.get("space_marines_inner_circle_martial_mastery_turn_owner", "") or "")
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                return "", ""
+            try:
+                effect_turn = int(sr.get("space_marines_inner_circle_martial_mastery_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return "", ""
+
+        source = str(sr.get("space_marines_inner_circle_martial_mastery_source", "") or "Martial Mastery").strip()
+        if not source:
+            source = "Martial Mastery"
+        if self.inner_circle_unit_within_vowed_objective(root, game=game_obj):
+            return "full", source
+        return "ones", source
+
     def inner_circle_deathwing_assault_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
         if not self.is_inner_circle_task_force():
             return 0

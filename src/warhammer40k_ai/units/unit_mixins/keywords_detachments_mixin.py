@@ -902,6 +902,46 @@ class KeywordsDetachmentsMixin:
             self.special_rules = sr
         return None
 
+    def _space_marines_duty_unto_death_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        sr = getattr(self, "special_rules", None)
+        if not (isinstance(sr, dict) and sr.get("space_marines_duty_unto_death_active")):
+            return None
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            marked_turn = int(sr.get("space_marines_duty_unto_death_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        exp = str(sr.get("space_marines_duty_unto_death_expires_phase", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+            if not (marked_turn and current_turn and marked_turn != current_turn):
+                threshold = 4
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                within_fn = getattr(sm_mgr, "inner_circle_unit_within_vowed_objective", None) if sm_mgr is not None else None
+                if callable(within_fn) and bool(within_fn(self, game=game)):
+                    threshold = 3
+                source = str(sr.get("space_marines_duty_unto_death_source", "") or "DUTY UNTO DEATH").strip()
+                source = source or "DUTY UNTO DEATH"
+                return {
+                    "threshold": max(2, min(6, int(threshold))),
+                    "source": source,
+                }
+        if phase_name and phase_name != "FIGHT_PHASE":
+            for key in (
+                "space_marines_duty_unto_death_active",
+                "space_marines_duty_unto_death_expires_phase",
+                "space_marines_duty_unto_death_turn_owner",
+                "space_marines_duty_unto_death_turn",
+                "space_marines_duty_unto_death_source",
+            ):
+                sr.pop(key, None)
+            self.special_rules = sr
+        return None
+
     def empowered_by_death_sources(self) -> list[str]:
         """Return source names for Empowered by Death style Fight First abilities."""
         cache_key = "empowered_by_death_sources"
@@ -1607,6 +1647,10 @@ class KeywordsDetachmentsMixin:
             pass
 
         rule = self._space_marines_obdurate_vengeance_rule()
+        if rule is not None:
+            return rule
+
+        rule = self._space_marines_duty_unto_death_rule(model=model)
         if rule is not None:
             return rule
 

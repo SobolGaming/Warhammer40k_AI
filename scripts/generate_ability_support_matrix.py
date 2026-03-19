@@ -20312,6 +20312,37 @@ def _stratagem_support(
     if stratagem_id in {"000010624003", "000010624004", "000010624005", "000010624006"}:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
 
+    if stratagem_id == "000008775003":
+        return (
+            "Implemented",
+            "Fight phase: selected DEATHWING INFANTRY unit that has not yet been selected to fight re-rolls Wound rolls of 1, or re-rolls the Wound roll while it is within a Vowed objective.",
+            name_u,
+        )
+    if stratagem_id == "000008775004":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected DEATHWING unit fights on death after the attacking unit finishes its attacks this phase on 4+, improving to 3+ while that unit is within a Vowed objective.",
+            name_u,
+        )
+    if stratagem_id == "000008775005":
+        return (
+            "Implemented",
+            "Your Movement phase: selected DEATHWING unit arriving from Reserves with Deep Strike can be set up more than 6\" horizontally away from enemy units this phase, and that unit cannot declare a charge this turn.",
+            name_u,
+        )
+    if stratagem_id == "000008775006":
+        return (
+            "Implemented",
+            "Your Charge phase after a DEATHWING INFANTRY unit ends a Charge move: select one enemy unit within Engagement Range and roll one D6 per model in the unit, adding 1 while that enemy is within a Vowed objective; each 4+ deals 1 mortal wound to a maximum of 3.",
+            name_u,
+        )
+    if stratagem_id == "000008775007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after enemy targets are selected: selected DEATHWING INFANTRY unit is -1 to wound against ranged attacks whose Strength is greater than its Toughness until end of phase.",
+            name_u,
+        )
+
     if stratagem_id == "000008483003":
         return (
             "Implemented",

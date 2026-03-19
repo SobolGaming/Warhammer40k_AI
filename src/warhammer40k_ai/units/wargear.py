@@ -18304,6 +18304,23 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass
+        # Space Marines: Inner Circle Task Force (Martial Mastery).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "inner_circle_martial_mastery_wound_reroll_mode", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_mode, source = reroll_fn(attacker, game=game)
+                source_name = str(source or "Martial Mastery").strip() or "Martial Mastery"
+                if str(reroll_mode or "").strip().lower() == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+                elif str(reroll_mode or "").strip().lower() == "full":
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
         # Space Marines: Reclamation Force (Liberatum).
         try:
             unit = getattr(attacker, "parent_unit", None)

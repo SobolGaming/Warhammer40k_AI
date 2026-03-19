@@ -4165,6 +4165,91 @@ _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HAMMER_OF_AVERNII_STRATAGEM_DESCRIPTORS.values()
 }
 
+_INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008775004": StratagemToolDescriptor(
+        stratagem_id="000008775004",
+        name="Duty Unto Death",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="deathwing_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="melee_fight_on_death_after_attacks_with_vowed_objective_bonus",
+        cp_cost=1,
+        effect_params={
+            "base_threshold": 4,
+            "threshold_if_within_vowed_objective": 3,
+            "required_keywords_any": ["DEATHWING"],
+        },
+    ),
+    "000008775003": StratagemToolDescriptor(
+        stratagem_id="000008775003",
+        name="Martial Mastery",
+        timing="fight_phase_before_selected",
+        target="deathwing_infantry_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_wound_reroll_ones_or_full_if_within_vowed_objective",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "base_reroll_mode": "ones",
+            "within_vowed_objective_reroll_mode": "full",
+            "required_keywords_all": ["DEATHWING", "INFANTRY"],
+        },
+    ),
+    "000008775005": StratagemToolDescriptor(
+        stratagem_id="000008775005",
+        name="Relic Teleportarium",
+        timing="your_movement_phase",
+        target="deathwing_unit_arriving_using_deep_strike",
+        duration="until_end_of_turn",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={
+            "min_distance": 6,
+            "cannot_charge_this_turn": True,
+            "required_keywords_any": ["DEATHWING"],
+            "requires_deep_strike": True,
+            "requires_reserves": True,
+        },
+    ),
+    "000008775007": StratagemToolDescriptor(
+        stratagem_id="000008775007",
+        name="Unmatched Fortitude",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="deathwing_infantry_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty_vs_higher_strength_ranged",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "wound_penalty": 1,
+            "requires_strength_gt_toughness": True,
+            "required_keywords_all": ["DEATHWING", "INFANTRY"],
+        },
+    ),
+    "000008775006": StratagemToolDescriptor(
+        stratagem_id="000008775006",
+        name="Wrath of the Lion",
+        timing="charge_phase_after_charge_move_end",
+        target="deathwing_infantry_unit_just_completed_charge",
+        duration="immediate",
+        effect="charge_end_capped_mortal_wound_burst",
+        cp_cost=1,
+        effect_params={
+            "enemy_selection": "one_enemy_within_engagement_range",
+            "dice_per_model_mode": "all_models_in_unit",
+            "success_on": 4,
+            "roll_bonus_if_enemy_within_vowed_objective": 1,
+            "mortal_wounds_per_success": 1,
+            "max_mortal_wounds": 3,
+            "required_keywords_all": ["DEATHWING", "INFANTRY"],
+        },
+    ),
+}
+
+_INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008475006": StratagemToolDescriptor(
         stratagem_id="000008475006",
@@ -5727,6 +5812,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HAMMER_OF_AVERNII_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -5854,6 +5942,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _EMPERORS_SHIELD_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_AVERNII_STRATAGEM_BY_NAME.get(key)
+        or _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _GLADIUS_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
