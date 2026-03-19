@@ -5560,6 +5560,293 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return cls._MISSION_TACTIC_PURGATUS
         return raw
 
+    @staticmethod
+    def _ability_name_text(ability) -> str:
+        if isinstance(ability, str):
+            return str(ability or "").strip()
+        if isinstance(ability, dict):
+            return str(ability.get("name", "") or "").strip()
+        return str(getattr(ability, "name", "") or "").strip()
+
+    def _attached_unit_has_named_ability(self, unit, ability_name: str) -> bool:
+        target = str(ability_name or "").strip().lower()
+        if not target:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            abilities = list(getattr(member, "possible_abilities", []) or [])
+            datasheet = getattr(member, "datasheet", None)
+            abilities.extend(list(getattr(datasheet, "datasheets_abilities", []) or []))
+            for ability in list(abilities or []):
+                if self._ability_name_text(ability).lower() == target:
+                    return True
+        return False
+
+    def unit_has_mission_tactics_ability(self, unit) -> bool:
+        return self._attached_unit_has_named_ability(unit, "Mission Tactics")
+
+    @staticmethod
+    def _black_spear_adaptive_tactics_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_black_spear_adaptive_tactics_active",
+            "space_marines_black_spear_adaptive_tactics_key",
+            "space_marines_black_spear_adaptive_tactics_turn_owner",
+            "space_marines_black_spear_adaptive_tactics_turn",
+            "space_marines_black_spear_adaptive_tactics_source",
+        )
+
+    def clear_black_spear_adaptive_tactics(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._black_spear_adaptive_tactics_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_black_spear_adaptive_tactics_for_unit(
+        self,
+        unit,
+        choice_key: str,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Adaptive Tactics",
+    ) -> bool:
+        if not self.is_black_spear_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        key = self._normalize_mission_tactic_key(choice_key)
+        if key not in self._MISSION_TACTIC_KEYS:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_black_spear_adaptive_tactics_active"] = True
+        sr["space_marines_black_spear_adaptive_tactics_key"] = key
+        sr["space_marines_black_spear_adaptive_tactics_turn_owner"] = str(player_id or "").strip()
+        try:
+            sr["space_marines_black_spear_adaptive_tactics_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_black_spear_adaptive_tactics_turn"] = 0
+        sr["space_marines_black_spear_adaptive_tactics_source"] = str(source or "Adaptive Tactics").strip() or "Adaptive Tactics"
+        root.special_rules = sr
+        return True
+
+    def black_spear_adaptive_tactics_choice_for_unit(self, unit, *, game=None) -> tuple[str, str]:
+        if not self.is_black_spear_task_force():
+            return "", ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return "", ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_black_spear_adaptive_tactics_active")):
+            return "", ""
+        key = self._normalize_mission_tactic_key(str(sr.get("space_marines_black_spear_adaptive_tactics_key", "") or ""))
+        if key not in self._MISSION_TACTIC_KEYS:
+            return "", ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_round = 0
+            try:
+                effect_round = int(sr.get("space_marines_black_spear_adaptive_tactics_turn", 0) or 0)
+            except Exception:
+                effect_round = 0
+            if effect_round and current_round and current_round > effect_round:
+                current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "")
+                effect_owner = str(sr.get("space_marines_black_spear_adaptive_tactics_turn_owner", "") or "")
+                if not current_phase or current_phase == "COMMAND_PHASE":
+                    if not effect_owner or not current_owner or effect_owner == current_owner:
+                        self.clear_black_spear_adaptive_tactics(root)
+                return "", ""
+        source = str(sr.get("space_marines_black_spear_adaptive_tactics_source", "") or "Adaptive Tactics").strip() or "Adaptive Tactics"
+        return key, source
+
+    @staticmethod
+    def _black_spear_special_issue_ammunition_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_black_spear_special_issue_ammunition_mode",
+            "space_marines_black_spear_special_issue_ammunition_turn_owner",
+            "space_marines_black_spear_special_issue_ammunition_turn",
+            "space_marines_black_spear_special_issue_ammunition_expires_phase",
+            "space_marines_black_spear_special_issue_ammunition_source",
+        )
+
+    @classmethod
+    def _normalize_black_spear_special_issue_ammunition_mode(cls, value: str) -> str:
+        raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "DRAGONFIRE": "DRAGONFIRE_ROUNDS",
+            "DRAGONFIRE_ROUND": "DRAGONFIRE_ROUNDS",
+            "HELLFIRE": "HELLFIRE_ROUNDS",
+            "HELLFIRE_ROUND": "HELLFIRE_ROUNDS",
+            "KRAKEN": "KRAKEN_ROUNDS",
+            "KRAKEN_ROUND": "KRAKEN_ROUNDS",
+        }
+        raw = aliases.get(raw, raw)
+        if raw in {"DRAGONFIRE_ROUNDS", "HELLFIRE_ROUNDS", "KRAKEN_ROUNDS"}:
+            return raw
+        return ""
+
+    @classmethod
+    def _black_spear_special_issue_ammunition_label(cls, mode: str) -> str:
+        normalized = cls._normalize_black_spear_special_issue_ammunition_mode(mode)
+        labels = {
+            "DRAGONFIRE_ROUNDS": "Dragonfire Rounds",
+            "HELLFIRE_ROUNDS": "Hellfire Rounds",
+            "KRAKEN_ROUNDS": "Kraken Rounds",
+        }
+        return labels.get(normalized, str(mode or "").strip())
+
+    def clear_black_spear_special_issue_ammunition(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._black_spear_special_issue_ammunition_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_black_spear_special_issue_ammunition(
+        self,
+        unit,
+        mode: str,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_black_spear_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        normalized_mode = self._normalize_black_spear_special_issue_ammunition_mode(mode)
+        if not normalized_mode:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_black_spear_special_issue_ammunition_mode"] = normalized_mode
+        sr["space_marines_black_spear_special_issue_ammunition_turn_owner"] = str(player_id or "").strip()
+        try:
+            sr["space_marines_black_spear_special_issue_ammunition_turn"] = int(battle_round or 0)
+        except Exception:
+            sr["space_marines_black_spear_special_issue_ammunition_turn"] = 0
+        sr["space_marines_black_spear_special_issue_ammunition_expires_phase"] = "SHOOTING_PHASE"
+        default_source = self._black_spear_special_issue_ammunition_label(normalized_mode)
+        sr["space_marines_black_spear_special_issue_ammunition_source"] = str(source or default_source).strip() or default_source
+        root.special_rules = sr
+        return True
+
+    def black_spear_special_issue_ammunition_mode(self, unit, *, game=None) -> tuple[str, str]:
+        if not self.is_black_spear_task_force():
+            return "", ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return "", ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return "", ""
+        mode = self._normalize_black_spear_special_issue_ammunition_mode(
+            str(sr.get("space_marines_black_spear_special_issue_ammunition_mode", "") or "")
+        )
+        if not mode:
+            return "", ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "")
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_round = 0
+            expected_phase = str(sr.get("space_marines_black_spear_special_issue_ammunition_expires_phase", "") or "").strip().upper()
+            effect_owner = str(sr.get("space_marines_black_spear_special_issue_ammunition_turn_owner", "") or "")
+            try:
+                effect_round = int(sr.get("space_marines_black_spear_special_issue_ammunition_turn", 0) or 0)
+            except Exception:
+                effect_round = 0
+            if expected_phase and current_phase and expected_phase != current_phase:
+                return "", ""
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return "", ""
+            if effect_round and current_round and effect_round != current_round:
+                return "", ""
+        source = str(
+            sr.get("space_marines_black_spear_special_issue_ammunition_source", "")
+            or self._black_spear_special_issue_ammunition_label(mode)
+        ).strip()
+        return mode, source or self._black_spear_special_issue_ammunition_label(mode)
+
+    def _active_mission_tactic_key(self, *, game=None) -> str:
+        key = self._normalize_mission_tactic_key(self.mission_tactics_active_key)
+        if key not in self._MISSION_TACTIC_KEYS:
+            return ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_round = 0
+            try:
+                active_round = int(getattr(self, "mission_tactics_active_round", 0) or 0)
+            except Exception:
+                active_round = 0
+            if active_round and current_round and current_round > active_round:
+                return ""
+        return key
+
+    def _effective_black_spear_mission_tactic(self, unit, *, game=None) -> tuple[str, str]:
+        if unit is None or not self.is_black_spear_task_force():
+            return "", ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return "", ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return "", ""
+        adaptive_key, adaptive_source = self.black_spear_adaptive_tactics_choice_for_unit(root, game=game)
+        if adaptive_key:
+            return adaptive_key, adaptive_source
+        if not self.unit_has_mission_tactics_ability(root):
+            return "", ""
+        active_key = self._active_mission_tactic_key(game=game)
+        if not active_key:
+            return "", ""
+        return active_key, self.mission_tactic_label(active_key)
+
     def clear_active_mission_tactic(self, *, game=None) -> None:
         if not self.is_black_spear_task_force():
             self.mission_tactics_active_key = ""
@@ -6160,40 +6447,104 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return True
         return False
 
-    def _mission_tactics_recipient(self, unit) -> bool:
-        if unit is None:
-            return False
-        if not self.is_black_spear_task_force():
-            return False
-        if not str(getattr(self, "mission_tactics_active_key", "") or "").strip():
-            return False
-        if not self.attached_unit_is_adeptus_astartes(unit):
-            return False
-        return True
-
     def mission_tactics_lethal_hits(self, attacker_model) -> tuple[bool, str]:
-        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_MALLEUS:
-            return False, ""
         attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
-        if not self._mission_tactics_recipient(attacker_unit):
+        key, source = self._effective_black_spear_mission_tactic(attacker_unit)
+        if key != self._MISSION_TACTIC_MALLEUS:
             return False, ""
-        return True, self.mission_tactic_label(self._MISSION_TACTIC_MALLEUS)
+        return True, str(source or self.mission_tactic_label(self._MISSION_TACTIC_MALLEUS))
 
     def mission_tactics_sustained_hits(self, attacker_model) -> tuple[int, str]:
-        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_FUROR:
-            return 0, ""
         attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
-        if not self._mission_tactics_recipient(attacker_unit):
+        key, source = self._effective_black_spear_mission_tactic(attacker_unit)
+        if key != self._MISSION_TACTIC_FUROR:
             return 0, ""
-        return 1, self.mission_tactic_label(self._MISSION_TACTIC_FUROR)
+        return 1, str(source or self.mission_tactic_label(self._MISSION_TACTIC_FUROR))
 
     def mission_tactics_precision_on_crit(self, attacker_model) -> tuple[bool, str]:
-        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_PURGATUS:
-            return False, ""
         attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
-        if not self._mission_tactics_recipient(attacker_unit):
+        key, source = self._effective_black_spear_mission_tactic(attacker_unit)
+        if key != self._MISSION_TACTIC_PURGATUS:
             return False, ""
-        return True, self.mission_tactic_label(self._MISSION_TACTIC_PURGATUS)
+        return True, str(source or self.mission_tactic_label(self._MISSION_TACTIC_PURGATUS))
+
+    def black_spear_special_issue_ammunition_attack_keywords(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[list[str], str]:
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        mode, source = self.black_spear_special_issue_ammunition_mode(attacker_unit, game=game)
+        if not mode:
+            return [], ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = bool(getattr(parent, "is_ranged", lambda: False)()) if parent is not None else False
+            if not is_ranged:
+                return [], ""
+        if mode == "DRAGONFIRE_ROUNDS":
+            return ["ASSAULT", "IGNORES COVER"], source
+        if mode == "HELLFIRE_ROUNDS":
+            is_devastating = bool(getattr(weapon_profile, "is_devastating_wounds", lambda: False)()) if weapon_profile is not None else False
+            if is_devastating:
+                return [], ""
+            return ["ANTI-INFANTRY 2+", "ANTI-MONSTER 5+"], source
+        return [], ""
+
+    def black_spear_special_issue_ammunition_assault_applies(
+        self,
+        unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        mode, _source = self.black_spear_special_issue_ammunition_mode(unit, game=game)
+        if mode != "DRAGONFIRE_ROUNDS":
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = bool(getattr(parent, "is_ranged", lambda: False)()) if parent is not None else False
+            if not is_ranged:
+                return False
+        return True
+
+    def black_spear_special_issue_ammunition_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        mode, source = self.black_spear_special_issue_ammunition_mode(attacker_unit, game=game)
+        if mode != "KRAKEN_ROUNDS":
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = bool(getattr(parent, "is_ranged", lambda: False)()) if parent is not None else False
+            if not is_ranged:
+                return 0, ""
+        return 1, source
+
+    def black_spear_special_issue_ammunition_range_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        mode, source = self.black_spear_special_issue_ammunition_mode(attacker_unit, game=game)
+        if mode != "KRAKEN_ROUNDS":
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = bool(getattr(parent, "is_ranged", lambda: False)()) if parent is not None else False
+            if not is_ranged:
+                return 0, ""
+        return 6, source
 
     def _blade_of_ultramar_enhancement_source_member(self, unit, flag_key: str):
         if unit is None:

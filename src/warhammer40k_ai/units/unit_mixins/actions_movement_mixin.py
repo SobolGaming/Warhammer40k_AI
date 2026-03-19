@@ -17520,6 +17520,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if heresy_fn(self, profile, game=game):
                     return True
+            black_spear_fn = getattr(mgr, "black_spear_special_issue_ammunition_assault_applies", None) if mgr is not None else None
+            if callable(black_spear_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if black_spear_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:

@@ -5234,6 +5234,27 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            keyword_fn = getattr(sm_mgr, "black_spear_special_issue_ammunition_attack_keywords", None) if sm_mgr is not None else None
+            if callable(keyword_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                keywords, source = keyword_fn(
+                    model,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                for keyword in list(keywords or []):
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "ranged",
+                            "keyword": str(keyword),
+                            "source": str(source or "Black Spear Task Force"),
+                        }
+                    ]
+        except Exception:
+            pass
+        try:
             if target is not None:
                 army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None

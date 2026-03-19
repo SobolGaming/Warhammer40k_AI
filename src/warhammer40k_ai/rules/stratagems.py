@@ -79,16 +79,20 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
+    "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
     "CODEX DISCIPLINE",
+    "DRAGONFIRE ROUNDS",
     "DUTY AND HONOUR",
     "FOCUSED FURY",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
+    "HELLFIRE ROUNDS",
     "HERESY UNDONE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
     "INSTANT OF GRACE",
+    "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
     "LIGHT OF VENGEANCE",
     "NO THREAT TOO GREAT",
@@ -96,6 +100,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORBITAL TELEPORTARIUM",
     "RIGID DISCIPLINE",
     "SHOCK BOMBARDMENT",
+    "SITE-TO-SITE TELEPORTATION",
     "STRIKE NOW FOR GLORY",
     "TERRIFYING PROFICIENCY",
     "UNTO THE BURNING SKIES",
@@ -5901,6 +5906,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_black_spear_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_angelic_inheritors_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6938,6 +6947,7 @@ class StratagemManager(
         try:
             self._queue_space_marines_first_company_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
@@ -7071,6 +7081,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_bastion_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_black_spear_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -16165,6 +16179,9 @@ class StratagemManager(
         angelic_result = self._use_space_marines_angelic_inheritors_stratagem(s, **kwargs)
         if angelic_result is not None:
             return angelic_result
+        black_spear_result = self._use_space_marines_black_spear_task_force_stratagem(s, **kwargs)
+        if black_spear_result is not None:
+            return black_spear_result
         first_company_result = self._use_space_marines_first_company_task_force_stratagem(s, **kwargs)
         if first_company_result is not None:
             return first_company_result

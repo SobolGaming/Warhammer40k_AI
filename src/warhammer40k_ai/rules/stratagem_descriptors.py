@@ -4120,6 +4120,84 @@ _BASTION_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008523003": StratagemToolDescriptor(
+        stratagem_id="000008523003",
+        name="Adaptive Tactics",
+        timing="your_command_phase",
+        target="up_to_two_kill_team_units_or_one_other_adeptus_astartes_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="unit_specific_mission_tactic_override",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "requires_kill_team_for_multi_select": True,
+            "choices": ["FUROR_TACTICS", "MALLEUS_TACTICS", "PURGATUS_TACTICS"],
+        },
+    ),
+    "000008523006": StratagemToolDescriptor(
+        stratagem_id="000008523006",
+        name="Dragonfire Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="kill_team_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_assault_and_ignores_cover",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["ASSAULT", "IGNORES COVER"],
+        },
+    ),
+    "000008523004": StratagemToolDescriptor(
+        stratagem_id="000008523004",
+        name="Hellfire Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="kill_team_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_anti_infantry_2_and_anti_monster_5_except_devastating_wounds",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ["ANTI-INFANTRY 2+", "ANTI-MONSTER 5+"],
+            "exclude_weapon_keywords_any": ["DEVASTATING WOUNDS"],
+        },
+    ),
+    "000008523005": StratagemToolDescriptor(
+        stratagem_id="000008523005",
+        name="Kraken Rounds",
+        timing="shooting_phase_on_select_to_shoot",
+        target="kill_team_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_ap_and_range_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "ap_bonus": 1,
+            "range_bonus_in": 6.0,
+        },
+    ),
+    "000008523007": StratagemToolDescriptor(
+        stratagem_id="000008523007",
+        name="Site-to-Site Teleportation",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_two_kill_team_units_or_one_other_adeptus_astartes_infantry_unit_not_engaged",
+        duration="until_next_reinforcements_step",
+        effect="enter_strategic_reserves_with_temp_deep_strike",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "requires_kill_team_for_multi_select": True,
+            "required_keywords_any_for_single_non_kill_team": ["INFANTRY"],
+            "grant_deep_strike": True,
+            "must_arrive_next_movement_phase": True,
+        },
+    ),
+}
+
+_BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -4839,6 +4917,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BLACK_SPEAR_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4933,6 +5014,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

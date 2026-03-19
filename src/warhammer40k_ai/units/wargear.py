@@ -1669,6 +1669,20 @@ class WargearProfile:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "black_spear_special_issue_ammunition_range_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                range_bonus, _source = mgr.black_spear_special_issue_ammunition_range_bonus(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and callable(getattr(mgr, "librarius_fusillade_ranged_range_bonus", None)):
                 game = getattr(getattr(army, "player", None), "game", None)
                 range_bonus, _source = mgr.librarius_fusillade_ranged_range_bonus(
@@ -3378,6 +3392,20 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_ranged_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            ap_bonus_fn = getattr(sm_mgr, "black_spear_special_issue_ammunition_ap_bonus", None) if sm_mgr is not None else None
+            if callable(ap_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = ap_bonus_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
             weapon_lookup_name = self._temporary_weapon_lookup_name()
             if weapon_lookup_name:
                 temp_ap_bonus, _temp_ap_reasons = getattr(attacker, "get_temporary_weapon_ap_bonus", lambda _n: (0, []))(

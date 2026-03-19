@@ -11,6 +11,7 @@ class _MockDatasheet:
         faction_keywords=None,
         toughness: int = 4,
         save: str = "3",
+        datasheet_abilities=None,
     ):
         self.name = name
         self.faction_data = {"name": "Test Faction"}
@@ -33,12 +34,26 @@ class _MockDatasheet:
         ]
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
-        self.datasheets_abilities = []
+        normalized_abilities = []
+        for ability in list(datasheet_abilities or []):
+            if isinstance(ability, str):
+                normalized_abilities.append({"name": ability, "description": "", "type": "Datasheet", "parameter": ""})
+            else:
+                normalized_abilities.append(ability)
+        self.datasheets_abilities = normalized_abilities
         self.loadout = "This model is equipped with: nothing"
         self.transport = ""
 
 
-def _make_unit(name, *, keywords=None, faction_keywords=None, toughness: int = 4, save: str = "3"):
+def _make_unit(
+    name,
+    *,
+    keywords=None,
+    faction_keywords=None,
+    toughness: int = 4,
+    save: str = "3",
+    datasheet_abilities=None,
+):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
@@ -47,6 +62,7 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, toughness: int = 4
         faction_keywords=faction_keywords,
         toughness=toughness,
         save=save,
+        datasheet_abilities=datasheet_abilities,
     )
     return Unit(datasheet)
 
@@ -69,6 +85,12 @@ def _build_game(detachment_type: str = "Black Spear Task Force"):
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army_enemy)
     game.add_player(p1)
     game.add_player(p2)
+    game.current_player_index = 0
+
+    p1.command_points = 10
+    p2.command_points = 10
+    army_sm.configure_rule_managers(force=True)
+    p1.stratagems.refresh_available()
 
     return game, p1, army_sm, army_enemy
 
@@ -136,6 +158,7 @@ class TestSpaceMarinesBlackSpearTaskForce(unittest.TestCase):
             "Deathwatch Kill Team",
             keywords=["INFANTRY"],
             faction_keywords=["ADEPTUS ASTARTES"],
+            datasheet_abilities=["Mission Tactics"],
         )
         target = _make_unit(
             "Enemy Unit",
@@ -166,6 +189,7 @@ class TestSpaceMarinesBlackSpearTaskForce(unittest.TestCase):
             "Deathwatch Kill Team",
             keywords=["INFANTRY"],
             faction_keywords=["ADEPTUS ASTARTES"],
+            datasheet_abilities=["Mission Tactics"],
         )
         target = _make_unit(
             "Enemy Unit",
@@ -196,6 +220,7 @@ class TestSpaceMarinesBlackSpearTaskForce(unittest.TestCase):
             "Deathwatch Kill Team",
             keywords=["INFANTRY"],
             faction_keywords=["ADEPTUS ASTARTES"],
+            datasheet_abilities=["Mission Tactics"],
         )
         target = _make_unit(
             "Enemy Unit",

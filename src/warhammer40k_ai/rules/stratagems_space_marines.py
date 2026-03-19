@@ -49,6 +49,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_black_spear_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_black_spear_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_vindication_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_vindication_task_force", None) if mgr is not None else None
@@ -177,6 +182,42 @@ class SpaceMarinesStratagemMixin:
     def _sm_selected_to_fight_this_phase(unit: Any) -> bool:
         return bool(getattr(getattr(unit, "round_state", None), "fought_this_phase", False))
 
+    def _sm_resolve_units(self, selected: Any) -> list[Any]:
+        if selected is None:
+            return []
+        if isinstance(selected, (list, tuple, set)):
+            values = list(selected)
+        else:
+            values = [selected]
+        out: list[Any] = []
+        seen: set[str] = set()
+        for value in list(values or []):
+            root = self._sm_root(value)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return out
+
+    def _sm_unit_in_candidates(self, root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        root_id = self._sm_sort_key(root)
+        for candidate in list(candidates or []):
+            candidate_root = self._sm_root(candidate)
+            if candidate_root is None:
+                continue
+            if candidate_root is root:
+                return True
+            candidate_id = self._sm_sort_key(candidate_root)
+            if root_id and candidate_id and root_id == candidate_id:
+                return True
+        return False
+
     @staticmethod
     def _sm_unit_models(unit: Any) -> list[Any]:
         if unit is None:
@@ -247,6 +288,29 @@ class SpaceMarinesStratagemMixin:
         if callable(has_any):
             return bool(has_any("BATTLELINE"))
         return False
+
+    def _sm_is_kill_team_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        attached_checker = getattr(root, "attached_unit_has_kill_team", None)
+        if callable(attached_checker) and bool(attached_checker()):
+            return True
+        local_checker = getattr(root, "has_kill_team", None)
+        if callable(local_checker) and bool(local_checker()):
+            return True
+        mgr = self._sm_detachment_mgr()
+        named_checker = getattr(mgr, "_attached_unit_has_named_ability", None) if mgr is not None else None
+        if callable(named_checker) and bool(named_checker(root, "Kill Team")):
+            return True
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("KILL TEAM")):
+            return True
+        has_keyword = getattr(root, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("KILL TEAM")):
+            return True
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "kill team" in name
 
     def _sm_is_jump_pack_unit(self, unit: Any) -> bool:
         root = self._sm_root(unit)
@@ -2134,6 +2198,242 @@ class SpaceMarinesStratagemMixin:
                         sr.pop(key, None)
             root.special_rules = sr
 
+    def _space_marines_black_spear_adaptive_tactics_candidates(self) -> tuple[list[Any], list[Any]]:
+        if not self._is_black_spear_task_force_detachment():
+            return ([], [])
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ([], [])
+        out: list[Any] = []
+        kill_team_out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            out.append(root)
+            if self._sm_is_kill_team_unit(root):
+                kill_team_out.append(root)
+        return (sorted(out, key=self._sm_sort_key), sorted(kill_team_out, key=self._sm_sort_key))
+
+    def _space_marines_black_spear_special_issue_ammunition_candidates(self) -> list[Any]:
+        if not self._is_black_spear_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._sm_detachment_mgr()
+        out: list[Any] = []
+        seen: set[str] = set()
+        game = getattr(self.player, "game", None)
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_kill_team_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            ammo_mode = ("", "")
+            if mgr is not None:
+                getter = getattr(mgr, "black_spear_special_issue_ammunition_mode", None)
+                if callable(getter):
+                    ammo_mode = getter(root, game=game)
+            if str(ammo_mode[0] or "").strip():
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_black_spear_site_to_site_candidates(self) -> tuple[list[Any], list[Any]]:
+        if not self._is_black_spear_task_force_detachment():
+            return ([], [])
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ([], [])
+        out: list[Any] = []
+        kill_team_out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            is_kill_team = self._sm_is_kill_team_unit(root)
+            if not is_kill_team and not self._sm_is_infantry_unit(root):
+                continue
+            out.append(root)
+            if is_kill_team:
+                kill_team_out.append(root)
+        return (sorted(out, key=self._sm_sort_key), sorted(kill_team_out, key=self._sm_sort_key))
+
+    def _queue_space_marines_black_spear_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_black_spear_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "COMMAND_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("ADAPTIVE TACTICS")
+            candidates, kill_team_candidates = self._space_marines_black_spear_adaptive_tactics_candidates()
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Command phase",
+                        "phase_name": "Command phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                        "kill_team_candidates": kill_team_candidates,
+                        "max_units": 2 if len(kill_team_candidates) >= 2 else 1,
+                        "mission_tactic_options": self._sm_black_spear_mission_tactic_options(),
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            candidates = self._space_marines_black_spear_special_issue_ammunition_candidates()
+            if not candidates:
+                return
+            for stratagem_name in ("DRAGONFIRE ROUNDS", "HELLFIRE ROUNDS", "KRAKEN ROUNDS"):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Shooting phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_black_spear_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_black_spear_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("SITE-TO-SITE TELEPORTATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, kill_team_candidates = self._space_marines_black_spear_site_to_site_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "kill_team_candidates": kill_team_candidates,
+            "max_units": 2 if len(kill_team_candidates) >= 2 else 1,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_black_spear_phase_end_effects(self, *, phase: Any) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return
+        clear_fn = getattr(mgr, "clear_black_spear_special_issue_ammunition", None)
+        if not callable(clear_fn):
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            clear_fn(root)
+
     def _queue_space_marines_first_company_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_1st_company_task_force_detachment():
             return
@@ -2806,6 +3106,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_mortal_wound_stratagem(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_black_spear_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_black_spear_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ADAPTIVE TACTICS":
+            return self._use_space_marines_adaptive_tactics(stratagem, **kwargs)
+        if name_u == "DRAGONFIRE ROUNDS":
+            return self._use_space_marines_dragonfire_rounds(stratagem, **kwargs)
+        if name_u == "HELLFIRE ROUNDS":
+            return self._use_space_marines_hellfire_rounds(stratagem, **kwargs)
+        if name_u == "KRAKEN ROUNDS":
+            return self._use_space_marines_kraken_rounds(stratagem, **kwargs)
+        if name_u == "SITE-TO-SITE TELEPORTATION":
+            return self._use_space_marines_site_to_site_teleportation(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_vindication_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -2981,6 +3299,115 @@ class SpaceMarinesStratagemMixin:
         if target_model is None and len(model_candidates) == 1:
             target_model = model_candidates[0]
         return (unit, candidates, attacking_unit, target_units, target_model, model_candidates, from_pending)
+
+    def _sm_black_spear_mission_tactic_options(self) -> list[dict[str, str]]:
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return []
+        keys = list(getattr(mgr, "_MISSION_TACTIC_KEYS", ()) or ())
+        label_fn = getattr(mgr, "mission_tactic_label", None)
+        out: list[dict[str, str]] = []
+        for key in list(keys or []):
+            choice_key = str(key or "").strip().upper()
+            if not choice_key:
+                continue
+            label = label_fn(choice_key) if callable(label_fn) else choice_key.title().replace("_", " ")
+            out.append({"choice_key": choice_key, "label": str(label or choice_key)})
+        return out
+
+    def _sm_black_spear_mission_tactic_key(self, choice: Any) -> str:
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return ""
+        normalize = getattr(mgr, "_normalize_mission_tactic_key", None)
+        if not callable(normalize):
+            return ""
+        key = str(normalize(choice) or "").strip().upper()
+        valid = set(getattr(mgr, "_MISSION_TACTIC_KEYS", ()) or ())
+        if key not in valid:
+            return ""
+        return key
+
+    def _sm_black_spear_special_issue_mode(self, choice: Any) -> str:
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return ""
+        normalize = getattr(mgr, "_normalize_black_spear_special_issue_ammunition_mode", None)
+        if not callable(normalize):
+            return ""
+        return str(normalize(choice) or "").strip().upper()
+
+    def _sm_black_spear_choice_from_mapping(self, mapping: Any, root: Any) -> Any:
+        if not isinstance(mapping, dict) or root is None:
+            return None
+        if root in mapping:
+            return mapping[root]
+        root_id = self._sm_sort_key(root)
+        for key, value in list(mapping.items()):
+            if key is root:
+                return value
+            key_id = ""
+            if isinstance(key, str):
+                key_id = str(key or "").strip()
+            else:
+                key_id = str(get_entity_id(key) or key or "").strip()
+            if key_id and root_id and key_id == root_id:
+                return value
+        return None
+
+    def _sm_black_spear_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[list[Any], list[Any], list[Any], int, Any, bool]:
+        selected = kwargs.get("units") or kwargs.get("selected_units")
+        if selected is None:
+            selected = kwargs.get("target_units")
+        if selected is None:
+            selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        kill_team_candidates = list(kwargs.get("kill_team_candidates") or [])
+        max_units = int(kwargs.get("max_units", 0) or 0)
+        choice_payload = (
+            kwargs.get("choices_by_unit")
+            or kwargs.get("choice_by_unit")
+            or kwargs.get("tactic_by_unit")
+            or kwargs.get("mission_tactic_by_unit")
+        )
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if selected is None:
+                selected = (
+                    reaction.get("units")
+                    or reaction.get("selected_units")
+                    or reaction.get("target_units")
+                    or reaction.get("unit")
+                    or reaction.get("target_unit")
+                )
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not kill_team_candidates:
+                kill_team_candidates = list(reaction.get("kill_team_candidates") or [])
+            if not max_units:
+                max_units = int(reaction.get("max_units", 0) or 0)
+            if choice_payload is None:
+                choice_payload = (
+                    reaction.get("choices_by_unit")
+                    or reaction.get("choice_by_unit")
+                    or reaction.get("tactic_by_unit")
+                    or reaction.get("mission_tactic_by_unit")
+                )
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        selected_roots = self._sm_resolve_units(selected)
+        if not selected_roots and len(candidates) == 1:
+            selected_roots = [self._sm_root(candidates[0])]
+        selected_roots = [root for root in list(selected_roots or []) if root is not None]
+        return (selected_roots, candidates, kill_team_candidates, int(max_units or 0), choice_payload, from_pending)
 
     def _use_space_marines_focused_fury(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
@@ -3698,6 +4125,326 @@ class SpaceMarinesStratagemMixin:
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: TERRIFYING PROFICIENCY: %s will force nearby enemies to test for Battle-shock in the opponent's next Command phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_space_marines_adaptive_tactics(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: ADAPTIVE TACTICS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ADAPTIVE TACTICS: not your Command phase")
+            return False
+
+        selected_roots, candidates, kill_team_candidates, max_units, choice_payload, _from_pending = self._sm_black_spear_context(
+            "ADAPTIVE TACTICS",
+            kwargs,
+        )
+        if not selected_roots:
+            logger.error("ERROR: ADAPTIVE TACTICS: no target unit provided")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: ADAPTIVE TACTICS: cannot target more than two units")
+            return False
+        if int(max_units or 0) > 0 and len(selected_roots) > int(max_units):
+            logger.error("ERROR: ADAPTIVE TACTICS: selected too many units")
+            return False
+
+        eligible, kill_team_eligible = self._space_marines_black_spear_adaptive_tactics_candidates()
+        if candidates:
+            eligible = candidates
+        if kill_team_candidates:
+            kill_team_eligible = kill_team_candidates
+        for root in list(selected_roots):
+            if not self._sm_owned_by_player(root, self.player):
+                logger.error("ERROR: ADAPTIVE TACTICS: target unit is not yours")
+                return False
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: ADAPTIVE TACTICS: target must be on the battlefield and targetable")
+                return False
+            if not self._is_adeptus_astartes_unit(root):
+                logger.error("ERROR: ADAPTIVE TACTICS: target must be an ADEPTUS ASTARTES unit")
+                return False
+            if eligible and not self._sm_unit_in_candidates(root, eligible):
+                logger.error("ERROR: ADAPTIVE TACTICS: one or more selected units are not currently eligible")
+                return False
+        if len(selected_roots) == 2 and not all(self._sm_unit_in_candidates(root, kill_team_eligible) for root in list(selected_roots)):
+            logger.error("ERROR: ADAPTIVE TACTICS: selecting two units requires both units to be Kill Team units")
+            return False
+
+        choice_list = list(choice_payload or []) if isinstance(choice_payload, (list, tuple)) else []
+        single_choice = (
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mission_tactic")
+            or kwargs.get("tactic")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+        )
+        normalized_choices: list[tuple[Any, str]] = []
+        for index, root in enumerate(list(selected_roots or [])):
+            raw_choice = self._sm_black_spear_choice_from_mapping(choice_payload, root)
+            if raw_choice is None and index < len(choice_list):
+                raw_choice = choice_list[index]
+            if raw_choice is None and len(selected_roots) == 1:
+                raw_choice = single_choice
+            choice_key = self._sm_black_spear_mission_tactic_key(raw_choice)
+            if not choice_key:
+                logger.error("ERROR: ADAPTIVE TACTICS: each selected unit requires a valid Mission Tactic choice")
+                return False
+            normalized_choices.append((root, choice_key))
+
+        first = selected_roots[0]
+        if not stratagem.can_use(self.player, self.game, target_unit=first, unit=first, phase_name="Command phase"):
+            logger.error("ERROR: ADAPTIVE TACTICS: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=first):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_black_spear_adaptive_tactics_for_unit", None) if mgr is not None else None
+        label_fn = getattr(mgr, "mission_tactic_label", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: ADAPTIVE TACTICS: Black Spear detachment manager unavailable")
+            return False
+        battle_round = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        owner_id = str(getattr(self.player, "id", "") or "")
+        labels: list[str] = []
+        for root, choice_key in list(normalized_choices or []):
+            applied = apply_fn(
+                root,
+                choice_key,
+                battle_round=battle_round,
+                player_id=owner_id,
+                source=str(getattr(stratagem, "name", "") or "ADAPTIVE TACTICS"),
+            )
+            if not bool(applied):
+                logger.error("ERROR: ADAPTIVE TACTICS: failed to apply selected Mission Tactic")
+                return False
+            label = label_fn(choice_key) if callable(label_fn) else choice_key.title().replace("_", " ")
+            labels.append(f"{getattr(root, 'name', 'Unit')}={label}")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: ADAPTIVE TACTICS: %s.", ", ".join(labels))
+        return True
+
+    def _use_space_marines_special_issue_ammunition(self, stratagem: Any, *, mode: str, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: %s: wrong phase", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: %s: not your Shooting phase", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+
+        selected_roots, candidates, _kill_team_candidates, _max_units, _choice_payload, _from_pending = self._sm_black_spear_context(
+            str(getattr(stratagem, "name", "") or ""),
+            kwargs,
+        )
+        if not selected_roots:
+            logger.error("ERROR: %s: no target unit provided", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if len(selected_roots) != 1:
+            logger.error("ERROR: %s: must target exactly one unit", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        root = selected_roots[0]
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if not self._sm_is_kill_team_unit(root):
+            logger.error("ERROR: %s: target must be a Kill Team unit", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: %s: target has already been selected to shoot this phase", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+
+        eligible = candidates or self._space_marines_black_spear_special_issue_ammunition_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: %s: selected unit is not currently eligible", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        active_mode_fn = getattr(mgr, "black_spear_special_issue_ammunition_mode", None) if mgr is not None else None
+        if callable(active_mode_fn):
+            active_mode, _source = active_mode_fn(root, game=self.game)
+            if str(active_mode or "").strip():
+                logger.error("ERROR: %s: target unit already has Special-Issue Ammunition this phase", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+                return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: %s: cannot be used in current state", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        apply_fn = getattr(mgr, "set_black_spear_special_issue_ammunition", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: %s: Black Spear detachment manager unavailable", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+        battle_round = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        owner_id = str(getattr(self.player, "id", "") or "")
+        applied = apply_fn(
+            root,
+            mode,
+            battle_round=battle_round,
+            player_id=owner_id,
+            source=str(getattr(stratagem, "name", "") or mode),
+        )
+        if not bool(applied):
+            logger.error("ERROR: %s: failed to apply Special-Issue Ammunition", getattr(stratagem, "name", "BLACK SPEAR AMMUNITION"))
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_space_marines_dragonfire_rounds(self, stratagem: Any, **kwargs) -> bool:
+        selected_roots, _candidates, _kill_team_candidates, _max_units, _choice_payload, _from_pending = self._sm_black_spear_context(
+            "DRAGONFIRE ROUNDS",
+            kwargs,
+        )
+        ok = self._use_space_marines_special_issue_ammunition(
+            stratagem,
+            mode="DRAGONFIRE_ROUNDS",
+            **kwargs,
+        )
+        if ok:
+            root = selected_roots[0] if selected_roots else None
+            logger.info(
+                "INFO: DRAGONFIRE ROUNDS: %s gains [ASSAULT] and [IGNORES COVER] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        return ok
+
+    def _use_space_marines_hellfire_rounds(self, stratagem: Any, **kwargs) -> bool:
+        selected_roots, _candidates, _kill_team_candidates, _max_units, _choice_payload, _from_pending = self._sm_black_spear_context(
+            "HELLFIRE ROUNDS",
+            kwargs,
+        )
+        ok = self._use_space_marines_special_issue_ammunition(
+            stratagem,
+            mode="HELLFIRE_ROUNDS",
+            **kwargs,
+        )
+        if ok:
+            root = selected_roots[0] if selected_roots else None
+            logger.info(
+                "INFO: HELLFIRE ROUNDS: %s gains [ANTI-INFANTRY 2+] and [ANTI-MONSTER 5+] on non-[DEVASTATING WOUNDS] ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        return ok
+
+    def _use_space_marines_kraken_rounds(self, stratagem: Any, **kwargs) -> bool:
+        selected_roots, _candidates, _kill_team_candidates, _max_units, _choice_payload, _from_pending = self._sm_black_spear_context(
+            "KRAKEN ROUNDS",
+            kwargs,
+        )
+        ok = self._use_space_marines_special_issue_ammunition(
+            stratagem,
+            mode="KRAKEN_ROUNDS",
+            **kwargs,
+        )
+        if ok:
+            root = selected_roots[0] if selected_roots else None
+            logger.info(
+                "INFO: KRAKEN ROUNDS: %s improves ranged AP by 1 and range by 6\" this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        return ok
+
+    def _use_space_marines_site_to_site_teleportation(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: not opponent's Fight phase")
+            return False
+
+        selected_roots, candidates, kill_team_candidates, max_units, _choice_payload, _from_pending = self._sm_black_spear_context(
+            "SITE-TO-SITE TELEPORTATION",
+            kwargs,
+        )
+        if not selected_roots:
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: no target unit provided")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: cannot target more than two units")
+            return False
+        if int(max_units or 0) > 0 and len(selected_roots) > int(max_units):
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: selected too many units")
+            return False
+
+        eligible, kill_team_eligible = self._space_marines_black_spear_site_to_site_candidates()
+        if candidates:
+            eligible = candidates
+        if kill_team_candidates:
+            kill_team_eligible = kill_team_candidates
+        for root in list(selected_roots):
+            if not self._sm_owned_by_player(root, self.player):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: target unit is not yours")
+                return False
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: target must be on the battlefield and targetable")
+                return False
+            if not self._is_adeptus_astartes_unit(root):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: target must be an ADEPTUS ASTARTES unit")
+                return False
+            if self._sm_unit_is_engaged(root):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: target cannot be within Engagement Range")
+                return False
+            if eligible and not self._sm_unit_in_candidates(root, eligible):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: one or more selected units are not currently eligible")
+                return False
+        if len(selected_roots) == 2 and not all(self._sm_unit_in_candidates(root, kill_team_eligible) for root in list(selected_roots)):
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: selecting two units requires both units to be Kill Team units")
+            return False
+        if len(selected_roots) == 1 and not self._sm_unit_in_candidates(selected_roots[0], kill_team_eligible):
+            if not self._sm_is_infantry_unit(selected_roots[0]):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: single non-Kill Team selection must be an INFANTRY unit")
+                return False
+
+        first = selected_roots[0]
+        if not stratagem.can_use(self.player, self.game, target_unit=first, unit=first, phase_name="Fight phase"):
+            logger.error("ERROR: SITE-TO-SITE TELEPORTATION: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=first):
+            return False
+
+        arrival_turn = self._sm_next_owner_movement_phase_turn(self.player)
+        source_name = str(getattr(stratagem, "name", "") or "SITE-TO-SITE TELEPORTATION")
+        owner_id = str(getattr(self.player, "id", "") or "")
+        for root in list(selected_roots):
+            if not self._sm_place_unit_into_strategic_reserves(root, reason=source_name):
+                logger.error("ERROR: SITE-TO-SITE TELEPORTATION: failed to place target into Strategic Reserves")
+                return False
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["midgame_temp_deep_strike"] = True
+                sr["midgame_temp_deep_strike_turn_owner"] = owner_id
+                sr["midgame_temp_deep_strike_must_arrive_turn"] = int(arrival_turn)
+                sr["midgame_temp_deep_strike_source"] = source_name
+                member.special_rules = sr
+                self._sm_clear_ability_cache(member, "deep_strike")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SITE-TO-SITE TELEPORTATION: %d unit(s) enter Strategic Reserves and return next Movement phase via Deep Strike.",
+            len(selected_roots),
+        )
         return True
 
     def _use_space_marines_litanies_of_purgation(self, stratagem: Any, **kwargs) -> bool:
