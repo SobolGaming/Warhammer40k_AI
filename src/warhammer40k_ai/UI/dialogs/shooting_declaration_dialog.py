@@ -794,6 +794,15 @@ class ShootingDeclarationDialog(BaseDialog):
         - Short-circuit per unit: as soon as any shooter model is eligible, accept
         Returns (is_valid: bool, reason: str)
         """
+        try:
+            restriction_fn = getattr(self.unit, "_space_marines_bastion_heresy_undone_target_restriction_reason", None)
+            if callable(restriction_fn):
+                reason = str(restriction_fn(target_unit, game=self.game) or "").strip()
+                if reason:
+                    return (False, reason)
+        except Exception:
+            pass
+
         # Determine max range
         weapon_range_max = 0
         if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
@@ -862,6 +871,14 @@ class ShootingDeclarationDialog(BaseDialog):
             if hasattr(self.unit, "round_state") and getattr(self.unit.round_state, "fell_back_this_round", False):
                 if hasattr(self.unit, "can_shoot_after_fall_back") and (not self.unit.can_shoot_after_fall_back(weapon_profile)):
                     return (False, "Unit fell back and cannot shoot with this weapon")
+        except Exception:
+            pass
+        try:
+            restriction_fn = getattr(self.unit, "_space_marines_bastion_heresy_undone_target_restriction_reason", None)
+            if callable(restriction_fn):
+                reason = str(restriction_fn(target_unit, game=self.game) or "").strip()
+                if reason:
+                    return (False, reason)
         except Exception:
             pass
 

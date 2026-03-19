@@ -5234,6 +5234,24 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            if target is not None:
+                army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                keyword_fn = getattr(sm_mgr, "light_of_vengeance_weapon_keyword", None) if sm_mgr is not None else None
+                if callable(keyword_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    keyword = str(keyword_fn(self, target, game=game) or "").strip().upper()
+                    if keyword:
+                        rules = list(rules or []) + [
+                            {
+                                "attack_type": "any",
+                                "keyword": keyword,
+                                "source": "Light of Vengeance",
+                            }
+                        ]
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
@@ -8397,6 +8415,14 @@ class PositioningMixin:
         # Only FLY units can charge AIRCRAFT.
         try:
             if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(self, "is_flying", False)):
+                return False
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            target_ok_fn = getattr(sm_mgr, "heresy_undone_target_is_legal", None) if sm_mgr is not None else None
+            if callable(target_ok_fn) and not target_ok_fn(self, target_unit, game=game):
                 return False
         except Exception:
             pass

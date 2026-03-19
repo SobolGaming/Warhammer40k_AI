@@ -80,17 +80,22 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
     "BATTLE DRILL RECALL",
+    "CODEX DISCIPLINE",
     "DUTY AND HONOUR",
     "FOCUSED FURY",
+    "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
+    "HERESY UNDONE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
     "INSTANT OF GRACE",
     "LEGENDARY FORTITUDE",
+    "LIGHT OF VENGEANCE",
     "NO THREAT TOO GREAT",
     "NOT ONE BACKWARDS STEP",
     "ORBITAL TELEPORTARIUM",
     "RIGID DISCIPLINE",
+    "SHOCK BOMBARDMENT",
     "STRIKE NOW FOR GLORY",
     "TERRIFYING PROFICIENCY",
     "UNTO THE BURNING SKIES",
@@ -500,6 +505,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
+    "GUIDED DISRUPTION",
     "IMPLACABLE GUARDIANS",
     "GLIMMERSHIFT PORTAL",
     "KHAINE'S VENGEANCE",
@@ -526,6 +532,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "SHOCK BOMBARDMENT",
     "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
@@ -1602,7 +1609,7 @@ class StratagemManager(
         if "BERZERKER'S WRATH" in names:
             add("blood_surge_triggered", self._on_blood_surge_triggered)
 
-        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES"}:
+        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
@@ -1732,6 +1739,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "HAIL OF VENGEANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
+        if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
@@ -1896,7 +1905,7 @@ class StratagemManager(
         if needs_attacker_cleanup_shooting:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
 
-        if "A WORTHY SKULL" in names:
+        if names & {"A WORTHY SKULL", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
         if has_consolidate_spec:
@@ -5888,6 +5897,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_bastion_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_angelic_inheritors_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7054,6 +7067,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_anvil_siege_force_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_bastion_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9524,6 +9541,12 @@ class StratagemManager(
     def _on_unit_shooting_resolved_space_marines_anvil_siege_force(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_anvil_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        self._queue_space_marines_bastion_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+
     def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
         self._queue_orks_more_dakka_call_dat_dakka_reactions(attacker_unit=attacker_unit)
 
@@ -11653,6 +11676,7 @@ class StratagemManager(
                 return
             if (self._current_phase_name or "").strip().lower() != "fight phase":
                 return
+            self._queue_space_marines_bastion_fight_sequence_complete_reactions(unit=unit)
             self._resolve_drukhari_skysplinter_vicious_blades_after_fight(unit=unit)
             # Offer only to the opponent of the unit that just fought
             owner_player = None
@@ -11753,6 +11777,10 @@ class StratagemManager(
                 return
             if (self._current_phase_name or "").strip().lower() != "fight phase":
                 return
+            self._capture_space_marines_bastion_fight_attacks_resolved(
+                unit=unit,
+                hits_by_target=_kwargs.get("hits_by_target"),
+            )
             s = self.get_by_name("A WORTHY SKULL")
             if not s:
                 return
@@ -16143,6 +16171,9 @@ class StratagemManager(
         anvil_result = self._use_space_marines_anvil_siege_force_stratagem(s, **kwargs)
         if anvil_result is not None:
             return anvil_result
+        bastion_result = self._use_space_marines_bastion_task_force_stratagem(s, **kwargs)
+        if bastion_result is not None:
+            return bastion_result
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result

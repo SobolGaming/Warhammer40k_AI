@@ -174,6 +174,12 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             if target_unit is None:
                 return ("Declaration target unit not found.",)
             if unit is not None:
+                reason_fn = getattr(unit, "_space_marines_bastion_heresy_undone_target_restriction_reason", None)
+                if callable(reason_fn):
+                    reason = str(reason_fn(target_unit, game=game) or "").strip()
+                    if reason:
+                        return (reason,)
+            if unit is not None:
                 try:
                     allowed, reason = unit._formless_horror_gate(
                         target_unit,

@@ -6652,6 +6652,158 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                 return False
         return True
 
+    def _bastion_phase_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        expires_phase_key: str,
+        game=None,
+    ) -> bool:
+        if not self.is_bastion_task_force():
+            return False
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return False
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        if game_obj is None:
+            return True
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            return False
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def codex_discipline_reroll_hit_ones_applies(self, unit, *, game=None) -> bool:
+        return self._bastion_phase_effect_active(
+            unit,
+            active_key="space_marines_bastion_codex_discipline_active",
+            owner_key="space_marines_bastion_codex_discipline_turn_owner",
+            turn_key="space_marines_bastion_codex_discipline_turn",
+            expires_phase_key="space_marines_bastion_codex_discipline_expires_phase",
+            game=game,
+        )
+
+    def codex_discipline_reroll_wound_ones_applies(self, unit, target_unit, *, game=None) -> bool:
+        if not self.codex_discipline_reroll_hit_ones_applies(unit, game=game):
+            return False
+        return self.interlocking_tactics_target_is_auspex_scanned_for(unit, target_unit, game=game)
+
+    def light_of_vengeance_weapon_keyword(self, unit, target_unit, *, game=None) -> str:
+        if not self._bastion_phase_effect_active(
+            unit,
+            active_key="space_marines_bastion_light_of_vengeance_active",
+            owner_key="space_marines_bastion_light_of_vengeance_turn_owner",
+            turn_key="space_marines_bastion_light_of_vengeance_turn",
+            expires_phase_key="space_marines_bastion_light_of_vengeance_expires_phase",
+            game=game,
+        ):
+            return ""
+        if unit is None:
+            return ""
+        applies = self.interlocking_tactics_target_is_auspex_scanned_for(unit, target_unit, game=game)
+        if not applies:
+            applies = self._attached_unit_has_keyword(unit, "BATTLELINE")
+        if not applies:
+            return ""
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("space_marines_bastion_light_of_vengeance_choice", "") or "").strip().upper()
+        if choice == "LETHAL_HITS":
+            return "LETHAL HITS"
+        if choice == "SUSTAINED_HITS_1":
+            return "SUSTAINED HITS 1"
+        return ""
+
+    def heresy_undone_shoot_after_advance_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        if not self._bastion_phase_effect_active(
+            unit,
+            active_key="space_marines_bastion_heresy_undone_active",
+            owner_key="space_marines_bastion_heresy_undone_turn_owner",
+            turn_key="space_marines_bastion_heresy_undone_turn",
+            expires_phase_key="space_marines_bastion_heresy_undone_expires_phase",
+            game=game,
+        ):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def heresy_undone_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self.heresy_undone_shoot_after_advance_applies(unit, weapon_profile, game=game)
+
+    def heresy_undone_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._bastion_phase_effect_active(
+            unit,
+            active_key="space_marines_bastion_heresy_undone_active",
+            owner_key="space_marines_bastion_heresy_undone_turn_owner",
+            turn_key="space_marines_bastion_heresy_undone_turn",
+            expires_phase_key="space_marines_bastion_heresy_undone_expires_phase",
+            game=game,
+        )
+
+    def heresy_undone_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        return self.heresy_undone_charge_after_advance_applies(unit, game=game)
+
+    def heresy_undone_requires_auspex_targets(self, attacker_unit, *, game=None) -> bool:
+        if not self._bastion_phase_effect_active(
+            attacker_unit,
+            active_key="space_marines_bastion_heresy_undone_active",
+            owner_key="space_marines_bastion_heresy_undone_turn_owner",
+            turn_key="space_marines_bastion_heresy_undone_turn",
+            expires_phase_key="space_marines_bastion_heresy_undone_expires_phase",
+            game=game,
+        ):
+            return False
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        round_state = getattr(root, "round_state", None)
+        return bool(
+            getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
+    def heresy_undone_target_is_legal(self, attacker_unit, target_unit, *, game=None) -> bool:
+        if not self.heresy_undone_requires_auspex_targets(attacker_unit, game=game):
+            return True
+        return self.interlocking_tactics_target_is_auspex_scanned_for(attacker_unit, target_unit, game=game)
+
     def lightning_assault_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_stormlance_task_force():
             return False

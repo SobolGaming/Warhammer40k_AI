@@ -4043,6 +4043,83 @@ _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010677002": StratagemToolDescriptor(
+        stratagem_id="000010677002",
+        name="Codex Discipline",
+        timing="shooting_or_fight_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="hit_reroll_ones_and_conditional_wound_reroll_ones_vs_auspex_scanned",
+        cp_cost=1,
+        effect_params={
+            "reroll_hit_values": [1],
+            "reroll_wound_values": [1],
+            "wound_bonus_requires_auspex_scanned": True,
+        },
+    ),
+    "000010677003": StratagemToolDescriptor(
+        stratagem_id="000010677003",
+        name="Guided Disruption",
+        timing="shooting_or_fight_phase_after_battleline_attacks_resolved",
+        target="adeptus_astartes_battleline_unit_that_just_attacked",
+        duration="until_start_of_your_next_turn",
+        effect="auspex_scanned_target_becomes_pinned",
+        cp_cost=1,
+        effect_params={
+            "move_penalty": -2,
+            "charge_penalty": -2,
+            "exclude_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000010677004": StratagemToolDescriptor(
+        stratagem_id="000010677004",
+        name="Light of Vengeance",
+        timing="shooting_or_fight_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_lethal_hits_or_sustained_hits_1",
+        cp_cost=1,
+        effect_params={
+            "choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            "target_condition": "auspex_scanned_or_battleline",
+        },
+    ),
+    "000010677005": StratagemToolDescriptor(
+        stratagem_id="000010677005",
+        name="Shock Bombardment",
+        timing="shooting_or_fight_phase_after_battleline_attacks_resolved",
+        target="adeptus_astartes_battleline_unit_that_just_attacked",
+        duration="until_start_of_your_next_turn",
+        effect="auspex_scanned_target_becomes_suppressed",
+        cp_cost=1,
+        effect_params={
+            "hit_modifier": -1,
+            "attack_types": ["melee", "ranged"],
+        },
+    ),
+    "000010677007": StratagemToolDescriptor(
+        stratagem_id="000010677007",
+        name="Heresy Undone",
+        timing="shooting_or_charge_phase",
+        target="adeptus_astartes_non_battleline_unit",
+        duration="until_end_of_phase",
+        effect="shoot_and_charge_after_advance_or_fall_back_with_auspex_target_lock",
+        cp_cost=1,
+        effect_params={
+            "advance_and_shoot": True,
+            "advance_and_charge": True,
+            "fall_back_and_shoot": True,
+            "fall_back_and_charge": True,
+            "requires_auspex_target_if_used_after_advance_or_fall_back": True,
+        },
+    ),
+}
+
+_BASTION_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -4759,6 +4836,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BASTION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4852,6 +4932,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

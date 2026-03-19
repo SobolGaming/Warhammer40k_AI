@@ -44,6 +44,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_anvil_siege_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_bastion_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_bastion_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_vindication_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_vindication_task_force", None) if mgr is not None else None
@@ -228,6 +233,19 @@ class SpaceMarinesStratagemMixin:
         has_any = getattr(root, "has_any_keyword", None)
         if callable(has_any):
             return bool(has_any("INFANTRY"))
+        return False
+
+    def _sm_is_battleline_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "_attached_unit_has_keyword", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root, "BATTLELINE"))
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            return bool(has_any("BATTLELINE"))
         return False
 
     def _sm_is_jump_pack_unit(self, unit: Any) -> bool:
@@ -906,6 +924,333 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_bastion_phase_start_candidates(self, *, phase_key: str) -> list[Any]:
+        if not self._is_bastion_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        normalized_phase = str(phase_key or "").strip().lower()
+        if normalized_phase not in {"shooting phase", "fight phase"}:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if normalized_phase == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if normalized_phase == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_bastion_heresy_undone_candidates(self, *, phase_key: str) -> list[Any]:
+        if not self._is_bastion_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        normalized_phase = str(phase_key or "").strip().lower()
+        if normalized_phase not in {"shooting phase", "charge phase"}:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_is_battleline_unit(root):
+                continue
+            if normalized_phase == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if normalized_phase == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_bastion_post_attack_source(self, *, attacker_unit: Any, hits_by_target: Any) -> Any:
+        if not self._is_bastion_task_force_detachment():
+            return None
+        if attacker_unit is None or not isinstance(hits_by_target, dict):
+            return None
+        root = self._sm_root(attacker_unit)
+        if root is None:
+            return None
+        if not self._sm_owned_by_player(root, self.player):
+            return None
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return None
+        if not self._is_adeptus_astartes_unit(root):
+            return None
+        if not self._sm_is_battleline_unit(root):
+            return None
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            target_root = self._sm_root(target_unit)
+            if target_root is None:
+                continue
+            if self._sm_owned_by_player(target_root, self.player):
+                continue
+            if not self._sm_is_alive(target_root):
+                continue
+            return root
+        return None
+
+    def _sm_bastion_pending_effect_matches(
+        self,
+        root: Any,
+        *,
+        prefix: str,
+        owner_id: str,
+        turn: int,
+        phase_key: str,
+    ) -> bool:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get(f"{prefix}_pending", False)):
+            return False
+        effect_owner = str(sr.get(f"{prefix}_pending_turn_owner", "") or "")
+        effect_phase = str(sr.get(f"{prefix}_pending_phase", "") or "").strip().upper()
+        try:
+            effect_turn = int(sr.get(f"{prefix}_pending_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return False
+        if phase_key and effect_phase and phase_key != effect_phase:
+            return False
+        if turn and effect_turn and turn != effect_turn:
+            return False
+        return True
+
+    def _sm_bastion_set_pending_effect(
+        self,
+        root: Any,
+        *,
+        prefix: str,
+        owner_id: str,
+        turn: int,
+        phase_key: str,
+        source_name: str,
+    ) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_pending"] = True
+        sr[f"{prefix}_pending_turn_owner"] = str(owner_id or "")
+        sr[f"{prefix}_pending_turn"] = int(turn or 0)
+        sr[f"{prefix}_pending_phase"] = str(phase_key or "").strip().upper()
+        sr[f"{prefix}_source"] = str(source_name or "").strip() or prefix
+        root.special_rules = sr
+
+    def _sm_bastion_clear_pending_effect(self, root: Any, *, prefix: str) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            f"{prefix}_pending",
+            f"{prefix}_pending_turn_owner",
+            f"{prefix}_pending_turn",
+            f"{prefix}_pending_phase",
+            f"{prefix}_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _sm_bastion_last_scan_target(self, root: Any, *, owner_id: str, turn: int, phase_key: str) -> Any:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        target_id = str(sr.get("interlocking_tactics_last_scan_target_id", "") or "")
+        if not target_id:
+            return None
+        effect_owner = str(sr.get("interlocking_tactics_last_scan_owner", "") or "")
+        effect_phase = str(sr.get("interlocking_tactics_last_scan_phase", "") or "").strip().upper()
+        try:
+            effect_turn = int(sr.get("interlocking_tactics_last_scan_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return None
+        if phase_key and effect_phase and phase_key != effect_phase:
+            return None
+        if turn and effect_turn and turn != effect_turn:
+            return None
+        registry = getattr(self.game, "entity_registry", None) if self.game is not None else None
+        if registry is None or not callable(getattr(registry, "get", None)):
+            return None
+        return registry.get(target_id, kind="unit")
+
+    def _apply_space_marines_bastion_guided_disruption_effect(
+        self,
+        *,
+        target_unit: Any,
+        owner_id: str,
+        turn: int,
+        source_name: str,
+    ) -> bool:
+        target_root = self._sm_root(target_unit)
+        if target_root is None or not self._sm_is_alive(target_root):
+            return False
+        has_keyword = getattr(target_root, "has_any_keyword", None)
+        if not callable(has_keyword):
+            has_keyword = getattr(target_root, "has_keyword", None)
+        if callable(has_keyword):
+            if bool(has_keyword("MONSTER")) or bool(has_keyword("VEHICLE")):
+                return False
+        apply_fn = getattr(target_root, "apply_pinned", None)
+        if callable(apply_fn):
+            apply_fn(
+                owner_id=str(owner_id or ""),
+                turn=int(turn or 0),
+                source=str(source_name or "GUIDED DISRUPTION"),
+                move_penalty=-2,
+                charge_penalty=-2,
+                expires_phase="COMMAND_PHASE",
+            )
+        else:
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["pinned_active"] = True
+            sr["pinned_owner"] = str(owner_id or "")
+            sr["pinned_turn"] = int(turn or 0)
+            sr["pinned_source"] = str(source_name or "GUIDED DISRUPTION")
+            sr["pinned_move_penalty"] = -2
+            sr["pinned_charge_penalty"] = -2
+            sr["pinned_expires_phase"] = "COMMAND_PHASE"
+            target_root.special_rules = sr
+        logger.info(
+            "INFO: GUIDED DISRUPTION: %s is pinned until the start of your next turn.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _apply_space_marines_bastion_shock_bombardment_effect(
+        self,
+        *,
+        target_unit: Any,
+        owner_id: str,
+        turn: int,
+        source_name: str,
+    ) -> bool:
+        target_root = self._sm_root(target_unit)
+        if target_root is None or not self._sm_is_alive(target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_suppressed_active"] = True
+        sr["post_shoot_suppressed_owner"] = str(owner_id or "")
+        sr["post_shoot_suppressed_turn"] = int(turn or 0)
+        sr["post_shoot_suppressed_source"] = str(source_name or "SHOCK BOMBARDMENT")
+        sr["post_shoot_suppressed_attack_types"] = ["melee", "ranged"]
+        target_root.special_rules = sr
+        logger.info(
+            "INFO: SHOCK BOMBARDMENT: %s is suppressed until the start of your next turn.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _sm_bastion_resolve_last_scan_effect(
+        self,
+        *,
+        root: Any,
+        prefix: str,
+        owner_id: str,
+        turn: int,
+        phase_key: str,
+        source_name: str,
+    ) -> bool:
+        target_unit = self._sm_bastion_last_scan_target(
+            root,
+            owner_id=owner_id,
+            turn=turn,
+            phase_key=phase_key,
+        )
+        if target_unit is None:
+            return False
+        if prefix == "space_marines_bastion_guided_disruption":
+            self._apply_space_marines_bastion_guided_disruption_effect(
+                target_unit=target_unit,
+                owner_id=owner_id,
+                turn=turn,
+                source_name=source_name,
+            )
+            return True
+        if prefix == "space_marines_bastion_shock_bombardment":
+            self._apply_space_marines_bastion_shock_bombardment_effect(
+                target_unit=target_unit,
+                owner_id=owner_id,
+                turn=turn,
+                source_name=source_name,
+            )
+            return True
+        return False
+
+    def _queue_space_marines_bastion_post_attack_reactions(
+        self,
+        *,
+        event_name: str,
+        phase_name: str,
+        source_unit: Any,
+    ) -> None:
+        if source_unit is None:
+            return
+        for stratagem_name in ("GUIDED DISRUPTION", "SHOCK BOMBARDMENT"):
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name=event_name,
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+                target_unit=source_unit,
+            ):
+                continue
+            payload = {
+                "event": event_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": [source_unit],
+                "unit": source_unit,
+                "target_unit": source_unit,
+            }
+            self._queue_reaction(payload, use_timer=False)
+
     def _space_marines_angelic_focused_fury_candidates(self) -> list[Any]:
         if not self._is_angelic_inheritors_detachment():
             return []
@@ -1532,6 +1877,261 @@ class SpaceMarinesStratagemMixin:
                     "space_marines_not_one_backwards_step_source",
                 ):
                     sr.pop(key, None)
+            root.special_rules = sr
+
+    def _queue_space_marines_bastion_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_bastion_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            shooting_candidates = self._space_marines_bastion_phase_start_candidates(phase_key="shooting phase")
+            heresy_candidates = self._space_marines_bastion_heresy_undone_candidates(phase_key="shooting phase")
+            for stratagem_name, candidates in (
+                ("CODEX DISCIPLINE", shooting_candidates),
+                ("LIGHT OF VENGEANCE", shooting_candidates),
+                ("HERESY UNDONE", heresy_candidates),
+            ):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Shooting phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "CHARGE_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("HERESY UNDONE")
+            candidates = self._space_marines_bastion_heresy_undone_candidates(phase_key="charge phase")
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Charge phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Charge phase",
+                        "phase_name": "Charge phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            candidates = self._space_marines_bastion_phase_start_candidates(phase_key="fight phase")
+            if not candidates:
+                return
+            for stratagem_name in ("CODEX DISCIPLINE", "LIGHT OF VENGEANCE"):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Fight phase",
+                ):
+                    continue
+                payload = {
+                    "event": "phase_start",
+                    "phase": "Fight phase",
+                    "phase_name": "Fight phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_bastion_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any,
+    ) -> None:
+        if not self._is_bastion_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        source_unit = self._space_marines_bastion_post_attack_source(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+        if source_unit is None:
+            return
+        self._queue_space_marines_bastion_post_attack_reactions(
+            event_name="unit_shooting_resolved",
+            phase_name="Shooting phase",
+            source_unit=source_unit,
+        )
+
+    def _capture_space_marines_bastion_fight_attacks_resolved(self, *, unit: Any, hits_by_target: Any) -> None:
+        if not self._is_bastion_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_unit = self._space_marines_bastion_post_attack_source(
+            attacker_unit=unit,
+            hits_by_target=hits_by_target,
+        )
+        if source_unit is None:
+            return
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_bastion_post_fight_ready"] = True
+        sr["space_marines_bastion_post_fight_ready_owner"] = owner_id
+        sr["space_marines_bastion_post_fight_ready_turn"] = int(turn or 0)
+        source_unit.special_rules = sr
+
+    def _queue_space_marines_bastion_fight_sequence_complete_reactions(self, *, unit: Any) -> None:
+        if not self._is_bastion_task_force_detachment():
+            return
+        if unit is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_unit = self._sm_root(unit)
+        if source_unit is None:
+            return
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        ready = bool(sr.get("space_marines_bastion_post_fight_ready", False))
+        ready_owner = str(sr.get("space_marines_bastion_post_fight_ready_owner", "") or "")
+        try:
+            ready_turn = int(sr.get("space_marines_bastion_post_fight_ready_turn", 0) or 0)
+        except Exception:
+            ready_turn = 0
+        for key in (
+            "space_marines_bastion_post_fight_ready",
+            "space_marines_bastion_post_fight_ready_owner",
+            "space_marines_bastion_post_fight_ready_turn",
+        ):
+            sr.pop(key, None)
+        source_unit.special_rules = sr
+        if not ready:
+            return
+        if owner_id and ready_owner and owner_id != ready_owner:
+            return
+        if turn and ready_turn and turn != ready_turn:
+            return
+        if not self._sm_owned_by_player(source_unit, self.player):
+            return
+        if not self._sm_on_battlefield(source_unit, require_targetable=True):
+            return
+        if not self._is_adeptus_astartes_unit(source_unit):
+            return
+        if not self._sm_is_battleline_unit(source_unit):
+            return
+        self._queue_space_marines_bastion_post_attack_reactions(
+            event_name="fight_sequence_complete",
+            phase_name="Fight phase",
+            source_unit=source_unit,
+        )
+
+    def _cleanup_space_marines_bastion_phase_end_effects(self, *, player: Any, phase: Any) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_key:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE", "CHARGE_PHASE"}:
+                prefix_map = {
+                    "space_marines_bastion_codex_discipline": {"SHOOTING_PHASE", "FIGHT_PHASE"},
+                    "space_marines_bastion_light_of_vengeance": {"SHOOTING_PHASE", "FIGHT_PHASE"},
+                    "space_marines_bastion_heresy_undone": {"SHOOTING_PHASE", "CHARGE_PHASE"},
+                }
+                for prefix, phases in prefix_map.items():
+                    if phase_key not in phases:
+                        continue
+                    for key in (
+                        f"{prefix}_active",
+                        f"{prefix}_choice",
+                        f"{prefix}_turn_owner",
+                        f"{prefix}_turn",
+                        f"{prefix}_expires_phase",
+                        f"{prefix}_source",
+                    ):
+                        sr.pop(key, None)
+            if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                for key in (
+                    "interlocking_tactics_last_scan_target_id",
+                    "interlocking_tactics_last_scan_owner",
+                    "interlocking_tactics_last_scan_turn",
+                    "interlocking_tactics_last_scan_phase",
+                    "space_marines_bastion_post_fight_ready",
+                    "space_marines_bastion_post_fight_ready_owner",
+                    "space_marines_bastion_post_fight_ready_turn",
+                ):
+                    sr.pop(key, None)
+                for prefix in (
+                    "space_marines_bastion_guided_disruption",
+                    "space_marines_bastion_shock_bombardment",
+                ):
+                    for key in (
+                        f"{prefix}_pending",
+                        f"{prefix}_pending_turn_owner",
+                        f"{prefix}_pending_turn",
+                        f"{prefix}_pending_phase",
+                        f"{prefix}_source",
+                    ):
+                        sr.pop(key, None)
             root.special_rules = sr
 
     def _queue_space_marines_first_company_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
@@ -2269,6 +2869,53 @@ class SpaceMarinesStratagemMixin:
         if name_u == "RIGID DISCIPLINE":
             return self._use_space_marines_rigid_discipline(stratagem, **kwargs)
         return None
+
+    def _use_space_marines_bastion_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_bastion_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "CODEX DISCIPLINE":
+            return self._use_space_marines_codex_discipline(stratagem, **kwargs)
+        if name_u == "GUIDED DISRUPTION":
+            return self._use_space_marines_guided_disruption(stratagem, **kwargs)
+        if name_u == "HERESY UNDONE":
+            return self._use_space_marines_heresy_undone(stratagem, **kwargs)
+        if name_u == "LIGHT OF VENGEANCE":
+            return self._use_space_marines_light_of_vengeance(stratagem, **kwargs)
+        if name_u == "SHOCK BOMBARDMENT":
+            return self._use_space_marines_shock_bombardment(stratagem, **kwargs)
+        return None
+
+    def _sm_bastion_context(self, stratagem_name: str, kwargs: dict[str, Any]) -> tuple[Any, list[Any], bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        return unit, candidates, from_pending
+
+    @staticmethod
+    def _sm_bastion_light_choice(choice: Any) -> str:
+        normalized = str(choice or "").strip().upper()
+        normalized = normalized.replace(" ", "_")
+        if normalized == "SUSTAINED":
+            normalized = "SUSTAINED_HITS_1"
+        if normalized == "LETHAL":
+            normalized = "LETHAL_HITS"
+        if normalized in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return normalized
+        return ""
 
     def _sm_anvil_context(self, stratagem_name: str, kwargs: dict[str, Any]) -> tuple[Any, list[Any], Any, bool]:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -3643,6 +4290,355 @@ class SpaceMarinesStratagemMixin:
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: RIGID DISCIPLINE: %s can make a Fall Back move of up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_codex_discipline(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CODEX DISCIPLINE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: CODEX DISCIPLINE: not your Shooting phase")
+            return False
+
+        unit, candidates, _from_pending = self._sm_bastion_context("CODEX DISCIPLINE", kwargs)
+        if unit is None:
+            logger.error("ERROR: CODEX DISCIPLINE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CODEX DISCIPLINE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CODEX DISCIPLINE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: CODEX DISCIPLINE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        eligible = candidates or self._space_marines_bastion_phase_start_candidates(phase_key=phase_name)
+        if eligible:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in eligible):
+                logger.error("ERROR: CODEX DISCIPLINE: selected unit is not currently eligible")
+                return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: CODEX DISCIPLINE: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: CODEX DISCIPLINE: target has already been selected to fight this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_bastion_codex_discipline_active"] = True
+        sr["space_marines_bastion_codex_discipline_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_bastion_codex_discipline_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_bastion_codex_discipline_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["space_marines_bastion_codex_discipline_source"] = str(getattr(stratagem, "name", "") or "CODEX DISCIPLINE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CODEX DISCIPLINE: %s re-rolls Hit rolls of 1, and re-rolls Wound rolls of 1 vs auspex scanned targets, this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_light_of_vengeance(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: LIGHT OF VENGEANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: LIGHT OF VENGEANCE: not your Shooting phase")
+            return False
+
+        choice = self._sm_bastion_light_choice(
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("mode")
+            or kwargs.get("selection")
+        )
+        if not choice:
+            logger.error("ERROR: LIGHT OF VENGEANCE: choice must be LETHAL_HITS or SUSTAINED_HITS_1")
+            return False
+
+        unit, candidates, _from_pending = self._sm_bastion_context("LIGHT OF VENGEANCE", kwargs)
+        if unit is None:
+            logger.error("ERROR: LIGHT OF VENGEANCE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LIGHT OF VENGEANCE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LIGHT OF VENGEANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LIGHT OF VENGEANCE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        eligible = candidates or self._space_marines_bastion_phase_start_candidates(phase_key=phase_name)
+        if eligible:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in eligible):
+                logger.error("ERROR: LIGHT OF VENGEANCE: selected unit is not currently eligible")
+                return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: LIGHT OF VENGEANCE: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: LIGHT OF VENGEANCE: target has already been selected to fight this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_bastion_light_of_vengeance_active"] = True
+        sr["space_marines_bastion_light_of_vengeance_choice"] = choice
+        sr["space_marines_bastion_light_of_vengeance_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_bastion_light_of_vengeance_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_bastion_light_of_vengeance_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["space_marines_bastion_light_of_vengeance_source"] = str(getattr(stratagem, "name", "") or "LIGHT OF VENGEANCE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LIGHT OF VENGEANCE: %s gains %s while targeting auspex scanned units, or while it has BATTLELINE, this phase.",
+            getattr(root, "name", "Unit"),
+            "LETHAL HITS" if choice == "LETHAL_HITS" else "SUSTAINED HITS 1",
+        )
+        return True
+
+    def _use_space_marines_heresy_undone(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "charge phase"}:
+            logger.error("ERROR: HERESY UNDONE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: HERESY UNDONE: not your phase")
+            return False
+
+        unit, candidates, _from_pending = self._sm_bastion_context("HERESY UNDONE", kwargs)
+        if unit is None:
+            logger.error("ERROR: HERESY UNDONE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: HERESY UNDONE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: HERESY UNDONE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: HERESY UNDONE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_is_battleline_unit(root):
+            logger.error("ERROR: HERESY UNDONE: target cannot be a BATTLELINE unit")
+            return False
+        eligible = candidates or self._space_marines_bastion_heresy_undone_candidates(phase_key=phase_name)
+        if eligible:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in eligible):
+                logger.error("ERROR: HERESY UNDONE: selected unit is not currently eligible")
+                return False
+        if phase_name == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: HERESY UNDONE: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+            logger.error("ERROR: HERESY UNDONE: target has already been selected to charge this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_bastion_heresy_undone_active"] = True
+        sr["space_marines_bastion_heresy_undone_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_bastion_heresy_undone_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_bastion_heresy_undone_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "CHARGE_PHASE"
+        )
+        sr["space_marines_bastion_heresy_undone_source"] = str(getattr(stratagem, "name", "") or "HERESY UNDONE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HERESY UNDONE: %s can shoot or charge after Advancing or Falling Back this phase, but those targets must be auspex scanned if it does so.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_guided_disruption(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: GUIDED DISRUPTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: GUIDED DISRUPTION: not your Shooting phase")
+            return False
+
+        unit, candidates, from_pending = self._sm_bastion_context("GUIDED DISRUPTION", kwargs)
+        if unit is None:
+            logger.error("ERROR: GUIDED DISRUPTION: no source unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: GUIDED DISRUPTION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: GUIDED DISRUPTION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: GUIDED DISRUPTION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_battleline_unit(root):
+            logger.error("ERROR: GUIDED DISRUPTION: target must be a BATTLELINE unit")
+            return False
+        if candidates:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in candidates):
+                logger.error("ERROR: GUIDED DISRUPTION: selected unit is not currently eligible")
+                return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        has_last_scan = self._sm_bastion_last_scan_target(
+            root,
+            owner_id=owner_id,
+            turn=turn,
+            phase_key=phase_key,
+        ) is not None
+        if not from_pending and not has_last_scan:
+            logger.error("ERROR: GUIDED DISRUPTION: missing completed-attack trigger context")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "GUIDED DISRUPTION")
+        self._sm_bastion_clear_pending_effect(root, prefix="space_marines_bastion_guided_disruption")
+        if has_last_scan:
+            self._sm_bastion_resolve_last_scan_effect(
+                root=root,
+                prefix="space_marines_bastion_guided_disruption",
+                owner_id=owner_id,
+                turn=turn,
+                phase_key=phase_key,
+                source_name=source_name,
+            )
+        else:
+            self._sm_bastion_set_pending_effect(
+                root,
+                prefix="space_marines_bastion_guided_disruption",
+                owner_id=owner_id,
+                turn=turn,
+                phase_key=phase_key,
+                source_name=source_name,
+            )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GUIDED DISRUPTION: %s will pin the auspex scanned unit from its latest attack sequence if that target is not a MONSTER or VEHICLE.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_shock_bombardment(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SHOCK BOMBARDMENT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: SHOCK BOMBARDMENT: not your Shooting phase")
+            return False
+
+        unit, candidates, from_pending = self._sm_bastion_context("SHOCK BOMBARDMENT", kwargs)
+        if unit is None:
+            logger.error("ERROR: SHOCK BOMBARDMENT: no source unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: SHOCK BOMBARDMENT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SHOCK BOMBARDMENT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: SHOCK BOMBARDMENT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_battleline_unit(root):
+            logger.error("ERROR: SHOCK BOMBARDMENT: target must be a BATTLELINE unit")
+            return False
+        if candidates:
+            root_id = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != root_id for candidate in candidates):
+                logger.error("ERROR: SHOCK BOMBARDMENT: selected unit is not currently eligible")
+                return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        has_last_scan = self._sm_bastion_last_scan_target(
+            root,
+            owner_id=owner_id,
+            turn=turn,
+            phase_key=phase_key,
+        ) is not None
+        if not from_pending and not has_last_scan:
+            logger.error("ERROR: SHOCK BOMBARDMENT: missing completed-attack trigger context")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SHOCK BOMBARDMENT")
+        self._sm_bastion_clear_pending_effect(root, prefix="space_marines_bastion_shock_bombardment")
+        if has_last_scan:
+            self._sm_bastion_resolve_last_scan_effect(
+                root=root,
+                prefix="space_marines_bastion_shock_bombardment",
+                owner_id=owner_id,
+                turn=turn,
+                phase_key=phase_key,
+                source_name=source_name,
+            )
+        else:
+            self._sm_bastion_set_pending_effect(
+                root,
+                prefix="space_marines_bastion_shock_bombardment",
+                owner_id=owner_id,
+                turn=turn,
+                phase_key=phase_key,
+                source_name=source_name,
+            )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHOCK BOMBARDMENT: %s will suppress the auspex scanned unit from its latest attack sequence.",
             getattr(root, "name", "Unit"),
         )
         return True

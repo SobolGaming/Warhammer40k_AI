@@ -23547,6 +23547,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 target_root = chosen
             attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
             try:
+                attacker_root = attacker_unit.get_attached_unit_root()
+            except Exception:
+                attacker_root = attacker_unit
+            try:
                 player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
             except Exception:
                 player = None
@@ -23556,6 +23560,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 marked_turn = int(getattr(game, "turn", 0) or 0)
             ability_name = str(ctx.get("ability_name", "") or "Interlocking Tactics").strip() or "Interlocking Tactics"
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
             sr = getattr(target_root, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -23572,6 +23577,63 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             sr["interlocking_tactics_auspex_scanned_turn"] = int(marked_turn or 0)
             sr["interlocking_tactics_auspex_scanned_source"] = ability_name
             target_root.special_rules = sr
+            attacker_sr = getattr(attacker_root, "special_rules", None)
+            if not isinstance(attacker_sr, dict):
+                attacker_sr = {}
+            attacker_sr["interlocking_tactics_last_scan_target_id"] = str(get_entity_id(target_root) or "")
+            attacker_sr["interlocking_tactics_last_scan_owner"] = owner_id
+            attacker_sr["interlocking_tactics_last_scan_turn"] = int(marked_turn or 0)
+            attacker_sr["interlocking_tactics_last_scan_phase"] = current_phase
+            attacker_root.special_rules = attacker_sr
+            strat_mgr = getattr(player, "stratagems", None)
+            if strat_mgr is not None and attacker_root is not None and target_root is not None:
+                guided_prefix = "space_marines_bastion_guided_disruption"
+                guided_source = str(attacker_sr.get(f"{guided_prefix}_source", "") or "GUIDED DISRUPTION")
+                guided_matches = getattr(strat_mgr, "_sm_bastion_pending_effect_matches", None)
+                apply_guided = getattr(strat_mgr, "_apply_space_marines_bastion_guided_disruption_effect", None)
+                clear_pending = getattr(strat_mgr, "_sm_bastion_clear_pending_effect", None)
+                if (
+                    callable(guided_matches)
+                    and callable(apply_guided)
+                    and guided_matches(
+                        attacker_root,
+                        prefix=guided_prefix,
+                        owner_id=owner_id,
+                        turn=marked_turn,
+                        phase_key=current_phase,
+                    )
+                ):
+                    apply_guided(
+                        target_unit=target_root,
+                        owner_id=owner_id,
+                        turn=marked_turn,
+                        source_name=guided_source,
+                    )
+                    if callable(clear_pending):
+                        clear_pending(attacker_root, prefix=guided_prefix)
+                shock_prefix = "space_marines_bastion_shock_bombardment"
+                shock_source = str(attacker_sr.get(f"{shock_prefix}_source", "") or "SHOCK BOMBARDMENT")
+                shock_matches = getattr(strat_mgr, "_sm_bastion_pending_effect_matches", None)
+                apply_shock = getattr(strat_mgr, "_apply_space_marines_bastion_shock_bombardment_effect", None)
+                if (
+                    callable(shock_matches)
+                    and callable(apply_shock)
+                    and shock_matches(
+                        attacker_root,
+                        prefix=shock_prefix,
+                        owner_id=owner_id,
+                        turn=marked_turn,
+                        phase_key=current_phase,
+                    )
+                ):
+                    apply_shock(
+                        target_unit=target_root,
+                        owner_id=owner_id,
+                        turn=marked_turn,
+                        source_name=shock_source,
+                    )
+                    if callable(clear_pending):
+                        clear_pending(attacker_root, prefix=shock_prefix)
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(

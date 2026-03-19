@@ -959,6 +959,21 @@ class ShootingMixin:
             f"Powers of the C'tan: select up to {int(limit)} different C'tan Powers weapons before resolving shooting.",
         )
 
+    def _space_marines_bastion_heresy_undone_target_restriction_reason(self, target_unit, *, game=None) -> str:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        requires_fn = getattr(sm_mgr, "heresy_undone_requires_auspex_targets", None) if sm_mgr is not None else None
+        legal_fn = getattr(sm_mgr, "heresy_undone_target_is_legal", None) if sm_mgr is not None else None
+        if not callable(requires_fn) or not callable(legal_fn):
+            return ""
+        if not requires_fn(self, game=game):
+            return ""
+        if legal_fn(self, target_unit, game=game):
+            return ""
+        return "Heresy Undone: target must be an auspex scanned unit after Advancing or Falling Back"
 
     def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None, linked_fire_mode=None) -> dict:
         """Validate a shooting declaration"""
@@ -988,6 +1003,9 @@ class ShootingMixin:
         except Exception:
             game = None
         reason = self._thrill_seekers_restriction_reason(target_unit, game)
+        if reason:
+            return {"valid": False, "reason": reason}
+        reason = self._space_marines_bastion_heresy_undone_target_restriction_reason(target_unit, game=game)
         if reason:
             return {"valid": False, "reason": reason}
 
@@ -1161,6 +1179,11 @@ class ShootingMixin:
             except Exception:
                 game = None
             if self._formless_horror_target_blocked(target_unit, game=game):
+                return False
+        except Exception:
+            pass
+        try:
+            if self._space_marines_bastion_heresy_undone_target_restriction_reason(target_unit, game=game):
                 return False
         except Exception:
             pass
