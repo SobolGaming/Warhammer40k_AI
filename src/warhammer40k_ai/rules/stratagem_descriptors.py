@@ -5426,6 +5426,106 @@ _LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LIONS_BLADE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010681002": StratagemToolDescriptor(
+        stratagem_id="000010681002",
+        name="Suppression Strafing",
+        timing="command_phase",
+        target="one_adeptus_astartes_unit_and_one_visible_enemy_within_18",
+        duration="until_start_of_your_next_turn",
+        effect="visible_enemy_within_18_forced_battleshock_and_suppressed",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "requires_visible_enemy": True,
+            "battle_shock_test_modifier": -1,
+            "apply_suppressed_on_failed_test": True,
+        },
+    ),
+    "000010681003": StratagemToolDescriptor(
+        stratagem_id="000010681003",
+        name="Tactical Decapitation",
+        timing="shooting_or_fight_phase_before_selected",
+        target="one_adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_and_character_target_hit_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "granted_keyword": "PRECISION",
+            "hit_bonus_vs_target_keywords_all": ["CHARACTER"],
+            "hit_bonus": 1,
+        },
+    ),
+    "000010681004": StratagemToolDescriptor(
+        stratagem_id="000010681004",
+        name="Shock Onslaught",
+        timing="fight_phase_before_selected",
+        target="one_adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="increase_pile_in_and_consolidate_distance",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "pile_in_distance_in": 6.0,
+            "consolidate_distance_in": 6.0,
+        },
+    ),
+    "000010681005": StratagemToolDescriptor(
+        stratagem_id="000010681005",
+        name="Auto‑Sense Coordination",
+        timing="shooting_or_fight_phase_before_selected",
+        target="one_adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="choose_lethal_hits_or_sustained_hits_1_if_drop_pod_or_within_12",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "choice_keywords": ["LETHAL HITS", "SUSTAINED HITS 1"],
+            "active_if_disembarked_from_transport_name": "Drop Pod",
+            "active_if_target_within_in": 12.0,
+        },
+    ),
+    "000010681006": StratagemToolDescriptor(
+        stratagem_id="000010681006",
+        name="Blind Screen",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="one_non_titanic_adeptus_astartes_targeted_unit_and_one_friendly_smoke_vehicle_or_drop_pod_within_9",
+        duration="until_end_of_phase",
+        effect="paired_units_gain_stealth_and_cover",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "target_excluded_keywords_any": ["TITANIC"],
+            "paired_support_keywords_any": ["DROP POD", "SMOKE"],
+            "grants_stealth": True,
+            "grants_benefit_of_cover": True,
+        },
+    ),
+    "000010681007": StratagemToolDescriptor(
+        stratagem_id="000010681007",
+        name="Onward For The Emperor",
+        timing="end_of_opponent_fight_phase",
+        target="one_adeptus_astartes_infantry_unit_not_set_up_this_turn_and_one_friendly_transport_within_6",
+        duration="immediate",
+        effect="end_of_opponent_fight_embark",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "requires_not_set_up_this_turn": True,
+            "requires_transport": True,
+        },
+    ),
+}
+
+_ORBITAL_ASSAULT_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -6193,6 +6293,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _LIONS_BLADE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6303,6 +6406,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ORBITAL_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

@@ -5273,6 +5273,29 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            keyword_fn = getattr(sm_mgr, "orbital_assault_auto_sense_coordination_weapon_keyword", None) if sm_mgr is not None else None
+            if callable(keyword_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                keyword, source = keyword_fn(
+                    model,
+                    target,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                keyword = str(keyword or "").strip().upper()
+                if keyword:
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "any",
+                            "keyword": keyword,
+                            "source": str(source or "AUTO-SENSE COORDINATION").strip() or "AUTO-SENSE COORDINATION",
+                        }
+                    ]
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self

@@ -20414,6 +20414,43 @@ def _stratagem_support(
             name_u,
         )
 
+    if stratagem_id == "000010681002":
+        return (
+            "Implemented",
+            "Command phase: selected ADEPTUS ASTARTES unit picks one visible enemy within 18\" to take a Battle-shock test at -1, and a failed test leaves that enemy suppressed until the start of your next turn with -1 to hit on its attacks.",
+            name_u,
+        )
+    if stratagem_id == "000010681003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected gains [PRECISION], and its attacks gain +1 to hit while targeting a CHARACTER unit until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010681004":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected to fight can Pile-in and Consolidate up to 6\" until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010681005":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES unit chooses [LETHAL HITS] or [SUSTAINED HITS 1], and its weapons gain that ability this phase after disembarking from a Drop Pod or while targeting enemies within 12\".",
+            name_u,
+        )
+    if stratagem_id == "000010681006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after enemy targets are selected: one targeted ADEPTUS ASTARTES unit and one nearby friendly Smoke Vehicle or Drop Pod gain Stealth and the Benefit of Cover until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010681007":
+        return (
+            "Implemented",
+            "End of opponent Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that was not set up this turn can embark within a friendly Transport while wholly within 6\".",
+            name_u,
+        )
+
     if stratagem_id == "000008483003":
         return (
             "Implemented",

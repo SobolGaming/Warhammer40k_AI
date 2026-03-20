@@ -3072,6 +3072,122 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, "Rapid-drop Deployment"
 
+    def _orbital_assault_phase_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        expires_phase_key: str,
+        game=None,
+    ) -> bool:
+        if not self.is_orbital_assault_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        if owner_id and effect_owner and owner_id != effect_owner:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            return False
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def orbital_assault_auto_sense_coordination_weapon_keyword(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[str, str]:
+        unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._orbital_assault_phase_effect_active(
+            unit,
+            active_key="space_marines_orbital_auto_sense_coordination_active",
+            owner_key="space_marines_orbital_auto_sense_coordination_turn_owner",
+            turn_key="space_marines_orbital_auto_sense_coordination_turn",
+            expires_phase_key="space_marines_orbital_auto_sense_coordination_expires_phase",
+            game=game,
+        ):
+            return "", ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return "", ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return "", ""
+        choice = str(sr.get("space_marines_orbital_auto_sense_coordination_choice", "") or "").strip().upper()
+        if choice == "LETHAL_HITS":
+            keyword = "LETHAL HITS"
+        elif choice == "SUSTAINED_HITS_1":
+            keyword = "SUSTAINED HITS 1"
+        else:
+            return "", ""
+        source = str(sr.get("space_marines_orbital_auto_sense_coordination_source", "") or "AUTO-SENSE COORDINATION").strip()
+        if self._attached_unit_disembarked_from_transport_name_this_round(
+            root,
+            transport_name_fragment="Drop Pod",
+            game=game,
+        ):
+            return keyword, source
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return "", ""
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return "", ""
+        try:
+            distance = float(game_map.get_distance_between_units(root, target_root))
+        except Exception:
+            return "", ""
+        if distance > 12.0 + 1e-6:
+            return "", ""
+        return keyword, source
+
+    def orbital_assault_tactical_decapitation_hit_bonus(self, attacker_model, target_unit, *, game=None) -> tuple[int, str]:
+        unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._orbital_assault_phase_effect_active(
+            unit,
+            active_key="space_marines_orbital_tactical_decapitation_active",
+            owner_key="space_marines_orbital_tactical_decapitation_turn_owner",
+            turn_key="space_marines_orbital_tactical_decapitation_turn",
+            expires_phase_key="space_marines_orbital_tactical_decapitation_expires_phase",
+            game=game,
+        ):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None or not self._attached_unit_has_keyword(target_root, "CHARACTER"):
+            return 0, ""
+        source = "TACTICAL DECAPITATION"
+        root = self._attached_unit_root(unit)
+        if root is not None:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                source = str(sr.get("space_marines_orbital_tactical_decapitation_source", "") or source).strip() or source
+        return 1, source
+
     def upon_wings_of_fire_end_of_opponent_turn_max_units(self, *, game=None) -> int:
         if not self.is_the_angelic_host():
             return 0

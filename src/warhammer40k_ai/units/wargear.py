@@ -11514,6 +11514,20 @@ class WargearProfile:
                         _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
         except Exception:
             pass
+        # Space Marines: Orbital Assault Force - Tactical Decapitation.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "orbital_assault_tactical_decapitation_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                hit_bonus, source = bonus_fn(attacker, target, game=game)
+                if int(hit_bonus or 0):
+                    source_name = str(source or "TACTICAL DECAPITATION").strip() or "TACTICAL DECAPITATION"
+                    _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
+        except Exception:
+            pass
         # Adeptus Mechanicus: Explorator Maniple (Logis).
         try:
             unit = attacker.parent_unit
