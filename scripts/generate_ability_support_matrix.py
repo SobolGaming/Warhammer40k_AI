@@ -20517,6 +20517,36 @@ def _stratagem_support(
             "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" and not within Engagement Range can make a Normal move of up to 6\".",
             name_u,
         )
+    if stratagem_id == "000009191004":
+        return (
+            "Implemented",
+            "Start of the Fight phase: selected ADEPTUS ASTARTES JUMP PACK unit within Engagement Range forces enemy units engaging it to direct all of their melee attacks into that unit until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000009191007":
+        return (
+            "Implemented",
+            "Your Movement phase just after an ADEPTUS ASTARTES JUMP PACK unit Advances or Falls Back: that unit can shoot and declare a charge after Advancing or Falling Back until the end of the turn.",
+            name_u,
+        )
+    if stratagem_id == "000009191006":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES JUMP PACK unit arriving from Reserves with Deep Strike can be set up more than 6\" horizontally away from enemy units this phase.",
+            name_u,
+        )
+    if stratagem_id == "000009191005":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES JUMP PACK unit that has not yet been selected to fight gains [LETHAL HITS] and [PRECISION] on melee weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000009191002":
+        return (
+            "Implemented",
+            "Any phase reaction when one of your ADEPTUS ASTARTES units is destroyed: friendly Sanguinary Guard units can re-roll Hit rolls and Wound rolls against the enemy unit that destroyed it for the rest of the battle.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

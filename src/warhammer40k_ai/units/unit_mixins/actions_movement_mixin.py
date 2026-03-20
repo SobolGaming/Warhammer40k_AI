@@ -17180,6 +17180,12 @@ class ActionsMovementMixin:
             found = True
         elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
             found = True
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="space_marines_angelic_host_death_from_the_skies_active",
+            owner_key="space_marines_angelic_host_death_from_the_skies_turn_owner",
+            turn_key="space_marines_angelic_host_death_from_the_skies_turn",
+        ):
+            found = True
         else:
             found = self._has_simple_eligibility_rule([
                 "eligible to shoot in a turn in which it advanced",
@@ -17246,6 +17252,12 @@ class ActionsMovementMixin:
         if self.has_thrill_seekers():
             found = True
         elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
+            found = True
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="space_marines_angelic_host_death_from_the_skies_active",
+            owner_key="space_marines_angelic_host_death_from_the_skies_turn_owner",
+            turn_key="space_marines_angelic_host_death_from_the_skies_turn",
+        ):
             found = True
         else:
             found = self._has_simple_eligibility_rule([
@@ -17356,6 +17368,15 @@ class ActionsMovementMixin:
                 else None
             )
             if callable(apply_fn) and bool(apply_fn(self)):
+                return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="space_marines_angelic_host_death_from_the_skies_active",
+                owner_key="space_marines_angelic_host_death_from_the_skies_turn_owner",
+                turn_key="space_marines_angelic_host_death_from_the_skies_turn",
+            ):
                 return True
         except Exception:
             pass
@@ -18507,6 +18528,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, game=game)):
                     return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="space_marines_angelic_host_death_from_the_skies_active",
+                owner_key="space_marines_angelic_host_death_from_the_skies_turn_owner",
+                turn_key="space_marines_angelic_host_death_from_the_skies_turn",
+            ):
+                return True
         except Exception:
             pass
         return self._has_simple_eligibility_rule([

@@ -6112,6 +6112,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_angelic_host_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_blade_of_ultramar_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9108,6 +9112,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
@@ -13615,6 +13620,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_space_marines_angelic_host_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         self._queue_shadow_legion_unit_destroyed_reactions(
             unit=unit,
             last_model=last_model,
@@ -16589,6 +16601,9 @@ class StratagemManager(
         angelic_result = self._use_space_marines_angelic_inheritors_stratagem(s, **kwargs)
         if angelic_result is not None:
             return angelic_result
+        angelic_host_result = self._use_space_marines_the_angelic_host_stratagem(s, **kwargs)
+        if angelic_host_result is not None:
+            return angelic_host_result
         blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
         if blade_result is not None:
             return blade_result

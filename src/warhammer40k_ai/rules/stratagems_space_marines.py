@@ -160,6 +160,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_angelic_inheritors", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_the_angelic_host_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_the_angelic_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _sm_owned_by_player(unit: Any, player: Any) -> bool:
         if unit is None or player is None:
@@ -742,6 +747,19 @@ class SpaceMarinesStratagemMixin:
             return True
         name = str(getattr(unit, "name", "") or "").strip().lower()
         return "the sanguinor" in name
+
+    @staticmethod
+    def _sm_is_sanguinary_guard_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("SANGUINARY GUARD")):
+            return True
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("SANGUINARY GUARD")):
+            return True
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "sanguinary guard" in name
 
     @staticmethod
     def _sm_model_has_keyword(model: Any, keyword: str) -> bool:
@@ -3410,6 +3428,126 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_angelic_host_angels_sacrifice_candidates(self) -> list[Any]:
+        if not self._is_the_angelic_host_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_jump_pack_unit(root):
+                continue
+            if not self._sm_unit_is_engaged(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_angelic_host_martial_exemplars_candidates(self) -> list[Any]:
+        if not self._is_the_angelic_host_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_jump_pack_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_angelic_host_descent_of_angels_candidates(self) -> list[Any]:
+        if not self._is_the_angelic_host_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_is_alive(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_jump_pack_unit(root):
+                continue
+            if not self._sm_has_deep_strike(root):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if not callable(in_reserves) or not bool(in_reserves()):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status not in {"reserves", "strategic_reserves"}:
+                continue
+            can_arrive = getattr(root, "can_arrive_from_reserves", None)
+            if callable(can_arrive) and not bool(can_arrive(current_turn)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def the_angelic_host_unbridled_ardour_applies(self, attacker_unit: Any, target_unit: Any) -> bool:
+        if not self._is_the_angelic_host_detachment():
+            return False
+        root = self._sm_root(attacker_unit)
+        target_root = self._sm_root(target_unit)
+        if root is None or target_root is None:
+            return False
+        if not self._sm_is_sanguinary_guard_unit(root):
+            return False
+        enemy_ids = getattr(self, "_the_angelic_host_unbridled_ardour_enemy_ids", set())
+        if not isinstance(enemy_ids, set):
+            return False
+        target_id = self._sm_sort_key(target_root)
+        return bool(target_id and target_id in enemy_ids)
+
     def _queue_space_marines_angelic_inheritors_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_angelic_inheritors_detachment():
             return
@@ -3595,6 +3733,175 @@ class SpaceMarinesStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_angelic_host_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_the_angelic_host_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("DESCENT OF ANGELS")
+            candidates = self._space_marines_angelic_host_descent_of_angels_candidates()
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Movement phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Movement phase",
+                        "phase_name": "Movement phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key != "FIGHT_PHASE":
+            return
+
+        phase_reactions: tuple[tuple[str, list[Any]], ...] = (
+            ("ANGEL'S SACRIFICE", self._space_marines_angelic_host_angels_sacrifice_candidates()),
+            ("MARTIAL EXEMPLARS", self._space_marines_angelic_host_martial_exemplars_candidates()),
+        )
+        for stratagem_name, candidates in phase_reactions:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None or not candidates:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_angelic_host_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_the_angelic_host_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"advance", "fall_back", "fallback"}:
+            return
+        root = self._sm_root(unit)
+        if root is None or not self._sm_owned_by_player(root, self.player):
+            return
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_adeptus_astartes_unit(root):
+            return
+        if not self._sm_is_jump_pack_unit(root):
+            return
+        stratagem = self.get_by_name("DEATH FROM THE SKIES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "moving_unit": root,
+            "candidates": [root],
+            "action": str(action or ""),
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_angelic_host_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if not self._is_the_angelic_host_detachment():
+            return
+        if destroyed_unit is None or destroyed_by_unit is None:
+            return
+        destroyed_root = self._sm_root(destroyed_unit)
+        enemy_root = self._sm_root(destroyed_by_unit)
+        if destroyed_root is None or enemy_root is None:
+            return
+        if not self._sm_owned_by_player(destroyed_root, self.player):
+            return
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return
+        if self._sm_is_alive(destroyed_root):
+            return
+        if not self._is_adeptus_astartes_unit(destroyed_root):
+            return
+        stratagem = self.get_by_name("UNBRIDLED ARDOUR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip()
+        if not phase_name:
+            phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "").replace("_", " ").title()
+        if self._sm_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            target_unit=destroyed_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": destroyed_root,
+                "target_unit": destroyed_root,
+                "destroyed_unit": destroyed_root,
+                "destroyed_by_unit": enemy_root,
+                "enemy_unit": enemy_root,
+                "attacking_unit": enemy_root,
+                "candidates": [destroyed_root],
+            },
+            use_timer=False,
+        )
 
     def _queue_space_marines_anvil_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_anvil_siege_force_detachment():
@@ -12911,6 +13218,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_unto_the_burning_skies(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_the_angelic_host_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_the_angelic_host_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("’", "'")
+        if name_u == "ANGEL'S SACRIFICE":
+            return self._use_space_marines_angels_sacrifice(stratagem, **kwargs)
+        if name_u == "DEATH FROM THE SKIES":
+            return self._use_space_marines_death_from_the_skies(stratagem, **kwargs)
+        if name_u == "DESCENT OF ANGELS":
+            return self._use_space_marines_descent_of_angels(stratagem, **kwargs)
+        if name_u == "MARTIAL EXEMPLARS":
+            return self._use_space_marines_martial_exemplars(stratagem, **kwargs)
+        if name_u == "UNBRIDLED ARDOUR":
+            return self._use_space_marines_unbridled_ardour(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_blade_of_ultramar_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -13471,6 +13796,42 @@ class SpaceMarinesStratagemMixin:
             target_model = model_candidates[0]
         return (unit, candidates, attacking_unit, target_units, target_model, model_candidates, from_pending)
 
+    def _sm_angelic_host_destroyed_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, Any, list[Any], bool]:
+        unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = (
+            kwargs.get("enemy_unit")
+            or kwargs.get("destroyed_by_unit")
+            or kwargs.get("attacking_unit")
+            or kwargs.get("attacker_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+            if enemy_unit is None:
+                enemy_unit = (
+                    reaction.get("enemy_unit")
+                    or reaction.get("destroyed_by_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("attacker_unit")
+                )
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, enemy_unit, candidates, from_pending)
+
     def _sm_black_spear_mission_tactic_options(self) -> list[dict[str, str]]:
         mgr = self._sm_detachment_mgr()
         if mgr is None:
@@ -13919,6 +14280,319 @@ class SpaceMarinesStratagemMixin:
         logger.info(
             "INFO: UNTO THE BURNING SKIES: %s enters Strategic Reserves.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_angels_sacrifice(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ANGEL'S SACRIFICE: wrong phase")
+            return False
+        unit, candidates, _attacking_unit, _target_units, _target_model, _model_candidates, _from_pending = self._sm_angelic_context(
+            "ANGEL'S SACRIFICE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: ANGEL'S SACRIFICE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        valid_candidates = candidates or self._space_marines_angelic_host_angels_sacrifice_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: ANGEL'S SACRIFICE: selected unit is not currently eligible")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: ANGEL'S SACRIFICE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: ANGEL'S SACRIFICE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: ANGEL'S SACRIFICE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_jump_pack_unit(root):
+            logger.error("ERROR: ANGEL'S SACRIFICE: target must be a JUMP PACK unit")
+            return False
+        if not self._sm_unit_is_engaged(root):
+            logger.error("ERROR: ANGEL'S SACRIFICE: target must be within Engagement Range of an enemy unit")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["suffering_and_sacrifice_active"] = True
+        sr["suffering_and_sacrifice_expires_phase"] = "FIGHT_PHASE"
+        sr["suffering_and_sacrifice_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["suffering_and_sacrifice_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["suffering_and_sacrifice_source"] = str(getattr(stratagem, "name", "") or "ANGEL'S SACRIFICE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANGEL'S SACRIFICE: enemy units in Engagement Range must target %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_death_from_the_skies(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DEATH FROM THE SKIES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DEATH FROM THE SKIES: not your Movement phase")
+            return False
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_stormlance_context(
+            "DEATH FROM THE SKIES",
+            kwargs,
+        )
+        if unit is None:
+            unit = trigger_unit
+        if unit is None:
+            logger.error("ERROR: DEATH FROM THE SKIES: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"advance", "fall_back", "fallback"}:
+            logger.error("ERROR: DEATH FROM THE SKIES: target must have just Advanced or Fallen Back")
+            return False
+        valid_candidates = candidates or [root]
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: DEATH FROM THE SKIES: selected unit is not currently eligible")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: DEATH FROM THE SKIES: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: DEATH FROM THE SKIES: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: DEATH FROM THE SKIES: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_jump_pack_unit(root):
+            logger.error("ERROR: DEATH FROM THE SKIES: target must be a JUMP PACK unit")
+            return False
+        if not from_pending and trigger_unit is not None and self._sm_root(trigger_unit) is not root:
+            logger.error("ERROR: DEATH FROM THE SKIES: trigger unit context does not match target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_angelic_host_death_from_the_skies_active"] = True
+        sr["space_marines_angelic_host_death_from_the_skies_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_angelic_host_death_from_the_skies_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_angelic_host_death_from_the_skies_source"] = str(
+            getattr(stratagem, "name", "") or "DEATH FROM THE SKIES"
+        )
+        root.special_rules = sr
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEATH FROM THE SKIES: %s can shoot and charge after Advancing or Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_descent_of_angels(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DESCENT OF ANGELS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DESCENT OF ANGELS: not your Movement phase")
+            return False
+        unit, candidates, _attacking_unit, _target_units, _target_model, _model_candidates, _from_pending = self._sm_angelic_context(
+            "DESCENT OF ANGELS",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: DESCENT OF ANGELS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        valid_candidates = candidates or self._space_marines_angelic_host_descent_of_angels_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: DESCENT OF ANGELS: selected unit is not currently eligible")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: DESCENT OF ANGELS: target unit is not yours")
+            return False
+        if not self._sm_is_alive(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DESCENT OF ANGELS: target cannot be selected")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: DESCENT OF ANGELS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_jump_pack_unit(root):
+            logger.error("ERROR: DESCENT OF ANGELS: target must be a JUMP PACK unit")
+            return False
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if not callable(in_reserves) or not bool(in_reserves()):
+            logger.error("ERROR: DESCENT OF ANGELS: target is not in Reserves")
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+        if reserve_status not in {"reserves", "strategic_reserves"}:
+            logger.error("ERROR: DESCENT OF ANGELS: target is not arriving from Reserves")
+            return False
+        if not self._sm_has_deep_strike(root):
+            logger.error("ERROR: DESCENT OF ANGELS: target lacks Deep Strike")
+            return False
+        can_arrive = getattr(root, "can_arrive_from_reserves", None)
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if callable(can_arrive) and not bool(can_arrive(current_turn)):
+            logger.error("ERROR: DESCENT OF ANGELS: target cannot arrive from Reserves this turn")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_angelic_host_descent_of_angels_deep_strike_min_distance"] = 6.0
+        sr["space_marines_angelic_host_descent_of_angels_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_angelic_host_descent_of_angels_turn"] = current_turn
+        sr["space_marines_angelic_host_descent_of_angels_expires_phase"] = "MOVEMENT_PHASE"
+        sr["space_marines_angelic_host_descent_of_angels_source"] = str(getattr(stratagem, "name", "") or "DESCENT OF ANGELS")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DESCENT OF ANGELS: %s can be set up more than 6\" horizontally away from enemy units this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_martial_exemplars(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MARTIAL EXEMPLARS: wrong phase")
+            return False
+        unit, candidates, _attacking_unit, _target_units, _target_model, _model_candidates, _from_pending = self._sm_angelic_context(
+            "MARTIAL EXEMPLARS",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: MARTIAL EXEMPLARS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        valid_candidates = candidates or self._space_marines_angelic_host_martial_exemplars_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: MARTIAL EXEMPLARS: selected unit is not currently eligible")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MARTIAL EXEMPLARS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: MARTIAL EXEMPLARS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: MARTIAL EXEMPLARS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_jump_pack_unit(root):
+            logger.error("ERROR: MARTIAL EXEMPLARS: target must be a JUMP PACK unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: MARTIAL EXEMPLARS: target has already been selected to fight this phase")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "MARTIAL EXEMPLARS")
+        bonus_keywords = ["LETHAL HITS", "PRECISION"]
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_martial_exemplars:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=list(bonus_keywords),
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MARTIAL EXEMPLARS: %s gains [LETHAL HITS] and [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_unbridled_ardour(self, stratagem: Any, **kwargs) -> bool:
+        unit, enemy_unit, candidates, _from_pending = self._sm_angelic_host_destroyed_context(
+            "UNBRIDLED ARDOUR",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: UNBRIDLED ARDOUR: no target unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: UNBRIDLED ARDOUR: missing enemy unit context")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        if candidates and not self._sm_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNBRIDLED ARDOUR: target was not selected")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNBRIDLED ARDOUR: target unit is not yours")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: UNBRIDLED ARDOUR: enemy context is invalid")
+            return False
+        if self._sm_is_alive(root):
+            logger.error("ERROR: UNBRIDLED ARDOUR: target unit was not destroyed")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: UNBRIDLED ARDOUR: target must be an ADEPTUS ASTARTES unit")
+            return False
+        enemy_id = self._sm_sort_key(enemy_root)
+        if not enemy_id:
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if not isinstance(getattr(self, "_the_angelic_host_unbridled_ardour_enemy_ids", None), set):
+            self._the_angelic_host_unbridled_ardour_enemy_ids = set()
+        self._the_angelic_host_unbridled_ardour_enemy_ids.add(enemy_id)
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNBRIDLED ARDOUR: friendly Sanguinary Guard units can re-roll Hit and Wound rolls against %s for the battle.",
+            getattr(enemy_root, "name", "Enemy"),
         )
         return True
 

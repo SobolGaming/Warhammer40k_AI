@@ -2361,6 +2361,31 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _space_marines_the_angelic_host_unbridled_ardour_applies(
+        self,
+        attacker_unit: Optional['Unit'],
+        target_unit: Optional['Unit'],
+    ) -> bool:
+        if attacker_unit is None or target_unit is None:
+            return False
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        check = (
+            getattr(stratagems, "the_angelic_host_unbridled_ardour_applies", None)
+            if stratagems is not None
+            else None
+        )
+        if not callable(check):
+            return False
+        try:
+            return bool(check(attacker_unit, target_unit))
+        except Exception:
+            return False
+
     def _tau_montka_pinpoint_counter_offensive_applies(
         self,
         attacker_unit: Optional['Unit'],
@@ -12741,6 +12766,13 @@ class WargearProfile:
                 reroll_full_reasons.append("Bloody Vengeance")
         except Exception:
             pass
+        # Space Marines (The Angelic Host): Unbridled Ardour.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if self._space_marines_the_angelic_host_unbridled_ardour_applies(unit, target):
+                reroll_full_reasons.append("Unbridled Ardour")
+        except Exception:
+            pass
         # T'au Empire (Mont'ka): PINPOINT COUNTER-OFFENSIVE.
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -18711,6 +18743,13 @@ class WargearProfile:
                             apply_bonus = False
                     if apply_bonus and self._target_has_monster_or_vehicle_keyword(target):
                         reroll_full_reasons.append("Overshadowed by None")
+        except Exception:
+            pass
+        # Space Marines (The Angelic Host): Unbridled Ardour.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if self._space_marines_the_angelic_host_unbridled_ardour_applies(unit, target):
+                reroll_full_reasons.append("Unbridled Ardour")
         except Exception:
             pass
         # Twin-linked grants reroll of wound rolls.

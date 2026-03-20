@@ -5746,6 +5746,84 @@ _ANGELIC_INHERITORS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_THE_ANGELIC_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009191004": StratagemToolDescriptor(
+        stratagem_id="000009191004",
+        name="Angel's Sacrifice",
+        timing="fight_phase_start",
+        target="adeptus_astartes_jump_pack_unit",
+        duration="until_end_of_phase",
+        effect="engaged_enemy_target_lock",
+        cp_cost=1,
+        effect_params={"required_keywords_any": ["JUMP PACK"]},
+    ),
+    "000009191007": StratagemToolDescriptor(
+        stratagem_id="000009191007",
+        name="Death from the Skies",
+        timing="your_movement_phase_after_advance_or_fall_back",
+        target="adeptus_astartes_jump_pack_unit_that_just_advanced_or_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "advance_and_shoot": True,
+            "advance_and_charge": True,
+            "fall_back_and_shoot": True,
+            "fall_back_and_charge": True,
+            "required_keywords_any": ["JUMP PACK"],
+        },
+    ),
+    "000009191006": StratagemToolDescriptor(
+        stratagem_id="000009191006",
+        name="Descent of Angels",
+        timing="movement_phase_reinforcements_step",
+        target="adeptus_astartes_jump_pack_unit_arriving_using_deep_strike",
+        duration="this_phase",
+        effect="deep_strike_min_distance_override",
+        cp_cost=1,
+        effect_params={
+            "min_distance": 6,
+            "distance_type": "horizontal",
+            "required_keywords_any": ["JUMP PACK"],
+            "requires_deep_strike": True,
+            "requires_reserves": True,
+        },
+    ),
+    "000009191005": StratagemToolDescriptor(
+        stratagem_id="000009191005",
+        name="Martial Exemplars",
+        timing="fight_phase_on_select_to_fight",
+        target="adeptus_astartes_jump_pack_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_keywords_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "grant_keywords": ["LETHAL HITS", "PRECISION"],
+            "required_keywords_any": ["JUMP PACK"],
+        },
+    ),
+    "000009191002": StratagemToolDescriptor(
+        stratagem_id="000009191002",
+        name="Unbridled Ardour",
+        timing="any_phase_on_destroyed",
+        target="destroyed_adeptus_astartes_unit",
+        duration="until_end_of_battle",
+        effect="battlelong_sanguinary_guard_hit_and_wound_rerolls_vs_marked_destroyer",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attacker_unit_name_contains": "Sanguinary Guard",
+            "reroll_hit_full": True,
+            "reroll_wound_full": True,
+        },
+    ),
+}
+
+_THE_ANGELIC_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THE_ANGELIC_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
@@ -6457,6 +6535,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _THE_ANGELIC_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6568,6 +6649,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RECLAMATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _STORMLANCE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
+        or _THE_ANGELIC_HOST_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

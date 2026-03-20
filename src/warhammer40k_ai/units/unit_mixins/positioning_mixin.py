@@ -9679,6 +9679,40 @@ class PositioningMixin:
                 )
 
         try:
+            angelic_host_min = float(
+                sr.get("space_marines_angelic_host_descent_of_angels_deep_strike_min_distance", 0) or 0
+            )
+        except (TypeError, ValueError):
+            angelic_host_min = 0.0
+        if angelic_host_min > 0:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None)
+            owner_id = str(sr.get("space_marines_angelic_host_descent_of_angels_turn_owner", "") or "")
+            turn_raw = sr.get("space_marines_angelic_host_descent_of_angels_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if game is not None:
+                try:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    cur_turn = 0
+                get_current_player = getattr(game, "get_current_player", None)
+                cur_player = get_current_player() if callable(get_current_player) else None
+                cur_owner = str(getattr(cur_player, "id", "") or "")
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                exp = str(sr.get("space_marines_angelic_host_descent_of_angels_expires_phase", "") or "").strip().upper()
+                if owner_id and cur_owner and owner_id != cur_owner:
+                    angelic_host_min = 0.0
+                elif turn and cur_turn and turn != cur_turn:
+                    angelic_host_min = 0.0
+                elif exp and pname and exp != pname:
+                    angelic_host_min = 0.0
+            if angelic_host_min > 0:
+                min_dist = angelic_host_min if min_dist is None else min(min_dist, angelic_host_min)
+
+        try:
             hallowed_beacon_min = float(sr.get("hallowed_beacon_deep_strike_min_distance", 0) or 0)
         except Exception:
             hallowed_beacon_min = 0.0
