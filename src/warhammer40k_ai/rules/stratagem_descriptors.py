@@ -5593,6 +5593,91 @@ _RECLAMATION_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RECLAMATION_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_STORMLANCE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008487003": StratagemToolDescriptor(
+        stratagem_id="000008487003",
+        name="Blitzing Fusillade",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_assault_or_sustained_hits_1_to_ranged_weapons",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "attack_type": "ranged",
+            "base_keyword": "ASSAULT",
+            "bonus_keyword_if_already_present": "SUSTAINED HITS 1",
+        },
+    ),
+    "000008487004": StratagemToolDescriptor(
+        stratagem_id="000008487004",
+        name="Full Throttle",
+        timing="your_movement_phase",
+        target="adeptus_astartes_mounted_or_non_walker_vehicle_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="fixed_advance_distance_by_keyword",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "required_keywords_any": ["MOUNTED", "VEHICLE"],
+            "excluded_keywords_any": ["WALKER"],
+            "mounted_advance_distance": 9,
+            "other_advance_distance": 6,
+        },
+    ),
+    "000008487005": StratagemToolDescriptor(
+        stratagem_id="000008487005",
+        name="Shock Assault",
+        timing="your_charge_phase_on_select_to_charge",
+        target="adeptus_astartes_mounted_unit_not_yet_selected_to_charge",
+        duration="until_end_of_turn",
+        effect="reroll_charge_rolls_and_gain_lance",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "MOUNTED"],
+            "reroll_charge": True,
+            "attack_type": "melee",
+            "keywords": ["LANCE"],
+        },
+    ),
+    "000008487006": StratagemToolDescriptor(
+        stratagem_id="000008487006",
+        name="Ride Hard, Ride Fast",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="adeptus_astartes_mounted_or_fly_vehicle_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="ranged_hit_and_wound_penalty",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "required_keywords_any": ["MOUNTED", "FLY VEHICLE"],
+            "attack_type": "ranged",
+            "hit_penalty": 1,
+            "wound_penalty": 1,
+        },
+    ),
+    "000008487007": StratagemToolDescriptor(
+        stratagem_id="000008487007",
+        name="Wind-Swift Evasion",
+        timing="opponent_movement_phase_after_enemy_move_ends",
+        target="adeptus_astartes_infantry_or_mounted_unit_within_9_of_enemy_and_not_in_engagement_range",
+        duration="immediate",
+        effect="reactive_normal_move_up_to_6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "required_keywords_any": ["INFANTRY", "MOUNTED"],
+            "requires_not_in_engagement_range": True,
+            "max_distance": 6,
+        },
+    ),
+}
+
+_STORMLANCE_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _STORMLANCE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -6366,6 +6451,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RECLAMATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _STORMLANCE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6478,6 +6566,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ORBITAL_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _RECLAMATION_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _STORMLANCE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

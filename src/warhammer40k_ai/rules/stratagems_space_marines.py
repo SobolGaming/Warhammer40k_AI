@@ -82,6 +82,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_firestorm_assault_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_stormlance_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_stormlance_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_forgefathers_seekers_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_forgefathers_seekers", None) if mgr is not None else None
@@ -348,6 +353,79 @@ class SpaceMarinesStratagemMixin:
             return list(get_models() or [])
         return list(getattr(unit, "models", []) or [])
 
+    def _sm_unit_has_ranged_weapon(self, unit: Any) -> bool:
+        for model in self._sm_unit_models(unit):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if callable(is_ranged) and bool(is_ranged()):
+                    return True
+        return False
+
+    @staticmethod
+    def _sm_wargear_has_keyword(wargear: Any, keyword: str) -> bool:
+        target = str(keyword or "").strip().upper()
+        if wargear is None or not target:
+            return False
+        checker_name = f"is_{target.lower().replace(' ', '_').replace('-', '_')}"
+        checker = getattr(wargear, checker_name, None)
+        if callable(checker) and bool(checker()):
+            return True
+        get_keywords = getattr(wargear, "get_keywords", None)
+        if callable(get_keywords):
+            try:
+                keywords = list(get_keywords() or [])
+            except TypeError:
+                keywords = []
+            for value in keywords:
+                text = str(value or "").strip().upper()
+                if text == target or text.startswith(f"{target} "):
+                    return True
+        profiles = getattr(wargear, "profiles", None)
+        if isinstance(profiles, dict):
+            for profile in list(profiles.values()):
+                get_keywords = getattr(profile, "get_keywords", None)
+                if not callable(get_keywords):
+                    continue
+                try:
+                    keywords = list(get_keywords() or [])
+                except TypeError:
+                    continue
+                for value in keywords:
+                    text = str(value or "").strip().upper()
+                    if text == target or text.startswith(f"{target} "):
+                        return True
+        return False
+
+    @staticmethod
+    def _sm_model_temporary_weapon_has_keyword(
+        model: Any,
+        weapon_name: str,
+        keyword: str,
+        *,
+        attack_type: str = "",
+    ) -> bool:
+        getter = getattr(model, "get_temporary_weapon_keyword_bonuses", None)
+        if not callable(getter):
+            return False
+        target = str(keyword or "").strip().upper()
+        attack_type_key = str(attack_type or "").strip().lower()
+        for entry in list(getter(weapon_name) or []):
+            if not isinstance(entry, dict):
+                continue
+            entry_attack_type = str(entry.get("attack_type", "") or "").strip().lower()
+            if attack_type_key and entry_attack_type not in {"", "any", attack_type_key}:
+                continue
+            entry_keyword = str(entry.get("keyword", "") or "").strip().upper()
+            if entry_keyword == target or entry_keyword.startswith(f"{target} "):
+                return True
+        return False
+
     def _sm_unit_has_torrent_ranged_weapon(self, unit: Any) -> bool:
         for model in self._sm_unit_models(unit):
             is_alive_attr = getattr(model, "is_alive", True)
@@ -528,6 +606,9 @@ class SpaceMarinesStratagemMixin:
 
     def _sm_is_mounted_unit(self, unit: Any) -> bool:
         return self._sm_has_keyword(unit, "MOUNTED")
+
+    def _sm_is_fly_vehicle_unit(self, unit: Any) -> bool:
+        return self._sm_is_vehicle_unit(unit) and self._sm_has_keyword(unit, "FLY")
 
     def _sm_is_ravenwing_unit(self, unit: Any) -> bool:
         root = self._sm_root(unit)
@@ -1916,6 +1997,175 @@ class SpaceMarinesStratagemMixin:
         if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
             return []
         return [root]
+
+    def _space_marines_stormlance_blitzing_fusillade_candidates(self) -> list[Any]:
+        if not self._is_stormlance_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if not self._sm_unit_has_ranged_weapon(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_stormlance_full_throttle_candidates(self) -> list[Any]:
+        if not self._is_stormlance_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_move_this_phase(root):
+                continue
+            if not (self._sm_is_mounted_unit(root) or self._sm_is_vehicle_unit(root)):
+                continue
+            if self._sm_is_walker_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_stormlance_shock_assault_candidates(self) -> list[Any]:
+        if not self._is_stormlance_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_mounted_unit(root):
+                continue
+            if self._sm_selected_to_charge_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_stormlance_ride_hard_ride_fast_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        if not self._is_stormlance_task_force_detachment():
+            return []
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return []
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_stormlance_wind_swift_evasion_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_stormlance_task_force_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None or not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
 
     def _space_marines_liberator_red_rampage_candidates(self) -> list[Any]:
         if not self._is_liberator_assault_group_detachment():
@@ -7169,6 +7419,203 @@ class SpaceMarinesStratagemMixin:
                     sr.pop(key, None)
             root.special_rules = sr
 
+    def _queue_space_marines_stormlance_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_stormlance_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if player is not self.player or active_player is not self.player:
+            return
+
+        phase_reactions: tuple[tuple[str, str, list[Any]], ...] = ()
+        if phase_key == "MOVEMENT_PHASE":
+            phase_reactions = (
+                ("FULL THROTTLE", "Movement phase", self._space_marines_stormlance_full_throttle_candidates()),
+            )
+        elif phase_key == "SHOOTING_PHASE":
+            phase_reactions = (
+                ("BLITZING FUSILLADE", "Shooting phase", self._space_marines_stormlance_blitzing_fusillade_candidates()),
+            )
+        elif phase_key == "CHARGE_PHASE":
+            phase_reactions = (
+                ("SHOCK ASSAULT", "Charge phase", self._space_marines_stormlance_shock_assault_candidates()),
+            )
+        if not phase_reactions:
+            return
+
+        for stratagem_name, phase_name, candidates in phase_reactions:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None or not candidates:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_stormlance_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_stormlance_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("WIND-SWIFT EVASION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_stormlance_wind_swift_evasion_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+            "action": str(action or ""),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_stormlance_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_stormlance_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("RIDE HARD, RIDE FAST")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_stormlance_ride_hard_ride_fast_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_stormlance_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_stormlance_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "FIGHT_PHASE"}:
+            return
+        full_throttle_tag = "stratagem:space_marines_full_throttle"
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "MOVEMENT_PHASE":
+                effects = list(sr.get("advance_no_roll_effects", []) or [])
+                kept = [
+                    entry
+                    for entry in effects
+                    if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == full_throttle_tag)
+                ]
+                if kept != effects:
+                    changed = True
+                    if kept:
+                        sr["advance_no_roll_effects"] = kept
+                    else:
+                        sr.pop("advance_no_roll_effects", None)
+                for key in (
+                    "space_marines_stormlance_full_throttle_active",
+                    "space_marines_stormlance_full_throttle_distance",
+                    "space_marines_stormlance_full_throttle_expires_phase",
+                    "space_marines_stormlance_full_throttle_turn_owner",
+                    "space_marines_stormlance_full_throttle_turn",
+                    "space_marines_stormlance_full_throttle_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE":
+                for key in (
+                    "space_marines_stormlance_shock_assault_active",
+                    "space_marines_stormlance_shock_assault_expires_phase",
+                    "space_marines_stormlance_shock_assault_turn_owner",
+                    "space_marines_stormlance_shock_assault_turn",
+                    "space_marines_stormlance_shock_assault_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if changed:
+                root.special_rules = sr
+
     def _sm_firestorm_context(
         self,
         stratagem_name: str,
@@ -11793,6 +12240,427 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_blitzing_fusillade(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BLITZING FUSILLADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BLITZING FUSILLADE: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_stormlance_context(
+            "BLITZING FUSILLADE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: BLITZING FUSILLADE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: BLITZING FUSILLADE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BLITZING FUSILLADE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: BLITZING FUSILLADE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: BLITZING FUSILLADE: target has already been selected to shoot this phase")
+            return False
+        if not self._sm_unit_has_ranged_weapon(root):
+            logger.error("ERROR: BLITZING FUSILLADE: target must have one or more ranged weapons")
+            return False
+
+        valid_candidates = candidates or self._space_marines_stormlance_blitzing_fusillade_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: BLITZING FUSILLADE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "BLITZING FUSILLADE").strip() or "BLITZING FUSILLADE"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                already_has_assault = self._sm_wargear_has_keyword(wargear, "ASSAULT") or self._sm_model_temporary_weapon_has_keyword(
+                    model,
+                    weapon_name,
+                    "ASSAULT",
+                    attack_type="ranged",
+                )
+                keyword_to_add = "SUSTAINED HITS 1" if already_has_assault else "ASSAULT"
+                set_keywords(
+                    key=f"space_marines_blitzing_fusillade:{model_id}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=[keyword_to_add],
+                    source=source,
+                    expires_phase="SHOOTING_PHASE",
+                    attack_type="ranged",
+                )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLITZING FUSILLADE: %s gains [ASSAULT] on ranged weapons, or [SUSTAINED HITS 1] on those that already had [ASSAULT], this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_full_throttle(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FULL THROTTLE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FULL THROTTLE: not your Movement phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_stormlance_context(
+            "FULL THROTTLE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: FULL THROTTLE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FULL THROTTLE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FULL THROTTLE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FULL THROTTLE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_mounted_unit(root) or self._sm_is_vehicle_unit(root)):
+            logger.error("ERROR: FULL THROTTLE: target must be a MOUNTED or VEHICLE unit")
+            return False
+        if self._sm_is_walker_unit(root):
+            logger.error("ERROR: FULL THROTTLE: target must not be a WALKER unit")
+            return False
+        if self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: FULL THROTTLE: target has already moved this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_stormlance_full_throttle_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FULL THROTTLE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        distance = 9 if self._sm_is_mounted_unit(root) else 6
+        source = str(getattr(stratagem, "name", "") or "FULL THROTTLE").strip() or "FULL THROTTLE"
+        tag = "stratagem:space_marines_full_throttle"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == tag)
+        ]
+        effects.append(
+            {
+                "distance": int(distance),
+                "source": source,
+                "tag": tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["space_marines_stormlance_full_throttle_active"] = True
+        sr["space_marines_stormlance_full_throttle_distance"] = int(distance)
+        sr["space_marines_stormlance_full_throttle_expires_phase"] = "MOVEMENT_PHASE"
+        sr["space_marines_stormlance_full_throttle_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_stormlance_full_throttle_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_stormlance_full_throttle_source"] = source
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FULL THROTTLE: %s treats its Advance distance this phase as +%d\".",
+            getattr(root, "name", "Unit"),
+            int(distance),
+        )
+        return True
+
+    def _use_space_marines_shock_assault(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: SHOCK ASSAULT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SHOCK ASSAULT: not your Charge phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_stormlance_context(
+            "SHOCK ASSAULT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: SHOCK ASSAULT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: SHOCK ASSAULT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SHOCK ASSAULT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: SHOCK ASSAULT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_mounted_unit(root):
+            logger.error("ERROR: SHOCK ASSAULT: target must be a MOUNTED unit")
+            return False
+        if self._sm_selected_to_charge_this_phase(root):
+            logger.error("ERROR: SHOCK ASSAULT: target has already declared a charge this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_stormlance_shock_assault_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: SHOCK ASSAULT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "SHOCK ASSAULT").strip() or "SHOCK ASSAULT"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_stormlance_shock_assault:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["LANCE"],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_stormlance_shock_assault_active"] = True
+        sr["space_marines_stormlance_shock_assault_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_stormlance_shock_assault_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_stormlance_shock_assault_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_stormlance_shock_assault_source"] = source
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHOCK ASSAULT: %s can re-roll Charge rolls this turn and gains [LANCE] on melee weapons until the end of the turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_ride_hard_ride_fast(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: RIDE HARD, RIDE FAST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: RIDE HARD, RIDE FAST: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _action, _from_pending = self._sm_stormlance_context(
+            "RIDE HARD, RIDE FAST",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RIDE HARD, RIDE FAST: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(trigger_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: RIDE HARD, RIDE FAST: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: attacking unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(attacking_root, require_targetable=False):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: attacking unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: target must be a MOUNTED or FLY VEHICLE unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_stormlance_ride_hard_ride_fast_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: RIDE HARD, RIDE FAST: target unit was not selected as an attack target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "RIDE HARD, RIDE FAST").strip() or "RIDE HARD, RIDE FAST"
+        self._append_defensive_effect(
+            root,
+            "defensive_hit_mods",
+            {
+                "value": 1,
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source,
+            },
+        )
+        self._append_defensive_effect(
+            root,
+            "defensive_wound_mods",
+            {
+                "value": 1,
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source,
+            },
+        )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RIDE HARD, RIDE FAST: %s is -1 to hit and -1 to wound against ranged attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_wind_swift_evasion(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WIND-SWIFT EVASION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: WIND-SWIFT EVASION: not opponent's Movement phase")
+            return False
+
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_stormlance_context(
+            "WIND-SWIFT EVASION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: WIND-SWIFT EVASION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: WIND-SWIFT EVASION: missing enemy movement trigger")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: WIND-SWIFT EVASION: invalid trigger action")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: WIND-SWIFT EVASION: trigger unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: WIND-SWIFT EVASION: trigger unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: WIND-SWIFT EVASION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: WIND-SWIFT EVASION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: WIND-SWIFT EVASION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: WIND-SWIFT EVASION: target must be an INFANTRY or MOUNTED unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: WIND-SWIFT EVASION: target must not be within Engagement Range")
+            return False
+        distance = self._sm_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: WIND-SWIFT EVASION: target must be within 9\" of the enemy unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_stormlance_wind_swift_evasion_candidates(enemy_unit=enemy_root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: WIND-SWIFT EVASION: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: WIND-SWIFT EVASION: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="wind_swift_evasion",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "WIND-SWIFT EVASION"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: WIND-SWIFT EVASION: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WIND-SWIFT EVASION: %s can make a Normal move up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_space_marines_firestorm_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -12212,6 +13080,61 @@ class SpaceMarinesStratagemMixin:
         if name_u == "MARCHING EVER ON":
             return self._use_space_marines_marching_ever_on(stratagem, **kwargs)
         return None
+
+    def _use_space_marines_stormlance_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_stormlance_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BLITZING FUSILLADE":
+            return self._use_space_marines_blitzing_fusillade(stratagem, **kwargs)
+        if name_u == "FULL THROTTLE":
+            return self._use_space_marines_full_throttle(stratagem, **kwargs)
+        if name_u == "SHOCK ASSAULT":
+            return self._use_space_marines_shock_assault(stratagem, **kwargs)
+        if name_u == "RIDE HARD, RIDE FAST":
+            return self._use_space_marines_ride_hard_ride_fast(stratagem, **kwargs)
+        if name_u == "WIND-SWIFT EVASION":
+            return self._use_space_marines_wind_swift_evasion(stratagem, **kwargs)
+        return None
+
+    def _sm_stormlance_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        trigger_unit = kwargs.get("moving_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit") or kwargs.get("attacker_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if trigger_unit is None:
+                trigger_unit = (
+                    reaction.get("moving_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("enemy_unit")
+                    or reaction.get("attacker_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, candidates, trigger_unit, target_units, action, from_pending)
 
     def _sm_blade_context(
         self,

@@ -8132,6 +8132,70 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def lightning_assault_charge_after_fall_back_applies(self, unit) -> bool:
         return self.lightning_assault_charge_after_advance_applies(unit)
 
+    @staticmethod
+    def _clear_stormlance_effect_keys(root, keys: tuple[str, ...]) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in keys:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def _stormlance_turn_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        turn_key: str,
+        owner_key: str,
+        clear_keys: tuple[str, ...],
+        game=None,
+    ) -> bool:
+        if not self.is_stormlance_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(active_key, False))):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_player_id = str(sr.get(owner_key, "") or "").strip()
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        if (effect_turn and current_turn and effect_turn != current_turn) or (
+            effect_player_id and current_player_id and effect_player_id != current_player_id
+        ):
+            self._clear_stormlance_effect_keys(root, clear_keys)
+            return False
+        return True
+
+    def stormlance_shock_assault_reroll_charge_applies(self, unit, *, game=None) -> bool:
+        return self._stormlance_turn_effect_active(
+            unit,
+            active_key="space_marines_stormlance_shock_assault_active",
+            turn_key="space_marines_stormlance_shock_assault_turn",
+            owner_key="space_marines_stormlance_shock_assault_turn_owner",
+            clear_keys=(
+                "space_marines_stormlance_shock_assault_active",
+                "space_marines_stormlance_shock_assault_expires_phase",
+                "space_marines_stormlance_shock_assault_turn",
+                "space_marines_stormlance_shock_assault_turn_owner",
+                "space_marines_stormlance_shock_assault_source",
+            ),
+            game=game,
+        )
+
     def stormlance_portents_of_wisdom_reroll_advance_applies(self, unit) -> bool:
         if not self.is_stormlance_task_force():
             return False

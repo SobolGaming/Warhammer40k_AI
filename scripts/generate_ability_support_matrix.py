@@ -20487,6 +20487,36 @@ def _stratagem_support(
             "Opponent Movement phase just after an enemy unit Falls Back: selected ADEPTUS ASTARTES unit that was within Engagement Range of that enemy at the start of the phase can make a Normal move of up to D6\"+1.",
             name_u,
         )
+    if stratagem_id == "000008487003":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected to shoot gains [ASSAULT] on ranged weapons until end of phase, while weapons that already had [ASSAULT] gain [SUSTAINED HITS 1] instead.",
+            name_u,
+        )
+    if stratagem_id == "000008487004":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES MOUNTED unit gains fixed Advance distance 9, or selected non-WALKER ADEPTUS ASTARTES VEHICLE unit gains fixed Advance distance 6, until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008487005":
+        return (
+            "Implemented",
+            "Your Charge phase: selected ADEPTUS ASTARTES MOUNTED unit that has not yet declared a charge can re-roll Charge rolls this turn and gains [LANCE] on melee weapons until the end of the turn.",
+            name_u,
+        )
+    if stratagem_id == "000008487006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES MOUNTED or FLY VEHICLE unit is -1 to hit and -1 to wound against ranged attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008487007":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" and not within Engagement Range can make a Normal move of up to 6\".",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

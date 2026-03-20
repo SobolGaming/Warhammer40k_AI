@@ -11519,6 +11519,14 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "stormlance_shock_assault_reroll_charge_applies", None):
+                if mgr.stormlance_shock_assault_reroll_charge_applies(self, game=game):
+                    return True
+        except Exception:
+            pass
         army = self.get_parent_army()
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         xenocreed_reroll_charge = (

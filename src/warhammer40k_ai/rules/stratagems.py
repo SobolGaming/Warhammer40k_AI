@@ -1737,6 +1737,7 @@ class StratagemManager(
             "RELENTLESS ASSAULT",
             "SAVAGE ECHOES",
             "SQUAD TACTICS",
+            "WIND-SWIFT EVASION",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1918,6 +1919,7 @@ class StratagemManager(
             "SHIELD NODES",
             "PSYCHIC SHIELD",
             "ILLUMINATING FIRE",
+            "RIDE HARD, RIDE FAST",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2183,6 +2185,8 @@ class StratagemManager(
             "HEROES OF THE CHAPTER",
             "NO THREAT TOO GREAT",
             "NOT ONE BACKWARDS STEP",
+            "BLITZING FUSILLADE",
+            "FULL THROTTLE",
             "VENOMOUS WRATH",
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
@@ -2207,6 +2211,8 @@ class StratagemManager(
             "VOID HARDENED",
             "WRATHFUL INFERNO",
             "BLAZING EARTH",
+            "RIDE HARD, RIDE FAST",
+            "SHOCK ASSAULT",
             "ONLY IN DEATH DOES DUTY END",
         }
         needs_phase_end = bool(
@@ -6058,6 +6064,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_stormlance_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_librarius_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7166,6 +7176,7 @@ class StratagemManager(
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
             self._cleanup_space_marines_reclamation_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9096,6 +9107,7 @@ class StratagemManager(
         self._queue_space_marines_hammer_of_avernii_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
@@ -10152,6 +10164,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_orbital_assault_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_stormlance_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16618,6 +16637,9 @@ class StratagemManager(
         reclamation_result = self._use_space_marines_reclamation_force_stratagem(s, **kwargs)
         if reclamation_result is not None:
             return reclamation_result
+        stormlance_result = self._use_space_marines_stormlance_task_force_stratagem(s, **kwargs)
+        if stormlance_result is not None:
+            return stormlance_result
         emperors_shield_result = self._use_space_marines_emperors_shield_stratagem(s, **kwargs)
         if emperors_shield_result is not None:
             return emperors_shield_result
