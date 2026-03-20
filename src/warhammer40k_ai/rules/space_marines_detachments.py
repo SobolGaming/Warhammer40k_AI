@@ -3545,6 +3545,218 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             source = "Liberatum"
         return reroll_hit, reroll_wound, source
 
+    @staticmethod
+    def _clear_reclamation_force_effect_keys(root, keys: tuple[str, ...]) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in keys:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def _reclamation_force_turn_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        turn_key: str,
+        owner_key: str,
+        clear_keys: tuple[str, ...],
+        game=None,
+    ) -> bool:
+        if not self.is_reclamation_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(active_key, False))):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_player_id = str(sr.get(owner_key, "") or "").strip()
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        if (effect_turn and current_turn and effect_turn != current_turn) or (
+            effect_player_id and current_player_id and effect_player_id != current_player_id
+        ):
+            self._clear_reclamation_force_effect_keys(root, clear_keys)
+            return False
+        return True
+
+    def reclamation_force_crusading_conquerors_objective_control_bonus(
+        self,
+        model,
+        *,
+        unit=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_reclamation_force():
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_reclamation_crusading_conquerors_active", False))):
+            return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            phase_key = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            effect_player_id = str(sr.get("space_marines_reclamation_crusading_conquerors_command_phase_owner", "") or "").strip()
+            effect_turn = int(sr.get("space_marines_reclamation_crusading_conquerors_command_phase_turn", 0) or 0)
+            if (
+                phase_key == "COMMAND_PHASE"
+                and effect_player_id
+                and effect_player_id == current_player_id
+                and (not effect_turn or not current_turn or effect_turn != current_turn)
+            ):
+                self._clear_reclamation_force_effect_keys(
+                    root,
+                    (
+                        "space_marines_reclamation_crusading_conquerors_active",
+                        "space_marines_reclamation_crusading_conquerors_objective_control_bonus",
+                        "space_marines_reclamation_crusading_conquerors_command_phase_owner",
+                        "space_marines_reclamation_crusading_conquerors_command_phase_turn",
+                        "space_marines_reclamation_crusading_conquerors_source",
+                    ),
+                )
+                return 0, ""
+        bonus = int(sr.get("space_marines_reclamation_crusading_conquerors_objective_control_bonus", 1) or 1)
+        source = str(sr.get("space_marines_reclamation_crusading_conquerors_source", "") or "Crusading Conquerors").strip()
+        return max(0, bonus), source or "Crusading Conquerors"
+
+    def reclamation_force_furious_dedication_charge_roll_bonus(
+        self,
+        charging_unit,
+        target_units=None,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = target_units
+        if not self._reclamation_force_turn_effect_active(
+            charging_unit,
+            active_key="space_marines_reclamation_furious_dedication_active",
+            turn_key="space_marines_reclamation_furious_dedication_turn",
+            owner_key="space_marines_reclamation_furious_dedication_turn_owner",
+            clear_keys=(
+                "space_marines_reclamation_furious_dedication_active",
+                "space_marines_reclamation_furious_dedication_charge_roll_bonus",
+                "space_marines_reclamation_furious_dedication_melee_attacks_bonus",
+                "space_marines_reclamation_furious_dedication_turn_owner",
+                "space_marines_reclamation_furious_dedication_turn",
+                "space_marines_reclamation_furious_dedication_expires_phase",
+                "space_marines_reclamation_furious_dedication_source",
+            ),
+            game=game,
+        ):
+            return 0, ""
+        root = self._attached_unit_root(charging_unit)
+        if root is None:
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        bonus = int(sr.get("space_marines_reclamation_furious_dedication_charge_roll_bonus", 0) or 0)
+        source = str(sr.get("space_marines_reclamation_furious_dedication_source", "") or "Furious Dedication").strip()
+        return max(0, bonus), source or "Furious Dedication"
+
+    def set_reclamation_force_scions_of_guilliman(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Scions of Guilliman",
+    ) -> bool:
+        if not self.is_reclamation_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_reclamation_scions_of_guilliman_active"] = True
+        sr["space_marines_reclamation_scions_of_guilliman_turn"] = int(battle_round or 0)
+        sr["space_marines_reclamation_scions_of_guilliman_turn_owner"] = str(player_id or "").strip()
+        sr["space_marines_reclamation_scions_of_guilliman_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_reclamation_scions_of_guilliman_source"] = (
+            str(source or "Scions of Guilliman").strip() or "Scions of Guilliman"
+        )
+        root.special_rules = sr
+        return True
+
+    def reclamation_force_scions_of_guilliman_shoot_after_fall_back_applies(
+        self,
+        unit,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> bool:
+        if not self._reclamation_force_turn_effect_active(
+            unit,
+            active_key="space_marines_reclamation_scions_of_guilliman_active",
+            turn_key="space_marines_reclamation_scions_of_guilliman_turn",
+            owner_key="space_marines_reclamation_scions_of_guilliman_turn_owner",
+            clear_keys=(
+                "space_marines_reclamation_scions_of_guilliman_active",
+                "space_marines_reclamation_scions_of_guilliman_turn_owner",
+                "space_marines_reclamation_scions_of_guilliman_turn",
+                "space_marines_reclamation_scions_of_guilliman_expires_phase",
+                "space_marines_reclamation_scions_of_guilliman_source",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def reclamation_force_scions_of_guilliman_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        if not self._reclamation_force_turn_effect_active(
+            unit,
+            active_key="space_marines_reclamation_scions_of_guilliman_active",
+            turn_key="space_marines_reclamation_scions_of_guilliman_turn",
+            owner_key="space_marines_reclamation_scions_of_guilliman_turn_owner",
+            clear_keys=(
+                "space_marines_reclamation_scions_of_guilliman_active",
+                "space_marines_reclamation_scions_of_guilliman_turn_owner",
+                "space_marines_reclamation_scions_of_guilliman_turn",
+                "space_marines_reclamation_scions_of_guilliman_expires_phase",
+                "space_marines_reclamation_scions_of_guilliman_source",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        return bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False))
+
     def _attached_unit_is_ancient(self, unit) -> bool:
         if unit is None:
             return False

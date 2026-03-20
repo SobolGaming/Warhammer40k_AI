@@ -112,6 +112,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_orbital_assault_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_reclamation_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_reclamation_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_librarius_conclave_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_librarius_conclave", None) if mgr is not None else None
@@ -908,6 +913,34 @@ class SpaceMarinesStratagemMixin:
         snapshots = {}
         setattr(self, "_space_marines_ironstorm_power_shooting_snapshots_cache", snapshots)
         return snapshots
+
+    def _space_marines_reclamation_marching_snapshots(self) -> dict[str, list[str]]:
+        snapshots = getattr(self, "_space_marines_reclamation_marching_snapshots_cache", None)
+        if isinstance(snapshots, dict):
+            return snapshots
+        snapshots = {}
+        setattr(self, "_space_marines_reclamation_marching_snapshots_cache", snapshots)
+        return snapshots
+
+    def _sm_reclamation_current_turn_key(self) -> str:
+        if self.game is None:
+            return ""
+        current_player = getattr(self.game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(self.game, "turn", 0) or 0)
+        if not current_turn and not current_player_id:
+            return ""
+        return f"{current_turn}:{current_player_id}"
+
+    def _space_marines_reclamation_furious_dedication_used_this_turn(self) -> bool:
+        used_turn_key = str(getattr(self, "_space_marines_reclamation_furious_dedication_turn_key", "") or "")
+        current_turn_key = self._sm_reclamation_current_turn_key()
+        return bool(used_turn_key and current_turn_key and used_turn_key == current_turn_key)
+
+    def _mark_space_marines_reclamation_furious_dedication_used_this_turn(self) -> None:
+        current_turn_key = self._sm_reclamation_current_turn_key()
+        if current_turn_key:
+            setattr(self, "_space_marines_reclamation_furious_dedication_turn_key", current_turn_key)
 
     def _sm_unit_is_engaged(self, unit: Any) -> bool:
         root = self._sm_root(unit)
@@ -1709,6 +1742,180 @@ class SpaceMarinesStratagemMixin:
         if action_key in {"fall_back", "fallback"} and bool(getattr(round_state, "fell_back_this_round", False)):
             return [root]
         return []
+
+    def _space_marines_reclamation_crusading_conquerors_candidates(self) -> list[Any]:
+        if not self._is_reclamation_force_detachment():
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            unit_id = self._sm_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_is_alive(root):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_reclamation_furious_dedication_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_reclamation_force_detachment():
+            return []
+        if self._space_marines_reclamation_furious_dedication_used_this_turn():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"charge phase", "fight phase"}:
+            return []
+        candidates: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if phase_key == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_reclamation_fight_to_the_end_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_reclamation_force_detachment():
+            return []
+        target_ids = {
+            self._sm_sort_key(self._sm_root(target))
+            for target in list(target_units or [])
+            if self._sm_root(target) is not None
+        }
+        if not target_ids:
+            return []
+        candidates: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if self._sm_sort_key(root) not in target_ids:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_reclamation_ultramarian_destiny_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_reclamation_force_detachment():
+            return ([], {})
+        candidates: list[Any] = []
+        objective_map: dict[str, list[Any]] = {}
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            objectives = self._sm_objective_candidates_you_control(root)
+            if not objectives:
+                continue
+            candidates.append(root)
+            objective_map[self._sm_sort_key(root)] = list(objectives)
+        return sorted(candidates, key=self._sm_sort_key), objective_map
+
+    def _capture_space_marines_reclamation_marching_phase_start(self, *, player: Any, phase: Any) -> None:
+        snapshots = self._space_marines_reclamation_marching_snapshots()
+        snapshots.clear()
+        if not self._is_reclamation_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key != "MOVEMENT_PHASE" or player is self.player or active_player is self.player:
+            return
+        game_map = self._sm_game_map()
+        if game_map is None:
+            return
+        friendly_units = [
+            root
+            for root in self._sm_owned_army_roots()
+            if root is not None
+            and self._sm_on_battlefield(root, require_targetable=False)
+            and self._is_adeptus_astartes_unit(root)
+        ]
+        if not friendly_units:
+            return
+        get_army = getattr(player, "get_army", None)
+        enemy_army = get_army() if callable(get_army) else getattr(player, "army", None)
+        if enemy_army is None:
+            return
+        for enemy_unit in list(getattr(enemy_army, "units", []) or []):
+            enemy_root = self._sm_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            enemy_id = self._sm_sort_key(enemy_root)
+            if not enemy_id:
+                continue
+            engaged_ids: list[str] = []
+            for friendly_root in friendly_units:
+                try:
+                    if bool(game_map.is_within_engagement_range(friendly_root, enemy_root)):
+                        engaged_ids.append(self._sm_sort_key(friendly_root))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if engaged_ids:
+                snapshots[enemy_id] = sorted(set(engaged_ids))
+
+    def _space_marines_reclamation_marching_ever_on_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_reclamation_force_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        candidate_ids = list(self._space_marines_reclamation_marching_snapshots().get(self._sm_sort_key(enemy_root)) or [])
+        if not candidate_ids:
+            return []
+        candidates: list[Any] = []
+        for candidate_id in candidate_ids:
+            root = self._sm_resolve_unit_by_id(candidate_id)
+            if root is None:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_reclamation_scions_of_guilliman_candidates(self, *, moved_unit: Any) -> list[Any]:
+        if not self._is_reclamation_force_detachment():
+            return []
+        root = self._sm_root(moved_unit)
+        if root is None:
+            return []
+        if not self._sm_owned_by_player(root, self.player):
+            return []
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            return []
+        if not self._is_adeptus_astartes_unit(root):
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return []
+        return [root]
 
     def _space_marines_liberator_red_rampage_candidates(self) -> list[Any]:
         if not self._is_liberator_assault_group_detachment():
@@ -6639,6 +6846,329 @@ class SpaceMarinesStratagemMixin:
                         sr.pop(key, None)
             root.special_rules = sr
 
+    def _cleanup_space_marines_reclamation_command_phase_effects(self) -> None:
+        if not self._is_reclamation_force_detachment() or self.game is None:
+            return
+        current_player = getattr(self.game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(self.game, "turn", 0) or 0)
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("space_marines_reclamation_crusading_conquerors_active", False))):
+                continue
+            effect_player_id = str(sr.get("space_marines_reclamation_crusading_conquerors_command_phase_owner", "") or "").strip()
+            effect_turn = int(sr.get("space_marines_reclamation_crusading_conquerors_command_phase_turn", 0) or 0)
+            if effect_player_id and effect_player_id != current_player_id:
+                continue
+            if effect_turn and current_turn and effect_turn == current_turn:
+                continue
+            for key in (
+                "space_marines_reclamation_crusading_conquerors_active",
+                "space_marines_reclamation_crusading_conquerors_objective_control_bonus",
+                "space_marines_reclamation_crusading_conquerors_command_phase_owner",
+                "space_marines_reclamation_crusading_conquerors_command_phase_turn",
+                "space_marines_reclamation_crusading_conquerors_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _queue_space_marines_reclamation_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_reclamation_force_detachment():
+            self._space_marines_reclamation_marching_snapshots().clear()
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "COMMAND_PHASE":
+            self._cleanup_space_marines_reclamation_command_phase_effects()
+        if phase_key == "MOVEMENT_PHASE":
+            self._capture_space_marines_reclamation_marching_phase_start(player=player, phase=phase)
+            if player is self.player and active_player is self.player:
+                stratagem = self.get_by_name("ULTRAMARIAN DESTINY")
+                if (
+                    stratagem is not None
+                    and int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                ):
+                    candidates, objective_map = self._space_marines_reclamation_ultramarian_destiny_candidates()
+                    if candidates and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Movement phase",
+                    ):
+                        payload: dict[str, Any] = {
+                            "event": "phase_start",
+                            "phase": "Movement phase",
+                            "phase_name": "Movement phase",
+                            "stratagem": stratagem.name,
+                            "cp_cost": stratagem.cp_cost,
+                            "candidates": candidates,
+                            "objective_candidates_by_unit": objective_map,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                            objective_candidates = list(objective_map.get(self._sm_sort_key(candidates[0])) or [])
+                            if objective_candidates:
+                                payload["objective_candidates"] = objective_candidates
+                                if len(objective_candidates) == 1:
+                                    payload["objective"] = objective_candidates[0]
+                                    payload["objective_marker"] = objective_candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+        if phase_key == "CHARGE_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("FURIOUS DEDICATION")
+            if (
+                stratagem is not None
+                and not self._space_marines_reclamation_furious_dedication_used_this_turn()
+                and int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+            ):
+                candidates = self._space_marines_reclamation_furious_dedication_candidates(phase_name="Charge phase")
+                if candidates and not self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Charge phase",
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Charge phase",
+                        "phase_name": "Charge phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("FURIOUS DEDICATION")
+            if (
+                stratagem is not None
+                and not self._space_marines_reclamation_furious_dedication_used_this_turn()
+                and int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+            ):
+                candidates = self._space_marines_reclamation_furious_dedication_candidates(phase_name="Fight phase")
+                if candidates and not self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Fight phase",
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Fight phase",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_reclamation_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_reclamation_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if player is not self.player or active_player is not self.player:
+            return
+        stratagem = self.get_by_name("CRUSADING CONQUERORS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_reclamation_crusading_conquerors_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Command phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_reclamation_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_reclamation_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            stratagem = self.get_by_name("SCIONS OF GUILLIMAN")
+            candidates = self._space_marines_reclamation_scions_of_guilliman_candidates(moved_unit=unit)
+            if stratagem is None or not candidates:
+                return
+            root = candidates[0]
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="unit_move_ended",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+                target_unit=root,
+            ):
+                return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+                "action": "fall_back",
+            }
+            self._queue_reaction(payload, use_timer=False)
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("MARCHING EVER ON")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_reclamation_marching_ever_on_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+            "action": "fall_back",
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_reclamation_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_reclamation_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("FIGHT TO THE END")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_reclamation_fight_to_the_end_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_reclamation_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_reclamation_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "MOVEMENT_PHASE":
+            self._space_marines_reclamation_marching_snapshots().clear()
+        if phase_key != "FIGHT_PHASE":
+            return
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if bool(sr.get("space_marines_reclamation_fight_to_the_end_active", False)):
+                for key in (
+                    "space_marines_reclamation_fight_to_the_end_active",
+                    "space_marines_reclamation_fight_to_the_end_threshold",
+                    "space_marines_reclamation_fight_to_the_end_expires_phase",
+                    "space_marines_reclamation_fight_to_the_end_turn_owner",
+                    "space_marines_reclamation_fight_to_the_end_turn",
+                    "space_marines_reclamation_fight_to_the_end_source",
+                ):
+                    sr.pop(key, None)
+            if bool(sr.get("space_marines_reclamation_furious_dedication_active", False)):
+                for key in (
+                    "space_marines_reclamation_furious_dedication_active",
+                    "space_marines_reclamation_furious_dedication_charge_roll_bonus",
+                    "space_marines_reclamation_furious_dedication_melee_attacks_bonus",
+                    "space_marines_reclamation_furious_dedication_turn_owner",
+                    "space_marines_reclamation_furious_dedication_turn",
+                    "space_marines_reclamation_furious_dedication_expires_phase",
+                    "space_marines_reclamation_furious_dedication_source",
+                ):
+                    sr.pop(key, None)
+            if bool(sr.get("space_marines_reclamation_scions_of_guilliman_active", False)):
+                for key in (
+                    "space_marines_reclamation_scions_of_guilliman_active",
+                    "space_marines_reclamation_scions_of_guilliman_turn_owner",
+                    "space_marines_reclamation_scions_of_guilliman_turn",
+                    "space_marines_reclamation_scions_of_guilliman_expires_phase",
+                    "space_marines_reclamation_scions_of_guilliman_source",
+                ):
+                    sr.pop(key, None)
+            root.special_rules = sr
+
     def _sm_firestorm_context(
         self,
         stratagem_name: str,
@@ -10881,6 +11411,388 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_crusading_conquerors(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: CRUSADING CONQUERORS: wrong phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_reclamation_context("CRUSADING CONQUERORS", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: CRUSADING CONQUERORS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CRUSADING CONQUERORS: target unit is not yours")
+            return False
+        if not self._sm_is_alive(root):
+            logger.error("ERROR: CRUSADING CONQUERORS: target unit must be alive")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: CRUSADING CONQUERORS: target unit must be an ADEPTUS ASTARTES unit")
+            return False
+        valid_candidates = candidates or self._space_marines_reclamation_crusading_conquerors_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: CRUSADING CONQUERORS: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_reclamation_crusading_conquerors_active"] = True
+        sr["space_marines_reclamation_crusading_conquerors_objective_control_bonus"] = 1
+        sr["space_marines_reclamation_crusading_conquerors_command_phase_owner"] = str(
+            getattr(current_player, "id", "") or ""
+        )
+        sr["space_marines_reclamation_crusading_conquerors_command_phase_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        sr["space_marines_reclamation_crusading_conquerors_source"] = str(
+            getattr(stratagem, "name", "") or "CRUSADING CONQUERORS"
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRUSADING CONQUERORS: %s gains +1 Objective Control until the start of the next Command phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_furious_dedication(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"charge phase", "fight phase"}:
+            logger.error("ERROR: FURIOUS DEDICATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "charge phase" and active_player is not self.player:
+            logger.error("ERROR: FURIOUS DEDICATION: not your Charge phase")
+            return False
+        if self._space_marines_reclamation_furious_dedication_used_this_turn():
+            logger.error("ERROR: FURIOUS DEDICATION: cannot be used more than once per turn")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_reclamation_context("FURIOUS DEDICATION", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: FURIOUS DEDICATION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FURIOUS DEDICATION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: FURIOUS DEDICATION: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FURIOUS DEDICATION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if phase_name == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+            logger.error("ERROR: FURIOUS DEDICATION: target has already declared a charge this phase")
+            return False
+        if phase_name == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: FURIOUS DEDICATION: target has already been selected to fight this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_reclamation_furious_dedication_candidates(
+            phase_name="Charge phase" if phase_name == "charge phase" else "Fight phase"
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FURIOUS DEDICATION: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_reclamation_furious_dedication_active"] = True
+        sr["space_marines_reclamation_furious_dedication_charge_roll_bonus"] = 2
+        sr["space_marines_reclamation_furious_dedication_melee_attacks_bonus"] = 1
+        sr["space_marines_reclamation_furious_dedication_turn_owner"] = str(
+            getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        sr["space_marines_reclamation_furious_dedication_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        sr["space_marines_reclamation_furious_dedication_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_reclamation_furious_dedication_source"] = str(
+            getattr(stratagem, "name", "") or "FURIOUS DEDICATION"
+        )
+        root.special_rules = sr
+        self._mark_space_marines_reclamation_furious_dedication_used_this_turn()
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FURIOUS DEDICATION: %s gains +2 to Charge rolls and +1 Attacks on melee weapons until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_fight_to_the_end(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FIGHT TO THE END: wrong phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, trigger_unit, target_units, _action, _from_pending = (
+            self._sm_reclamation_context("FIGHT TO THE END", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: FIGHT TO THE END: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(trigger_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: FIGHT TO THE END: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: FIGHT TO THE END: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FIGHT TO THE END: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: FIGHT TO THE END: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FIGHT TO THE END: target must be an ADEPTUS ASTARTES unit")
+            return False
+        valid_candidates = candidates or self._space_marines_reclamation_fight_to_the_end_candidates(
+            target_units=list(target_units or [])
+        )
+        if not valid_candidates or not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FIGHT TO THE END: target unit was not selected as an attack target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_reclamation_fight_to_the_end_active"] = True
+        sr["space_marines_reclamation_fight_to_the_end_threshold"] = 4
+        sr["space_marines_reclamation_fight_to_the_end_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_reclamation_fight_to_the_end_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_reclamation_fight_to_the_end_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        sr["space_marines_reclamation_fight_to_the_end_source"] = str(
+            getattr(stratagem, "name", "") or "FIGHT TO THE END"
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FIGHT TO THE END: %s fights on death on 4+ against the attacking unit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_scions_of_guilliman(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SCIONS OF GUILLIMAN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SCIONS OF GUILLIMAN: not your Movement phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, action, _from_pending = (
+            self._sm_reclamation_context("SCIONS OF GUILLIMAN", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: SCIONS OF GUILLIMAN: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: target must be an ADEPTUS ASTARTES unit")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: SCIONS OF GUILLIMAN: wrong trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: target must have Fallen Back this phase")
+            return False
+        valid_candidates = candidates or self._space_marines_reclamation_scions_of_guilliman_candidates(
+            moved_unit=root
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_reclamation_force_scions_of_guilliman", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: Reclamation Force detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "SCIONS OF GUILLIMAN"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: SCIONS OF GUILLIMAN: failed to apply fall-back permissions")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCIONS OF GUILLIMAN: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_ultramarian_destiny(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: ULTRAMARIAN DESTINY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ULTRAMARIAN DESTINY: not your Movement phase")
+            return False
+
+        unit, candidates, objective, objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_reclamation_context("ULTRAMARIAN DESTINY", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: ULTRAMARIAN DESTINY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: ULTRAMARIAN DESTINY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: ULTRAMARIAN DESTINY: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: ULTRAMARIAN DESTINY: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        valid_candidates, objective_map = self._space_marines_reclamation_ultramarian_destiny_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: ULTRAMARIAN DESTINY: selected unit is not currently eligible")
+            return False
+        if not objective_candidates:
+            objective_candidates = list(objective_map.get(self._sm_sort_key(root)) or [])
+        if objective is None:
+            logger.error("ERROR: ULTRAMARIAN DESTINY: no objective marker selected")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: ULTRAMARIAN DESTINY: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: ULTRAMARIAN DESTINY: objective marker location unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="space_marines_ultramarian_destiny")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "space_marines_ultramarian_destiny"
+            objective_location.controlling_player = self.player
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: ULTRAMARIAN DESTINY: selected objective remains under your control until broken.")
+        return True
+
+    def _use_space_marines_marching_ever_on(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MARCHING EVER ON: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: MARCHING EVER ON: not opponent's Movement phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, trigger_unit, _target_units, action, _from_pending = (
+            self._sm_reclamation_context("MARCHING EVER ON", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: MARCHING EVER ON: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: MARCHING EVER ON: missing enemy fall-back context")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MARCHING EVER ON: trigger unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MARCHING EVER ON: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: MARCHING EVER ON: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: MARCHING EVER ON: target must be an ADEPTUS ASTARTES unit")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: MARCHING EVER ON: wrong trigger")
+            return False
+        valid_candidates = candidates or self._space_marines_reclamation_marching_ever_on_candidates(enemy_unit=enemy_root)
+        if not valid_candidates or not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: MARCHING EVER ON: selected unit was not within Engagement Range of the enemy at phase start")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: MARCHING EVER ON: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = max(1, int(dice_module.get_roll("D6") or 0) + 1)
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=max_distance,
+            kind="marching_ever_on",
+            movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "MARCHING EVER ON"),
+            moving_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: MARCHING EVER ON: failed to queue Normal move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MARCHING EVER ON: %s can make a Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
     def _use_space_marines_firestorm_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -11281,6 +12193,26 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_onward_for_the_emperor(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_reclamation_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_reclamation_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "CRUSADING CONQUERORS":
+            return self._use_space_marines_crusading_conquerors(stratagem, **kwargs)
+        if name_u == "FIGHT TO THE END":
+            return self._use_space_marines_fight_to_the_end(stratagem, **kwargs)
+        if name_u == "FURIOUS DEDICATION":
+            return self._use_space_marines_furious_dedication(stratagem, **kwargs)
+        if name_u == "SCIONS OF GUILLIMAN":
+            return self._use_space_marines_scions_of_guilliman(stratagem, **kwargs)
+        if name_u == "ULTRAMARIAN DESTINY":
+            return self._use_space_marines_ultramarian_destiny(stratagem, **kwargs)
+        if name_u == "MARCHING EVER ON":
+            return self._use_space_marines_marching_ever_on(stratagem, **kwargs)
+        return None
+
     def _sm_blade_context(
         self,
         stratagem_name: str,
@@ -11438,6 +12370,61 @@ class SpaceMarinesStratagemMixin:
             support_unit,
             support_candidates,
             choice_payload,
+            from_pending,
+        )
+
+    def _sm_reclamation_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], Any, list[Any], str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        trigger_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("source_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        action = str(kwargs.get("action") or "").strip()
+        objective_map = kwargs.get("objective_candidates_by_unit")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if objective is None:
+                objective = reaction.get("objective") or reaction.get("objective_marker")
+            if not objective_candidates:
+                objective_candidates = list(reaction.get("objective_candidates") or [])
+            if trigger_unit is None:
+                trigger_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("source_unit")
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if objective_map is None:
+                objective_map = reaction.get("objective_candidates_by_unit")
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._sm_root(unit)
+        if root is not None and not objective_candidates and hasattr(objective_map, "get"):
+            objective_candidates = list(objective_map.get(self._sm_sort_key(root)) or [])
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        return (
+            unit,
+            candidates,
+            objective,
+            objective_candidates,
+            trigger_unit,
+            target_units,
+            action,
             from_pending,
         )
 

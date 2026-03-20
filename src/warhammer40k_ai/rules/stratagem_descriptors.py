@@ -5526,6 +5526,73 @@ _ORBITAL_ASSAULT_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RECLAMATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010685002": StratagemToolDescriptor(
+        stratagem_id="000010685002",
+        name="Crusading Conquerors",
+        timing="end_of_command_phase",
+        target="adeptus_astartes_unit",
+        duration="until_start_of_next_command_phase",
+        effect="objective_control_bonus_until_next_command_phase",
+        cp_cost=1,
+        effect_params={"objective_control_bonus": 1},
+    ),
+    "000010685003": StratagemToolDescriptor(
+        stratagem_id="000010685003",
+        name="Furious Dedication",
+        timing="charge_or_fight_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected",
+        duration="until_end_of_turn",
+        effect="charge_roll_bonus_and_melee_attacks_bonus",
+        cp_cost=1,
+        effect_params={"charge_roll_bonus": 2, "melee_attacks_bonus": 1, "once_per_turn": True},
+    ),
+    "000010685004": StratagemToolDescriptor(
+        stratagem_id="000010685004",
+        name="Fight to the End",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_astartes_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_on_4_plus",
+        cp_cost=1,
+        effect_params={"fight_on_death_threshold": 4},
+    ),
+    "000010685005": StratagemToolDescriptor(
+        stratagem_id="000010685005",
+        name="Scions of Guilliman",
+        timing="your_movement_phase_after_fall_back",
+        target="that_adeptus_astartes_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={"shoot_after_fall_back": True, "charge_after_fall_back": True},
+    ),
+    "000010685006": StratagemToolDescriptor(
+        stratagem_id="000010685006",
+        name="Ultramarian Destiny",
+        timing="movement_phase_on_select",
+        target="adeptus_astartes_unit_within_controlled_objective",
+        duration="until_control_is_lost",
+        effect="sticky_objective_control",
+        cp_cost=1,
+        effect_params={"requires_controlled_objective_in_range": True},
+    ),
+    "000010685007": StratagemToolDescriptor(
+        stratagem_id="000010685007",
+        name="Marching Ever On",
+        timing="opponent_movement_phase_after_enemy_fall_back",
+        target="adeptus_astartes_unit_engaged_with_enemy_at_phase_start",
+        duration="immediate",
+        effect="reactive_normal_move_after_enemy_fall_back",
+        cp_cost=1,
+        effect_params={"distance_roll": "D6+1"},
+    ),
+}
+
+_RECLAMATION_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RECLAMATION_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -6296,6 +6363,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RECLAMATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6407,6 +6477,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
         or _LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ORBITAL_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _RECLAMATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

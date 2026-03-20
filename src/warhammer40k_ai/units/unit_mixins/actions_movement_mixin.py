@@ -11984,6 +11984,19 @@ class ActionsMovementMixin:
                 bonus, source = 0, ""
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "In The Lion's Claws")))
+        reclamation_bonus_fn = (
+            getattr(sm_mgr, "reclamation_force_furious_dedication_charge_roll_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(reclamation_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            try:
+                bonus, source = reclamation_bonus_fn(root, targets, game=game)
+            except Exception:
+                bonus, source = 0, ""
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Furious Dedication")))
 
         necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         necrons_bonus_fn = (
@@ -17808,6 +17821,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, weapon_profile=profile, game=game):
                     return True
+            reclamation_fn = (
+                getattr(mgr, "reclamation_force_scions_of_guilliman_shoot_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(reclamation_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if reclamation_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:
@@ -18281,6 +18303,15 @@ class ActionsMovementMixin:
             if callable(liberator_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, game=game):
+                    return True
+            reclamation_fn = (
+                getattr(mgr, "reclamation_force_scions_of_guilliman_charge_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(reclamation_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if reclamation_fn(self, game=game):
                     return True
         except Exception:
             pass

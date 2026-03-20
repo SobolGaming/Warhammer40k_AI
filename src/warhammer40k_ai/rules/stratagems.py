@@ -1945,6 +1945,7 @@ class StratagemManager(
             "ARMOUR OF CONTEMPT",
             "ONLY IN DEATH DOES DUTY END",
             "THE FOE FORESEEN",
+            "FIGHT TO THE END",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
@@ -6053,6 +6054,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_reclamation_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_librarius_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7153,12 +7158,14 @@ class StratagemManager(
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_lions_blade_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_orbital_assault_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_reclamation_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_reclamation_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9088,6 +9095,7 @@ class StratagemManager(
         self._queue_space_marines_first_company_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_hammer_of_avernii_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
@@ -11231,6 +11239,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_lions_blade_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_reclamation_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16600,6 +16615,9 @@ class StratagemManager(
         orbital_result = self._use_space_marines_orbital_assault_force_stratagem(s, **kwargs)
         if orbital_result is not None:
             return orbital_result
+        reclamation_result = self._use_space_marines_reclamation_force_stratagem(s, **kwargs)
+        if reclamation_result is not None:
+            return reclamation_result
         emperors_shield_result = self._use_space_marines_emperors_shield_stratagem(s, **kwargs)
         if emperors_shield_result is not None:
             return emperors_shield_result

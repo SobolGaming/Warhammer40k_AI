@@ -20451,6 +20451,43 @@ def _stratagem_support(
             name_u,
         )
 
+    if stratagem_id == "000010685002":
+        return (
+            "Implemented",
+            "End of any Command phase: selected ADEPTUS ASTARTES unit gains +1 Objective Control until the start of the next Command phase, including units that are off the battlefield when targeted.",
+            name_u,
+        )
+    if stratagem_id == "000010685003":
+        return (
+            "Implemented",
+            "Your Charge phase or any Fight phase: selected ADEPTUS ASTARTES unit that has not yet charged or fought this phase gains +2 to Charge rolls and +1 melee Attack until end of turn, with the stratagem limited to once per turn.",
+            name_u,
+        )
+    if stratagem_id == "000010685004":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES unit fights on death on 4+ against the attacking unit until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010685005":
+        return (
+            "Implemented",
+            "Your Movement phase just after an ADEPTUS ASTARTES unit Falls Back: that unit can shoot and charge after Falling Back until end of turn.",
+            name_u,
+        )
+    if stratagem_id == "000010685006":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES unit makes one controlled objective it is within range of remain under your control until your opponent has greater control over it at the end of a phase.",
+            name_u,
+        )
+    if stratagem_id == "000010685007":
+        return (
+            "Implemented",
+            "Opponent Movement phase just after an enemy unit Falls Back: selected ADEPTUS ASTARTES unit that was within Engagement Range of that enemy at the start of the phase can make a Normal move of up to D6\"+1.",
+            name_u,
+        )
+
     if stratagem_id == "000008483003":
         return (
             "Implemented",
@@ -20634,6 +20671,16 @@ def _table(headers: Sequence[str], rows: Sequence[Tuple[Sequence[str], str]]) ->
     ths = "".join(f"<th>{_escape(h)}</th>" for h in headers)
     body = "".join(_row(cells, status) for cells, status in rows)
     return f"<table><thead><tr>{ths}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def _stratagem_doc_turn_phase(stratagem: dict) -> Tuple[str, str]:
+    stratagem_id = str(stratagem.get("id", "") or "").strip()
+    turn = str(stratagem.get("turn", "") or "")
+    phase = str(stratagem.get("phase", "") or "")
+    if stratagem_id == "000010685007":
+        return turn, "Movement phase"
+    return turn, phase
+
 
 def _load_factions() -> Dict[str, Dict[str, str]]:
     path = os.path.join(WAHA_DIR, "Factions.json")
@@ -21045,6 +21092,7 @@ def _build_faction_content(
                         detachment_name=det_name,
                         stratagem_id=str(s.get("id", "") or ""),
                     )
+                    turn_text, phase_text = _stratagem_doc_turn_phase(s)
                     det_strat_statuses.append(status)
                     strat_rows.append(
                         (
@@ -21054,8 +21102,8 @@ def _build_faction_content(
                                 f"<code>{_escape(s.get('id', ''))}</code>",
                                 _escape(s.get("type", "")),
                                 _escape(s.get("cp_cost", "")),
-                                _escape(s.get("turn", "")),
-                                _escape(s.get("phase", "")),
+                                _escape(turn_text),
+                                _escape(phase_text),
                                 _stratagem_note_block(str(s.get("description", "") or ""), status, notes),
                             ],
                             status,
@@ -21560,6 +21608,7 @@ def _build_matrix() -> str:
     core_strat_items: List[Tuple[str, str]] = []
     for s in core_strats:
         status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
+        turn_text, phase_text = _stratagem_doc_turn_phase(s)
         core_strat_items.append((status, s.get("name", "") or ""))
         core_strat_rows.append(
             (
@@ -21569,8 +21618,8 @@ def _build_matrix() -> str:
                     f"<code>{_escape(s.get('id', ''))}</code>",
                     _escape(s.get("type", "")),
                     _escape(s.get("cp_cost", "")),
-                    _escape(s.get("turn", "")),
-                    _escape(s.get("phase", "")),
+                    _escape(turn_text),
+                    _escape(phase_text),
                     _stratagem_note_block(str(s.get("description", "") or ""), status, notes),
                 ],
                 status,

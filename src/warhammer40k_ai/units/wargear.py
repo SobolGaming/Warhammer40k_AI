@@ -6101,6 +6101,25 @@ class WargearProfile:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
+                bonus = int(sr.get("space_marines_reclamation_furious_dedication_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    source_name = (
+                        str(sr.get("space_marines_reclamation_furious_dedication_source", "") or "Furious Dedication").strip()
+                        or "Furious Dedication"
+                    )
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="detachment:space_marines_reclamation_furious_dedication_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(f"{source_name} +{bonus}A (melee)")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
