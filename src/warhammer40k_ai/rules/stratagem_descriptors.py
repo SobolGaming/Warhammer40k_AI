@@ -4016,6 +4016,86 @@ _SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SAGA_OF_THE_GREAT_WOLF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010661003": StratagemToolDescriptor(
+        stratagem_id="000010661003",
+        name="Grimnar's Command",
+        timing="your_command_phase",
+        target="adeptus_astartes_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="unit_specific_master_of_wolves_hunting_pack_override",
+        cp_cost=1,
+        effect_params={
+            "choices": ["ENCIRCLING_JAWS", "HUNTERS_EYE", "FEROCIOUS_STRIKE"],
+            "override_even_if_selected_this_battle": True,
+        },
+    ),
+    "000010661004": StratagemToolDescriptor(
+        stratagem_id="000010661004",
+        name="Fenrisian Ferocity",
+        timing="movement_or_charge_phase_on_select",
+        target="adeptus_astartes_mounted_or_walker_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_models_and_terrain_with_titanic_block",
+        cp_cost=1,
+        effect_params={
+            "phase_move_types": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            },
+            "move_through_models": True,
+            "move_through_terrain": True,
+            "block_enemy_keywords": ["TITANIC"],
+            "movement_phase_allow_move_within_engagement_range": True,
+            "movement_phase_cannot_end_in_engagement_range": True,
+        },
+    ),
+    "000010661005": StratagemToolDescriptor(
+        stratagem_id="000010661005",
+        name="Unrelenting Hunters",
+        timing="movement_phase_on_select_to_move",
+        target="adeptus_astartes_unit_not_yet_selected_to_move",
+        duration="until_end_of_turn",
+        effect="charge_after_fall_back_and_space_wolves_charge_after_advance",
+        cp_cost=1,
+        effect_params={
+            "fall_back_and_charge": True,
+            "space_wolves_only_advance_and_charge": True,
+        },
+    ),
+    "000010661006": StratagemToolDescriptor(
+        stratagem_id="000010661006",
+        name="Eye of the Pack",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_plus_one_to_wound_on_ranged_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "wound_bonus": 1,
+        },
+    ),
+    "000010661007": StratagemToolDescriptor(
+        stratagem_id="000010661007",
+        name="Battle Instincts",
+        timing="opponent_shooting_phase_after_enemy_unit_shoots",
+        target="space_wolves_unit_targeted_by_enemy_shooter",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "movement_type": "normal",
+            "reactive_move_distance": "D6",
+            "required_keywords_any": ["SPACE WOLVES"],
+        },
+    ),
+}
+
+_SAGA_OF_THE_GREAT_WOLF_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_DESCRIPTORS.values()
+}
+
 _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008495005": StratagemToolDescriptor(
         stratagem_id="000008495005",
@@ -6933,6 +7013,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7047,6 +7130,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME.get(key)
+        or _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)

@@ -20672,6 +20672,36 @@ def _stratagem_support(
             "End of opponent Charge phase: selected ADEPTUS ASTARTES CHARACTER unit within 6\" of one or more enemy units it could charge declares an out-of-turn charge against those enemies and does not receive the Charge bonus this turn.",
             name_u,
         )
+    if stratagem_id == "000010661003":
+        return (
+            "Implemented",
+            "Your Command phase: selected ADEPTUS ASTARTES unit gains a chosen Encircling Jaws, Hunter's Eye, or Ferocious Strike Hunting Pack override until the start of your next Command phase, even if that pack was already selected this battle.",
+            name_u,
+        )
+    if stratagem_id == "000010661004":
+        return (
+            "Implemented",
+            "Your Movement or Charge phase: selected ADEPTUS ASTARTES MOUNTED or WALKER unit that has not yet been selected to move or charge can move horizontally through models and terrain this phase, TITANIC models still block, and Normal/Advance/Fall Back moves can pass within but not end within Engagement Range.",
+            name_u,
+        )
+    if stratagem_id == "000010661005":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES unit that has not yet been selected to move can charge after Falling Back this turn, and if it is a Space Wolves unit it can also charge after Advancing.",
+            name_u,
+        )
+    if stratagem_id == "000010661006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected to shoot gains +1 to wound for ranged attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010661007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy unit has shot: selected Space Wolves unit that was targeted by that attacker can make a reactive Normal move up to D6\".",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

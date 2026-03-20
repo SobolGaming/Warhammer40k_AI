@@ -42,6 +42,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_saga_of_the_bold", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_saga_of_the_great_wolf_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_saga_of_the_great_wolf", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_1st_company_task_force_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_1st_company_task_force", None) if mgr is not None else None
@@ -3455,6 +3460,100 @@ class SpaceMarinesStratagemMixin:
             enemy_candidates_by_unit[root_id] = sorted(valid_enemies, key=self._sm_sort_key)
         return sorted(candidates, key=self._sm_sort_key), enemy_candidates_by_unit
 
+    def _space_marines_great_wolf_grimnars_command_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_great_wolf_unrelenting_hunters_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_move_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_great_wolf_eye_of_the_pack_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_great_wolf_fenrisian_ferocity_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"movement phase", "charge phase"}:
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_mounted_unit(root) or self._sm_is_walker_unit(root)):
+                continue
+            if phase_key == "movement phase" and self._sm_selected_to_move_this_phase(root):
+                continue
+            if phase_key == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_great_wolf_battle_instincts_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return []
+        attacker_root = self._sm_root(attacking_unit)
+        if attacker_root is None or self._sm_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
     def _space_marines_litanies_of_purgation_candidates(self) -> list[Any]:
         if not self._is_vindication_task_force_detachment():
             return []
@@ -5970,6 +6069,34 @@ class SpaceMarinesStratagemMixin:
         return ""
 
     @staticmethod
+    def _sm_great_wolf_pack_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "ENCIRCLING_JAWS", "label": "Encircling Jaws"},
+            {"choice_key": "HUNTERS_EYE", "label": "Hunter's Eye"},
+            {"choice_key": "FEROCIOUS_STRIKE", "label": "Ferocious Strike"},
+        ]
+
+    @staticmethod
+    def _sm_great_wolf_pack_choice_key(choice: Any) -> str:
+        if isinstance(choice, dict):
+            choice = (
+                choice.get("choice_key")
+                or choice.get("pack_key")
+                or choice.get("pack_name")
+                or choice.get("choice")
+                or choice.get("label")
+            )
+        text = str(choice or "").strip().upper()
+        text = text.replace("'", "").replace("-", "_").replace(" ", "_")
+        if text in {"ENCIRCLING_JAWS", "ENCIRCLING", "ENCIRCLINGJAWS", "JAWS"}:
+            return "ENCIRCLING_JAWS"
+        if text in {"HUNTERS_EYE", "HUNTERS_EYE", "HUNTERSEYE", "HUNTERS", "HUNTER"}:
+            return "HUNTERS_EYE"
+        if text in {"FEROCIOUS_STRIKE", "FEROCIOUS", "FEROCIOUSSTRIKE"}:
+            return "FEROCIOUS_STRIKE"
+        return ""
+
+    @staticmethod
     def _sm_liberator_mobility_options() -> list[dict[str, str]]:
         return [
             {"choice_key": "SHOOT", "label": "Shoot"},
@@ -7314,6 +7441,259 @@ class SpaceMarinesStratagemMixin:
             if len(valid_enemies) == 1:
                 payload["enemy_unit"] = valid_enemies[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_great_wolf_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if player is not self.player or active_player is not self.player:
+            return
+
+        if phase_key == "COMMAND_PHASE":
+            stratagem = self.get_by_name("GRIMNAR'S COMMAND")
+            candidates = self._space_marines_great_wolf_grimnars_command_candidates()
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0)
+                    >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Command phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Command phase",
+                        "phase_name": "Command phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                        "choice_options": self._sm_great_wolf_pack_options(),
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "MOVEMENT_PHASE":
+            for stratagem_name, candidates, choice_options in (
+                ("UNRELENTING HUNTERS", self._space_marines_great_wolf_unrelenting_hunters_candidates(), []),
+                (
+                    "FENRISIAN FEROCITY",
+                    self._space_marines_great_wolf_fenrisian_ferocity_candidates(phase_name="Movement phase"),
+                    [],
+                ),
+            ):
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None or not candidates:
+                    continue
+                if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                    continue
+                if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if self._sm_reaction_already_queued(
+                    event_name="phase_start",
+                    stratagem_name=stratagem.name,
+                    phase_name="Movement phase",
+                ):
+                    continue
+                payload: dict[str, Any] = {
+                    "event": "phase_start",
+                    "phase": "Movement phase",
+                    "phase_name": "Movement phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "candidates": candidates,
+                }
+                if choice_options:
+                    payload["choice_options"] = choice_options
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            stratagem = self.get_by_name("EYE OF THE PACK")
+            candidates = self._space_marines_great_wolf_eye_of_the_pack_candidates()
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "CHARGE_PHASE":
+            stratagem = self.get_by_name("FENRISIAN FEROCITY")
+            candidates = self._space_marines_great_wolf_fenrisian_ferocity_candidates(phase_name="Charge phase")
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Charge phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Charge phase",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _resolve_space_marines_saga_of_the_great_wolf_after_shooting(self, *, attacker_unit: Any) -> None:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        attacker_id = self._sm_sort_key(attacker_root)
+        if attacker_root is None or not attacker_id or self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("BATTLE INSTINCTS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        target_units = list(getattr(self, "_recent_shooting_targets", {}).get(attacker_id) or [])
+        if attacker_id and hasattr(self, "_recent_shooting_targets"):
+            self._recent_shooting_targets.pop(attacker_id, None)
+        candidates = self._space_marines_great_wolf_battle_instincts_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": target_units,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        active_owner_id = str(getattr(active_player, "id", "") or "")
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_name in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                exp = str(sr.get("space_marines_fenrisian_ferocity_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_fenrisian_ferocity_active") is True and (not exp or exp == phase_name):
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_types",
+                        "space_marines_fenrisian_ferocity_added_phase_move_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_block_titanic_types",
+                        "space_marines_fenrisian_ferocity_added_phase_move_block_titanic_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_engagement_types",
+                        "space_marines_fenrisian_ferocity_added_phase_move_engagement_types",
+                    )
+                    for key in (
+                        "space_marines_fenrisian_ferocity_active",
+                        "space_marines_fenrisian_ferocity_expires_phase",
+                        "space_marines_fenrisian_ferocity_turn_owner",
+                        "space_marines_fenrisian_ferocity_turn",
+                        "space_marines_fenrisian_ferocity_source",
+                        "space_marines_fenrisian_ferocity_added_phase_move_types",
+                        "space_marines_fenrisian_ferocity_added_phase_move_block_titanic_types",
+                        "space_marines_fenrisian_ferocity_added_phase_move_engagement_types",
+                    ):
+                        sr.pop(key, None)
+            if phase_name == "FIGHT_PHASE":
+                effect_owner = str(sr.get("space_marines_unrelenting_hunters_turn_owner", "") or "").strip()
+                if (
+                    sr.get("space_marines_unrelenting_hunters_active") is True
+                    and effect_owner
+                    and active_owner_id
+                    and effect_owner == active_owner_id
+                ):
+                    for key in (
+                        "space_marines_unrelenting_hunters_active",
+                        "space_marines_unrelenting_hunters_turn_owner",
+                        "space_marines_unrelenting_hunters_turn",
+                        "space_marines_unrelenting_hunters_source",
+                    ):
+                        sr.pop(key, None)
+            root.special_rules = sr
 
     @staticmethod
     def _clear_space_marines_beastslayer_impetuosity_pending(root: Any) -> None:
@@ -15343,6 +15723,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_inspiring_presence(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_saga_of_the_great_wolf_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BATTLE INSTINCTS":
+            return self._use_space_marines_battle_instincts(stratagem, **kwargs)
+        if name_u == "EYE OF THE PACK":
+            return self._use_space_marines_eye_of_the_pack(stratagem, **kwargs)
+        if name_u == "FENRISIAN FEROCITY":
+            return self._use_space_marines_fenrisian_ferocity(stratagem, **kwargs)
+        if name_u == "GRIMNAR'S COMMAND":
+            return self._use_space_marines_grimnars_command(stratagem, **kwargs)
+        if name_u == "UNRELENTING HUNTERS":
+            return self._use_space_marines_unrelenting_hunters(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "COORDINATED STRIKE":
@@ -19320,6 +19718,65 @@ class SpaceMarinesStratagemMixin:
             enemy_candidates_by_unit,
             from_pending,
         )
+
+    def _sm_great_wolf_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], Any, str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        trigger_unit = (
+            kwargs.get("moving_unit")
+            or kwargs.get("charging_unit")
+            or kwargs.get("attacking_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("enemy_unit")
+        )
+        target_units = list(kwargs.get("target_units") or [])
+        choice_payload = (
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("pack_key")
+            or kwargs.get("pack")
+            or kwargs.get("selection")
+        )
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if trigger_unit is None:
+                trigger_unit = (
+                    reaction.get("moving_unit")
+                    or reaction.get("charging_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("attacker_unit")
+                    or reaction.get("enemy_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if choice_payload is None:
+                choice_payload = (
+                    reaction.get("choice")
+                    or reaction.get("choice_key")
+                    or reaction.get("pack_key")
+                    or reaction.get("pack")
+                    or reaction.get("selection")
+                )
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, candidates, trigger_unit, target_units, choice_payload, action, from_pending)
 
     def _sm_vehemence_context(
         self,
@@ -24099,6 +24556,382 @@ class SpaceMarinesStratagemMixin:
         logger.info(
             "INFO: INSPIRING PRESENCE: %s gains [LETHAL HITS] on melee weapons this phase.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_grimnars_command(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: GRIMNAR'S COMMAND: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: GRIMNAR'S COMMAND: not your Command phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, choice_payload, _action, _from_pending = self._sm_great_wolf_context(
+            str(getattr(stratagem, "name", "") or "GRIMNAR'S COMMAND"),
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: GRIMNAR'S COMMAND: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: GRIMNAR'S COMMAND: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: GRIMNAR'S COMMAND: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: GRIMNAR'S COMMAND: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        eligible = candidates or self._space_marines_great_wolf_grimnars_command_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: GRIMNAR'S COMMAND: selected unit is not currently eligible")
+            return False
+
+        pack_key = self._sm_great_wolf_pack_choice_key(choice_payload)
+        if not pack_key:
+            logger.error("ERROR: GRIMNAR'S COMMAND: no Hunting Pack selected")
+            return False
+        mgr = self._sm_detachment_mgr()
+        set_pack = getattr(mgr, "set_grimnars_command_pack", None) if mgr is not None else None
+        if not callable(set_pack):
+            logger.error("ERROR: GRIMNAR'S COMMAND: detachment override handler unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if not bool(
+            set_pack(
+                root,
+                pack_key,
+                game=self.game,
+                player_id=str(getattr(self.player, "id", "") or ""),
+                source=str(getattr(stratagem, "name", "") or "GRIMNAR'S COMMAND"),
+            )
+        ):
+            logger.error("ERROR: GRIMNAR'S COMMAND: failed to apply the selected Hunting Pack override")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GRIMNAR'S COMMAND: %s uses %s until your next Command phase.",
+            getattr(root, "name", "Unit"),
+            pack_key.replace("_", " ").title().replace("S ", "s "),
+        )
+        return True
+
+    def _use_space_marines_unrelenting_hunters(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNRELENTING HUNTERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNRELENTING HUNTERS: not your Movement phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _choice_payload, _action, _from_pending = self._sm_great_wolf_context(
+            str(getattr(stratagem, "name", "") or "UNRELENTING HUNTERS"),
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: UNRELENTING HUNTERS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNRELENTING HUNTERS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNRELENTING HUNTERS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: UNRELENTING HUNTERS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: UNRELENTING HUNTERS: target has already been selected to move this phase")
+            return False
+
+        eligible = candidates or self._space_marines_great_wolf_unrelenting_hunters_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNRELENTING HUNTERS: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_unrelenting_hunters_active"] = True
+        sr["space_marines_unrelenting_hunters_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_unrelenting_hunters_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_unrelenting_hunters_source"] = str(getattr(stratagem, "name", "") or "UNRELENTING HUNTERS")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNRELENTING HUNTERS: %s can charge after Falling Back this turn%s.",
+            getattr(root, "name", "Unit"),
+            " and after Advancing" if self._sm_is_space_wolves_unit(root) else "",
+        )
+        return True
+
+    def _use_space_marines_eye_of_the_pack(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EYE OF THE PACK: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EYE OF THE PACK: not your Shooting phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _choice_payload, _action, _from_pending = self._sm_great_wolf_context(
+            str(getattr(stratagem, "name", "") or "EYE OF THE PACK"),
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: EYE OF THE PACK: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: EYE OF THE PACK: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: EYE OF THE PACK: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: EYE OF THE PACK: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: EYE OF THE PACK: target has already been selected to shoot this phase")
+            return False
+
+        eligible = candidates or self._space_marines_great_wolf_eye_of_the_pack_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EYE OF THE PACK: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "EYE OF THE PACK").strip() or "EYE OF THE PACK"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_bonus = getattr(model, "set_temporary_weapon_wound_crit_bonus", None)
+                if callable(set_bonus):
+                    set_bonus(
+                        key=f"space_marines_eye_of_the_pack:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        wound_bonus=1,
+                        source=source,
+                        expires_phase="SHOOTING_PHASE",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EYE OF THE PACK: %s gains +1 to wound for ranged attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_fenrisian_ferocity(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: FENRISIAN FEROCITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FENRISIAN FEROCITY: not your turn")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _choice_payload, _action, _from_pending = self._sm_great_wolf_context(
+            str(getattr(stratagem, "name", "") or "FENRISIAN FEROCITY"),
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: FENRISIAN FEROCITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FENRISIAN FEROCITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FENRISIAN FEROCITY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FENRISIAN FEROCITY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_mounted_unit(root) or self._sm_is_walker_unit(root)):
+            logger.error("ERROR: FENRISIAN FEROCITY: target must be a MOUNTED or WALKER unit")
+            return False
+        if phase_name == "movement phase" and self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: FENRISIAN FEROCITY: target has already been selected to move this phase")
+            return False
+        if phase_name == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+            logger.error("ERROR: FENRISIAN FEROCITY: target has already declared a charge this phase")
+            return False
+
+        eligible = candidates or self._space_marines_great_wolf_fenrisian_ferocity_candidates(phase_name=phase_name)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: FENRISIAN FEROCITY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        move_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else {"charge"}
+        engagement_move_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else set()
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_types",
+            "space_marines_fenrisian_ferocity_added_phase_move_types",
+            set(move_types),
+        )
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_block_titanic_types",
+            "space_marines_fenrisian_ferocity_added_phase_move_block_titanic_types",
+            set(move_types),
+        )
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_engagement_types",
+            "space_marines_fenrisian_ferocity_added_phase_move_engagement_types",
+            set(engagement_move_types),
+        )
+
+        sr["space_marines_fenrisian_ferocity_active"] = True
+        sr["space_marines_fenrisian_ferocity_expires_phase"] = (
+            "MOVEMENT_PHASE" if phase_name == "movement phase" else "CHARGE_PHASE"
+        )
+        sr["space_marines_fenrisian_ferocity_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_fenrisian_ferocity_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_fenrisian_ferocity_source"] = str(getattr(stratagem, "name", "") or "FENRISIAN FEROCITY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FENRISIAN FEROCITY: %s can move through models and terrain this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_battle_instincts(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_great_wolf_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BATTLE INSTINCTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: BATTLE INSTINCTS: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _choice_payload, _action, from_pending = self._sm_great_wolf_context(
+            str(getattr(stratagem, "name", "") or "BATTLE INSTINCTS"),
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: BATTLE INSTINCTS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(trigger_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: BATTLE INSTINCTS: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: BATTLE INSTINCTS: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: BATTLE INSTINCTS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BATTLE INSTINCTS: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: BATTLE INSTINCTS: target must be a Space Wolves unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: BATTLE INSTINCTS: target must not be within Engagement Range")
+            return False
+
+        eligible = candidates or self._space_marines_great_wolf_battle_instincts_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        )
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BATTLE INSTINCTS: selected unit is not currently eligible")
+            return False
+        if not from_pending and target_units and not any(self._sm_root(target) is root for target in list(target_units or [])):
+            logger.error("ERROR: BATTLE INSTINCTS: target unit was not selected as a target of the enemy attacks")
+            return False
+
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: BATTLE INSTINCTS: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = int(dice_module.get_roll("D6") or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: BATTLE INSTINCTS: failed to determine reactive move distance")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="battle_instincts",
+            movement_type="move",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "BATTLE INSTINCTS"),
+            attacker_unit=attacker_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: BATTLE INSTINCTS: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BATTLE INSTINCTS: %s can make a reactive Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
         )
         return True
 

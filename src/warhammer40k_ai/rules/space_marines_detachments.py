@@ -7136,6 +7136,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         return raw
 
     def master_of_wolves_begin_command_phase(self, *, battle_round=None) -> None:
+        self._clear_grimnars_command_pack_overrides()
         if not self.is_saga_of_the_great_wolf():
             self.master_of_wolves_active_pack_key = ""
             self.master_of_wolves_active_round = 0
@@ -7299,28 +7300,107 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.attached_unit_is_adeptus_astartes(root)
 
-    def _master_of_wolves_recipient(self, unit) -> bool:
+    @staticmethod
+    def _clear_grimnars_command_pack_effect(root) -> None:
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "space_marines_grimnars_command_active",
+            "space_marines_grimnars_command_pack_key",
+            "space_marines_grimnars_command_source",
+            "space_marines_grimnars_command_turn_owner",
+            "space_marines_grimnars_command_turn",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_grimnars_command_pack_overrides(self) -> None:
+        if self.army is None:
+            return
+        for root in self._iter_unique_army_roots():
+            self._clear_grimnars_command_pack_effect(root)
+
+    def clear_grimnars_command_pack(self, unit) -> None:
+        self._clear_grimnars_command_pack_effect(self._attached_unit_root(unit))
+
+    def set_grimnars_command_pack(
+        self,
+        unit,
+        pack_key: str,
+        *,
+        game=None,
+        player_id: str = "",
+        source: str = "Grimnar's Command",
+    ) -> bool:
         if not self.is_saga_of_the_great_wolf():
             return False
-        if str(getattr(self, "master_of_wolves_active_pack_key", "") or "").strip().upper() not in self._MASTER_OF_WOLVES_PACK_KEYS:
+        root = self._attached_unit_root(unit)
+        if root is None or not self._master_of_wolves_unit_is_eligible(root):
             return False
-        return self._master_of_wolves_unit_is_eligible(unit)
+        normalized_pack_key = self._normalize_master_of_wolves_pack_key(pack_key)
+        if normalized_pack_key not in self._MASTER_OF_WOLVES_PACK_KEYS:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        game_obj = self._resolve_game_context(game=game)
+        owner_id = str(player_id or "").strip()
+        if not owner_id and game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            owner_id = str(getattr(current_player, "id", "") or "").strip()
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+        sr["space_marines_grimnars_command_active"] = True
+        sr["space_marines_grimnars_command_pack_key"] = normalized_pack_key
+        sr["space_marines_grimnars_command_source"] = str(source or "Grimnar's Command").strip() or "Grimnar's Command"
+        if owner_id:
+            sr["space_marines_grimnars_command_turn_owner"] = owner_id
+        if turn_now:
+            sr["space_marines_grimnars_command_turn"] = int(turn_now)
+        root.special_rules = sr
+        return True
+
+    def _master_of_wolves_active_pack_for_unit(self, unit) -> str:
+        if not self.is_saga_of_the_great_wolf():
+            return ""
+        root = self._attached_unit_root(unit)
+        if root is None or not self._master_of_wolves_unit_is_eligible(root):
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("space_marines_grimnars_command_active", False)):
+            override_key = self._normalize_master_of_wolves_pack_key(
+                str(sr.get("space_marines_grimnars_command_pack_key", "") or "")
+            )
+            if override_key in self._MASTER_OF_WOLVES_PACK_KEYS:
+                return override_key
+        active_key = self._normalize_master_of_wolves_pack_key(str(self.master_of_wolves_active_pack_key or ""))
+        if active_key in self._MASTER_OF_WOLVES_PACK_KEYS:
+            return active_key
+        return ""
+
+    def _master_of_wolves_recipient(self, unit) -> bool:
+        return bool(self._master_of_wolves_active_pack_for_unit(unit))
 
     def master_of_wolves_reroll_advance_applies(self, unit) -> bool:
         if not self._master_of_wolves_recipient(unit):
             return False
-        return str(self.master_of_wolves_active_pack_key or "").strip().upper() == self._MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS
+        return self._master_of_wolves_active_pack_for_unit(unit) == self._MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS
 
     def master_of_wolves_reroll_charge_applies(self, unit) -> bool:
         return self.master_of_wolves_reroll_advance_applies(unit)
 
     def master_of_wolves_hunters_eye_hit_bonus(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
-        if str(self.master_of_wolves_active_pack_key or "").strip().upper() != self._MASTER_OF_WOLVES_PACK_HUNTERS_EYE:
-            return 0, ""
         if attacker_model is None:
             return 0, ""
         unit = getattr(attacker_model, "parent_unit", None)
-        if not self._master_of_wolves_recipient(unit):
+        if self._master_of_wolves_active_pack_for_unit(unit) != self._MASTER_OF_WOLVES_PACK_HUNTERS_EYE:
             return 0, ""
         if weapon_profile is not None:
             parent = getattr(weapon_profile, "parent_wargear", None)
@@ -7330,9 +7410,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def master_of_wolves_ferocious_strike_applies(self, unit, *, game=None) -> bool:
         _ = game
-        if str(self.master_of_wolves_active_pack_key or "").strip().upper() != self._MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE:
-            return False
-        return self._master_of_wolves_recipient(unit)
+        return self._master_of_wolves_active_pack_for_unit(unit) == self._MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE
 
     def clear_master_of_wolves_ferocious_strike_choice(self, unit) -> None:
         root = self._attached_unit_root(unit)
@@ -7432,6 +7510,74 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if choice_key == "LETHAL_HITS":
             return True, 0, source
         return False, 1, source
+
+    def _saga_of_the_great_wolf_turn_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        require_space_wolves: bool = False,
+        game=None,
+    ) -> bool:
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if require_space_wolves and not (
+            self._attached_unit_has_keyword(root, "SPACE WOLVES")
+            or str(self.get_committed_chapter_keyword() or "").strip().upper() == "SPACE WOLVES"
+        ):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        if effect_owner and game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if current_owner and current_owner != effect_owner:
+                return False
+        return True
+
+    def saga_of_the_great_wolf_unrelenting_hunters_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        return self._saga_of_the_great_wolf_turn_effect_active(
+            unit,
+            active_key="space_marines_unrelenting_hunters_active",
+            owner_key="space_marines_unrelenting_hunters_turn_owner",
+            turn_key="space_marines_unrelenting_hunters_turn",
+            game=game,
+        )
+
+    def saga_of_the_great_wolf_unrelenting_hunters_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._saga_of_the_great_wolf_turn_effect_active(
+            unit,
+            active_key="space_marines_unrelenting_hunters_active",
+            owner_key="space_marines_unrelenting_hunters_turn_owner",
+            turn_key="space_marines_unrelenting_hunters_turn",
+            require_space_wolves=True,
+            game=game,
+        )
 
     def _saga_of_the_great_wolf_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)

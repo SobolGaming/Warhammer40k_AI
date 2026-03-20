@@ -85,6 +85,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARMOUR OF CONTEMPT",
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
+    "BATTLE INSTINCTS",
     "CALCULATED FEINT",
     "CHILLING HOWL",
     "CODEX DISCIPLINE",
@@ -101,8 +102,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FURY OF THE FIRST",
     "FINAL RETRIBUTION",
     "FIRE DISCIPLINE",
+    "FENRISIAN FEROCITY",
     "FURIOUS ONSLAUGHT",
     "GLORIOUS SACRIFICE",
+    "GRIMNAR'S COMMAND",
     "GRIM RETRIBUTION",
     "GUERRILLA TACTICS",
     "GUIDED DISRUPTION",
@@ -133,6 +136,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
     "PREYTAKER’S EYE",
+    "EYE OF THE PACK",
     "RELENTLESS ASSAULT",
     "RIGID DISCIPLINE",
     "RUNES OF CLAIMING",
@@ -150,6 +154,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBREAKABLE LINES",
     "UNFORGIVEN FURY",
     "ULTRAMARIAN ADAPTIVITY",
+    "UNRELENTING HUNTERS",
     "VENGEFUL ANIMUS",
     "WRATHFUL RAMPAGE",
     "A WORTHY SKULL",
@@ -1861,6 +1866,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_unforgiven_task_force)
         if "IMPETUOSITY" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_saga_of_the_beastslayer)
+        if "BATTLE INSTINCTS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_saga_of_the_great_wolf)
         if "STRIKE FROM THE SHADOWS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_vanguard_spearhead)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
@@ -5300,17 +5307,22 @@ class StratagemManager(
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "ALPHA STRIKE": "Target: your ADEPTUS ASTARTES CHARACTER unit; until end of the Charge phase it can declare a charge after Advancing",
+            "BATTLE INSTINCTS": "Opponent Shooting phase reaction after an enemy unit has shot: target your SPACE WOLVES unit that was selected as one of that unit's targets; it can make a reactive Normal move up to D6\"",
             "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
             "BIRTH OF A SAGA": "Target: one Wolf Guard Headtaker or Wolf Guard Terminator Pack Leader model from your army; it gains the CHARACTER keyword until the start of your next Command phase and its unit counts as a CHARACTER unit",
             "CHAMPION'S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
             "CHAMPION’S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
             "COUNTERCHARGE": "End of opponent's Charge phase: target your ADEPTUS ASTARTES CHARACTER unit within 6\" of enemy units it could charge; it declares an out-of-turn charge against only those enemies and does not receive the Charge bonus",
+            "EYE OF THE PACK": "Target: your ADEPTUS ASTARTES unit that has not been selected to shoot this phase; add 1 to wound rolls for its ranged attacks until end of phase",
+            "FENRISIAN FEROCITY": "Target: your ADEPTUS ASTARTES MOUNTED or WALKER unit that has not been selected to move or charge this phase; it moves through models and terrain this phase, with TITANIC models still blocking and move/advance/fall back unable to end in Engagement Range",
+            "GRIMNAR'S COMMAND": "Target: your ADEPTUS ASTARTES unit; choose one Master of Wolves Hunting Pack for that unit until the start of your next Command phase, even if that pack was already selected this battle",
             "INSPIRING PRESENCE": "Target: your ADEPTUS ASTARTES CHARACTER unit that has not been selected to fight this phase; its melee weapons gain [LETHAL HITS] until end of phase",
             "PINNING FIRE": "Target: ADEPTUS ASTARTES unit that has not been selected to shoot this phase; after it shoots, select one hit enemy CHARACTER, MONSTER, or VEHICLE unit to be pinned (Move -2, Charge -2) until the start of your next Shooting phase",
             "COORDINATED STRIKE": "Target: your SPACE WOLVES unit wholly within 9\" of one or more battlefield edges and not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves",
             "IMPETUOSITY": "Target: your WULFEN INFANTRY or BLOOD CLAWS unit selected as a target of enemy shooting; after that enemy unit has shot, if one or more models were destroyed, it can make an Impetuous move up to D6\" toward the closest non-AIRCRAFT enemy unit and can end in Engagement Range of it",
             "THUNDEROUS PURSUIT": "Target: your ADEPTUS ASTARTES unit within 9\" of an enemy that just ended a Normal, Advance, or Fall Back move and not within Engagement Range; it can make a reactive Normal move up to D6\", or 6\" if it is SPACE WOLVES INFANTRY or THUNDERWOLF CAVALRY",
             "UNBRIDLED FEROCITY": "Target: your SPACE WOLVES unit that has not been selected to fight this phase; add 1 to wound rolls for its melee attacks until end of phase",
+            "UNRELENTING HUNTERS": "Target: your ADEPTUS ASTARTES unit that has not been selected to move this phase; it can charge after Falling Back this turn, and if it is SPACE WOLVES it can also charge after Advancing",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
@@ -6209,6 +6221,10 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_saga_of_the_bold_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_saga_of_the_great_wolf_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7272,6 +7288,7 @@ class StratagemManager(
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9942,6 +9959,9 @@ class StratagemManager(
 
     def _on_unit_shooting_resolved_space_marines_saga_of_the_beastslayer(self, attacker_unit=None, **_kwargs):
         self._resolve_space_marines_saga_of_the_beastslayer_after_shooting(attacker_unit=attacker_unit)
+
+    def _on_unit_shooting_resolved_space_marines_saga_of_the_great_wolf(self, attacker_unit=None, **_kwargs):
+        self._resolve_space_marines_saga_of_the_great_wolf_after_shooting(attacker_unit=attacker_unit)
 
     def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_bastion_shooting_resolved_reactions(
@@ -16834,6 +16854,9 @@ class StratagemManager(
         saga_bold_result = self._use_space_marines_saga_of_the_bold_stratagem(s, **kwargs)
         if saga_bold_result is not None:
             return saga_bold_result
+        saga_great_wolf_result = self._use_space_marines_saga_of_the_great_wolf_stratagem(s, **kwargs)
+        if saga_great_wolf_result is not None:
+            return saga_great_wolf_result
         saga_beastslayer_result = self._use_space_marines_saga_of_the_beastslayer_stratagem(s, **kwargs)
         if saga_beastslayer_result is not None:
             return saga_beastslayer_result

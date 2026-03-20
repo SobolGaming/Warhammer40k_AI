@@ -18248,6 +18248,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bold_fn(self, game=game):
                     return True
+            great_wolf_fn = (
+                getattr(mgr, "saga_of_the_great_wolf_unrelenting_hunters_charge_after_advance_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(great_wolf_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if great_wolf_fn(self, game=game):
+                    return True
             liberator_fn = getattr(mgr, "liberator_can_charge_after_advance_applies", None) if mgr is not None else None
             if callable(liberator_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -18386,6 +18395,15 @@ class ActionsMovementMixin:
             if callable(unforgiven_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if unforgiven_fn(self, game=game):
+                    return True
+            great_wolf_fn = (
+                getattr(mgr, "saga_of_the_great_wolf_unrelenting_hunters_charge_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(great_wolf_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if great_wolf_fn(self, game=game):
                     return True
         except Exception:
             pass
