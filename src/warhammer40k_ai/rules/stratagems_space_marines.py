@@ -102,6 +102,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_stormlance_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_spearpoint_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_spearpoint_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_vanguard_spearhead_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_vanguard_spearhead", None) if mgr is not None else None
@@ -2480,6 +2485,109 @@ class SpaceMarinesStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_spearpoint_adeptus_astartes_phase_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_spearpoint_task_force_detachment():
+            return []
+        if str(phase_name or "").strip().lower() != "movement phase":
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_spearpoint_fight_phase_candidates(self) -> list[Any]:
+        if not self._is_spearpoint_task_force_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_spearpoint_evasive_manoeuvres_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        if not self._is_spearpoint_task_force_detachment():
+            return []
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return []
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            root_id = self._sm_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_spearpoint_hunters_instincts_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_spearpoint_task_force_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None or not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_spearpoint_withdraw_and_regroup_candidates(self) -> list[Any]:
+        if not self._is_spearpoint_task_force_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
 
     def _space_marines_vanguard_deadly_prize_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
         if not self._is_vanguard_spearhead_detachment():
@@ -11593,6 +11701,208 @@ class SpaceMarinesStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _queue_space_marines_spearpoint_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_spearpoint_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if player is not self.player or active_player is not self.player:
+            return
+
+        phase_reactions: tuple[tuple[str, str, list[Any]], ...] = ()
+        if phase_key == "MOVEMENT_PHASE":
+            phase_reactions = (
+                ("MOBILE LETHALITY", "Movement phase", self._space_marines_spearpoint_adeptus_astartes_phase_candidates(phase_name="Movement phase")),
+            )
+        elif phase_key == "FIGHT_PHASE":
+            phase_reactions = (
+                ("SPEAR THRUST AND SABRE SWING", "Fight phase", self._space_marines_spearpoint_fight_phase_candidates()),
+            )
+        if not phase_reactions:
+            return
+
+        for stratagem_name, phase_name, candidates in phase_reactions:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None or not candidates:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_spearpoint_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_spearpoint_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("WITHDRAW AND REGROUP")
+        candidates = self._space_marines_spearpoint_withdraw_and_regroup_candidates()
+        if stratagem is None or not candidates:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_spearpoint_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_spearpoint_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("HUNTER'S INSTINCTS") or self.get_by_name("HUNTER’S INSTINCTS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_spearpoint_hunters_instincts_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+            "action": str(action or ""),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_spearpoint_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_spearpoint_task_force_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("EVASIVE MANOEUVRES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_spearpoint_evasive_manoeuvres_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_spearpoint_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_spearpoint_task_force_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        mgr = self._sm_detachment_mgr()
+        clear_fn = getattr(mgr, "clear_spearpoint_mobile_lethality", None) if mgr is not None else None
+        if not callable(clear_fn):
+            return
+        seen: set[str] = set()
+        for root in self._sm_owned_army_roots():
+            root_id = self._sm_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            clear_fn(root)
+            self._sm_clear_ability_cache(root, "advance_and_shoot")
+            self._sm_clear_ability_cache(root, "fell_back_and_shoot")
+
     def _sm_firestorm_context(
         self,
         stratagem_name: str,
@@ -16688,6 +16998,378 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_space_marines_spear_thrust_and_sabre_swing(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, choice_payload, _action, _from_pending = self._sm_blade_context(
+            "SPEAR THRUST AND SABRE SWING",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_spearpoint_fight_phase_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: selected unit is not currently eligible")
+            return False
+
+        mounted_unit = self._sm_is_mounted_unit(root)
+        choice = "RED_THIRST" if mounted_unit else self._sm_liberator_choice_key(choice_payload, kind="red_rampage")
+        if not choice:
+            logger.error("ERROR: SPEAR THRUST AND SABRE SWING: choice must be LANCE or LETHAL_HITS")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "SPEAR THRUST AND SABRE SWING").strip() or "SPEAR THRUST AND SABRE SWING"
+        granted_keywords = ["LANCE", "LETHAL HITS"] if choice == "RED_THIRST" else [choice.replace("_", " ")]
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_spearpoint_spear_thrust_and_sabre_swing:{choice}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=list(granted_keywords),
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if choice == "RED_THIRST":
+            logger.info(
+                "INFO: SPEAR THRUST AND SABRE SWING: %s gains [LANCE] and [LETHAL HITS] on melee weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: SPEAR THRUST AND SABRE SWING: %s gains [%s] on melee weapons this phase.",
+                getattr(root, "name", "Unit"),
+                granted_keywords[0],
+            )
+        return True
+
+    def _use_space_marines_mobile_lethality(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MOBILE LETHALITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MOBILE LETHALITY: not your Movement phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_stormlance_context(
+            "MOBILE LETHALITY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: MOBILE LETHALITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: MOBILE LETHALITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: MOBILE LETHALITY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: MOBILE LETHALITY: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_spearpoint_adeptus_astartes_phase_candidates(
+            phase_name="Movement phase"
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: MOBILE LETHALITY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_spearpoint_mobile_lethality", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: MOBILE LETHALITY: Spearpoint detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "MOBILE LETHALITY"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: MOBILE LETHALITY: failed to apply shooting permissions")
+            return False
+        self._sm_clear_ability_cache(root, "advance_and_shoot")
+        self._sm_clear_ability_cache(root, "fell_back_and_shoot")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MOBILE LETHALITY: %s can shoot after Advancing or Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_evasive_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EVASIVE MANOEUVRES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: EVASIVE MANOEUVRES: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _action, _from_pending = self._sm_stormlance_context(
+            "EVASIVE MANOEUVRES",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: EVASIVE MANOEUVRES: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(trigger_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: EVASIVE MANOEUVRES: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: EVASIVE MANOEUVRES: attacking unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(attacking_root, require_targetable=False):
+            logger.error("ERROR: EVASIVE MANOEUVRES: attacking unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: EVASIVE MANOEUVRES: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: EVASIVE MANOEUVRES: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: EVASIVE MANOEUVRES: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+            logger.error("ERROR: EVASIVE MANOEUVRES: target must be a MOUNTED or FLY VEHICLE unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_spearpoint_evasive_manoeuvres_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: EVASIVE MANOEUVRES: target unit was not selected as an attack target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "EVASIVE MANOEUVRES").strip() or "EVASIVE MANOEUVRES"
+        self._append_defensive_effect(
+            root,
+            "defensive_hit_mods",
+            {
+                "value": 1,
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source,
+            },
+        )
+        self._append_defensive_effect(
+            root,
+            "defensive_wound_mods",
+            {
+                "value": 1,
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source,
+            },
+        )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EVASIVE MANOEUVRES: %s is -1 to hit and -1 to wound against ranged attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_hunters_instincts(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: HUNTER'S INSTINCTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: HUNTER'S INSTINCTS: not opponent's Movement phase")
+            return False
+
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_stormlance_context(
+            "HUNTER'S INSTINCTS",
+            kwargs,
+        )
+        if unit is None:
+            unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_stormlance_context(
+                "HUNTER’S INSTINCTS",
+                kwargs,
+            )
+        if unit is None:
+            logger.error("ERROR: HUNTER'S INSTINCTS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: HUNTER'S INSTINCTS: missing enemy movement trigger")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: HUNTER'S INSTINCTS: invalid trigger action")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: HUNTER'S INSTINCTS: trigger unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: HUNTER'S INSTINCTS: trigger unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: HUNTER'S INSTINCTS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: HUNTER'S INSTINCTS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: HUNTER'S INSTINCTS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: HUNTER'S INSTINCTS: target must be an INFANTRY or MOUNTED unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: HUNTER'S INSTINCTS: target must not be within Engagement Range")
+            return False
+        distance = self._sm_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: HUNTER'S INSTINCTS: target must be within 9\" of the enemy unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_spearpoint_hunters_instincts_candidates(enemy_unit=enemy_root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: HUNTER'S INSTINCTS: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: HUNTER'S INSTINCTS: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="hunters_instincts",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "HUNTER'S INSTINCTS"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: HUNTER'S INSTINCTS: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HUNTER'S INSTINCTS: %s can make a Normal move up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_withdraw_and_regroup(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: WITHDRAW AND REGROUP: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: WITHDRAW AND REGROUP: not opponent's Fight phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_stormlance_context(
+            "WITHDRAW AND REGROUP",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: WITHDRAW AND REGROUP: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: WITHDRAW AND REGROUP: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: WITHDRAW AND REGROUP: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: WITHDRAW AND REGROUP: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_mounted_unit(root) or self._sm_is_fly_vehicle_unit(root)):
+            logger.error("ERROR: WITHDRAW AND REGROUP: target must be a MOUNTED or FLY VEHICLE unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: WITHDRAW AND REGROUP: target cannot be within Engagement Range")
+            return False
+
+        valid_candidates = candidates or self._space_marines_spearpoint_withdraw_and_regroup_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: WITHDRAW AND REGROUP: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: WITHDRAW AND REGROUP: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if not self._sm_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "WITHDRAW AND REGROUP")):
+            logger.error("ERROR: WITHDRAW AND REGROUP: failed to place target into Strategic Reserves")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: WITHDRAW AND REGROUP: %s enters Strategic Reserves.", getattr(root, "name", "Unit"))
+        return True
+
     def _use_space_marines_firestorm_assault_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -16972,6 +17654,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_raptorial_vigilance(stratagem, **kwargs)
         if name_u == "STUNNING FUSILLADE":
             return self._use_space_marines_stunning_fusillade(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_spearpoint_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_spearpoint_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("’", "'")
+        if name_u == "SPEAR THRUST AND SABRE SWING":
+            return self._use_space_marines_spear_thrust_and_sabre_swing(stratagem, **kwargs)
+        if name_u == "MOBILE LETHALITY":
+            return self._use_space_marines_mobile_lethality(stratagem, **kwargs)
+        if name_u == "EVASIVE MANOEUVRES":
+            return self._use_space_marines_evasive_manoeuvres(stratagem, **kwargs)
+        if name_u == "WITHDRAW AND REGROUP":
+            return self._use_space_marines_withdraw_and_regroup(stratagem, **kwargs)
+        if name_u == "HUNTER'S INSTINCTS":
+            return self._use_space_marines_hunters_instincts(stratagem, **kwargs)
         return None
 
     def _use_space_marines_lions_blade_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

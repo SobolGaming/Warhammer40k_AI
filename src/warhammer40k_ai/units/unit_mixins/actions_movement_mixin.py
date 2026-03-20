@@ -17499,6 +17499,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(shadowmark_fn(self, game=game)):
                     return True
+            spearpoint_fn = (
+                getattr(mgr, "spearpoint_mobile_lethality_shoot_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(spearpoint_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(spearpoint_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -17789,6 +17798,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if shadowmark_fn(self, weapon_profile=profile, game=game):
                     return True
+            spearpoint_fn = getattr(mgr, "spearpoint_mobile_lethality_shoot_after_advance_applies", None) if mgr is not None else None
+            if callable(spearpoint_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if spearpoint_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:
@@ -17984,6 +17998,11 @@ class ActionsMovementMixin:
             if callable(liberator_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, weapon_profile=profile, game=game):
+                    return True
+            spearpoint_fn = getattr(mgr, "spearpoint_mobile_lethality_shoot_after_fall_back_applies", None) if mgr is not None else None
+            if callable(spearpoint_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if spearpoint_fn(self, weapon_profile=profile, game=game):
                     return True
             reclamation_fn = (
                 getattr(mgr, "reclamation_force_scions_of_guilliman_shoot_after_fall_back_applies", None)

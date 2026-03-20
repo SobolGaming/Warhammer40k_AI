@@ -11130,6 +11130,120 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             game=game,
         )
 
+    @staticmethod
+    def _spearpoint_mobile_lethality_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_spearpoint_mobile_lethality_active",
+            "space_marines_spearpoint_mobile_lethality_turn",
+            "space_marines_spearpoint_mobile_lethality_player_id",
+            "space_marines_spearpoint_mobile_lethality_source",
+            "space_marines_spearpoint_mobile_lethality_shoot_after_advance",
+            "space_marines_spearpoint_mobile_lethality_shoot_after_fall_back",
+        )
+
+    def clear_spearpoint_mobile_lethality(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._spearpoint_mobile_lethality_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_spearpoint_mobile_lethality(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Mobile Lethality",
+    ) -> bool:
+        if not self.is_spearpoint_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_spearpoint_mobile_lethality_active"] = True
+        sr["space_marines_spearpoint_mobile_lethality_turn"] = int(battle_round or 0)
+        sr["space_marines_spearpoint_mobile_lethality_player_id"] = str(player_id or "").strip()
+        sr["space_marines_spearpoint_mobile_lethality_source"] = (
+            str(source or "Mobile Lethality").strip() or "Mobile Lethality"
+        )
+        sr["space_marines_spearpoint_mobile_lethality_shoot_after_advance"] = True
+        sr["space_marines_spearpoint_mobile_lethality_shoot_after_fall_back"] = True
+        root.special_rules = sr
+        return True
+
+    def _spearpoint_mobile_lethality_applies(
+        self,
+        unit,
+        *,
+        required_move_flag: str,
+        effect_key: str,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if not self.is_spearpoint_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), str(required_move_flag or ""), False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_spearpoint_mobile_lethality_active")):
+            return False
+        if not bool(sr.get(effect_key, False)):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_player_id = str(sr.get("space_marines_spearpoint_mobile_lethality_player_id", "") or "").strip()
+        if effect_player_id and current_player_id and effect_player_id != current_player_id:
+            return False
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_turn = int(sr.get("space_marines_spearpoint_mobile_lethality_turn", 0) or 0)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def spearpoint_mobile_lethality_shoot_after_advance_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._spearpoint_mobile_lethality_applies(
+            unit,
+            required_move_flag="advanced_this_round",
+            effect_key="space_marines_spearpoint_mobile_lethality_shoot_after_advance",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def spearpoint_mobile_lethality_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._spearpoint_mobile_lethality_applies(
+            unit,
+            required_move_flag="fell_back_this_round",
+            effect_key="space_marines_spearpoint_mobile_lethality_shoot_after_fall_back",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
     def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_spearpoint_task_force():
             return False

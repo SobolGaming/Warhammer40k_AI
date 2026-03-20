@@ -20552,6 +20552,36 @@ def _stratagem_support(
             "End of opponent Fight phase: select up to two PHOBOS or Scout Squad units, or one other ADEPTUS ASTARTES INFANTRY unit, that are not within Engagement Range; selected units enter Strategic Reserves.",
             name_u,
         )
+    if stratagem_id == "000010630003":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected to fight gains either [LANCE] or [LETHAL HITS] on melee weapons until end of phase, or gains both abilities if it is a MOUNTED unit.",
+            name_u,
+        )
+    if stratagem_id == "000010630004":
+        return (
+            "Implemented",
+            "Your Movement phase: selected ADEPTUS ASTARTES unit can shoot after Advancing or Falling Back this turn.",
+            name_u,
+        )
+    if stratagem_id == "000010630005":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" and not within Engagement Range can make a Normal move of up to 6\".",
+            name_u,
+        )
+    if stratagem_id == "000010630006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES MOUNTED or FLY VEHICLE unit is -1 to hit and -1 to wound against ranged attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010630007":
+        return (
+            "Implemented",
+            "End of opponent Fight phase: selected ADEPTUS ASTARTES MOUNTED or FLY VEHICLE unit that is not within Engagement Range enters Strategic Reserves.",
+            name_u,
+        )
     if stratagem_id == "000009191004":
         return (
             "Implemented",

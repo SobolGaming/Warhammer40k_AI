@@ -191,6 +191,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DIABOLIC MAJESTY",
     "DRAWN TO THE SLAUGHTER",
     "EMBRACE THE PAIN",
+    "EVASIVE MANOEUVRES",
     "EXTINCTION ORDER",
     "ASPIRE TO INFAMY",
     "FAIL NOT THE BLOOD GOD",
@@ -202,6 +203,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
+    "HUNTER'S INSTINCTS",
+    "HUNTER’S INSTINCTS",
     "HUNTERS' TRAIL",
     "LAYERED WARDS",
     "LET DUTY BE YOUR SHIELD",
@@ -227,6 +230,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MARTIAL PERFECTION",
     "MASTERS OF THE VOID",
     "MIRAGE OF ECHOES",
+    "MOBILE LETHALITY",
     "MORDIAN MINUTE",
     "NEW ORDERS",
     "NO RETREAT!",
@@ -245,6 +249,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
     "SCINTILLATING TEMPO",
+    "SPEAR THRUST AND SABRE SWING",
     "PINNING FIRE",
     "THUNDEROUS PURSUIT",
     "TO THEIR FINAL BREATH",
@@ -253,6 +258,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SUPPRESS AND OVERWHELM",
     "SUMMONED BY SLAUGHTER",
     "WALL OF MIRRORS",
+    "WITHDRAW AND REGROUP",
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
@@ -587,6 +593,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "MACABRE RESILIENCE",
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
+    "EVASIVE MANOEUVRES",
     "HYPERSTIMMS",
     "ORBITAL OVERSIGHT",
     "FRENZIED RESILIENCE",
@@ -606,6 +613,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GO TO GROUND",
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
+    "HUNTER'S INSTINCTS",
+    "HUNTER’S INSTINCTS",
     "INSANE BRAVERY",
     "INTO DARKNESS",
     "NEW ORDERS",
@@ -637,6 +646,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SKYBORNE SANCTUARY",
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
+    "WITHDRAW AND REGROUP",
     "FOREWARNED",
     "WRAITHBONE ARMOUR",
     "CRUSHING STRIDES",
@@ -1782,6 +1792,8 @@ class StratagemManager(
             "SQUAD TACTICS",
             "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
+            "HUNTER'S INSTINCTS",
+            "HUNTER’S INSTINCTS",
             "A DEADLY PRIZE",
             "RAPTORIAL VIGILANCE",
             "THUNDEROUS PURSUIT",
@@ -1980,6 +1992,7 @@ class StratagemManager(
             "PSYCHIC SHIELD",
             "ILLUMINATING FIRE",
             "RIDE HARD, RIDE FAST",
+            "EVASIVE MANOEUVRES",
             "IMPETUOSITY",
         }
         fight_reaction_names = {
@@ -2109,6 +2122,7 @@ class StratagemManager(
             "RIGID DISCIPLINE",
             "GUERRILLA TACTICS",
             "INTO DARKNESS",
+            "WITHDRAW AND REGROUP",
             "COORDINATED STRIKE",
             "COUNTERCHARGE",
         }
@@ -2144,6 +2158,7 @@ class StratagemManager(
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
             "FEINT AND THRUST",
+            "MOBILE LETHALITY",
             "STRIKE FROM THE SHADOWS",
             "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
@@ -6153,6 +6168,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_spearpoint_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_librarius_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7287,6 +7306,7 @@ class StratagemManager(
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_vanguard_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_shadowmark_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_spearpoint_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_godhammer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_lions_blade_phase_end_reactions(player=player, phase=phase)
@@ -7306,6 +7326,7 @@ class StratagemManager(
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
             self._cleanup_space_marines_shadowmark_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_spearpoint_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_hunter_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(phase=phase)
@@ -9240,6 +9261,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_spearpoint_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_shadowmark_move_end_reactions(unit=unit, action=action)
         self._process_space_marines_vanguard_deadly_prize_move_end(unit=unit, action=action)
         self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
@@ -10353,6 +10375,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_stormlance_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_spearpoint_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16846,6 +16875,9 @@ class StratagemManager(
         shadowmark_result = self._use_space_marines_shadowmark_talon_stratagem(s, **kwargs)
         if shadowmark_result is not None:
             return shadowmark_result
+        spearpoint_result = self._use_space_marines_spearpoint_task_force_stratagem(s, **kwargs)
+        if spearpoint_result is not None:
+            return spearpoint_result
         firestorm_result = self._use_space_marines_firestorm_assault_force_stratagem(s, **kwargs)
         if firestorm_result is not None:
             return firestorm_result
