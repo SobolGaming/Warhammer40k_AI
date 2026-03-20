@@ -9409,6 +9409,21 @@ class WargearProfile:
                 telepathy_rule = None
             if isinstance(telepathy_rule, dict) and telepathy_rule:
                 return telepathy_rule
+        vindication_rule_fn = (
+            getattr(sm_mgr, "vindication_spoor_of_the_unholy_ignore_hit_modifiers_rule", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(vindication_rule_fn):
+            try:
+                vindication_rule = vindication_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                vindication_rule = None
+            if isinstance(vindication_rule, dict) and vindication_rule:
+                return vindication_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None
@@ -11099,6 +11114,27 @@ class WargearProfile:
                 bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
                 if bonus:
                     source_name = str(source or "Ancient Fury").strip() or "Ancient Fury"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
+        # Space Marines: Vindication Task Force (Reclaim Our Honour!) +1 to hit
+        # against the enemy unit marked by the stratagem until end of battle.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "vindication_reclaim_our_honour_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if bonus:
+                    source_name = str(source or "Reclaim Our Honour!").strip() or "Reclaim Our Honour!"
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass

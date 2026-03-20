@@ -4075,6 +4075,156 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self._attached_unit_is_crusader_squad(root)
 
+    @staticmethod
+    def _vindication_spoor_of_the_unholy_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_vindication_spoor_of_the_unholy_active",
+            "space_marines_vindication_spoor_of_the_unholy_expires_phase",
+            "space_marines_vindication_spoor_of_the_unholy_turn_owner",
+            "space_marines_vindication_spoor_of_the_unholy_turn",
+            "space_marines_vindication_spoor_of_the_unholy_source",
+        )
+
+    def clear_vindication_spoor_of_the_unholy(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._vindication_spoor_of_the_unholy_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def vindication_spoor_of_the_unholy_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        if not self.is_vindication_task_force():
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None
+        except Exception:
+            return None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_vindication_spoor_of_the_unholy_active"))):
+            return None
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+            expected_phase = str(sr.get("space_marines_vindication_spoor_of_the_unholy_expires_phase", "") or "").strip().upper()
+            if expected_phase and current_phase and expected_phase != current_phase:
+                self.clear_vindication_spoor_of_the_unholy(root)
+                return None
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get("space_marines_vindication_spoor_of_the_unholy_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                self.clear_vindication_spoor_of_the_unholy(root)
+                return None
+            owner_id = str(sr.get("space_marines_vindication_spoor_of_the_unholy_turn_owner", "") or "")
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                self.clear_vindication_spoor_of_the_unholy(root)
+                return None
+        source = str(sr.get("space_marines_vindication_spoor_of_the_unholy_source", "") or "Spoor of the Unholy").strip()
+        if not source:
+            source = "Spoor of the Unholy"
+        return {
+            "name": source,
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def set_vindication_reclaim_our_honour(
+        self,
+        enemy_unit,
+        *,
+        player_id: str = "",
+        source: str = "Reclaim Our Honour!",
+    ) -> bool:
+        if not self.is_vindication_task_force():
+            return False
+        root = self._attached_unit_root(enemy_unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_vindication_reclaim_our_honour_active"] = True
+        sr["space_marines_vindication_reclaim_our_honour_hit_bonus"] = 1
+        sr["space_marines_vindication_reclaim_our_honour_player_id"] = str(player_id or "").strip()
+        sr["space_marines_vindication_reclaim_our_honour_source"] = (
+            str(source or "Reclaim Our Honour!").strip() or "Reclaim Our Honour!"
+        )
+        root.special_rules = sr
+        return True
+
+    def vindication_reclaim_our_honour_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        _ = attack_instance
+        _ = game
+        if not self.is_vindication_task_force():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return 0, ""
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(attacker_root):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        sr = getattr(target_root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_vindication_reclaim_our_honour_active"))):
+            return 0, ""
+        owner_id = str(sr.get("space_marines_vindication_reclaim_our_honour_player_id", "") or "")
+        current_owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return 0, ""
+        try:
+            bonus = int(sr.get("space_marines_vindication_reclaim_our_honour_hit_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("space_marines_vindication_reclaim_our_honour_source", "") or "Reclaim Our Honour!").strip()
+        if not source:
+            source = "Reclaim Our Honour!"
+        return int(bonus), source
+
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:
             return False

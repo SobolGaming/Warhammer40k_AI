@@ -6549,6 +6549,21 @@ _UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME = {
 }
 
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010397002": StratagemToolDescriptor(
+        stratagem_id="000010397002",
+        name="Refusal to Yield",
+        timing="any_phase_on_friendly_ancient_model_destroyed",
+        target="just_destroyed_adeptus_astartes_ancient_model_once_per_battle_per_model",
+        duration="end_of_phase",
+        effect="return_destroyed_model_full_wounds_as_close_as_possible_not_in_engagement",
+        cp_cost=1,
+        effect_params={
+            "return_timing": "end_of_phase",
+            "wounds_fraction": 1.0,
+            "once_per_battle_per_model": True,
+            "not_within_engagement_range": True,
+        },
+    ),
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
         name="Litanies of Purgation",
@@ -6561,6 +6576,48 @@ _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor
             "attack_type": "melee",
             "ap_bonus": 1,
             "requires_attacker_or_target_within_objective_range": True,
+        },
+    ),
+    "000010397004": StratagemToolDescriptor(
+        stratagem_id="000010397004",
+        name="Spoor of the Unholy",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="ranged_weapons_gain_ignores_cover_and_ignore_skill_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "grant_ranged_keywords": ["IGNORES COVER"],
+            "ignore_modifiers": ["ballistic_skill", "weapon_skill", "hit_roll"],
+        },
+    ),
+    "000010397005": StratagemToolDescriptor(
+        stratagem_id="000010397005",
+        name="Reclaim Our Honour!",
+        timing="shooting_or_fight_phase_after_enemy_destroys_friendly_ancient_model",
+        target="adeptus_astartes_unit_visible_to_destroying_enemy",
+        duration="until_end_of_battle",
+        effect="mark_enemy_for_armywide_hit_bonus",
+        cp_cost=1,
+        effect_params={
+            "hit_bonus": 1,
+            "applies_against_destroying_enemy_only": True,
+            "attacker_required_keywords_all": ["ADEPTUS ASTARTES"],
+        },
+    ),
+    "000010397007": StratagemToolDescriptor(
+        stratagem_id="000010397007",
+        name="Perfervid Intervention",
+        timing="end_of_opponent_charge_phase",
+        target="adeptus_astartes_unit_within_6_of_enemy_unit_it_can_charge",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "count_as_charged": False,
+            "force_single_target": True,
         },
     ),
 }

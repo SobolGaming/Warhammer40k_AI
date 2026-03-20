@@ -242,9 +242,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAPID REAPPRAISAL",
     "RED RAMPAGE",
     "REDIRECTED STRIKE",
+    "RECLAIM OUR HONOUR!",
     "REFUSAL TO BE OUTDONE",
+    "REFUSAL TO YIELD",
     "MEET FORCE WITH FORCE",
     "OVERSHADOWED BY NONE",
+    "PERFERVID INTERVENTION",
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
@@ -255,6 +258,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
+    "SPOOR OF THE UNHOLY",
     "SUPPRESS AND OVERWHELM",
     "SUMMONED BY SLAUGHTER",
     "WALL OF MIRRORS",
@@ -1838,7 +1842,14 @@ class StratagemManager(
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
-        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION", "REVENGE OF THE RUBRICAE"}:
+        if names & {
+            "SKULLS FOR THE SKULL THRONE!",
+            "FICKLEFIRE",
+            "GORY DEDICATION",
+            "RECLAIM OUR HONOUR!",
+            "REFUSAL TO YIELD",
+            "REVENGE OF THE RUBRICAE",
+        }:
             add("model_destroyed", self._on_model_destroyed)
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH", "VENGEFUL ANIMUS"}:
@@ -6268,6 +6279,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_vindication_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7317,6 +7332,7 @@ class StratagemManager(
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_saga_of_the_beastslayer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_saga_of_the_bold_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_vindication_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
@@ -7330,6 +7346,7 @@ class StratagemManager(
             self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_hunter_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(phase=phase)
+            self._resolve_space_marines_vindication_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -13395,6 +13412,15 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 target_model=target_model,
                 target_unit=target_unit,
+                weapon_profile=weapon_profile,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_vindication_model_destroyed_reactions(
+                attacker_unit=attacker_unit,
+                target_unit=target_unit,
+                target_model=target_model,
                 weapon_profile=weapon_profile,
             )
         except Exception:
