@@ -117,13 +117,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HERESY UNDONE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
+    "INESCAPABLE JUSTICE",
     "INTRACTABLE",
     "IMPETUOSITY",
     "INSPIRING PRESENCE",
     "INSTANT OF GRACE",
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
+    "LEONINE AGGRESSION",
     "LIGHT OF VENGEANCE",
+    "LION'S WILL",
     "LOST TO RAGE",
     "MERCY IS WEAKNESS",
     "NO THREAT TOO GREAT",
@@ -138,6 +141,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PREYTAKER’S EYE",
     "EYE OF THE PACK",
     "RELENTLESS ASSAULT",
+    "RELICS OF THE DARK AGE",
     "RIGID DISCIPLINE",
     "RUNES OF CLAIMING",
     "SAVAGE ECHOES",
@@ -266,6 +270,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "TACTICAL MASTERY",
     "TALON STRIKE",
     "THUNDERSTOMP",
     "TERRIFYING SPECTACLE",
@@ -606,6 +611,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GUIDED DISRUPTION",
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
+    "INESCAPABLE JUSTICE",
     "GLIMMERSHIFT PORTAL",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
@@ -1839,6 +1845,7 @@ class StratagemManager(
             "SUSTAINED BY AGONY",
             "ECSTATIC SLAUGHTER",
             "TERRIFYING PROFICIENCY",
+            "INESCAPABLE JUSTICE",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -1979,8 +1986,9 @@ class StratagemManager(
             "BRAZEN CONTEMPT",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
-            "LIGHTNING-FAST REACTIONS",
-            "MACABRE RESILIENCE",
+    "LIGHTNING-FAST REACTIONS",
+    "LEONINE AGGRESSION",
+    "MACABRE RESILIENCE",
             "UNYIELDING FORMS",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
@@ -2136,6 +2144,7 @@ class StratagemManager(
             "WITHDRAW AND REGROUP",
             "COORDINATED STRIKE",
             "COUNTERCHARGE",
+            "LEONINE AGGRESSION",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -6283,6 +6292,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_wrath_of_the_rock_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7333,6 +7346,7 @@ class StratagemManager(
             self._queue_space_marines_saga_of_the_beastslayer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_saga_of_the_bold_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_vindication_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_wrath_of_the_rock_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
@@ -13900,6 +13914,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_space_marines_wrath_of_the_rock_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         self._queue_shadow_legion_unit_destroyed_reactions(
             unit=unit,
             last_model=last_model,
@@ -16961,6 +16982,9 @@ class StratagemManager(
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result
+        wrath_of_the_rock_result = self._use_space_marines_wrath_of_the_rock_stratagem(s, **kwargs)
+        if wrath_of_the_rock_result is not None:
+            return wrath_of_the_rock_result
         saga_bold_result = self._use_space_marines_saga_of_the_bold_stratagem(s, **kwargs)
         if saga_bold_result is not None:
             return saga_bold_result

@@ -17803,6 +17803,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if spearpoint_fn(self, weapon_profile=profile, game=game):
                     return True
+            tactical_mastery_fn = (
+                getattr(mgr, "wrath_of_the_rock_tactical_mastery_shoot_after_advance_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tactical_mastery_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if tactical_mastery_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:
@@ -18017,6 +18026,15 @@ class ActionsMovementMixin:
             if callable(unforgiven_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if unforgiven_fn(self, weapon_profile=profile, game=game):
+                    return True
+            tactical_mastery_fn = (
+                getattr(mgr, "wrath_of_the_rock_tactical_mastery_shoot_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tactical_mastery_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if tactical_mastery_fn(self, weapon_profile=profile, game=game):
                     return True
         except Exception:
             pass
@@ -18391,6 +18409,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if shadowmark_fn(self, game=game):
                     return True
+            tactical_mastery_fn = (
+                getattr(mgr, "wrath_of_the_rock_tactical_mastery_charge_after_advance_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tactical_mastery_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if tactical_mastery_fn(self, game=game):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()
@@ -18541,6 +18568,15 @@ class ActionsMovementMixin:
             if callable(unforgiven_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if unforgiven_fn(self, game=game):
+                    return True
+            tactical_mastery_fn = (
+                getattr(mgr, "wrath_of_the_rock_tactical_mastery_charge_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tactical_mastery_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if tactical_mastery_fn(self, game=game):
                     return True
             great_wolf_fn = (
                 getattr(mgr, "saga_of_the_great_wolf_unrelenting_hunters_charge_after_fall_back_applies", None)

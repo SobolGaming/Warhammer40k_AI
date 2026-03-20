@@ -11117,6 +11117,21 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Space Marines: Wrath of the Rock (Lion's Will) +1 to hit
+        # until end of turn for non-Deathwing, non-Ravenwing, non-VEHICLE units.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "wrath_of_the_rock_lions_will_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if bonus:
+                    source_name = str(source or "Lion's Will").strip() or "Lion's Will"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
         # Space Marines: Vindication Task Force (Reclaim Our Honour!) +1 to hit
         # against the enemy unit marked by the stratagem until end of battle.
         try:

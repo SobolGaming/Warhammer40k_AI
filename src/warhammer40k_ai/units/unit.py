@@ -637,6 +637,17 @@ class Unit(
                 if int(ironstorm_bonus or 0):
                     source = str(ironstorm_source or "Ancient Fury").strip() or "Ancient Fury"
                     mods.append(Modifier(ModifierOp.ADD, int(ironstorm_bonus), source=f"detachment:{source}"))
+                try:
+                    rock_bonus, rock_source = sm_mgr.wrath_of_the_rock_lions_will_objective_control_bonus(
+                        model,
+                        unit=self,
+                        game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                    )
+                except Exception:
+                    rock_bonus, rock_source = 0, ""
+                if int(rock_bonus or 0):
+                    source = str(rock_source or "Lion's Will").strip() or "Lion's Will"
+                    mods.append(Modifier(ModifierOp.ADD, int(rock_bonus), source=f"detachment:{source}"))
 
             # Stoic Defender (Anvil Siege Force): while leading, Battle-shocked models in the
             # bearer's unit halve Objective Control instead of setting it to 0.

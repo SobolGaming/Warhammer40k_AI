@@ -6626,6 +6626,83 @@ _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WRATH_OF_THE_ROCK_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010161002": StratagemToolDescriptor(
+        stratagem_id="000010161002",
+        name="Inescapable Justice",
+        timing="any_phase_after_oath_of_moment_target_destroyed",
+        target="adeptus_astartes_character_unit_on_battlefield",
+        duration="until_start_of_next_command_phase",
+        effect="reassign_oath_of_moment_target_from_visible_character",
+        cp_cost=2,
+        range_in=12.0,
+        effect_params={
+            "secondary_target": "enemy_unit_visible_to_target",
+            "reassigns_oath_of_moment_target": True,
+        },
+    ),
+    "000010161003": StratagemToolDescriptor(
+        stratagem_id="000010161003",
+        name="Lion's Will",
+        timing="command_phase",
+        target="adeptus_astartes_unit_within_engagement_range",
+        duration="mixed",
+        effect="objective_control_until_next_command_phase_and_conditional_hit_bonus_until_end_of_turn",
+        cp_cost=1,
+        effect_params={
+            "objective_control_bonus": 1,
+            "hit_bonus": 1,
+            "hit_bonus_excluded_keywords_any": ["DEATHWING", "RAVENWING", "VEHICLE"],
+        },
+    ),
+    "000010161005": StratagemToolDescriptor(
+        stratagem_id="000010161005",
+        name="Tactical Mastery",
+        timing="movement_phase",
+        target="adeptus_astartes_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_with_ravenwing_fallback_extension",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "charge_after_advance": True,
+            "shoot_after_fall_back_required_keyword": "RAVENWING",
+            "charge_after_fall_back_required_keyword": "RAVENWING",
+        },
+    ),
+    "000010161006": StratagemToolDescriptor(
+        stratagem_id="000010161006",
+        name="Relics of the Dark Age",
+        timing="shooting_phase",
+        target="adeptus_astartes_infantry_or_mounted_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_weapons_gain_plus_two_strength",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "strength_bonus": 2,
+        },
+    ),
+    "000010161007": StratagemToolDescriptor(
+        stratagem_id="000010161007",
+        name="Leonine Aggression",
+        timing="end_of_opponent_charge_phase",
+        target="adeptus_astartes_unit_within_3_or_deathwing_within_6_of_enemy_unit_it_can_charge",
+        duration="immediate",
+        effect="out_of_turn_charge",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "extended_range_keyword": "DEATHWING",
+        },
+    ),
+}
+
+_WRATH_OF_THE_ROCK_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WRATH_OF_THE_ROCK_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010198007": StratagemToolDescriptor(
         stratagem_id="000010198007",
@@ -7349,6 +7426,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WRATH_OF_THE_ROCK_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7465,6 +7545,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SAGA_OF_THE_HUNTER_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _WRATH_OF_THE_ROCK_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)

@@ -11445,6 +11445,279 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Dutiful Tenacity"
 
+    @staticmethod
+    def _wrath_of_the_rock_lions_will_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_wrath_of_the_rock_lions_will_active",
+            "space_marines_wrath_of_the_rock_lions_will_turn",
+            "space_marines_wrath_of_the_rock_lions_will_turn_player_id",
+            "space_marines_wrath_of_the_rock_lions_will_owner_id",
+            "space_marines_wrath_of_the_rock_lions_will_expires_turn",
+            "space_marines_wrath_of_the_rock_lions_will_source",
+            "space_marines_wrath_of_the_rock_lions_will_objective_control_bonus",
+            "space_marines_wrath_of_the_rock_lions_will_hit_bonus",
+        )
+
+    def clear_wrath_of_the_rock_lions_will(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._wrath_of_the_rock_lions_will_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_wrath_of_the_rock_lions_will(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        active_player_id: str = "",
+        owner_player_id: str = "",
+        source: str = "Lion's Will",
+    ) -> bool:
+        if not self.is_wrath_of_the_rock():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = str(owner_player_id or "").strip()
+        turn_player_id = str(active_player_id or "").strip()
+        turn_now = int(battle_round or 0)
+        expires_turn = int(turn_now + 1) if (owner_id and turn_player_id == owner_id) else int(turn_now)
+        sr["space_marines_wrath_of_the_rock_lions_will_active"] = True
+        sr["space_marines_wrath_of_the_rock_lions_will_turn"] = int(turn_now)
+        sr["space_marines_wrath_of_the_rock_lions_will_turn_player_id"] = turn_player_id
+        sr["space_marines_wrath_of_the_rock_lions_will_owner_id"] = owner_id
+        sr["space_marines_wrath_of_the_rock_lions_will_expires_turn"] = int(expires_turn)
+        sr["space_marines_wrath_of_the_rock_lions_will_source"] = (
+            str(source or "Lion's Will").strip() or "Lion's Will"
+        )
+        sr["space_marines_wrath_of_the_rock_lions_will_objective_control_bonus"] = 1
+        sr["space_marines_wrath_of_the_rock_lions_will_hit_bonus"] = 1
+        root.special_rules = sr
+        return True
+
+    def _wrath_of_the_rock_lions_will_context(self, unit, *, game=None) -> tuple[bool, bool, str]:
+        if not self.is_wrath_of_the_rock():
+            return False, False, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False, False, ""
+        if root.get_parent_army() is not self.army:
+            return False, False, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_wrath_of_the_rock_lions_will_active")):
+            return False, False, ""
+        source = str(sr.get("space_marines_wrath_of_the_rock_lions_will_source", "") or "Lion's Will").strip()
+        if not source:
+            source = "Lion's Will"
+        oc_active = True
+        hit_active = True
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            owner_id = str(sr.get("space_marines_wrath_of_the_rock_lions_will_owner_id", "") or "").strip()
+            expires_turn = int(sr.get("space_marines_wrath_of_the_rock_lions_will_expires_turn", 0) or 0)
+            if expires_turn and current_turn:
+                if current_turn > expires_turn:
+                    oc_active = False
+                elif current_turn == expires_turn and owner_id and current_player_id == owner_id:
+                    oc_active = False
+            effect_turn = int(sr.get("space_marines_wrath_of_the_rock_lions_will_turn", 0) or 0)
+            effect_player_id = str(sr.get("space_marines_wrath_of_the_rock_lions_will_turn_player_id", "") or "").strip()
+            if effect_turn and current_turn and effect_turn != current_turn:
+                hit_active = False
+            if effect_player_id and current_player_id and effect_player_id != current_player_id:
+                hit_active = False
+            if not oc_active and not hit_active:
+                self.clear_wrath_of_the_rock_lions_will(root)
+                return False, False, ""
+        return oc_active, hit_active, source
+
+    def wrath_of_the_rock_lions_will_objective_control_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        root = self._attached_unit_root(unit or getattr(model, "parent_unit", None))
+        oc_active, _hit_active, source = self._wrath_of_the_rock_lions_will_context(root, game=game)
+        if not oc_active:
+            return 0, ""
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_wrath_of_the_rock_lions_will_objective_control_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    def wrath_of_the_rock_lions_will_hit_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = weapon_profile
+        if attacker_model is None:
+            return 0, ""
+        root = self._attached_unit_root(getattr(attacker_model, "parent_unit", None))
+        _oc_active, hit_active, source = self._wrath_of_the_rock_lions_will_context(root, game=game)
+        if not hit_active:
+            return 0, ""
+        if self._attached_unit_has_keyword(root, "DEATHWING"):
+            return 0, ""
+        if self._attached_unit_has_keyword(root, "RAVENWING"):
+            return 0, ""
+        if self._attached_unit_has_keyword(root, "VEHICLE"):
+            return 0, ""
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        try:
+            bonus = int(sr.get("space_marines_wrath_of_the_rock_lions_will_hit_bonus", 1) or 1)
+        except (TypeError, ValueError, AttributeError):
+            bonus = 1
+        return (int(bonus), source) if int(bonus or 0) else (0, "")
+
+    @staticmethod
+    def _wrath_of_the_rock_tactical_mastery_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_wrath_of_the_rock_tactical_mastery_active",
+            "space_marines_wrath_of_the_rock_tactical_mastery_turn",
+            "space_marines_wrath_of_the_rock_tactical_mastery_player_id",
+            "space_marines_wrath_of_the_rock_tactical_mastery_source",
+            "space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_advance",
+            "space_marines_wrath_of_the_rock_tactical_mastery_charge_after_advance",
+            "space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_fall_back",
+            "space_marines_wrath_of_the_rock_tactical_mastery_charge_after_fall_back",
+        )
+
+    def clear_wrath_of_the_rock_tactical_mastery(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._wrath_of_the_rock_tactical_mastery_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_wrath_of_the_rock_tactical_mastery(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Tactical Mastery",
+    ) -> bool:
+        if not self.is_wrath_of_the_rock():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        is_ravenwing = self._attached_unit_has_keyword(root, "RAVENWING")
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_active"] = True
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_turn"] = int(battle_round or 0)
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_player_id"] = str(player_id or "").strip()
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_source"] = (
+            str(source or "Tactical Mastery").strip() or "Tactical Mastery"
+        )
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_advance"] = True
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_charge_after_advance"] = True
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_fall_back"] = bool(is_ravenwing)
+        sr["space_marines_wrath_of_the_rock_tactical_mastery_charge_after_fall_back"] = bool(is_ravenwing)
+        root.special_rules = sr
+        return True
+
+    def _wrath_of_the_rock_tactical_mastery_applies(
+        self,
+        unit,
+        *,
+        required_move_flag: str,
+        effect_key: str,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if not self.is_wrath_of_the_rock():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), str(required_move_flag or ""), False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_wrath_of_the_rock_tactical_mastery_active")):
+            return False
+        if not bool(sr.get(effect_key, False)):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_player_id = str(sr.get("space_marines_wrath_of_the_rock_tactical_mastery_player_id", "") or "").strip()
+        if effect_player_id and current_player_id and effect_player_id != current_player_id:
+            return False
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_turn = int(sr.get("space_marines_wrath_of_the_rock_tactical_mastery_turn", 0) or 0)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def wrath_of_the_rock_tactical_mastery_shoot_after_advance_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._wrath_of_the_rock_tactical_mastery_applies(
+            unit,
+            required_move_flag="advanced_this_round",
+            effect_key="space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_advance",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def wrath_of_the_rock_tactical_mastery_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._wrath_of_the_rock_tactical_mastery_applies(
+            unit,
+            required_move_flag="fell_back_this_round",
+            effect_key="space_marines_wrath_of_the_rock_tactical_mastery_shoot_after_fall_back",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def wrath_of_the_rock_tactical_mastery_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._wrath_of_the_rock_tactical_mastery_applies(
+            unit,
+            required_move_flag="advanced_this_round",
+            effect_key="space_marines_wrath_of_the_rock_tactical_mastery_charge_after_advance",
+            game=game,
+        )
+
+    def wrath_of_the_rock_tactical_mastery_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        return self._wrath_of_the_rock_tactical_mastery_applies(
+            unit,
+            required_move_flag="fell_back_this_round",
+            effect_key="space_marines_wrath_of_the_rock_tactical_mastery_charge_after_fall_back",
+            game=game,
+        )
+
     def wrath_of_the_rock_tempered_in_battle_reroll_sources(self, unit, *, game=None) -> list[str]:
         if not self.is_wrath_of_the_rock():
             return []

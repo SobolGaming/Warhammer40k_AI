@@ -185,6 +185,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_vindication_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_wrath_of_the_rock_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_wrath_of_the_rock", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_angelic_inheritors_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_angelic_inheritors", None) if mgr is not None else None
@@ -4139,6 +4144,163 @@ class SpaceMarinesStratagemMixin:
             return True
         return "ancient" in str(getattr(root, "name", "") or "").strip().lower()
 
+    def _space_marines_wrath_of_the_rock_lions_will_candidates(self) -> list[Any]:
+        if not self._is_wrath_of_the_rock_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_unit_is_engaged(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_wrath_of_the_rock_tactical_mastery_candidates(self) -> list[Any]:
+        if not self._is_wrath_of_the_rock_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_wrath_of_the_rock_relics_of_the_dark_age_candidates(self) -> list[Any]:
+        if not self._is_wrath_of_the_rock_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_wrath_of_the_rock_inescapable_justice_candidates(
+        self,
+        *,
+        exclude_enemy_unit: Any = None,
+    ) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_wrath_of_the_rock_detachment():
+            return ([], {})
+        excluded_enemy_root = self._sm_root(exclude_enemy_unit)
+        candidates: list[Any] = []
+        enemy_map: dict[str, list[Any]] = {}
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_character_unit(root):
+                continue
+            enemy_candidates: list[Any] = []
+            for enemy_root in self._sm_enemy_army_roots():
+                if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                if excluded_enemy_root is not None and self._sm_root(enemy_root) is excluded_enemy_root:
+                    continue
+                distance = self._sm_distance_between_units(root, enemy_root)
+                if distance is None or distance > 12.0 + 1e-6:
+                    continue
+                if not self._sm_unit_visible_to_unit(root, enemy_root):
+                    continue
+                enemy_candidates.append(enemy_root)
+            enemy_candidates.sort(key=self._sm_sort_key)
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            enemy_map[self._sm_sort_key(root)] = list(enemy_candidates)
+        return (sorted(candidates, key=self._sm_sort_key), enemy_map)
+
+    def _space_marines_wrath_of_the_rock_leonine_aggression_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_wrath_of_the_rock_detachment():
+            return ([], {})
+        candidates: list[Any] = []
+        enemy_map: dict[str, list[Any]] = {}
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            max_distance = 6.0 if self._sm_is_deathwing_unit(root) else 3.0
+            can_charge = getattr(root, "can_declare_charge_against", None)
+            if not callable(can_charge):
+                continue
+            enemy_candidates: list[Any] = []
+            for enemy_root in self._sm_enemy_army_roots():
+                if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                distance = self._sm_distance_between_units(root, enemy_root)
+                if distance is None or distance > float(max_distance) + 1e-6:
+                    continue
+                try:
+                    if not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+                        continue
+                except Exception:
+                    continue
+                enemy_candidates.append(enemy_root)
+            enemy_candidates.sort(key=self._sm_sort_key)
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            enemy_map[self._sm_sort_key(root)] = list(enemy_candidates)
+        return (sorted(candidates, key=self._sm_sort_key), enemy_map)
+
     def _space_marines_anvil_shooting_candidates(self) -> list[Any]:
         if not self._is_anvil_siege_force_detachment():
             return []
@@ -6439,6 +6601,170 @@ class SpaceMarinesStratagemMixin:
             "phase_name": "Charge phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            enemy_candidates = list(enemy_map.get(self._sm_sort_key(candidates[0])) or [])
+            if enemy_candidates:
+                payload["enemy_candidates"] = enemy_candidates
+                if len(enemy_candidates) == 1:
+                    payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_wrath_of_the_rock_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_wrath_of_the_rock_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        planned: list[tuple[str, str, list[Any]]] = []
+        if phase_key == "COMMAND_PHASE":
+            planned.append(
+                (
+                    "LION'S WILL",
+                    "Command phase",
+                    self._space_marines_wrath_of_the_rock_lions_will_candidates(),
+                )
+            )
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            planned.append(
+                (
+                    "TACTICAL MASTERY",
+                    "Movement phase",
+                    self._space_marines_wrath_of_the_rock_tactical_mastery_candidates(),
+                )
+            )
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            planned.append(
+                (
+                    "RELICS OF THE DARK AGE",
+                    "Shooting phase",
+                    self._space_marines_wrath_of_the_rock_relics_of_the_dark_age_candidates(),
+                )
+            )
+        for stratagem_name, phase_name, candidates in list(planned):
+            if not candidates:
+                continue
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_wrath_of_the_rock_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        _ = player
+        if not self._is_wrath_of_the_rock_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "CHARGE_PHASE":
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "charge phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("LEONINE AGGRESSION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, enemy_map = self._space_marines_wrath_of_the_rock_leonine_aggression_candidates()
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            enemy_candidates = list(enemy_map.get(self._sm_sort_key(candidates[0])) or [])
+            if enemy_candidates:
+                payload["enemy_candidates"] = enemy_candidates
+                if len(enemy_candidates) == 1:
+                    payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_wrath_of_the_rock_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        _ = destroyed_by_unit
+        if not self._is_wrath_of_the_rock_detachment():
+            return
+        destroyed_root = self._sm_root(destroyed_unit)
+        if destroyed_root is None or self._sm_owned_by_player(destroyed_root, self.player):
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+        is_oath_target = getattr(oath_mgr, "is_oath_target", None) if oath_mgr is not None else None
+        if not callable(is_oath_target) or not bool(is_oath_target(destroyed_root)):
+            return
+        stratagem = self.get_by_name("INESCAPABLE JUSTICE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, enemy_map = self._space_marines_wrath_of_the_rock_inescapable_justice_candidates(
+            exclude_enemy_unit=destroyed_root,
+        )
+        if not candidates:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip()
+        if not phase_name and self.game is not None:
+            phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "").replace("_", " ").title()
+        if self._sm_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "unit_destroyed",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": destroyed_root,
             "candidates": candidates,
             "enemy_candidates_by_unit": enemy_map,
         }
@@ -18298,6 +18624,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_spoor_of_the_unholy(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_wrath_of_the_rock_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_wrath_of_the_rock_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("’", "'")
+        if name_u == "INESCAPABLE JUSTICE":
+            return self._use_space_marines_inescapable_justice(stratagem, **kwargs)
+        if name_u == "LEONINE AGGRESSION":
+            return self._use_space_marines_leonine_aggression(stratagem, **kwargs)
+        if name_u == "LION'S WILL":
+            return self._use_space_marines_lions_will(stratagem, **kwargs)
+        if name_u == "RELICS OF THE DARK AGE":
+            return self._use_space_marines_relics_of_the_dark_age(stratagem, **kwargs)
+        if name_u == "TACTICAL MASTERY":
+            return self._use_space_marines_tactical_mastery(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_angelic_inheritors_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -21954,6 +22298,83 @@ class SpaceMarinesStratagemMixin:
             action,
             from_pending,
         )
+
+    def _space_marines_wrath_of_the_rock_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], dict[str, list[Any]] | None, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or kwargs.get("target_candidates") or [])
+        enemy_candidates_by_unit = kwargs.get("enemy_candidates_by_unit")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or reaction.get("target_candidates") or [])
+            if enemy_candidates_by_unit is None:
+                enemy_candidates_by_unit = reaction.get("enemy_candidates_by_unit")
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._sm_root(unit)
+        if root is not None and not enemy_candidates and hasattr(enemy_candidates_by_unit, "get"):
+            enemy_candidates = list(enemy_candidates_by_unit.get(self._sm_sort_key(root)) or [])
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        return (unit, candidates, enemy_unit, enemy_candidates, enemy_candidates_by_unit, from_pending)
+
+    def _space_marines_wrath_of_the_rock_destroyed_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, Any, list[Any], Any, list[Any], dict[str, list[Any]] | None, bool]:
+        destroyed_unit = kwargs.get("destroyed_unit")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or kwargs.get("target_candidates") or [])
+        enemy_candidates_by_unit = kwargs.get("enemy_candidates_by_unit")
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if destroyed_unit is None:
+                destroyed_unit = reaction.get("destroyed_unit")
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or reaction.get("target_candidates") or [])
+            if enemy_candidates_by_unit is None:
+                enemy_candidates_by_unit = reaction.get("enemy_candidates_by_unit")
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._sm_root(unit)
+        if root is not None and not enemy_candidates and hasattr(enemy_candidates_by_unit, "get"):
+            enemy_candidates = list(enemy_candidates_by_unit.get(self._sm_sort_key(root)) or [])
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        return (destroyed_unit, unit, candidates, enemy_unit, enemy_candidates, enemy_candidates_by_unit, from_pending)
 
     def _space_marines_librarius_context(
         self,
@@ -26937,6 +27358,386 @@ class SpaceMarinesStratagemMixin:
         else:
             logger.info(
                 "INFO: INESCAPABLE WRATH: %s declares an out-of-turn charge against %s.",
+                getattr(root, "name", "Unit"),
+                getattr(enemy_root, "name", "Enemy"),
+            )
+        return True
+
+    def _use_space_marines_inescapable_justice(self, stratagem: Any, **kwargs) -> bool:
+        (
+            destroyed_unit,
+            unit,
+            candidates,
+            enemy_unit,
+            enemy_candidates,
+            enemy_candidates_by_unit,
+            from_pending,
+        ) = self._space_marines_wrath_of_the_rock_destroyed_context("INESCAPABLE JUSTICE", kwargs)
+        if unit is None:
+            logger.error("ERROR: INESCAPABLE JUSTICE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: INESCAPABLE JUSTICE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: INESCAPABLE JUSTICE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: INESCAPABLE JUSTICE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_character_unit(root):
+            logger.error("ERROR: INESCAPABLE JUSTICE: target must be an ADEPTUS ASTARTES CHARACTER unit")
+            return False
+
+        destroyed_root = self._sm_root(destroyed_unit)
+        valid_candidates, enemy_map = self._space_marines_wrath_of_the_rock_inescapable_justice_candidates(
+            exclude_enemy_unit=destroyed_root,
+        )
+        if candidates:
+            valid_candidates = list(candidates)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: INESCAPABLE JUSTICE: selected unit is not currently eligible")
+            return False
+
+        valid_enemy_candidates = list(enemy_candidates or [])
+        if not valid_enemy_candidates and hasattr(enemy_candidates_by_unit, "get"):
+            valid_enemy_candidates = list(enemy_candidates_by_unit.get(self._sm_sort_key(root)) or [])
+        if not valid_enemy_candidates:
+            valid_enemy_candidates = list(enemy_map.get(self._sm_sort_key(root)) or [])
+        if destroyed_root is not None:
+            valid_enemy_candidates = [
+                candidate
+                for candidate in list(valid_enemy_candidates)
+                if self._sm_root(candidate) is not destroyed_root
+            ]
+        if enemy_unit is None and len(valid_enemy_candidates) == 1:
+            enemy_unit = valid_enemy_candidates[0]
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: INESCAPABLE JUSTICE: no eligible enemy unit selected")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: INESCAPABLE JUSTICE: selected enemy unit is not enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: INESCAPABLE JUSTICE: selected enemy unit must be on the battlefield")
+            return False
+        if valid_enemy_candidates and not self._sm_unit_in_candidates(enemy_root, valid_enemy_candidates):
+            logger.error("ERROR: INESCAPABLE JUSTICE: selected enemy unit is not currently eligible")
+            return False
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+        set_target = getattr(oath_mgr, "set_target", None) if oath_mgr is not None else None
+        is_oath_target = getattr(oath_mgr, "is_oath_target", None) if oath_mgr is not None else None
+        if not from_pending:
+            if destroyed_root is None:
+                logger.error("ERROR: INESCAPABLE JUSTICE: no destroyed Oath target context")
+                return False
+            if not callable(is_oath_target) or not bool(is_oath_target(destroyed_root)):
+                logger.error("ERROR: INESCAPABLE JUSTICE: destroyed unit is not the current Oath of Moment target")
+                return False
+        if not callable(set_target):
+            logger.error("ERROR: INESCAPABLE JUSTICE: Oath of Moment manager is unavailable")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if not phase_name and self.game is not None:
+            phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "").replace("_", " ").title()
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            enemy_unit=enemy_root,
+            phase_name=phase_name,
+        ):
+            logger.error("ERROR: INESCAPABLE JUSTICE: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        set_target(
+            enemy_root,
+            game=self.game,
+            player=self.player,
+            source=str(getattr(stratagem, "name", "") or "INESCAPABLE JUSTICE"),
+            queue_followups=False,
+        )
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: INESCAPABLE JUSTICE: %s becomes the new Oath of Moment target.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_space_marines_lions_will(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: LION'S WILL: wrong phase")
+            return False
+        unit, candidates, _enemy_unit, _enemy_candidates, _enemy_candidates_by_unit, from_pending = (
+            self._space_marines_wrath_of_the_rock_context("LION'S WILL", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: LION'S WILL: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LION'S WILL: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LION'S WILL: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LION'S WILL: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_unit_is_engaged(root):
+            logger.error("ERROR: LION'S WILL: target must be within Engagement Range of one or more enemy units")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrath_of_the_rock_lions_will_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: LION'S WILL: selected unit is not currently eligible")
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_wrath_of_the_rock_lions_will", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: LION'S WILL: detachment manager is unavailable")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: LION'S WILL: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            active_player_id=str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""),
+            owner_player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "LION'S WILL"),
+        )
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: LION'S WILL: %s gains +1 OC until the start of your next Command phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_tactical_mastery(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: TACTICAL MASTERY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TACTICAL MASTERY: not your turn")
+            return False
+        unit, candidates, _enemy_unit, _enemy_candidates, _enemy_candidates_by_unit, from_pending = (
+            self._space_marines_wrath_of_the_rock_context("TACTICAL MASTERY", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: TACTICAL MASTERY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: TACTICAL MASTERY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: TACTICAL MASTERY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: TACTICAL MASTERY: target must be an ADEPTUS ASTARTES unit")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrath_of_the_rock_tactical_mastery_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: TACTICAL MASTERY: selected unit is not currently eligible")
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_wrath_of_the_rock_tactical_mastery", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: TACTICAL MASTERY: detachment manager is unavailable")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: TACTICAL MASTERY: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "TACTICAL MASTERY"),
+        )
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: TACTICAL MASTERY: %s gains Advance/Fall Back action overrides until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_relics_of_the_dark_age(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: RELICS OF THE DARK AGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RELICS OF THE DARK AGE: not your turn")
+            return False
+        unit, candidates, _enemy_unit, _enemy_candidates, _enemy_candidates_by_unit, from_pending = (
+            self._space_marines_wrath_of_the_rock_context("RELICS OF THE DARK AGE", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: RELICS OF THE DARK AGE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELICS OF THE DARK AGE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RELICS OF THE DARK AGE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RELICS OF THE DARK AGE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: RELICS OF THE DARK AGE: target must be ADEPTUS ASTARTES INFANTRY or MOUNTED")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: RELICS OF THE DARK AGE: target has already been selected to shoot this phase")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrath_of_the_rock_relics_of_the_dark_age_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: RELICS OF THE DARK AGE: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: RELICS OF THE DARK AGE: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+            if not callable(set_bonus):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_bonus(
+                    key=f"space_marines_wrath_of_the_rock_relics_of_the_dark_age:{weapon_name}",
+                    weapon_name=weapon_name,
+                    strength_bonus=2,
+                    source=str(getattr(stratagem, "name", "") or "RELICS OF THE DARK AGE"),
+                    expires_phase="SHOOTING_PHASE",
+                )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: RELICS OF THE DARK AGE: %s gains +2 Strength on ranged weapons until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_leonine_aggression(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: LEONINE AGGRESSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: LEONINE AGGRESSION: not opponent's Charge phase")
+            return False
+        unit, candidates, enemy_unit, enemy_candidates, enemy_candidates_by_unit, from_pending = (
+            self._space_marines_wrath_of_the_rock_context("LEONINE AGGRESSION", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: LEONINE AGGRESSION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LEONINE AGGRESSION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LEONINE AGGRESSION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LEONINE AGGRESSION: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        valid_candidates, enemy_map = self._space_marines_wrath_of_the_rock_leonine_aggression_candidates()
+        if candidates:
+            valid_candidates = list(candidates)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: LEONINE AGGRESSION: selected unit is not currently eligible")
+            return False
+
+        valid_enemy_candidates = list(enemy_candidates or [])
+        if not valid_enemy_candidates and hasattr(enemy_candidates_by_unit, "get"):
+            valid_enemy_candidates = list(enemy_candidates_by_unit.get(self._sm_sort_key(root)) or [])
+        if not valid_enemy_candidates:
+            valid_enemy_candidates = list(enemy_map.get(self._sm_sort_key(root)) or [])
+        if enemy_unit is None and len(valid_enemy_candidates) == 1:
+            enemy_unit = valid_enemy_candidates[0]
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: LEONINE AGGRESSION: no eligible enemy unit selected")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: LEONINE AGGRESSION: selected enemy unit is not enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: LEONINE AGGRESSION: selected enemy unit must be on the battlefield")
+            return False
+        if valid_enemy_candidates and not self._sm_unit_in_candidates(enemy_root, valid_enemy_candidates):
+            logger.error("ERROR: LEONINE AGGRESSION: selected enemy unit is not currently eligible")
+            return False
+        can_charge = getattr(root, "can_declare_charge_against", None)
+        if not callable(can_charge) or not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+            logger.error("ERROR: LEONINE AGGRESSION: target cannot declare a charge against the selected enemy")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            enemy_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: LEONINE AGGRESSION: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        ok = bool(self.game.attempt_charge(root, enemy_root, out_of_turn=True)) if self.game is not None else False
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        if not ok:
+            logger.error("ERROR: LEONINE AGGRESSION: charge failed")
+        else:
+            logger.info(
+                "INFO: LEONINE AGGRESSION: %s declares an out-of-turn charge against %s.",
                 getattr(root, "name", "Unit"),
                 getattr(enemy_root, "name", "Enemy"),
             )
