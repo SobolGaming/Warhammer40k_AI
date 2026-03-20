@@ -607,6 +607,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
+    "INTO DARKNESS",
     "NEW ORDERS",
     "PEERLESS WARRIOR",
     "RAPID EMBARKATION",
@@ -625,6 +626,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REACTIVE IMPACT DAMPENERS",
     "RELENTLESS ASSAULT",
     "REVENGE OF THE RUBRICAE",
+    "RAPTORIAL VIGILANCE",
     "SAVAGE ECHOES",
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
@@ -1781,6 +1783,7 @@ class StratagemManager(
             "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
             "A DEADLY PRIZE",
+            "RAPTORIAL VIGILANCE",
             "THUNDEROUS PURSUIT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
@@ -1870,6 +1873,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_saga_of_the_great_wolf)
         if "STRIKE FROM THE SHADOWS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_vanguard_spearhead)
+        if "STUNNING FUSILLADE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_shadowmark_talon)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "DEATH ON THE WIND" in names:
@@ -2031,7 +2036,7 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
-        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS"}:
+        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS", "STUNNING FUSILLADE"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
@@ -2103,6 +2108,7 @@ class StratagemManager(
             "ORBITAL TELEPORTARIUM",
             "RIGID DISCIPLINE",
             "GUERRILLA TACTICS",
+            "INTO DARKNESS",
             "COORDINATED STRIKE",
             "COUNTERCHARGE",
         }
@@ -2137,7 +2143,9 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
+            "FEINT AND THRUST",
             "STRIKE FROM THE SHADOWS",
+            "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
@@ -6173,6 +6181,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_shadowmark_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_forgefathers_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7274,6 +7286,7 @@ class StratagemManager(
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_vanguard_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_shadowmark_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_godhammer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_lions_blade_phase_end_reactions(player=player, phase=phase)
@@ -7292,6 +7305,7 @@ class StratagemManager(
             self._cleanup_space_marines_unforgiven_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_shadowmark_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_hunter_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(phase=phase)
@@ -9226,6 +9240,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_shadowmark_move_end_reactions(unit=unit, action=action)
         self._process_space_marines_vanguard_deadly_prize_move_end(unit=unit, action=action)
         self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_lost_brethren_move_end_reactions(unit=unit, action=action)
@@ -10006,6 +10021,17 @@ class StratagemManager(
             killing_models_by_target=killing_models_by_target,
         )
 
+    def _on_unit_shooting_resolved_space_marines_shadowmark_talon(
+        self,
+        attacker_unit=None,
+        killing_models_by_target=None,
+        **_kwargs,
+    ):
+        self._queue_space_marines_shadowmark_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            killing_models_by_target=killing_models_by_target,
+        )
+
     def _on_unit_shooting_resolved_space_marines_forgefathers(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_forgefathers_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -10303,6 +10329,10 @@ class StratagemManager(
             owner_player = attacking_unit.get_parent_army().player
             if owner_player is self.player:
                 self._capture_space_marines_vanguard_shooting_targets_selected(
+                    attacking_unit=attacking_unit,
+                    target_units=list(target_units or []),
+                )
+                self._capture_space_marines_shadowmark_shooting_targets_selected(
                     attacking_unit=attacking_unit,
                     target_units=list(target_units or []),
                 )
@@ -16813,6 +16843,9 @@ class StratagemManager(
         vanguard_result = self._use_space_marines_vanguard_spearhead_stratagem(s, **kwargs)
         if vanguard_result is not None:
             return vanguard_result
+        shadowmark_result = self._use_space_marines_shadowmark_talon_stratagem(s, **kwargs)
+        if shadowmark_result is not None:
+            return shadowmark_result
         firestorm_result = self._use_space_marines_firestorm_assault_force_stratagem(s, **kwargs)
         if firestorm_result is not None:
             return firestorm_result

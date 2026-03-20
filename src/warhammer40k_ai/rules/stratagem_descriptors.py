@@ -5360,6 +5360,90 @@ _VANGUARD_SPEARHEAD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VANGUARD_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SHADOWMARK_TALON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010467004": StratagemToolDescriptor(
+        stratagem_id="000010467004",
+        name="Feint and Thrust",
+        timing="your_movement_phase",
+        target="adeptus_astartes_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back_and_conditional_advance",
+        cp_cost=1,
+        effect_params={
+            "required_faction_keywords_all": ["ADEPTUS ASTARTES"],
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+            "shoot_after_advance_if_keywords_any": ["PHOBOS", "SCOUT SQUAD"],
+            "charge_after_advance_if_keywords_any": ["PHOBOS", "SCOUT SQUAD"],
+        },
+    ),
+    "000010467007": StratagemToolDescriptor(
+        stratagem_id="000010467007",
+        name="Into Darkness",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_two_phobos_or_scout_units_or_one_other_adeptus_astartes_infantry_unit_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "requires_keywords_any_for_multi_select": ["PHOBOS", "SCOUT SQUAD"],
+            "required_keywords_any_for_single_non_special_unit": ["INFANTRY"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000010467003": StratagemToolDescriptor(
+        stratagem_id="000010467003",
+        name="Lay Low the Tyrants",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["INFANTRY"], "attack_type": "melee", "grant_keywords": ["PRECISION"]},
+    ),
+    "000010467006": StratagemToolDescriptor(
+        stratagem_id="000010467006",
+        name="Raptorial Vigilance",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="adeptus_astartes_infantry_or_mounted_unit_within_9_not_engaged",
+        duration="immediate",
+        effect="reactive_normal_move_with_phobos_or_scout_fixed_six",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "required_keywords_any": ["INFANTRY", "MOUNTED"],
+            "reactive_move_distance": "D6",
+            "fixed_distance_if_keywords_any": ["PHOBOS", "SCOUT SQUAD"],
+            "fixed_distance_in": 6.0,
+            "requires_not_engaged": True,
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+    "000010467005": StratagemToolDescriptor(
+        stratagem_id="000010467005",
+        name="Stunning Fusillade",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_ballistic_skill_and_ap_bonus_beyond_12_with_post_shoot_battleshock",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["INFANTRY"],
+            "attack_type": "ranged",
+            "ballistic_skill_bonus": 1,
+            "ap_bonus": 1,
+            "min_target_distance_in": 12.0,
+            "distance_condition": "strictly_greater_than",
+            "post_shoot_battleshock_on_destroyed_model_unit": True,
+        },
+    ),
+}
+
+_SHADOWMARK_TALON_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SHADOWMARK_TALON_STRATAGEM_DESCRIPTORS.values()
+}
+
 _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008483003": StratagemToolDescriptor(
         stratagem_id="000008483003",
@@ -7068,6 +7152,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VANGUARD_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SHADOWMARK_TALON_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7218,6 +7305,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
+        or _SHADOWMARK_TALON_STRATAGEM_BY_NAME.get(key)
         or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME.get(key)
         or _GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)

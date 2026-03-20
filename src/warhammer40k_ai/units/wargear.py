@@ -3442,6 +3442,17 @@ class WargearProfile:
                 )
                 if int(ap_bonus or 0) > 0:
                     ap_val -= int(ap_bonus)
+            shadowmark_ap_bonus_fn = getattr(sm_mgr, "shadowmark_stunning_fusillade_ranged_ap_bonus", None) if sm_mgr is not None else None
+            if callable(shadowmark_ap_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = shadowmark_ap_bonus_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
             weapon_lookup_name = self._temporary_weapon_lookup_name()
             if weapon_lookup_name:
                 temp_ap_bonus, _temp_ap_reasons = getattr(attacker, "get_temporary_weapon_ap_bonus", lambda _n: (0, []))(
@@ -9838,6 +9849,19 @@ class WargearProfile:
             if int(vanguard_bonus or 0):
                 source_name = str(vanguard_source or "Strike from the Shadows").strip() or "Strike from the Shadows"
                 _add_skill_mod(int(vanguard_bonus), f"{source_name}: +{int(vanguard_bonus)} BS")
+        shadowmark_skill_fn = getattr(sm_mgr, "shadowmark_stunning_fusillade_ranged_skill_bonus", None) if sm_mgr is not None else None
+        if callable(shadowmark_skill_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            shadowmark_bonus, shadowmark_source = shadowmark_skill_fn(
+                attacker,
+                target,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+                game=game,
+            )
+            if int(shadowmark_bonus or 0):
+                source_name = str(shadowmark_source or "Stunning Fusillade").strip() or "Stunning Fusillade"
+                _add_skill_mod(int(shadowmark_bonus), f"{source_name}: +{int(shadowmark_bonus)} BS")
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None

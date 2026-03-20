@@ -17490,6 +17490,15 @@ class ActionsMovementMixin:
             )
             if callable(apply_fn) and bool(apply_fn(self)):
                 return True
+            shadowmark_fn = (
+                getattr(mgr, "shadowmark_feint_and_thrust_shoot_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(shadowmark_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(shadowmark_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -17774,6 +17783,11 @@ class ActionsMovementMixin:
             if callable(liberator_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, weapon_profile=profile, game=game):
+                    return True
+            shadowmark_fn = getattr(mgr, "shadowmark_feint_and_thrust_shoot_after_advance_applies", None) if mgr is not None else None
+            if callable(shadowmark_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if shadowmark_fn(self, weapon_profile=profile, game=game):
                     return True
         except Exception:
             pass
@@ -18353,6 +18367,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, game=game):
                     return True
+            shadowmark_fn = getattr(mgr, "shadowmark_feint_and_thrust_charge_after_advance_applies", None) if mgr is not None else None
+            if callable(shadowmark_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if shadowmark_fn(self, game=game):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()
@@ -18484,6 +18503,11 @@ class ActionsMovementMixin:
             if callable(liberator_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if liberator_fn(self, game=game):
+                    return True
+            shadowmark_fn = getattr(mgr, "shadowmark_feint_and_thrust_charge_after_fall_back_applies", None) if mgr is not None else None
+            if callable(shadowmark_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if shadowmark_fn(self, game=game):
                     return True
             reclamation_fn = (
                 getattr(mgr, "reclamation_force_scions_of_guilliman_charge_after_fall_back_applies", None)

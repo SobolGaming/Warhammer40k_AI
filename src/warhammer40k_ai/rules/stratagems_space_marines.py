@@ -107,6 +107,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_vanguard_spearhead", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_shadowmark_talon_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_shadowmark_talon", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_forgefathers_seekers_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_forgefathers_seekers", None) if mgr is not None else None
@@ -2588,6 +2593,85 @@ class SpaceMarinesStratagemMixin:
         all_candidates = sorted(all_candidates, key=self._sm_sort_key)
         phobos_or_scout_candidates = sorted(phobos_or_scout_candidates, key=self._sm_sort_key)
         max_units = 2 if len(phobos_or_scout_candidates) >= 2 else 1
+        return (all_candidates, phobos_or_scout_candidates, int(max_units))
+
+    def _space_marines_shadowmark_adeptus_astartes_phase_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_shadowmark_talon_detachment():
+            return []
+        if str(phase_name or "").strip().lower() != "movement phase":
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_shadowmark_infantry_phase_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_shadowmark_talon_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_infantry_unit(root):
+                continue
+            if phase_key == "shooting phase" and self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._sm_selected_to_fight_this_phase(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_shadowmark_raptorial_vigilance_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_shadowmark_talon_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._sm_sort_key)
+
+    def _space_marines_shadowmark_into_darkness_candidates(self) -> tuple[list[Any], list[Any], int]:
+        if not self._is_shadowmark_talon_detachment():
+            return ([], [], 0)
+        all_candidates: list[Any] = []
+        phobos_or_scout_candidates: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_infantry_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            all_candidates.append(root)
+            if self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root):
+                phobos_or_scout_candidates.append(root)
+        all_candidates = sorted(all_candidates, key=self._sm_sort_key)
+        phobos_or_scout_candidates = sorted(phobos_or_scout_candidates, key=self._sm_sort_key)
+        max_units = 2 if len(phobos_or_scout_candidates) >= 2 else (1 if all_candidates else 0)
         return (all_candidates, phobos_or_scout_candidates, int(max_units))
 
     def _space_marines_liberator_red_rampage_candidates(self) -> list[Any]:
@@ -8746,6 +8830,332 @@ class SpaceMarinesStratagemMixin:
             if root_id:
                 seen.add(root_id)
             clear_fn(root)
+
+    def _queue_space_marines_shadowmark_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("FEINT AND THRUST")
+            candidates = self._space_marines_shadowmark_adeptus_astartes_phase_candidates(phase_name="Movement phase")
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Movement phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Movement phase",
+                        "phase_name": "Movement phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("STUNNING FUSILLADE")
+            candidates = self._space_marines_shadowmark_infantry_phase_candidates(phase_name="Shooting phase")
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Shooting phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Shooting phase",
+                        "phase_name": "Shooting phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("LAY LOW THE TYRANTS")
+            candidates = self._space_marines_shadowmark_infantry_phase_candidates(phase_name="Fight phase")
+            if stratagem is not None and candidates:
+                if (
+                    int(getattr(self.player, "command_points", 0) or 0) >= self._sm_effective_cp_cost(self.player, stratagem)
+                    and str(stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+                    and not self._sm_reaction_already_queued(
+                        event_name="phase_start",
+                        stratagem_name=stratagem.name,
+                        phase_name="Fight phase",
+                    )
+                ):
+                    payload = {
+                        "event": "phase_start",
+                        "phase": "Fight phase",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "candidates": candidates,
+                    }
+                    if len(candidates) == 1:
+                        payload["unit"] = candidates[0]
+                        payload["target_unit"] = candidates[0]
+                    self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_shadowmark_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        stratagem = self.get_by_name("INTO DARKNESS")
+        candidates, phobos_or_scout_candidates, max_units = self._space_marines_shadowmark_into_darkness_candidates()
+        if stratagem is None or not candidates:
+            return
+        preview_cost = getattr(self.player, "preview_stratagem_cp_cost", None)
+        effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        if callable(preview_cost):
+            preview = preview_cost(stratagem, target_unit=candidates[0], assume_optional_discounts=True) or {}
+            effective_cost = int(preview.get("cost", effective_cost) or effective_cost)
+        if int(getattr(self.player, "command_points", 0) or 0) < effective_cost:
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "phobos_or_scout_candidates": phobos_or_scout_candidates,
+            "max_units": int(max_units),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_shadowmark_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("RAPTORIAL VIGILANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_shadowmark_raptorial_vigilance_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _capture_space_marines_shadowmark_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_owned_by_player(attacking_root, self.player):
+            return
+        sr = getattr(attacking_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_shadowmark_stunning_fusillade_active")):
+            return
+        selected_target_ids: list[str] = []
+        seen: set[str] = set()
+        for target_unit in list(target_units or []):
+            target_root = self._sm_root(target_unit)
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            selected_target_ids.append(target_id)
+        sr["space_marines_shadowmark_stunning_fusillade_selected_target_ids"] = selected_target_ids
+        sr["space_marines_shadowmark_stunning_fusillade_qualified_target_ids"] = []
+        attacking_root.special_rules = sr
+
+    def _queue_space_marines_shadowmark_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_owned_by_player(attacker_root, self.player) or not self._sm_is_alive(attacker_root):
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_shadowmark_stunning_fusillade_active")):
+            return
+        qualified_target_ids = {
+            str(value or "").strip()
+            for value in list(sr.get("space_marines_shadowmark_stunning_fusillade_qualified_target_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if not qualified_target_ids:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        ability_name = (
+            str(
+                sr.get("space_marines_shadowmark_stunning_fusillade_source", "") or "Stunning Fusillade"
+            ).strip()
+            or "Stunning Fusillade"
+        )
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+                    continue
+                if str(ctx.get("ability_name", "") or "").strip() != ability_name:
+                    continue
+                return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        target_items = (killing_models_by_target or {}).items() if isinstance(killing_models_by_target, dict) else []
+        for target_unit, killed_models in list(target_items):
+            if not killed_models:
+                continue
+            target_root = self._sm_root(target_unit)
+            if target_root is None or self._sm_owned_by_player(target_root, self.player) or not self._sm_is_alive(target_root):
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen or target_id not in qualified_target_ids:
+                continue
+            seen.add(target_id)
+            candidates.append(target_root)
+        candidates.sort(key=self._sm_sort_key)
+        if not candidates:
+            return
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        options.extend(
+            DecisionOption.create(
+                str(getattr(target_root, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(target_root)},
+            )
+            for target_root in list(candidates)
+        )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            f"{ability_name}: select a unit to take a Battle-shock test.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "attacker_unit_id": attacker_id,
+                "ability_name": ability_name,
+            },
+        )
+        if self.game is not None and hasattr(self.game, "request_decision"):
+            self.game.request_decision(request)
+
+    def _cleanup_space_marines_shadowmark_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_shadowmark_talon_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        mgr = self._sm_detachment_mgr()
+        if mgr is None:
+            return
+        if phase_key == "SHOOTING_PHASE":
+            clear_fn = getattr(mgr, "clear_shadowmark_stunning_fusillade", None)
+            if callable(clear_fn):
+                seen: set[str] = set()
+                for root in self._sm_owned_army_roots():
+                    root_id = self._sm_sort_key(root)
+                    if root_id and root_id in seen:
+                        continue
+                    if root_id:
+                        seen.add(root_id)
+                    clear_fn(root)
+        if phase_key == "FIGHT_PHASE":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                return
+            clear_fn = getattr(mgr, "clear_shadowmark_feint_and_thrust", None)
+            if callable(clear_fn):
+                seen: set[str] = set()
+                for root in self._sm_owned_army_roots():
+                    root_id = self._sm_sort_key(root)
+                    if root_id and root_id in seen:
+                        continue
+                    if root_id:
+                        seen.add(root_id)
+                    clear_fn(root)
+                    self._sm_clear_ability_cache(root, "fell_back_and_shoot")
 
     def _process_space_marines_vanguard_deadly_prize_move_end(self, *, unit: Any, action: Any) -> None:
         if not self._is_vanguard_spearhead_detachment():
@@ -16546,6 +16956,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_surgical_strikes(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_shadowmark_talon_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_shadowmark_talon_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "FEINT AND THRUST":
+            return self._use_space_marines_feint_and_thrust(stratagem, **kwargs)
+        if name_u == "INTO DARKNESS":
+            return self._use_space_marines_into_darkness(stratagem, **kwargs)
+        if name_u == "LAY LOW THE TYRANTS":
+            return self._use_space_marines_lay_low_the_tyrants(stratagem, **kwargs)
+        if name_u == "RAPTORIAL VIGILANCE":
+            return self._use_space_marines_raptorial_vigilance(stratagem, **kwargs)
+        if name_u == "STUNNING FUSILLADE":
+            return self._use_space_marines_stunning_fusillade(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_lions_blade_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -24038,6 +24466,381 @@ class SpaceMarinesStratagemMixin:
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: SURGICAL STRIKES: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_feint_and_thrust(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FEINT AND THRUST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FEINT AND THRUST: not your Movement phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_vanguard_context("FEINT AND THRUST", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: FEINT AND THRUST: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FEINT AND THRUST: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FEINT AND THRUST: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FEINT AND THRUST: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_shadowmark_adeptus_astartes_phase_candidates(
+            phase_name="Movement phase"
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FEINT AND THRUST: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_shadowmark_feint_and_thrust", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: FEINT AND THRUST: Shadowmark detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "FEINT AND THRUST"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: FEINT AND THRUST: failed to apply movement permissions")
+            return False
+        self._sm_clear_ability_cache(root, "fell_back_and_shoot")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FEINT AND THRUST: %s can shoot and charge after Falling Back this turn%s.",
+            getattr(root, "name", "Unit"),
+            ", and after Advancing" if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else "",
+        )
+        return True
+
+    def _use_space_marines_into_darkness(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: INTO DARKNESS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: INTO DARKNESS: not opponent's Fight phase")
+            return False
+
+        selected = kwargs.get("units") or kwargs.get("selected_units")
+        if selected is None:
+            selected = kwargs.get("target_units")
+        if selected is None:
+            selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        phobos_or_scout_candidates = list(kwargs.get("phobos_or_scout_candidates") or [])
+        max_units = int(kwargs.get("max_units", 0) or 0)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "INTO DARKNESS":
+                continue
+            if selected is None:
+                selected = (
+                    reaction.get("units")
+                    or reaction.get("selected_units")
+                    or reaction.get("target_units")
+                    or reaction.get("unit")
+                    or reaction.get("target_unit")
+                )
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not phobos_or_scout_candidates:
+                phobos_or_scout_candidates = list(reaction.get("phobos_or_scout_candidates") or [])
+            if not max_units:
+                max_units = int(reaction.get("max_units", 0) or 0)
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        selected_roots = [root for root in list(self._sm_resolve_units(selected) or []) if root is not None]
+        if not selected_roots and len(candidates) == 1:
+            selected_roots = [self._sm_root(candidates[0])]
+        if not selected_roots:
+            logger.error("ERROR: INTO DARKNESS: no target unit provided")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: INTO DARKNESS: cannot target more than two units")
+            return False
+        if int(max_units or 0) > 0 and len(selected_roots) > int(max_units):
+            logger.error("ERROR: INTO DARKNESS: selected too many units")
+            return False
+
+        valid_candidates, valid_phobos_or_scout_candidates, valid_max_units = self._space_marines_shadowmark_into_darkness_candidates()
+        if candidates:
+            valid_candidates = list(candidates)
+        if phobos_or_scout_candidates:
+            valid_phobos_or_scout_candidates = list(phobos_or_scout_candidates)
+        if max_units:
+            valid_max_units = int(max_units)
+        for root in list(selected_roots):
+            if not self._sm_owned_by_player(root, self.player):
+                logger.error("ERROR: INTO DARKNESS: target unit is not yours")
+                return False
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: INTO DARKNESS: target must be on the battlefield and targetable")
+                return False
+            if not self._is_adeptus_astartes_unit(root):
+                logger.error("ERROR: INTO DARKNESS: target must be an ADEPTUS ASTARTES unit")
+                return False
+            if not self._sm_is_infantry_unit(root):
+                logger.error("ERROR: INTO DARKNESS: target must be an INFANTRY unit")
+                return False
+            if self._sm_unit_is_engaged(root):
+                logger.error("ERROR: INTO DARKNESS: target cannot be within Engagement Range")
+                return False
+            if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+                logger.error("ERROR: INTO DARKNESS: one or more selected units are not currently eligible")
+                return False
+        if len(selected_roots) == 2:
+            if int(valid_max_units or 0) < 2:
+                logger.error("ERROR: INTO DARKNESS: selecting two units is not currently allowed")
+                return False
+            if not all(self._sm_unit_in_candidates(root, valid_phobos_or_scout_candidates) for root in list(selected_roots)):
+                logger.error("ERROR: INTO DARKNESS: selecting two units requires both units to be PHOBOS or Scout Squad units")
+                return False
+
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=selected_roots[0]):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "INTO DARKNESS")
+        for root in list(selected_roots):
+            if not self._sm_place_unit_into_strategic_reserves(root, reason=source_name):
+                logger.error("ERROR: INTO DARKNESS: failed to place target into Strategic Reserves")
+                return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: INTO DARKNESS: %d unit(s) enter Strategic Reserves.", len(selected_roots))
+        return True
+
+    def _use_space_marines_lay_low_the_tyrants(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: LAY LOW THE TYRANTS: wrong phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_vanguard_context("LAY LOW THE TYRANTS", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: LAY LOW THE TYRANTS: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LAY LOW THE TYRANTS: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LAY LOW THE TYRANTS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LAY LOW THE TYRANTS: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: LAY LOW THE TYRANTS: target must be an INFANTRY unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: LAY LOW THE TYRANTS: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_shadowmark_infantry_phase_candidates(phase_name="Fight phase")
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: LAY LOW THE TYRANTS: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "LAY LOW THE TYRANTS").strip() or "LAY LOW THE TYRANTS"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_shadowmark_lay_low_the_tyrants:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["PRECISION"],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LAY LOW THE TYRANTS: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_raptorial_vigilance(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RAPTORIAL VIGILANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: RAPTORIAL VIGILANCE: not opponent's Movement phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, trigger_unit, _target_units, action, _from_pending = (
+            self._sm_vanguard_context("RAPTORIAL VIGILANCE", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: RAPTORIAL VIGILANCE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: RAPTORIAL VIGILANCE: missing enemy move context")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: moving unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: target must be an INFANTRY or MOUNTED unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: target must not be within Engagement Range")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: RAPTORIAL VIGILANCE: invalid triggering move type")
+            return False
+
+        valid_candidates = candidates or self._space_marines_shadowmark_raptorial_vigilance_candidates(enemy_unit=enemy_root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: RAPTORIAL VIGILANCE: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = 6 if (self._sm_is_phobos_unit(root) or self._sm_is_scout_squad_unit(root)) else int(dice_module.get_roll("D6") or 0)
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="raptorial_vigilance",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "RAPTORIAL VIGILANCE"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: RAPTORIAL VIGILANCE: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RAPTORIAL VIGILANCE: %s can make a Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_space_marines_stunning_fusillade(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: STUNNING FUSILLADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: STUNNING FUSILLADE: not your Shooting phase")
+            return False
+
+        unit, candidates, _objective, _objective_candidates, _trigger_unit, _target_units, _action, _from_pending = (
+            self._sm_vanguard_context("STUNNING FUSILLADE", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: STUNNING FUSILLADE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: STUNNING FUSILLADE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: STUNNING FUSILLADE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: STUNNING FUSILLADE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_infantry_unit(root):
+            logger.error("ERROR: STUNNING FUSILLADE: target must be an INFANTRY unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: STUNNING FUSILLADE: target has already been selected to shoot this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_shadowmark_infantry_phase_candidates(phase_name="Shooting phase")
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: STUNNING FUSILLADE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_shadowmark_stunning_fusillade", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: STUNNING FUSILLADE: Shadowmark detachment manager unavailable")
+            return False
+        applied = apply_fn(
+            root,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+            source=str(getattr(stratagem, "name", "") or "STUNNING FUSILLADE"),
+        )
+        if not bool(applied):
+            logger.error("ERROR: STUNNING FUSILLADE: failed to apply ranged bonuses")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: STUNNING FUSILLADE: %s gains +1 BS and +1 AP against targets more than 12\" away this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

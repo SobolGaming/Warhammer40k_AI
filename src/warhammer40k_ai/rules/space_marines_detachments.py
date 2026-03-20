@@ -10838,6 +10838,298 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             game=game,
         )
 
+    @staticmethod
+    def _shadowmark_stunning_fusillade_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_shadowmark_stunning_fusillade_active",
+            "space_marines_shadowmark_stunning_fusillade_turn",
+            "space_marines_shadowmark_stunning_fusillade_expires_phase",
+            "space_marines_shadowmark_stunning_fusillade_source",
+            "space_marines_shadowmark_stunning_fusillade_player_id",
+            "space_marines_shadowmark_stunning_fusillade_selected_target_ids",
+            "space_marines_shadowmark_stunning_fusillade_qualified_target_ids",
+        )
+
+    def clear_shadowmark_stunning_fusillade(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._shadowmark_stunning_fusillade_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_shadowmark_stunning_fusillade(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Stunning Fusillade",
+    ) -> bool:
+        if not self.is_shadowmark_talon():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_shadowmark_stunning_fusillade_active"] = True
+        sr["space_marines_shadowmark_stunning_fusillade_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_shadowmark_stunning_fusillade_turn"] = int(battle_round or 0)
+        sr["space_marines_shadowmark_stunning_fusillade_player_id"] = str(player_id or "").strip()
+        sr["space_marines_shadowmark_stunning_fusillade_selected_target_ids"] = []
+        sr["space_marines_shadowmark_stunning_fusillade_qualified_target_ids"] = []
+        sr["space_marines_shadowmark_stunning_fusillade_source"] = (
+            str(source or "Stunning Fusillade").strip() or "Stunning Fusillade"
+        )
+        root.special_rules = sr
+        return True
+
+    def _shadowmark_stunning_fusillade_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_shadowmark_talon():
+            return 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, ""
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return 0, ""
+        is_ranged = getattr(parent, "is_ranged", None)
+        if not callable(is_ranged) or not bool(is_ranged()):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None or not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_shadowmark_stunning_fusillade_active")):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+        expected_phase = str(
+            sr.get("space_marines_shadowmark_stunning_fusillade_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase and current_phase and current_phase != expected_phase:
+            self.clear_shadowmark_stunning_fusillade(root)
+            return 0, ""
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        marked_turn = int(sr.get("space_marines_shadowmark_stunning_fusillade_turn", 0) or 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            self.clear_shadowmark_stunning_fusillade(root)
+            return 0, ""
+
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        distance = self._shadow_masters_attack_distance(
+            target_root,
+            attacker_model=attacker_model,
+            attack_instance=attack_instance,
+        )
+        if distance <= 0.0 or distance <= 12.0 + 1e-6:
+            return 0, ""
+
+        target_id = str(get_entity_id(target_root) or "")
+        if target_id:
+            qualified_ids = [
+                str(value or "").strip()
+                for value in list(sr.get("space_marines_shadowmark_stunning_fusillade_qualified_target_ids", []) or [])
+                if str(value or "").strip()
+            ]
+            if target_id not in qualified_ids:
+                qualified_ids.append(target_id)
+                sr["space_marines_shadowmark_stunning_fusillade_qualified_target_ids"] = qualified_ids
+                root.special_rules = sr
+        source = str(
+            sr.get("space_marines_shadowmark_stunning_fusillade_source", "") or "Stunning Fusillade"
+        ).strip() or "Stunning Fusillade"
+        return 1, source
+
+    def shadowmark_stunning_fusillade_ranged_skill_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._shadowmark_stunning_fusillade_bonus(
+            attacker_model,
+            target_unit,
+            weapon_profile=weapon_profile,
+            attack_instance=attack_instance,
+            game=game,
+        )
+
+    def shadowmark_stunning_fusillade_ranged_ap_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._shadowmark_stunning_fusillade_bonus(
+            attacker_model,
+            target_unit,
+            weapon_profile=weapon_profile,
+            attack_instance=attack_instance,
+            game=game,
+        )
+
+    @staticmethod
+    def _shadowmark_feint_and_thrust_keys() -> tuple[str, ...]:
+        return (
+            "space_marines_shadowmark_feint_and_thrust_active",
+            "space_marines_shadowmark_feint_and_thrust_turn",
+            "space_marines_shadowmark_feint_and_thrust_player_id",
+            "space_marines_shadowmark_feint_and_thrust_source",
+            "space_marines_shadowmark_feint_and_thrust_shoot_after_fall_back",
+            "space_marines_shadowmark_feint_and_thrust_charge_after_fall_back",
+            "space_marines_shadowmark_feint_and_thrust_shoot_after_advance",
+            "space_marines_shadowmark_feint_and_thrust_charge_after_advance",
+        )
+
+    def clear_shadowmark_feint_and_thrust(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in self._shadowmark_feint_and_thrust_keys():
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_shadowmark_feint_and_thrust(
+        self,
+        unit,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        source: str = "Feint and Thrust",
+    ) -> bool:
+        if not self.is_shadowmark_talon():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        advance_enabled = self._attached_unit_has_keyword(root, "PHOBOS") or self._attached_unit_has_keyword(root, "SCOUT SQUAD")
+        sr["space_marines_shadowmark_feint_and_thrust_active"] = True
+        sr["space_marines_shadowmark_feint_and_thrust_turn"] = int(battle_round or 0)
+        sr["space_marines_shadowmark_feint_and_thrust_player_id"] = str(player_id or "").strip()
+        sr["space_marines_shadowmark_feint_and_thrust_source"] = str(source or "Feint and Thrust").strip() or "Feint and Thrust"
+        sr["space_marines_shadowmark_feint_and_thrust_shoot_after_fall_back"] = True
+        sr["space_marines_shadowmark_feint_and_thrust_charge_after_fall_back"] = True
+        sr["space_marines_shadowmark_feint_and_thrust_shoot_after_advance"] = bool(advance_enabled)
+        sr["space_marines_shadowmark_feint_and_thrust_charge_after_advance"] = bool(advance_enabled)
+        root.special_rules = sr
+        return True
+
+    def _shadowmark_feint_and_thrust_applies(
+        self,
+        unit,
+        *,
+        required_move_flag: str,
+        effect_key: str,
+        weapon_profile=None,
+        game=None,
+    ) -> bool:
+        if not self.is_shadowmark_talon():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if root.get_parent_army() is not self.army:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), str(required_move_flag or ""), False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_shadowmark_feint_and_thrust_active")):
+            return False
+        if not bool(sr.get(effect_key, False)):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        effect_player_id = str(sr.get("space_marines_shadowmark_feint_and_thrust_player_id", "") or "").strip()
+        if effect_player_id and current_player_id and effect_player_id != current_player_id:
+            return False
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_turn = int(sr.get("space_marines_shadowmark_feint_and_thrust_turn", 0) or 0)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def shadowmark_feint_and_thrust_shoot_after_advance_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._shadowmark_feint_and_thrust_applies(
+            unit,
+            required_move_flag="advanced_this_round",
+            effect_key="space_marines_shadowmark_feint_and_thrust_shoot_after_advance",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def shadowmark_feint_and_thrust_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        return self._shadowmark_feint_and_thrust_applies(
+            unit,
+            required_move_flag="fell_back_this_round",
+            effect_key="space_marines_shadowmark_feint_and_thrust_shoot_after_fall_back",
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def shadowmark_feint_and_thrust_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._shadowmark_feint_and_thrust_applies(
+            unit,
+            required_move_flag="advanced_this_round",
+            effect_key="space_marines_shadowmark_feint_and_thrust_charge_after_advance",
+            game=game,
+        )
+
+    def shadowmark_feint_and_thrust_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        return self._shadowmark_feint_and_thrust_applies(
+            unit,
+            required_move_flag="fell_back_this_round",
+            effect_key="space_marines_shadowmark_feint_and_thrust_charge_after_fall_back",
+            game=game,
+        )
+
     def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_spearpoint_task_force():
             return False
