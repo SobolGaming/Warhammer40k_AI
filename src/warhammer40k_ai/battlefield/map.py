@@ -3011,6 +3011,8 @@ class ObjectivePoint:
         # Sticky control tracking (e.g., Uphold the Honour of the Emperor)
         self.sticky_controller = None
         self.sticky_source = None
+        # Vanguard Spearhead: per-player sabotage markers from A Deadly Prize.
+        self.space_marines_vanguard_deadly_prize_sources: Dict[str, str] = {}
         # Virulent Vectorium: Worldblight objective contagion source tracking
         self.worldblight_controller = None
         self.worldblight_source = None
@@ -3086,6 +3088,7 @@ class ObjectivePoint:
             self.controlling_player = None
             self.sticky_controller = None
             self.sticky_source = None
+            self.space_marines_vanguard_deadly_prize_sources = {}
             self.worldblight_controller = None
             self.worldblight_source = None
             return
@@ -3142,10 +3145,17 @@ class ObjectivePoint:
                     continue
             sticky_source = getattr(self, "sticky_source", None)
             allow_break = True
-            if sticky_source == "corrupt_realspace":
+            if sticky_source in {"corrupt_realspace", "space_marines_vanguard_deadly_prize"}:
                 allow_break = bool(getattr(game_state, "_corrupt_realspace_check", False))
             if opponent_max > sticky_oc and allow_break:
                 # Sticky control broken.
+                if sticky_source == "space_marines_vanguard_deadly_prize":
+                    owner_id = str(getattr(sticky_owner, "id", "") or "")
+                    if owner_id:
+                        sabotage_sources = getattr(self, "space_marines_vanguard_deadly_prize_sources", None)
+                        if isinstance(sabotage_sources, dict):
+                            sabotage_sources.pop(owner_id, None)
+                            self.space_marines_vanguard_deadly_prize_sources = sabotage_sources
                 self.sticky_controller = None
                 self.sticky_source = None
             else:

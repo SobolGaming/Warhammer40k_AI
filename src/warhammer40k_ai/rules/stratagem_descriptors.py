@@ -4952,6 +4952,89 @@ _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VANGUARD_SPEARHEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008491002": StratagemToolDescriptor(
+        stratagem_id="000008491002",
+        name="A Deadly Prize",
+        timing="start_of_command_phase",
+        target="adeptus_astartes_infantry_or_mounted_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_at_start_or_end_of_turn",
+        effect="sabotaged_sticky_objective_with_move_end_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["INFANTRY", "MOUNTED"],
+            "sticky_control": True,
+            "trigger_actions": ["normal_move", "advance", "fall_back", "charge"],
+            "move_end_trigger_die": "D6",
+            "move_end_trigger_threshold": 2,
+            "move_end_mortal_wounds": "D3",
+        },
+    ),
+    "000008491006": StratagemToolDescriptor(
+        stratagem_id="000008491006",
+        name="Calculated Feint",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="adeptus_astartes_infantry_unit_selected_as_charge_target_not_in_engagement_range",
+        duration="immediate",
+        effect="reactive_normal_move_with_phobos_or_scout_fixed_six",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["INFANTRY"],
+            "reactive_move_distance": "D6",
+            "fixed_distance_if_keywords_any": ["PHOBOS", "SCOUT SQUAD"],
+            "fixed_distance_in": 6.0,
+            "requires_not_engaged": True,
+        },
+    ),
+    "000008491007": StratagemToolDescriptor(
+        stratagem_id="000008491007",
+        name="Guerrilla Tactics",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_two_phobos_or_scout_units_or_one_other_adeptus_astartes_infantry_unit_more_than_3_from_enemy",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "requires_keywords_any_for_multi_select": ["PHOBOS", "SCOUT SQUAD"],
+            "required_keywords_any_for_single_non_special_unit": ["INFANTRY"],
+            "min_enemy_distance_in": 3.0,
+        },
+    ),
+    "000008491005": StratagemToolDescriptor(
+        stratagem_id="000008491005",
+        name="Strike from the Shadows",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase",
+        effect="ranged_ballistic_skill_and_ap_bonus_beyond_12_with_post_shoot_battleshock",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["INFANTRY"],
+            "attack_type": "ranged",
+            "ballistic_skill_bonus": 1,
+            "ap_bonus": 1,
+            "min_target_distance_in": 12.0,
+            "distance_condition": "strictly_greater_than",
+            "post_shoot_battleshock_on_destroyed_model_unit": True,
+        },
+    ),
+    "000008491004": StratagemToolDescriptor(
+        stratagem_id="000008491004",
+        name="Surgical Strikes",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_infantry_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=2,
+        effect_params={"required_keywords_all": ["INFANTRY"], "attack_type": "melee", "grant_keywords": ["PRECISION"]},
+    ),
+}
+
+_VANGUARD_SPEARHEAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VANGUARD_SPEARHEAD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008483003": StratagemToolDescriptor(
         stratagem_id="000008483003",
@@ -6657,6 +6740,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COMPANIONS_OF_VEHEMENCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VANGUARD_SPEARHEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _FIRESTORM_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6797,6 +6883,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BLADE_OF_ULTRAMAR_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FENRIS_STRATAGEM_BY_NAME.get(key)
         or _COMPANIONS_OF_VEHEMENCE_STRATAGEM_BY_NAME.get(key)
+        or _VANGUARD_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
         or _FIRESTORM_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _FORGEFATHERS_SEEKERS_STRATAGEM_BY_NAME.get(key)
         or _GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)

@@ -242,7 +242,8 @@ class Game(
         self._adepta_sororitas_destroyers_by_army_id: Dict[str, set[str]] = {}
         # Temporary Shadow of Chaos zone overrides (e.g., Impossible Eclipse).
         self._shadow_of_chaos_zone_overrides: Dict[str, set[str]] = {}
-        # Corrupt Realspace: allow sticky break only at start/end of turn.
+        # Turn-boundary sticky sources (e.g. Corrupt Realspace, A Deadly Prize)
+        # only break at the start/end of a turn.
         self._corrupt_realspace_check: bool = False
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
@@ -12272,22 +12273,23 @@ class Game(
                 maybe_upgrade_adaptive_biology(unit)
 
     def _evaluate_corrupt_realspace_turn_boundary(self, *, timing: str, player: Player | None = None) -> None:
-        """Check Corrupt Realspace sticky objectives at the start/end of any turn."""
+        """Check turn-boundary sticky objectives at the start/end of any turn."""
         game_map = getattr(self, "map", None)
         if game_map is None:
             return
         objectives = list(getattr(game_map, "objectives", []) or [])
         if not objectives:
             return
-        has_corrupt = False
+        turn_boundary_sources = {"corrupt_realspace", "space_marines_vanguard_deadly_prize"}
+        has_turn_boundary_sticky = False
         for obj in objectives:
             loc = getattr(obj, "location", None)
             if loc is None or getattr(loc, "removed", False):
                 continue
-            if str(getattr(loc, "sticky_source", "") or "") == "corrupt_realspace":
-                has_corrupt = True
+            if str(getattr(loc, "sticky_source", "") or "") in turn_boundary_sources:
+                has_turn_boundary_sticky = True
                 break
-        if not has_corrupt:
+        if not has_turn_boundary_sticky:
             return
         self._corrupt_realspace_check = True
         try:
@@ -12295,7 +12297,7 @@ class Game(
                 loc = getattr(obj, "location", None)
                 if loc is None or getattr(loc, "removed", False):
                     continue
-                if str(getattr(loc, "sticky_source", "") or "") != "corrupt_realspace":
+                if str(getattr(loc, "sticky_source", "") or "") not in turn_boundary_sources:
                     continue
                 if hasattr(loc, "update_control"):
                     loc.update_control(self)

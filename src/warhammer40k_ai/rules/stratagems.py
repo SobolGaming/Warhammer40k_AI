@@ -45,6 +45,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
+    "A DEADLY PRIZE",
     "A GRIM WARNING",
     "A DEADLY SNARE",
     "AUTOMATED REPAIR DRONES",
@@ -82,6 +83,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARMOUR OF CONTEMPT",
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
+    "CALCULATED FEINT",
     "CHILLING HOWL",
     "CODEX DISCIPLINE",
     "COURAGE AND HONOUR!",
@@ -100,6 +102,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FURIOUS ONSLAUGHT",
     "GLORIOUS SACRIFICE",
     "GRIM RETRIBUTION",
+    "GUERRILLA TACTICS",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
     "ANCIENT FURY",
@@ -133,7 +136,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHOCK BOMBARDMENT",
     "SITE-TO-SITE TELEPORTATION",
     "STALKING WOLVES",
+    "STRIKE FROM THE SHADOWS",
     "STRIKE NOW FOR GLORY",
+    "SURGICAL STRIKES",
     "TACTICAL FORESIGHT",
     "TERRIFYING PROFICIENCY",
     "UNBOWED CONVICTION",
@@ -549,6 +554,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BLAZING EARTH",
+    "CALCULATED FEINT",
     "FOCUSED HATRED",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
@@ -588,6 +594,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID EMBARKATION",
     "RAPID INGRESS",
     "FIRE AND FADE",
+    "GUERRILLA TACTICS",
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
     "A DEADLY SNARE",
@@ -1754,6 +1761,7 @@ class StratagemManager(
             "SQUAD TACTICS",
             "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
+            "A DEADLY PRIZE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1761,6 +1769,7 @@ class StratagemManager(
             "ANTI‑GRAV REPULSION",
             "BLIND GRENADES",
             "A DEADLY SNARE",
+            "CALCULATED FEINT",
             "DREAD CRUSADERS",
             "SHADE PATH",
         }:
@@ -1835,6 +1844,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
         if "GRIM RETRIBUTION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_unforgiven_task_force)
+        if "STRIKE FROM THE SHADOWS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_vanguard_spearhead)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "DEATH ON THE WIND" in names:
@@ -1994,7 +2005,7 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
-        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT"}:
+        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT", "STRIKE FROM THE SHADOWS"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
@@ -2065,6 +2076,7 @@ class StratagemManager(
             "INESCAPABLE WRATH",
             "ORBITAL TELEPORTARIUM",
             "RIGID DISCIPLINE",
+            "GUERRILLA TACTICS",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2097,6 +2109,7 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
+            "STRIKE FROM THE SHADOWS",
             "PEERLESS WARRIOR",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
@@ -6113,6 +6126,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_vanguard_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_forgefathers_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7197,6 +7214,7 @@ class StratagemManager(
             self._queue_space_marines_emperors_shield_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_anvil_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_vanguard_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_godhammer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_lions_blade_phase_end_reactions(player=player, phase=phase)
@@ -7212,6 +7230,7 @@ class StratagemManager(
             self._cleanup_space_marines_lost_brethren_phase_end_effects(phase=phase)
             self._cleanup_space_marines_unforgiven_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -9143,6 +9162,7 @@ class StratagemManager(
         self._queue_space_marines_inner_circle_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
+        self._process_space_marines_vanguard_deadly_prize_move_end(unit=unit, action=action)
         self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_lost_brethren_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_unforgiven_move_end_reactions(unit=unit, action=action)
@@ -9174,6 +9194,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_space_marines_companions_of_vehemence_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_space_marines_vanguard_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -9899,6 +9923,17 @@ class StratagemManager(
             killing_models_by_target=killing_models_by_target,
         )
 
+    def _on_unit_shooting_resolved_space_marines_vanguard_spearhead(
+        self,
+        attacker_unit=None,
+        killing_models_by_target=None,
+        **_kwargs,
+    ):
+        self._queue_space_marines_vanguard_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            killing_models_by_target=killing_models_by_target,
+        )
+
     def _on_unit_shooting_resolved_space_marines_forgefathers(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_forgefathers_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -10195,6 +10230,10 @@ class StratagemManager(
                 return
             owner_player = attacking_unit.get_parent_army().player
             if owner_player is self.player:
+                self._capture_space_marines_vanguard_shooting_targets_selected(
+                    attacking_unit=attacking_unit,
+                    target_units=list(target_units or []),
+                )
                 self._queue_space_marines_lions_blade_shooting_targets_selected_reactions(
                     attacking_unit=attacking_unit,
                     target_units=list(target_units or []),
@@ -16680,6 +16719,9 @@ class StratagemManager(
         vehemence_result = self._use_space_marines_companions_of_vehemence_stratagem(s, **kwargs)
         if vehemence_result is not None:
             return vehemence_result
+        vanguard_result = self._use_space_marines_vanguard_spearhead_stratagem(s, **kwargs)
+        if vanguard_result is not None:
+            return vanguard_result
         firestorm_result = self._use_space_marines_firestorm_assault_force_stratagem(s, **kwargs)
         if firestorm_result is not None:
             return firestorm_result
