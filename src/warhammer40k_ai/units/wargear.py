@@ -17460,6 +17460,34 @@ class WargearProfile:
                     wound_result["modifiers"].append(f"-1 to wound from {source_name}")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            if isinstance(sr, dict) and sr.get("fight_selected_enemy_melee_wound_penalty_active"):
+                apply_penalty = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                exp = str(sr.get("fight_selected_enemy_melee_wound_penalty_expires_phase", "") or "").strip().upper()
+                if apply_penalty and exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                    if phase_key and phase_key != exp:
+                        apply_penalty = False
+                if apply_penalty and bool(sr.get("fight_selected_enemy_melee_wound_penalty_requires_strength_gt_toughness")):
+                    if not int(strength or 0) > int(target_toughness or 0):
+                        apply_penalty = False
+                if apply_penalty:
+                    try:
+                        penalty = int(sr.get("fight_selected_enemy_melee_wound_penalty_value", 1) or 1)
+                    except Exception:
+                        penalty = 1
+                    penalty = abs(int(penalty or 1))
+                    if penalty > 0:
+                        source_name = (
+                            str(sr.get("fight_selected_enemy_melee_wound_penalty_source", "") or "Strength in Unity").strip()
+                            or "Strength in Unity"
+                        )
+                        dice_modifier -= int(penalty)
+                        wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
         # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -17801,6 +17829,30 @@ class WargearProfile:
                 )
                 if wound_bonus:
                     source_name = str(source or "Talon Strike").strip() or "Talon Strike"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Space Marines: Lion's Blade Task Force (Illuminating Fire) +1 to wound
+        # for Deathwing attacks against the marked enemy unit.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            bonus_fn = getattr(sm_mgr, "lions_blade_illuminating_fire_wound_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Illuminating Fire").strip() or "Illuminating Fire"
                     dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"

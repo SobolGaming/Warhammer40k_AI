@@ -20383,6 +20383,37 @@ def _stratagem_support(
             name_u,
         )
 
+    if stratagem_id == "000009734006":
+        return (
+            "Implemented",
+            "Your Shooting phase reaction after a friendly RAVENWING unit selects targets: pick one targeted enemy within 12\" of that unit, and friendly DEATHWING units gain +1 to wound against that enemy until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000009734007":
+        return (
+            "Implemented",
+            "End of opponent Charge phase: selected DEATHWING INFANTRY or DEATHWING WALKER unit within 6\" of one or more enemy units and eligible to charge can declare and resolve an out-of-turn charge against one of those enemies.",
+            name_u,
+        )
+    if stratagem_id == "000009734005":
+        return (
+            "Implemented",
+            "Your Movement or Charge phase: selected RAVENWING unit can move horizontally through terrain features when making Normal, Advance, or Charge moves this phase.",
+            name_u,
+        )
+    if stratagem_id == "000009734002":
+        return (
+            "Implemented",
+            "Command phase or start of the Fight phase: selected ADEPTUS ASTARTES unit picks one enemy within Engagement Range to take a Battle-shock test, with a -1 modifier if that unit has the DEATHWING or RAVENWING keyword.",
+            name_u,
+        )
+    if stratagem_id == "000009734004":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES unit causes that enemy unit to suffer -1 to hit while engaging friendly RAVENWING units and -1 to wound stronger melee attacks while engaging friendly DEATHWING units until end of phase.",
+            name_u,
+        )
+
     if stratagem_id == "000008483003":
         return (
             "Implemented",

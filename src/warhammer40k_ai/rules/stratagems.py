@@ -1917,6 +1917,7 @@ class StratagemManager(
             "ORBITAL OVERSIGHT",
             "SHIELD NODES",
             "PSYCHIC SHIELD",
+            "ILLUMINATING FIRE",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -1961,6 +1962,7 @@ class StratagemManager(
             "VOID HARDENED",
             "HYPERSTIMMS",
             "SHIELD NODES",
+            "STRENGTH IN UNITY",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -2036,6 +2038,7 @@ class StratagemManager(
             "INVISIBLE HUNTER",
             "INSTINCTIVE HUNTERS",
             "DED SNEAKY",
+            "INESCAPABLE WRATH",
             "ORBITAL TELEPORTARIUM",
             "RIGID DISCIPLINE",
         }
@@ -6042,6 +6045,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_lions_blade_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_librarius_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7140,10 +7147,12 @@ class StratagemManager(
             self._queue_space_marines_firestorm_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_godhammer_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_company_of_hunters_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_lions_blade_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -10119,6 +10128,11 @@ class StratagemManager(
                 return
             owner_player = attacking_unit.get_parent_army().player
             if owner_player is self.player:
+                self._queue_space_marines_lions_blade_shooting_targets_selected_reactions(
+                    attacking_unit=attacking_unit,
+                    target_units=list(target_units or []),
+                )
+            if owner_player is self.player:
                 return  # only opponent can react
         except Exception:
             raise
@@ -11197,6 +11211,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_blade_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_lions_blade_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16560,6 +16581,9 @@ class StratagemManager(
         company_hunters_result = self._use_space_marines_company_of_hunters_stratagem(s, **kwargs)
         if company_hunters_result is not None:
             return company_hunters_result
+        lions_blade_result = self._use_space_marines_lions_blade_task_force_stratagem(s, **kwargs)
+        if lions_blade_result is not None:
+            return lions_blade_result
         emperors_shield_result = self._use_space_marines_emperors_shield_stratagem(s, **kwargs)
         if emperors_shield_result is not None:
             return emperors_shield_result

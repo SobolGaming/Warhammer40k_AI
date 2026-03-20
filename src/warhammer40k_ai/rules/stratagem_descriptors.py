@@ -5341,6 +5341,91 @@ _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COMPANY_OF_HUNTERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_LIONS_BLADE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009734006": StratagemToolDescriptor(
+        stratagem_id="000009734006",
+        name="Illuminating Fire",
+        timing="your_shooting_phase_after_targets_selected",
+        target="one_ravenwing_unit_that_selected_targets_and_one_enemy_targeted_within_12",
+        duration="until_end_of_phase",
+        effect="mark_enemy_for_deathwing_wound_bonus",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "required_keywords_all": ["RAVENWING"],
+            "wound_bonus_keywords_all": ["DEATHWING"],
+            "wound_bonus": 1,
+            "requires_selected_enemy_target": True,
+            "max_target_range": 12.0,
+        },
+    ),
+    "000009734007": StratagemToolDescriptor(
+        stratagem_id="000009734007",
+        name="Inescapable Wrath",
+        timing="end_of_opponent_charge_phase",
+        target="one_deathwing_infantry_or_walker_unit_within_6_of_enemy_and_eligible_to_charge",
+        duration="immediate",
+        effect="out_of_turn_charge",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["DEATHWING"],
+            "required_keywords_any": ["INFANTRY", "WALKER"],
+            "max_enemy_distance": 6.0,
+            "count_as_charged": True,
+            "force_single_target": True,
+        },
+    ),
+    "000009734005": StratagemToolDescriptor(
+        stratagem_id="000009734005",
+        name="Knights of Iron",
+        timing="movement_or_charge_phase_on_select",
+        target="one_ravenwing_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["RAVENWING"],
+            "move_types_by_phase": {
+                "movement": ["move", "advance"],
+                "charge": ["charge"],
+            },
+        },
+    ),
+    "000009734002": StratagemToolDescriptor(
+        stratagem_id="000009734002",
+        name="Overpowering Exaction",
+        timing="command_phase_or_start_of_fight_phase",
+        target="one_adeptus_astartes_unit_within_engagement_range_of_enemy",
+        duration="immediate",
+        effect="force_battleshock_test_with_conditional_deathwing_or_ravenwing_modifier",
+        cp_cost=1,
+        effect_params={
+            "requires_enemy_within_engagement_range": True,
+            "battle_shock_test_modifier_if_source_has_any_keyword": ["DEATHWING", "RAVENWING"],
+            "battle_shock_test_modifier": -1,
+        },
+    ),
+    "000009734004": StratagemToolDescriptor(
+        stratagem_id="000009734004",
+        name="Strength in Unity",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="one_adeptus_astartes_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="enemy_melee_hit_and_conditional_wound_penalty",
+        cp_cost=1,
+        effect_params={
+            "hit_penalty_if_enemy_engaging_friendly_keyword": "RAVENWING",
+            "wound_penalty_if_enemy_engaging_friendly_keyword": "DEATHWING",
+            "wound_penalty_requires_strength_gt_toughness": True,
+        },
+    ),
+}
+
+_LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LIONS_BLADE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009836003": StratagemToolDescriptor(
         stratagem_id="000009836003",
@@ -6105,6 +6190,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COMPANY_OF_HUNTERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LIONS_BLADE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANGELIC_INHERITORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6214,6 +6302,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GODHAMMER_ASSAULT_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BLACK_SPEAR_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _COMPANY_OF_HUNTERS_STRATAGEM_BY_NAME.get(key)
+        or _LIONS_BLADE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
