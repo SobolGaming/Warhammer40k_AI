@@ -138,6 +138,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY = "enhancement_talisman_of_burning_blood_dark_pact_turn"
     _PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY = "enhancement_talisman_of_burning_blood_dark_pact_owner"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
+    _CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX = "chaos_cult_chosen_for_glory"
+    _CHAOS_CULT_CHOSEN_FOR_GLORY_SOURCE = "Chosen for Glory"
+    _CHAOS_CULT_CRAZED_FOCUS_PREFIX = "chaos_cult_crazed_focus"
+    _CHAOS_CULT_CRAZED_FOCUS_SOURCE = "Crazed Focus"
+    _CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX = "chaos_cult_infernal_sacrifice"
+    _CHAOS_CULT_INFERNAL_SACRIFICE_SOURCE = "Infernal Sacrifice"
+    _CHAOS_CULT_SELFLESS_DEMISE_PREFIX = "chaos_cult_selfless_demise"
+    _CHAOS_CULT_SELFLESS_DEMISE_SOURCE = "Selfless Demise"
+    _CHAOS_CULT_MORTAL_THRALLS_PREFIX = "chaos_cult_mortal_thralls"
+    _CHAOS_CULT_MORTAL_THRALLS_SOURCE = "Mortal Thralls"
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
     _TWISTED_DOCTRINE_ALLOWED_ACTIONS = {"move", "advance", "fall_back", "set_up"}
 
@@ -247,6 +257,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if unit_id:
             return unit_id
         return str(id(root))
+
+    @staticmethod
+    def _unit_entity_key(unit) -> str:
+        root = ChaosSpaceMarinesDetachmentManager._unit_root(unit)
+        if root is None:
+            return ""
+        entity_id = str(get_entity_id(root) or "").strip()
+        if entity_id:
+            return entity_id
+        return ChaosSpaceMarinesDetachmentManager._unit_root_key(root)
 
     def _iter_unique_roots(self, units: Iterable) -> list:
         roots = []
@@ -4009,6 +4029,330 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         source = str(sr.get("chaos_cult_desperate_devotion_source", "") or "Desperate Devotion").strip() or "Desperate Devotion"
         return int(bonus), source
+
+    def _chaos_cult_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_chaos_cult():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_chaos_cult_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    def _apply_chaos_cult_self_mortals(self, unit, *, roll_spec: str = "D3", game=None) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        try:
+            mortal_wounds = int(get_roll(str(roll_spec or "D3")) or 0)
+        except (TypeError, ValueError):
+            mortal_wounds = 0
+        if mortal_wounds <= 0:
+            mortal_wounds = 1
+        apply_mortal = getattr(root, "_apply_mortal_wounds_to_unit", None)
+        if callable(apply_mortal):
+            resolved_game = self._resolve_game(game=game)
+            apply_mortal(root, int(mortal_wounds), game_map=getattr(resolved_game, "map", None))
+        return int(mortal_wounds)
+
+    def resolve_chaos_cult_desperate_pact(self, unit, *, game=None) -> dict:
+        root = self._unit_root(unit)
+        if root is None:
+            return {"ok": False, "reason": "Unit not found."}
+        leadership_fn = getattr(root, "pass_leadership_check", None)
+        leadership_passed = True
+        if callable(leadership_fn):
+            leadership_passed = bool(leadership_fn())
+        mortal_wounds = 0
+        if not leadership_passed:
+            mortal_wounds = self._apply_chaos_cult_self_mortals(root, roll_spec="D3", game=game)
+        return {
+            "ok": True,
+            "unit_id": self._unit_entity_key(root),
+            "leadership_passed": bool(leadership_passed),
+            "mortal_wounds": int(mortal_wounds),
+        }
+
+    def _chaos_cult_effect_source(self, sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    @staticmethod
+    def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return True
+        if str(attack_type or "").strip().lower() == "melee":
+            checker = getattr(parent, "is_melee", None)
+        else:
+            checker = getattr(parent, "is_ranged", None)
+        return not callable(checker) or bool(checker())
+
+    def chaos_cult_chosen_for_glory_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged") and not self._weapon_profile_matches_attack_type(
+            weapon_profile,
+            "melee",
+        ):
+            return False, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return False, ""
+        return True, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX,
+            default=self._CHAOS_CULT_CHOSEN_FOR_GLORY_SOURCE,
+        )
+
+    def chaos_cult_chosen_for_glory_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return False, ""
+        if not bool(sr.get(f"{self._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX}_leadership_passed", False)):
+            return False, ""
+        return True, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX,
+            default=self._CHAOS_CULT_CHOSEN_FOR_GLORY_SOURCE,
+        )
+
+    def chaos_cult_crazed_focus_ranged_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_CRAZED_FOCUS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return 0, ""
+        return 1, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_CRAZED_FOCUS_PREFIX,
+            default=self._CHAOS_CULT_CRAZED_FOCUS_SOURCE,
+        )
+
+    def chaos_cult_crazed_focus_ranged_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_CRAZED_FOCUS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return 0, ""
+        if not bool(sr.get(f"{self._CHAOS_CULT_CRAZED_FOCUS_PREFIX}_leadership_passed", False)):
+            return 0, ""
+        return 1, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_CRAZED_FOCUS_PREFIX,
+            default=self._CHAOS_CULT_CRAZED_FOCUS_SOURCE,
+        )
+
+    def chaos_cult_infernal_sacrifice_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return 0, ""
+        return 1, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX,
+            default=self._CHAOS_CULT_INFERNAL_SACRIFICE_SOURCE,
+        )
+
+    def chaos_cult_infernal_sacrifice_melee_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        root, sr = self._chaos_cult_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return 0, ""
+        if not bool(sr.get(f"{self._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX}_leadership_passed", False)):
+            return 0, ""
+        return 1, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX,
+            default=self._CHAOS_CULT_INFERNAL_SACRIFICE_SOURCE,
+        )
+
+    def _chaos_cult_resolve_unit_from_key(self, unit_key: str, *, game=None, game_map=None):
+        resolved_key = str(unit_key or "").strip()
+        if not resolved_key:
+            return None
+        resolved_game = self._resolve_game(game=game)
+        if game_map is None and resolved_game is not None:
+            game_map = getattr(resolved_game, "map", None)
+        if game_map is None:
+            return None
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            if self._unit_entity_key(root) == resolved_key:
+                return root
+        return None
+
+    def chaos_cult_mortal_thralls_support_unit(
+        self,
+        protected_unit,
+        *,
+        attacker_unit=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[Optional[object], str]:
+        root, sr = self._chaos_cult_effect_state(
+            protected_unit,
+            prefix=self._CHAOS_CULT_MORTAL_THRALLS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return None, ""
+        expected_attacker_key = str(sr.get(f"{self._CHAOS_CULT_MORTAL_THRALLS_PREFIX}_attacker_unit_id", "") or "").strip()
+        current_attacker_key = self._unit_entity_key(attacker_unit)
+        if expected_attacker_key and current_attacker_key and expected_attacker_key != current_attacker_key:
+            return None, ""
+        support_key = str(sr.get(f"{self._CHAOS_CULT_MORTAL_THRALLS_PREFIX}_support_unit_id", "") or "").strip()
+        support_root = self._chaos_cult_resolve_unit_from_key(support_key, game=game, game_map=game_map)
+        if support_root is None or not self._unit_in_army(support_root):
+            return None, ""
+        if not self._unit_is_damned(support_root) or not self._unit_on_battlefield(support_root):
+            return None, ""
+        return support_root, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_MORTAL_THRALLS_PREFIX,
+            default=self._CHAOS_CULT_MORTAL_THRALLS_SOURCE,
+        )
+
+    def chaos_cult_selfless_demise_applies(self, unit, *, attacker_unit=None, game=None) -> tuple[bool, str]:
+        root, sr = self._chaos_cult_effect_state(
+            unit,
+            prefix=self._CHAOS_CULT_SELFLESS_DEMISE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return False, ""
+        expected_attacker_key = str(sr.get(f"{self._CHAOS_CULT_SELFLESS_DEMISE_PREFIX}_attacker_unit_id", "") or "").strip()
+        current_attacker_key = self._unit_entity_key(attacker_unit)
+        if expected_attacker_key and current_attacker_key and expected_attacker_key != current_attacker_key:
+            return False, ""
+        return True, self._chaos_cult_effect_source(
+            sr,
+            prefix=self._CHAOS_CULT_SELFLESS_DEMISE_PREFIX,
+            default=self._CHAOS_CULT_SELFLESS_DEMISE_SOURCE,
+        )
 
     @staticmethod
     def _model_alive(model) -> bool:

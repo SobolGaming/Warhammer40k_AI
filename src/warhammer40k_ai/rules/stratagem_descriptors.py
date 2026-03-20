@@ -2047,6 +2047,76 @@ _CABAL_OF_CHAOS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CHAOS_CULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008982002": StratagemToolDescriptor(
+        stratagem_id="000008982002",
+        name="Chosen for Glory",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="damned_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="desperate_pact_hit_reroll_with_conditional_wound_reroll",
+        cp_cost=1,
+        effect_params={"reroll_hit": True, "reroll_wound_if_leadership_passed": True},
+    ),
+    "000008982003": StratagemToolDescriptor(
+        stratagem_id="000008982003",
+        name="Selfless Demise",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="damned_unit_targeted_by_enemy_melee_attacks",
+        duration="until_attacker_finishes_attacks",
+        effect="post_attack_mortal_retaliation_on_destroyed_models",
+        cp_cost=1,
+        effect_params={"threshold": 6, "mortal_wounds": 1, "attack_type": "melee"},
+    ),
+    "000008982004": StratagemToolDescriptor(
+        stratagem_id="000008982004",
+        name="Infernal Sacrifice",
+        timing="fight_phase_on_select_to_fight",
+        target="damned_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="desperate_pact_with_extra_self_mortals_and_melee_attacks_strength_bonus",
+        cp_cost=1,
+        effect_params={
+            "extra_self_mortal_wounds": "D3",
+            "melee_attacks_bonus": 1,
+            "melee_strength_bonus_if_leadership_passed": 1,
+        },
+    ),
+    "000008982005": StratagemToolDescriptor(
+        stratagem_id="000008982005",
+        name="Crazed Focus",
+        timing="shooting_phase_on_select_to_shoot",
+        target="damned_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="desperate_pact_ranged_ap_bonus_with_conditional_strength_bonus",
+        cp_cost=1,
+        effect_params={"ranged_ap_bonus": 1, "ranged_strength_bonus_if_leadership_passed": 1},
+    ),
+    "000008982006": StratagemToolDescriptor(
+        stratagem_id="000008982006",
+        name="Reckless Haste",
+        timing="charge_phase",
+        target="damned_unit_not_yet_selected_to_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
+    "000008982007": StratagemToolDescriptor(
+        stratagem_id="000008982007",
+        name="Mortal Thralls",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_with_visible_damned_support_within_3",
+        duration="until_end_of_phase",
+        effect="redirect_pre_wound_roll_hits_to_support_unit_as_mortal_wounds",
+        cp_cost=1,
+        range_in=3.0,
+    ),
+}
+
+_CHAOS_CULT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_CULT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7306,6 +7376,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_CULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7550,6 +7623,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
+        or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

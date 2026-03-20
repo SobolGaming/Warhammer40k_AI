@@ -78,6 +78,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_cabal_of_chaos", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_chaos_cult_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_chaos_cult", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -95,6 +100,16 @@ class ChaosSpaceMarinesStratagemMixin:
         if not self._is_heretic_astartes_unit(root):
             return False
         return self._csm_has_keyword(root, "INFANTRY")
+
+    def _is_damned_unit(self, unit: Any) -> bool:
+        root = self._csm_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "_unit_is_damned", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._csm_has_keyword(root, "DAMNED")
 
     def _is_cabal_psyker_source_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
@@ -221,6 +236,181 @@ class ChaosSpaceMarinesStratagemMixin:
 
     def _cabal_shroud_of_chaos_candidates(self) -> list[Any]:
         return self._cabal_targetable_units(require_shroud_source=True)
+
+    def _chaos_cult_targetable_units(
+        self,
+        *,
+        require_damned: bool = False,
+        require_heretic_astartes: bool = False,
+        require_dark_pacts: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_attempted_charge: bool = False,
+    ) -> list[Any]:
+        if not self._is_chaos_cult_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._get_chaos_space_marines_mgr()
+        has_dark_pacts = getattr(mgr, "_unit_has_dark_pacts", None) if mgr is not None else None
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if require_damned and not self._is_damned_unit(root):
+                continue
+            if require_heretic_astartes and not self._is_heretic_astartes_unit(root):
+                continue
+            if require_dark_pacts and callable(has_dark_pacts) and not bool(has_dark_pacts(root)):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_not_attempted_charge and bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _chaos_cult_damned_shooting_candidates(self) -> list[Any]:
+        return self._chaos_cult_targetable_units(
+            require_damned=True,
+            require_dark_pacts=True,
+            require_not_shot=True,
+        )
+
+    def _chaos_cult_damned_fight_candidates(self) -> list[Any]:
+        return self._chaos_cult_targetable_units(
+            require_damned=True,
+            require_dark_pacts=True,
+            require_not_fought=True,
+        )
+
+    def _chaos_cult_reckless_haste_candidates(self) -> list[Any]:
+        return self._chaos_cult_targetable_units(
+            require_damned=True,
+            require_not_attempted_charge=True,
+        )
+
+    def _csm_find_pending_reaction(self, stratagem_name: str, *, unit: Any = None):
+        name_u = str(stratagem_name or "").strip().upper()
+        expected_root = self._csm_root(unit)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if expected_root is None:
+                return reaction
+            reaction_root = self._csm_root(reaction.get("unit") or reaction.get("target_unit"))
+            if reaction_root is expected_root:
+                return reaction
+        return None
+
+    def _chaos_cult_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._csm_root(source_unit)
+        target_root = self._csm_root(target_unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if source_root is None or target_root is None or game_map is None:
+            return False
+        los_checker = getattr(source_root, "_attacking_unit_has_any_los_to_target_unit", None)
+        return bool(callable(los_checker) and los_checker(target_root, game_map))
+
+    def _chaos_cult_mortal_thralls_support_candidates(
+        self,
+        *,
+        protected_unit: Any,
+        attacking_unit: Any,
+    ) -> list[Any]:
+        protected_root = self._csm_root(protected_unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if protected_root is None or attacker_root is None:
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        support_pool = self._chaos_cult_targetable_units(require_damned=True)
+        candidates: list[Any] = []
+        for support_root in list(support_pool or []):
+            if not unit_within_range_of_unit(protected_root, support_root, 3.0, use_attached_aggregate=True):
+                continue
+            if not self._chaos_cult_unit_visible_to_unit(protected_root, support_root):
+                continue
+            if not self._chaos_cult_unit_visible_to_unit(attacker_root, support_root):
+                continue
+            candidates.append(support_root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _chaos_cult_mortal_thralls_candidate_map(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> dict[str, dict[str, Any]]:
+        candidates: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            protected_root = self._csm_root(target)
+            if protected_root is None:
+                continue
+            uid = self._csm_sort_key(protected_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(protected_root, self.player):
+                continue
+            if not self._csm_is_alive(protected_root) or not self._csm_is_on_battlefield(protected_root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(protected_root):
+                continue
+            if not self._is_heretic_astartes_unit(protected_root):
+                continue
+            support_candidates = self._chaos_cult_mortal_thralls_support_candidates(
+                protected_unit=protected_root,
+                attacking_unit=attacking_unit,
+            )
+            if not support_candidates:
+                continue
+            candidates[uid] = {"unit": protected_root, "support_candidates": support_candidates}
+        return candidates
+
+    def _chaos_cult_selfless_demise_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_damned_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
 
     def _cabal_mutations_curse_enemy_candidates(self, source_unit: Any, *, radius: float = 12.0) -> list[Any]:
         source_root = self._csm_root(source_unit)
@@ -404,6 +594,101 @@ class ChaosSpaceMarinesStratagemMixin:
         }
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_chaos_cult_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_chaos_cult_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None:
+            return
+        if self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("MORTAL THRALLS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidate_map = self._chaos_cult_mortal_thralls_candidate_map(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        if not candidate_map:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MORTAL THRALLS":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        ordered_candidates = [entry["unit"] for entry in candidate_map.values()]
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": ordered_candidates,
+            "support_candidates_by_unit": {
+                key: list(entry["support_candidates"] or [])
+                for key, entry in candidate_map.items()
+            },
+        }
+        if len(ordered_candidates) == 1:
+            protected_root = ordered_candidates[0]
+            protected_key = self._csm_sort_key(protected_root)
+            payload["unit"] = protected_root
+            payload["target_unit"] = protected_root
+            support_candidates = list(payload["support_candidates_by_unit"].get(protected_key, []) or [])
+            if len(support_candidates) == 1:
+                payload["support_unit"] = support_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_chaos_cult_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_chaos_cult_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None:
+            return
+        if self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("SELFLESS DEMISE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._chaos_cult_selfless_demise_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "SELFLESS DEMISE":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_cabal_of_chaos_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -428,6 +713,24 @@ class ChaosSpaceMarinesStratagemMixin:
                         "shroud_of_chaos_turn",
                         "shroud_of_chaos_source",
                     ):
+                        sr.pop(key, None)
+                    root.special_rules = sr
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                remove_prefixes = (
+                    "chaos_cult_chosen_for_glory",
+                    "chaos_cult_crazed_focus",
+                    "chaos_cult_infernal_sacrifice",
+                    "chaos_cult_selfless_demise",
+                    "chaos_cult_mortal_thralls",
+                )
+                remove_keys = [
+                    key
+                    for key in list(sr.keys())
+                    if any(str(key).startswith(prefix) for prefix in remove_prefixes)
+                ]
+                if remove_keys:
+                    for key in remove_keys:
                         sr.pop(key, None)
                     root.special_rules = sr
 
@@ -971,10 +1274,419 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_chaos_cult_chosen_for_glory(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CHOSEN FOR GLORY: no target unit provided")
+            return False
+        root = self._csm_root(unit)
+        if root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CHOSEN FOR GLORY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: CHOSEN FOR GLORY: shooting phase use requires your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: CHOSEN FOR GLORY: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: CHOSEN FOR GLORY: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CHOSEN FOR GLORY: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: CHOSEN FOR GLORY: target must be DAMNED")
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        has_dark_pacts = getattr(mgr, "_unit_has_dark_pacts", None) if mgr is not None else None
+        if not callable(has_dark_pacts) or not bool(has_dark_pacts(root)):
+            logger.error("ERROR: CHOSEN FOR GLORY: target must be able to make a Desperate Pact")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: CHOSEN FOR GLORY: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: CHOSEN FOR GLORY: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        pact_result = mgr.resolve_chaos_cult_desperate_pact(root, game=self.game)
+        mgr._set_chaos_cult_effect_state(
+            root,
+            prefix=mgr._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX,
+            source=stratagem.name or "CHOSEN FOR GLORY",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX}_leadership_passed": bool(
+                    pact_result.get("leadership_passed", False)
+                )
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CHOSEN FOR GLORY: %s gains Hit re-rolls%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and Wound re-rolls" if bool(pact_result.get("leadership_passed", False)) else "",
+        )
+        return True
+
+    def _use_chaos_cult_crazed_focus(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CRAZED FOCUS: no target unit provided")
+            return False
+        root = self._csm_root(unit)
+        if root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CRAZED FOCUS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CRAZED FOCUS: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: CRAZED FOCUS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: CRAZED FOCUS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CRAZED FOCUS: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: CRAZED FOCUS: target must be DAMNED")
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        has_dark_pacts = getattr(mgr, "_unit_has_dark_pacts", None) if mgr is not None else None
+        if not callable(has_dark_pacts) or not bool(has_dark_pacts(root)):
+            logger.error("ERROR: CRAZED FOCUS: target must be able to make a Desperate Pact")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: CRAZED FOCUS: target has already been selected to shoot")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        pact_result = mgr.resolve_chaos_cult_desperate_pact(root, game=self.game)
+        mgr._set_chaos_cult_effect_state(
+            root,
+            prefix=mgr._CHAOS_CULT_CRAZED_FOCUS_PREFIX,
+            source=stratagem.name or "CRAZED FOCUS",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CHAOS_CULT_CRAZED_FOCUS_PREFIX}_leadership_passed": bool(
+                    pact_result.get("leadership_passed", False)
+                )
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRAZED FOCUS: %s gains +1 AP%s on ranged attacks until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and +1 Strength" if bool(pact_result.get("leadership_passed", False)) else "",
+        )
+        return True
+
+    def _use_chaos_cult_infernal_sacrifice(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: INFERNAL SACRIFICE: no target unit provided")
+            return False
+        root = self._csm_root(unit)
+        if root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: INFERNAL SACRIFICE: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: INFERNAL SACRIFICE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: INFERNAL SACRIFICE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: INFERNAL SACRIFICE: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: INFERNAL SACRIFICE: target must be DAMNED")
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        has_dark_pacts = getattr(mgr, "_unit_has_dark_pacts", None) if mgr is not None else None
+        if not callable(has_dark_pacts) or not bool(has_dark_pacts(root)):
+            logger.error("ERROR: INFERNAL SACRIFICE: target must be able to make a Desperate Pact")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: INFERNAL SACRIFICE: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        pact_result = mgr.resolve_chaos_cult_desperate_pact(root, game=self.game)
+        extra_mortals = mgr._apply_chaos_cult_self_mortals(root, roll_spec="D3", game=self.game)
+        mgr._set_chaos_cult_effect_state(
+            root,
+            prefix=mgr._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX,
+            source=stratagem.name or "INFERNAL SACRIFICE",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CHAOS_CULT_INFERNAL_SACRIFICE_PREFIX}_leadership_passed": bool(
+                    pact_result.get("leadership_passed", False)
+                )
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: INFERNAL SACRIFICE: %s gains +1 Attacks%s and suffers %d mortal wound(s).",
+            getattr(root, "name", "Unit"),
+            " and +1 Strength" if bool(pact_result.get("leadership_passed", False)) else "",
+            int(extra_mortals) + int(pact_result.get("mortal_wounds", 0) or 0),
+        )
+        return True
+
+    def _use_chaos_cult_reckless_haste(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RECKLESS HASTE: no target unit provided")
+            return False
+        root = self._csm_root(unit)
+        if root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: RECKLESS HASTE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RECKLESS HASTE: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: RECKLESS HASTE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: RECKLESS HASTE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: RECKLESS HASTE: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: RECKLESS HASTE: target must be DAMNED")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+            logger.error("ERROR: RECKLESS HASTE: target has already attempted a charge this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["warp_surge_charge_after_advance"] = True
+        sr["warp_surge_expires_phase"] = "CHARGE_PHASE"
+        sr["warp_surge_source"] = str(stratagem.name or "RECKLESS HASTE")
+        root.special_rules = sr
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RECKLESS HASTE: %s can charge after Advancing this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_chaos_cult_mortal_thralls(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        support_unit = kwargs.get("support_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        support_by_unit = dict(kwargs.get("support_candidates_by_unit") or {})
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("MORTAL THRALLS", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not support_by_unit:
+                support_by_unit = dict(pending.get("support_candidates_by_unit") or {})
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+            if support_unit is None:
+                support_unit = pending.get("support_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MORTAL THRALLS: no protected unit provided")
+            return False
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: MORTAL THRALLS: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: MORTAL THRALLS: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: MORTAL THRALLS: protected unit is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: MORTAL THRALLS: protected unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MORTAL THRALLS: protected unit cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: MORTAL THRALLS: protected unit must be HERETIC ASTARTES")
+            return False
+        protected_key = self._csm_sort_key(root)
+        support_candidates = list(support_by_unit.get(protected_key, []) or [])
+        if support_unit is None and len(support_candidates) == 1:
+            support_unit = support_candidates[0]
+        support_root = self._csm_root(support_unit)
+        if support_root is None:
+            logger.error("ERROR: MORTAL THRALLS: no support DAMNED unit provided")
+            return False
+        if support_candidates and support_root not in support_candidates:
+            logger.error("ERROR: MORTAL THRALLS: support unit is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(support_root, self.player):
+            logger.error("ERROR: MORTAL THRALLS: support unit is not yours")
+            return False
+        if not self._csm_is_alive(support_root) or not self._csm_is_on_battlefield(support_root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(support_root):
+            logger.error("ERROR: MORTAL THRALLS: support unit cannot be selected")
+            return False
+        if not self._is_damned_unit(support_root):
+            logger.error("ERROR: MORTAL THRALLS: support unit must be DAMNED")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        mgr._set_chaos_cult_effect_state(
+            root,
+            prefix=mgr._CHAOS_CULT_MORTAL_THRALLS_PREFIX,
+            source=stratagem.name or "MORTAL THRALLS",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CHAOS_CULT_MORTAL_THRALLS_PREFIX}_attacker_unit_id": mgr._unit_entity_key(attacker_root),
+                f"{mgr._CHAOS_CULT_MORTAL_THRALLS_PREFIX}_support_unit_id": mgr._unit_entity_key(support_root),
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MORTAL THRALLS: %s redirects eligible wound rolls to %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(support_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_chaos_cult_selfless_demise(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("SELFLESS DEMISE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SELFLESS DEMISE: no target unit provided")
+            return False
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_chaos_cult_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SELFLESS DEMISE: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: SELFLESS DEMISE: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SELFLESS DEMISE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SELFLESS DEMISE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SELFLESS DEMISE: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: SELFLESS DEMISE: target must be DAMNED")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        mgr._set_chaos_cult_effect_state(
+            root,
+            prefix=mgr._CHAOS_CULT_SELFLESS_DEMISE_PREFIX,
+            source=stratagem.name or "SELFLESS DEMISE",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CHAOS_CULT_SELFLESS_DEMISE_PREFIX}_attacker_unit_id": mgr._unit_entity_key(attacker_root),
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SELFLESS DEMISE: %s rolls for post-attack mortal retaliation against %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "enemy"),
+        )
+        return True
+
     def _use_chaos_space_marines_cabal_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "CHOSEN FOR GLORY":
+            return self._use_chaos_cult_chosen_for_glory(stratagem, **kwargs)
+        if name_u == "CRAZED FOCUS":
+            return self._use_chaos_cult_crazed_focus(stratagem, **kwargs)
+        if name_u == "INFERNAL SACRIFICE":
+            return self._use_chaos_cult_infernal_sacrifice(stratagem, **kwargs)
+        if name_u == "MORTAL THRALLS":
+            return self._use_chaos_cult_mortal_thralls(stratagem, **kwargs)
+        if name_u == "RECKLESS HASTE":
+            return self._use_chaos_cult_reckless_haste(stratagem, **kwargs)
+        if name_u == "SELFLESS DEMISE":
+            return self._use_chaos_cult_selfless_demise(stratagem, **kwargs)
         if name_u == "BALEFUL BLESSING":
             return self._use_cabal_baleful_blessing(stratagem, **kwargs)
         if name_u == "MUTATION'S CURSE":

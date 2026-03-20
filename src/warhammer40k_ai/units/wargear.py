@@ -3978,6 +3978,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                ap_bonus_fn = getattr(csm_mgr, "chaos_cult_crazed_focus_ranged_ap_bonus", None) if csm_mgr is not None else None
+                if callable(ap_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    ap_bonus, _source = ap_bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(ap_bonus or 0) > 0:
+                        ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
             _profile_s_bonus, profile_ap_bonus, _profile_d_bonus, _profile_source = (
                 self._model_target_keywords_profile_bonus(attacker, target)
             )
@@ -6318,6 +6335,26 @@ class WargearProfile:
                             ModifierOp.ADD,
                             int(bonus),
                             source="detachment:debt_to_the_soul_forge_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (melee)"
+                    )
+            infernal_bonus_fn = getattr(
+                mgr,
+                "chaos_cult_infernal_sacrifice_melee_attacks_bonus",
+                None,
+            ) if mgr is not None else None
+            if callable(infernal_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = infernal_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Infernal Sacrifice").strip() or "Infernal Sacrifice"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="stratagem:infernal_sacrifice_attacks",
                         )
                     )
                     attack_result.attacks_special_modifiers.append(
@@ -12861,6 +12898,20 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Tempting Addendum").strip() or "Tempting Addendum"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        chosen_for_glory_fn = (
+            getattr(csm_mgr, "chaos_cult_chosen_for_glory_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(chosen_for_glory_fn):
+            reroll_full, source = chosen_for_glory_fn(
+                attacker,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Chosen for Glory").strip() or "Chosen for Glory"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):
@@ -15890,6 +15941,23 @@ class WargearProfile:
             wound_result['special_effects'].append("Lethal Hit (auto-wound)")
             return wound_result
 
+        mortal_thralls_redirect = self._resolve_chaos_cult_mortal_thralls_redirect(
+            target,
+            attacker,
+            attack_instance,
+            game_map=self._get_game_map_from_model(attacker),
+        )
+        if isinstance(mortal_thralls_redirect, dict):
+            support_unit = mortal_thralls_redirect.get("support_unit")
+            damage_value = int(mortal_thralls_redirect.get("damage", 0) or 0)
+            source_name = str(mortal_thralls_redirect.get("source") or "Mortal Thralls").strip() or "Mortal Thralls"
+            support_name = str(getattr(support_unit, "name", "DAMNED unit") or "DAMNED unit").strip() or "DAMNED unit"
+            wound_result['wound'] = False
+            wound_result['special_effects'].append(
+                f"{source_name}: redirected to {support_name} as {int(damage_value)} mortal wound(s)"
+            )
+            return wound_result
+
         strength = self.strength
         try:
             if self.parent_wargear and isinstance(strength, int):
@@ -16343,6 +16411,25 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).extend(list(reasons))
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                bonus_fn = getattr(csm_mgr, "chaos_cult_crazed_focus_ranged_strength_bonus", None) if csm_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Crazed Focus").strip() or "Crazed Focus"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -16709,6 +16796,20 @@ class WargearProfile:
                 if int(s_bonus or 0):
                     strength = strength + int(s_bonus)
                     source_name = str(source or "Incendiary Goad").strip() or "Incendiary Goad"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"{source_name} +{int(s_bonus)}S (melee)"
+                    )
+            infernal_bonus_fn = (
+                getattr(csm_mgr, "chaos_cult_infernal_sacrifice_melee_strength_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(infernal_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                s_bonus, source = infernal_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(s_bonus or 0):
+                    strength = strength + int(s_bonus)
+                    source_name = str(source or "Infernal Sacrifice").strip() or "Infernal Sacrifice"
                     wound_result.setdefault("modifiers", []).append(
                         f"{source_name} +{int(s_bonus)}S (melee)"
                     )
@@ -19027,6 +19128,27 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Dread Reaver").strip() or "Dread Reaver"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "chaos_cult_chosen_for_glory_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Chosen for Glory").strip() or "Chosen for Glory"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
@@ -24955,6 +25077,59 @@ class WargearProfile:
                     setattr(target_unit, "_last_destroyed_by_unit", attacker_unit)
                     setattr(target_unit, "_last_destroyed_by_weapon_profile", self)
 
+                try:
+                    is_melee_attack = bool(self.parent_wargear and self.parent_wargear.is_melee())
+                except Exception:
+                    is_melee_attack = False
+                if is_melee_attack and target_unit is not None:
+                    try:
+                        target_army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+                    except Exception:
+                        target_army = None
+                    csm_mgr = getattr(target_army, "chaos_space_marines_detachments", None) if target_army is not None else None
+                    applies_fn = getattr(csm_mgr, "chaos_cult_selfless_demise_applies", None) if csm_mgr is not None else None
+                    if callable(applies_fn):
+                        game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                        applies, source = applies_fn(target_unit, attacker_unit=attacker_unit, game=game)
+                        if bool(applies):
+                            try:
+                                target_root = target_unit.get_attached_unit_root()
+                            except Exception:
+                                target_root = target_unit
+                            try:
+                                attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+                            except Exception:
+                                attacker_root = attacker_unit
+                            attacker_id = str(get_entity_id(attacker_root) or "")
+                            if target_root is not None and attacker_id:
+                                sr = getattr(target_root, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                allocations_by_key = sr.get("allocated_melee_retaliation_allocations")
+                                if not isinstance(allocations_by_key, dict):
+                                    allocations_by_key = {}
+                                specs_by_key = sr.get("allocated_melee_retaliation_specs")
+                                if not isinstance(specs_by_key, dict):
+                                    specs_by_key = {}
+                                ability_key = "allocated_melee_retaliation:chaos_cult_selfless_demise"
+                                allocations = allocations_by_key.get(ability_key)
+                                if not isinstance(allocations, dict):
+                                    allocations = {}
+                                try:
+                                    current = int(allocations.get(attacker_id, 0) or 0)
+                                except Exception:
+                                    current = 0
+                                allocations[attacker_id] = int(max(0, current + 1))
+                                allocations_by_key[ability_key] = allocations
+                                specs_by_key[ability_key] = {
+                                    "source": str(source or "Selfless Demise").strip() or "Selfless Demise",
+                                    "threshold": 6,
+                                    "mortal_wounds": 1,
+                                }
+                                sr["allocated_melee_retaliation_allocations"] = allocations_by_key
+                                sr["allocated_melee_retaliation_specs"] = specs_by_key
+                                target_root.special_rules = sr
+
                 game = attacker_unit.get_parent_army().player.game if attacker_unit is not None else None
                 if game is not None and hasattr(game, "event_system"):
                     game.event_system.publish(
@@ -25019,6 +25194,85 @@ class WargearProfile:
             return int(value)
         except (TypeError, ValueError):
             return 0
+
+    def _current_attack_damage_characteristic(self, attacker: 'Model', attack_instance: Dict) -> int:
+        weapon_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or getattr(self, "name", "") or "")
+        damage_override = 0
+        if attacker is not None and hasattr(attacker, "get_temporary_weapon_damage_override"):
+            override = attacker.get_temporary_weapon_damage_override(weapon_name)
+            if isinstance(override, tuple):
+                override = override[0]
+            try:
+                damage_override = int(override or 0)
+            except (TypeError, ValueError):
+                damage_override = 0
+        if damage_override:
+            damage_value = int(damage_override)
+        else:
+            waaagh_damage_set = 0
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                waaagh_damage_set, _waaagh_source = self._orks_waaagh_model_weapon_damage_set(attacker)
+            try:
+                damage_value = int(waaagh_damage_set or 0)
+            except (TypeError, ValueError):
+                damage_value = 0
+            if damage_value <= 0:
+                damage_value = int(self._resolve_mortal_wound_amount(self.damage))
+        try:
+            sonic_bonus = int((attack_instance or {}).get("sonic_destruction_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            sonic_bonus = 0
+        return max(0, int(damage_value) + int(sonic_bonus))
+
+    def _resolve_chaos_cult_mortal_thralls_redirect(
+        self,
+        target: 'Unit',
+        attacker: 'Model',
+        attack_instance: Dict,
+        *,
+        game_map: Optional['Map'] = None,
+    ) -> Optional[Dict]:
+        if target is None or attacker is None or game_map is None:
+            return None
+        target_army = target.get_parent_army() if hasattr(target, "get_parent_army") else None
+        csm_mgr = getattr(target_army, "chaos_space_marines_detachments", None) if target_army is not None else None
+        support_fn = getattr(csm_mgr, "chaos_cult_mortal_thralls_support_unit", None) if csm_mgr is not None else None
+        if not callable(support_fn):
+            return None
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+        support_unit, source = support_fn(
+            target,
+            attacker_unit=attacker_unit,
+            game=game,
+            game_map=game_map,
+        )
+        if support_unit is None or attacker_unit is None:
+            return None
+        can_target_fn = getattr(attacker_unit, "_can_model_shoot_weapon_at_target", None)
+        if not callable(can_target_fn):
+            return None
+        if not bool(can_target_fn(attacker, self, support_unit, game_map)):
+            return None
+        damage_value = self._current_attack_damage_characteristic(attacker, attack_instance)
+        if damage_value <= 0:
+            return None
+        apply_mortals = getattr(attacker_unit, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortals):
+            return None
+        apply_mortals(
+            support_unit,
+            int(damage_value),
+            game_map=game_map,
+            attacker_unit=attacker_unit,
+            attacker_model=attacker,
+            damage_source="chaos_cult_mortal_thralls",
+        )
+        return {
+            "support_unit": support_unit,
+            "damage": int(damage_value),
+            "source": str(source or "Mortal Thralls").strip() or "Mortal Thralls",
+        }
 
     def _apply_single_mortal_wound_with_tracking(
         self,

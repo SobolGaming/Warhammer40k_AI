@@ -62,7 +62,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLAR’S WISDOM",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
+    "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
+    "MORTAL THRALLS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "OVERRIDE INSTINCTS",
@@ -75,8 +77,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VICIOUS BLADES",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
+    "RECKLESS HASTE",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "SELFLESS DEMISE",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
     "ALPHA STRIKE",
@@ -88,8 +92,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BATTLE INSTINCTS",
     "CALCULATED FEINT",
     "CHILLING HOWL",
+    "CHOSEN FOR GLORY",
     "CODEX DISCIPLINE",
     "COURAGE AND HONOUR!",
+    "CRAZED FOCUS",
     "DEVOUT PUSH",
     "DISCIPLINED EXTERMINATION",
     "DREAD CRUSADERS",
@@ -2017,6 +2023,7 @@ class StratagemManager(
             "RIDE HARD, RIDE FAST",
             "EVASIVE MANOEUVRES",
             "IMPETUOSITY",
+            "MORTAL THRALLS",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2047,6 +2054,7 @@ class StratagemManager(
             "THE FOE FORESEEN",
             "FIGHT TO THE END",
             "FINAL RETRIBUTION",
+            "SELFLESS DEMISE",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
@@ -10591,6 +10599,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_chaos_cult_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_votann_needgaard_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -11444,6 +11459,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_chaos_cult_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         if owner_player is None or owner_player is self.player:
             return
         try:
@@ -11607,7 +11629,6 @@ class StratagemManager(
             )
         except Exception:
             raise
-
         # FRENZIED RESILIENCE (World Eaters)
         try:
             s = self.get_by_name("FRENZIED RESILIENCE")
