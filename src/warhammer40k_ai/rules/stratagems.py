@@ -16089,7 +16089,14 @@ class StratagemManager(
                 logger.info("INFO: Rapid Ingress: target unit is in Cult Ambush")
                 return False
             # Restriction: cannot arrive in a battle round it would not normally be able to
-            if not getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0)):
+            rapid_ingress_eligibility = getattr(target, "can_be_targeted_by_rapid_ingress", None)
+            if callable(rapid_ingress_eligibility):
+                can_arrive = bool(rapid_ingress_eligibility(getattr(self.game, "turn", 0)))
+            else:
+                can_arrive = bool(
+                    getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0))
+                )
+            if not can_arrive:
                 logger.error("ERROR: Rapid Ingress: target unit cannot arrive from reserves this battle round")
                 return False
             gift_context: dict = {}

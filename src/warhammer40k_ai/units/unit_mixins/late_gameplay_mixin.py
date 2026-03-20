@@ -3208,6 +3208,20 @@ class LateGameplayMixin:
         
         return True
 
+    def can_be_targeted_by_rapid_ingress(self, current_turn: int) -> bool:
+        if not self.can_arrive_from_reserves(current_turn):
+            return False
+        if int(current_turn or 0) >= 2:
+            return True
+        get_drop_pod_rule = getattr(self, "get_drop_pod_assault_rule", None)
+        if not callable(get_drop_pod_rule):
+            return True
+        drop_pod_rule = get_drop_pod_rule()
+        if not isinstance(drop_pod_rule, dict):
+            return True
+        source_name = str(drop_pod_rule.get("source", "") or "").strip().lower()
+        return source_name != "drop pod assault"
+
     def _finalize_reserves_arrival(self, turn: int, game_map: Optional['Map'] = None) -> bool:
         """Finalize state updates for a unit that has been set up from reserves."""
         # Unit position is now determined by model positions

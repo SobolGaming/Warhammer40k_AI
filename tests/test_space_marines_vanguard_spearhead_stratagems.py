@@ -324,7 +324,12 @@ def test_a_deadly_prize_sets_sticky_and_sabotage_applies_move_end_mortals_and_br
     assert objective.location.controlling_player is enemy_player
     assert objective.location.sticky_controller is None
     assert objective.location.sticky_source is None
-    assert str(sm_player.id) not in objective.location.space_marines_vanguard_deadly_prize_sources
+    assert str(sm_player.id) in objective.location.space_marines_vanguard_deadly_prize_sources
+
+    enemy._apply_mortal_wounds_to_unit = Mock()
+    with patch("warhammer40k_ai.rules.stratagems_space_marines.dice_module.get_roll", side_effect=[4, 2]):
+        game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    enemy._apply_mortal_wounds_to_unit.assert_not_called()
 
 
 def test_calculated_feint_queues_and_uses_d6_reactive_move():

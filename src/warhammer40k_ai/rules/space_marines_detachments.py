@@ -20,6 +20,8 @@ CODEX_SPACE_MARINES_DETACHMENTS = {
     "vanguard spearhead",
     "1st company task force",
     "librarius conclave",
+    "bastion task force",
+    "orbital assault force",
 }
 
 DIVERGENT_CHAPTER_KEYWORDS = {

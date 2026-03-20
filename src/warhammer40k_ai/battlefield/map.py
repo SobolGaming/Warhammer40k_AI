@@ -3149,13 +3149,6 @@ class ObjectivePoint:
                 allow_break = bool(getattr(game_state, "_corrupt_realspace_check", False))
             if opponent_max > sticky_oc and allow_break:
                 # Sticky control broken.
-                if sticky_source == "space_marines_vanguard_deadly_prize":
-                    owner_id = str(getattr(sticky_owner, "id", "") or "")
-                    if owner_id:
-                        sabotage_sources = getattr(self, "space_marines_vanguard_deadly_prize_sources", None)
-                        if isinstance(sabotage_sources, dict):
-                            sabotage_sources.pop(owner_id, None)
-                            self.space_marines_vanguard_deadly_prize_sources = sabotage_sources
                 self.sticky_controller = None
                 self.sticky_source = None
             else:

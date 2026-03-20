@@ -125,6 +125,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_wound_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_wound_reroll"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_hit_reroll_ones"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_oath_of_moment_backup_promotion"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_storm_of_vengeance"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_tau_advanced_scouting"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_shoot_again"),
@@ -501,6 +502,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_sequence_complete", "_on_fight_sequence_complete_legendary_slayers"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_pack_quarry"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_heroes_all"),
+                ("fight_sequence_complete", "_on_fight_sequence_complete_oath_of_moment_backup_promotion"),
                 ("unit_destroyed", "_on_unit_destroyed_recalculating"),
             ],
         )

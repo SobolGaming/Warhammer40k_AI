@@ -110,9 +110,45 @@ HOMING_BEACON_ABILITY = {
     "type": "Datasheet",
     "parameter": "",
 }
+DROP_POD_ASSAULT_ABILITY = {
+    "name": "Drop Pod Assault",
+    "description": (
+        "This model must start the battle in Reserves and can be set up in the Reinforcements step of your first, "
+        "second or third Movement phase, regardless of any mission rules. Any units embarked within this model must "
+        "immediately disembark after it has been set up on the battlefield, and they must be set up more than 9\" "
+        "away from all enemy models."
+    ),
+    "type": "Datasheet",
+    "parameter": "",
+}
 
 
 class TestHomingBeaconRapidIngress(unittest.TestCase):
+    def test_drop_pod_assault_cannot_use_rapid_ingress_in_battle_round_one(self):
+        game, sm_player, enemy_player, sm_army, _enemy_army = _build_game()
+        game.turn = 1
+        drop_pod = _make_unit("Drop Pod", abilities=[DROP_POD_ASSAULT_ABILITY])
+        sm_army.add_unit(drop_pod)
+        drop_pod.deployed = False
+        drop_pod.reserve_status = "reserves"
+        drop_pod._started_in_reserves = True
+
+        game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.current_player_index = 1
+        sm_player.command_points = 5
+        enemy_player.command_points = 5
+
+        used = sm_player.stratagems.use(
+            "RAPID INGRESS",
+            unit=drop_pod,
+            phase_name="Movement phase",
+            position=(12.0, 10.0, 0.0),
+        )
+
+        self.assertFalse(bool(used))
+        self.assertFalse(bool(drop_pod.deployed))
+        self.assertEqual(str(drop_pod.reserve_status or ""), "reserves")
+
     def test_homing_beacon_preview_and_apply_zero_cp_once_per_battle(self):
         _game, sm_player, _enemy_player, sm_army, _enemy_army = _build_game()
         source = _make_unit("Phobos Unit", abilities=[HOMING_BEACON_ABILITY])

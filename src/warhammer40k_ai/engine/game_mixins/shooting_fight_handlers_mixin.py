@@ -15481,7 +15481,7 @@ class GameShootingFightHandlersMixin:
             mgr = getattr(army, "oath_of_moment", None)
             trigger_fn = getattr(mgr, "on_oath_target_destroyed", None) if mgr is not None else None
             if callable(trigger_fn):
-                trigger_fn(unit, game=self, player=player)
+                trigger_fn(unit, game=self, player=player, destroyed_by_unit=destroyed_by_unit)
             sm_mgr = getattr(army, "space_marines_detachments", None)
             boast_fn = getattr(sm_mgr, "heroes_all_on_unit_destroyed", None) if sm_mgr is not None else None
             if callable(boast_fn):
@@ -15489,6 +15489,36 @@ class GameShootingFightHandlersMixin:
             ulrik_fn = getattr(sm_mgr, "ulrik_slayers_oath_on_unit_destroyed", None) if sm_mgr is not None else None
             if callable(ulrik_fn):
                 ulrik_fn(unit, destroyed_by_unit=destroyed_by_unit, game=self)
+
+    def _on_unit_shooting_resolved_oath_of_moment_backup_promotion(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "oath_of_moment", None)
+            activate_fn = getattr(mgr, "on_attacking_unit_resolved", None) if mgr is not None else None
+            if callable(activate_fn):
+                activate_fn(attacker_unit, game=self, player=player)
+
+    def _on_fight_sequence_complete_oath_of_moment_backup_promotion(self, unit=None, **_kwargs) -> None:
+        if unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "oath_of_moment", None)
+            activate_fn = getattr(mgr, "on_attacking_unit_resolved", None) if mgr is not None else None
+            if callable(activate_fn):
+                activate_fn(unit, game=self, player=player)
 
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

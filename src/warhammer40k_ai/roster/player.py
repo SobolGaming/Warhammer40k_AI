@@ -653,7 +653,9 @@ class Player:
                 source_model_id = str(spec.get("source_model_id", "") or "").strip()
                 if source_model_id and not self._unit_has_alive_model_id(target_unit, source_model_id):
                     continue
-                specs.append(spec)
+                resolved_spec = dict(spec)
+                resolved_spec["_cp_refund_source_kind"] = "target"
+                specs.append(resolved_spec)
 
         army = self.get_army()
         if army is not None:
@@ -697,7 +699,9 @@ class Player:
                         source_model_id=source_model_id,
                     ):
                         continue
-                    specs.append(spec)
+                    resolved_spec = dict(spec)
+                    resolved_spec["_cp_refund_source_kind"] = "aura"
+                    specs.append(resolved_spec)
 
         if not specs:
             has_rule = getattr(target_unit, "has_multiwave_comms_array", None)
@@ -723,6 +727,10 @@ class Player:
                 bonus_range = int(spec.get("roll_bonus_range", 0) or 0)
             except (TypeError, ValueError):
                 bonus_range = 0
+            source_kind = str(spec.get("_cp_refund_source_kind", "") or "").strip().lower()
+            source_model_id = str(spec.get("source_model_id", "") or "").strip()
+            if source_kind == "aura":
+                source_model_id = ""
             key = (
                 int(spec.get("roll_min", 0) or 0),
                 int(spec.get("cp_gain", 0) or 0),
@@ -732,7 +740,7 @@ class Player:
                 int(bonus_range),
                 str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
                 bool(spec.get("roll_bonus_if_source_model_within_vowed_objective", False)),
-                str(spec.get("source_model_id", "") or "").strip(),
+                source_model_id,
                 str(spec.get("keyword", "") or "").strip().upper(),
                 int(spec.get("range", 0) or 0),
             )

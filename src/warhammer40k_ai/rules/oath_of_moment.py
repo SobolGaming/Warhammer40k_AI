@@ -17,10 +17,17 @@ class OathOfMomentManager:
         self.army = army
         self.oathOfMomentTargetUnitId: Optional[str] = None
         self.oathOfMomentTargetName: Optional[str] = None
+        self.oathOfMomentTargetTrackedUnitIds: tuple[str, ...] = ()
         self.oathOfMomentSecondaryTargetUnitId: Optional[str] = None
         self.oathOfMomentSecondaryTargetName: Optional[str] = None
+        self.oathOfMomentSecondaryTargetTrackedUnitIds: tuple[str, ...] = ()
         self.oathOfMomentBackupTargetUnitId: Optional[str] = None
         self.oathOfMomentBackupTargetName: Optional[str] = None
+        self.oathOfMomentBackupTargetTrackedUnitIds: tuple[str, ...] = ()
+        self.oathOfMomentPendingPromotionTargetUnitId: Optional[str] = None
+        self.oathOfMomentPendingPromotionTargetName: Optional[str] = None
+        self.oathOfMomentPendingPromotionTargetTrackedUnitIds: tuple[str, ...] = ()
+        self.oathOfMomentPendingPromotionAttackerUnitId: Optional[str] = None
         self.extremisLevelThreatActive: bool = False
         self.extremisLevelThreatUsed: bool = False
         self.recalculatingUsedBattleRound: int = 0
@@ -29,10 +36,17 @@ class OathOfMomentManager:
             try:
                 setattr(self.army, "oathOfMomentTargetUnitId", None)
                 setattr(self.army, "oathOfMomentTargetName", None)
+                setattr(self.army, "oathOfMomentTargetTrackedUnitIds", ())
                 setattr(self.army, "oathOfMomentSecondaryTargetUnitId", None)
                 setattr(self.army, "oathOfMomentSecondaryTargetName", None)
+                setattr(self.army, "oathOfMomentSecondaryTargetTrackedUnitIds", ())
                 setattr(self.army, "oathOfMomentBackupTargetUnitId", None)
                 setattr(self.army, "oathOfMomentBackupTargetName", None)
+                setattr(self.army, "oathOfMomentBackupTargetTrackedUnitIds", ())
+                setattr(self.army, "oathOfMomentPendingPromotionTargetUnitId", None)
+                setattr(self.army, "oathOfMomentPendingPromotionTargetName", None)
+                setattr(self.army, "oathOfMomentPendingPromotionTargetTrackedUnitIds", ())
+                setattr(self.army, "oathOfMomentPendingPromotionAttackerUnitId", None)
                 setattr(self.army, "extremisLevelThreatActive", False)
                 setattr(self.army, "extremisLevelThreatUsed", False)
                 setattr(self.army, "recalculatingUsedBattleRound", 0)
@@ -233,32 +247,170 @@ class OathOfMomentManager:
     def clear_target(self) -> None:
         self.oathOfMomentTargetUnitId = None
         self.oathOfMomentTargetName = None
+        self.oathOfMomentTargetTrackedUnitIds = ()
+        self.clear_pending_backup_promotion()
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentTargetUnitId", None)
                 setattr(self.army, "oathOfMomentTargetName", None)
+                setattr(self.army, "oathOfMomentTargetTrackedUnitIds", ())
             except Exception:
                 pass
 
     def clear_secondary_target(self) -> None:
         self.oathOfMomentSecondaryTargetUnitId = None
         self.oathOfMomentSecondaryTargetName = None
+        self.oathOfMomentSecondaryTargetTrackedUnitIds = ()
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentSecondaryTargetUnitId", None)
                 setattr(self.army, "oathOfMomentSecondaryTargetName", None)
+                setattr(self.army, "oathOfMomentSecondaryTargetTrackedUnitIds", ())
             except Exception:
                 pass
 
     def clear_backup_target(self) -> None:
         self.oathOfMomentBackupTargetUnitId = None
         self.oathOfMomentBackupTargetName = None
+        self.oathOfMomentBackupTargetTrackedUnitIds = ()
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentBackupTargetUnitId", None)
                 setattr(self.army, "oathOfMomentBackupTargetName", None)
+                setattr(self.army, "oathOfMomentBackupTargetTrackedUnitIds", ())
             except Exception:
                 pass
+
+    def clear_pending_backup_promotion(self) -> None:
+        self.oathOfMomentPendingPromotionTargetUnitId = None
+        self.oathOfMomentPendingPromotionTargetName = None
+        self.oathOfMomentPendingPromotionTargetTrackedUnitIds = ()
+        self.oathOfMomentPendingPromotionAttackerUnitId = None
+        if self.army is not None:
+            try:
+                setattr(self.army, "oathOfMomentPendingPromotionTargetUnitId", None)
+                setattr(self.army, "oathOfMomentPendingPromotionTargetName", None)
+                setattr(self.army, "oathOfMomentPendingPromotionTargetTrackedUnitIds", ())
+                setattr(self.army, "oathOfMomentPendingPromotionAttackerUnitId", None)
+            except Exception:
+                pass
+
+    def _queue_backup_promotion(self, unit, *, destroyed_by_unit=None) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        unit_id = str(getattr(root, "_id", None) or get_entity_id(root) or "").strip()
+        if not unit_id:
+            return False
+        tracked_ids = self._tracked_unit_ids(unit)
+        try:
+            attacker_root = (
+                destroyed_by_unit.get_attached_unit_root()
+                if destroyed_by_unit is not None and hasattr(destroyed_by_unit, "get_attached_unit_root")
+                else destroyed_by_unit
+            )
+        except Exception:
+            attacker_root = destroyed_by_unit
+        if attacker_root is None:
+            return False
+        attacker_id = str(getattr(attacker_root, "_id", None) or get_entity_id(attacker_root) or "").strip()
+        if not attacker_id:
+            return False
+        self.oathOfMomentPendingPromotionTargetUnitId = unit_id
+        try:
+            self.oathOfMomentPendingPromotionTargetName = str(getattr(root, "name", "") or "")
+        except Exception:
+            self.oathOfMomentPendingPromotionTargetName = None
+        self.oathOfMomentPendingPromotionTargetTrackedUnitIds = tracked_ids
+        self.oathOfMomentPendingPromotionAttackerUnitId = attacker_id
+        if self.army is not None:
+            try:
+                setattr(self.army, "oathOfMomentPendingPromotionTargetUnitId", self.oathOfMomentPendingPromotionTargetUnitId)
+                setattr(self.army, "oathOfMomentPendingPromotionTargetName", self.oathOfMomentPendingPromotionTargetName)
+                setattr(
+                    self.army,
+                    "oathOfMomentPendingPromotionTargetTrackedUnitIds",
+                    self.oathOfMomentPendingPromotionTargetTrackedUnitIds,
+                )
+                setattr(
+                    self.army,
+                    "oathOfMomentPendingPromotionAttackerUnitId",
+                    self.oathOfMomentPendingPromotionAttackerUnitId,
+                )
+            except Exception:
+                pass
+        return True
+
+    def _activate_pending_backup_promotion(self, *, game=None, player=None) -> bool:
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        pending_unit = self._resolve_tracked_unit(
+            self.oathOfMomentPendingPromotionTargetUnitId or "",
+            tracked_unit_ids=self.oathOfMomentPendingPromotionTargetTrackedUnitIds,
+            game=game,
+        )
+        if pending_unit is not None:
+            try:
+                is_alive = getattr(pending_unit, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    pending_unit = None
+            except Exception:
+                pending_unit = None
+        if pending_unit is not None and bool(getattr(pending_unit, "is_embarked", False)):
+            pending_unit = None
+        self.clear_pending_backup_promotion()
+        if pending_unit is None:
+            return False
+        self.set_target(
+            pending_unit,
+            game=game,
+            player=owner,
+            source="Master of Battle",
+            queue_followups=False,
+            clear_backup=False,
+        )
+        return True
+
+    def on_attacking_unit_resolved(self, attacker_unit, *, game=None, player=None) -> bool:
+        if attacker_unit is None:
+            return False
+        pending_attacker_id = str(self.oathOfMomentPendingPromotionAttackerUnitId or "").strip()
+        if not pending_attacker_id:
+            return False
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        attacker_id = str(getattr(attacker_root, "_id", None) or get_entity_id(attacker_root) or "").strip()
+        if attacker_id != pending_attacker_id:
+            return False
+        return bool(self._activate_pending_backup_promotion(game=game, player=player))
+
+    def _tracked_unit_ids(self, unit) -> tuple[str, ...]:
+        if unit is None:
+            return ()
+        ids: set[str] = set()
+        try:
+            members = list(unit.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            members = [root] if root is not None else []
+        for candidate in [unit] + list(members):
+            if candidate is None:
+                continue
+            ident = str(getattr(candidate, "_id", "") or "").strip()
+            if ident:
+                ids.add(ident)
+        return tuple(sorted(ids))
 
     def clear_extremis_level_threat(self) -> None:
         self.extremisLevelThreatActive = False
@@ -502,31 +654,61 @@ class OathOfMomentManager:
             return True
         return False
 
-    def _resolve_tracked_unit(self, unit_id: str, *, game=None):
-        tracked_id = str(unit_id or "").strip()
-        if not tracked_id:
-            return None
-        if game is not None:
-            resolve_unit = getattr(game, "_resolve_unit_by_id", None)
-            if callable(resolve_unit):
-                unit = resolve_unit(tracked_id)
-                if unit is not None:
-                    try:
-                        return unit.get_attached_unit_root()
-                    except Exception:
-                        return unit
-        if self.army is None:
-            return None
-        for unit in list(getattr(self.army, "units", []) or []):
+    def _resolve_tracked_unit(self, unit_id: str, *, tracked_unit_ids=(), game=None):
+        def _live_root(unit):
             if unit is None:
-                continue
+                return None
             try:
                 root = unit.get_attached_unit_root()
             except Exception:
                 root = unit
-            if str(getattr(root, "_id", "") or "") == tracked_id:
-                return root
-        return None
+            for candidate in (root, unit):
+                if candidate is None:
+                    continue
+                try:
+                    is_alive = getattr(candidate, "is_alive", None)
+                    if callable(is_alive) and not bool(is_alive()):
+                        continue
+                except Exception:
+                    continue
+                return candidate
+            return None
+
+        ordered_ids: list[str] = []
+        for raw_id in [unit_id] + list(tracked_unit_ids or ()):
+            tracked_id = str(raw_id or "").strip()
+            if tracked_id and tracked_id not in ordered_ids:
+                ordered_ids.append(tracked_id)
+        if not ordered_ids:
+            return None
+
+        if game is not None:
+            resolve_unit = getattr(game, "_resolve_unit_by_id", None)
+            if callable(resolve_unit):
+                for tracked_id in ordered_ids:
+                    resolved = _live_root(resolve_unit(tracked_id))
+                    if resolved is not None:
+                        return resolved
+        if self.army is None:
+            return None
+        search_ids = set(ordered_ids)
+        matches: list[tuple[int, str, object]] = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            current_ids = set(self._tracked_unit_ids(unit))
+            if not current_ids or not current_ids.intersection(search_ids):
+                continue
+            resolved = _live_root(unit)
+            if resolved is None:
+                continue
+            resolved_id = str(getattr(resolved, "_id", "") or "").strip()
+            priority = 0 if resolved_id and resolved_id == ordered_ids[0] else 1
+            matches.append((priority, resolved_id, resolved))
+        if not matches:
+            return None
+        matches.sort(key=lambda item: (item[0], item[1]))
+        return matches[0][2]
 
     def _is_primary_target(self, target_unit) -> bool:
         if target_unit is None:
@@ -805,16 +987,43 @@ class OathOfMomentManager:
         if hasattr(game, "request_decision"):
             game.request_decision(req)
 
-    def on_oath_target_destroyed(self, destroyed_unit, *, game=None, player=None) -> bool:
+    def on_oath_target_destroyed(self, destroyed_unit, *, game=None, player=None, destroyed_by_unit=None) -> bool:
         if self.army is None:
             return False
         owner = player if player is not None else getattr(self.army, "player", None)
         if owner is None:
             return False
+        if self._is_primary_target(destroyed_unit):
+            current_primary = self._resolve_tracked_unit(
+                self.oathOfMomentTargetUnitId or "",
+                tracked_unit_ids=self.oathOfMomentTargetTrackedUnitIds,
+                game=game,
+            )
+            if current_primary is not None:
+                current_primary_id = str(getattr(current_primary, "_id", "") or "").strip()
+                original_primary_id = str(self.oathOfMomentTargetUnitId or "").strip()
+                if current_primary is not destroyed_unit:
+                    if current_primary_id and current_primary_id != original_primary_id:
+                        self.set_target(
+                            current_primary,
+                            game=game,
+                            player=owner,
+                            source="Persisting Effects",
+                            queue_followups=False,
+                            clear_backup=False,
+                        )
+                        return True
+                    if current_primary_id:
+                        return False
         can_recalculate = bool(self.can_trigger_recalculating(destroyed_unit, game=game, player=owner))
         promoted_backup = False
+        queued_backup = False
         if self._is_primary_target(destroyed_unit):
-            backup_unit = self._resolve_tracked_unit(self.oathOfMomentBackupTargetUnitId or "", game=game)
+            backup_unit = self._resolve_tracked_unit(
+                self.oathOfMomentBackupTargetUnitId or "",
+                tracked_unit_ids=self.oathOfMomentBackupTargetTrackedUnitIds,
+                game=game,
+            )
             if backup_unit is not None:
                 try:
                     is_alive = getattr(backup_unit, "is_alive", None)
@@ -825,22 +1034,24 @@ class OathOfMomentManager:
             if backup_unit is not None and bool(getattr(backup_unit, "is_embarked", False)):
                 backup_unit = None
             if backup_unit is not None:
-                self.set_target(
-                    backup_unit,
-                    game=game,
-                    player=owner,
-                    source="Master of Battle",
-                    queue_followups=False,
-                    clear_backup=False,
-                )
-                promoted_backup = True
+                queued_backup = self._queue_backup_promotion(backup_unit, destroyed_by_unit=destroyed_by_unit)
+                if not queued_backup:
+                    self.set_target(
+                        backup_unit,
+                        game=game,
+                        player=owner,
+                        source="Master of Battle",
+                        queue_followups=False,
+                        clear_backup=False,
+                    )
+                    promoted_backup = True
             self.clear_backup_target()
         queued_recalculating = (
             bool(self.queue_recalculating_prompt(destroyed_unit, game=game, player=owner))
             if can_recalculate
             else False
         )
-        return bool(promoted_backup or queued_recalculating)
+        return bool(promoted_backup or queued_backup or queued_recalculating)
 
     def set_target(
         self,
@@ -864,6 +1075,8 @@ class OathOfMomentManager:
             rid = None
         if not rid:
             return
+        tracked_ids = self._tracked_unit_ids(unit)
+        self.clear_pending_backup_promotion()
         previous_target_id = str(self.oathOfMomentTargetUnitId or "")
         if clear_backup:
             self.clear_backup_target()
@@ -872,10 +1085,12 @@ class OathOfMomentManager:
             self.oathOfMomentTargetName = str(getattr(root, "name", "") or "")
         except Exception:
             self.oathOfMomentTargetName = None
+        self.oathOfMomentTargetTrackedUnitIds = tracked_ids
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentTargetUnitId", self.oathOfMomentTargetUnitId)
                 setattr(self.army, "oathOfMomentTargetName", self.oathOfMomentTargetName)
+                setattr(self.army, "oathOfMomentTargetTrackedUnitIds", self.oathOfMomentTargetTrackedUnitIds)
             except Exception:
                 pass
         if previous_target_id and previous_target_id == str(rid):
@@ -899,15 +1114,22 @@ class OathOfMomentManager:
             rid = None
         if not rid:
             return
+        tracked_ids = self._tracked_unit_ids(unit)
         self.oathOfMomentSecondaryTargetUnitId = str(rid)
         try:
             self.oathOfMomentSecondaryTargetName = str(getattr(root, "name", "") or "")
         except Exception:
             self.oathOfMomentSecondaryTargetName = None
+        self.oathOfMomentSecondaryTargetTrackedUnitIds = tracked_ids
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentSecondaryTargetUnitId", self.oathOfMomentSecondaryTargetUnitId)
                 setattr(self.army, "oathOfMomentSecondaryTargetName", self.oathOfMomentSecondaryTargetName)
+                setattr(
+                    self.army,
+                    "oathOfMomentSecondaryTargetTrackedUnitIds",
+                    self.oathOfMomentSecondaryTargetTrackedUnitIds,
+                )
             except Exception:
                 pass
 
@@ -924,37 +1146,50 @@ class OathOfMomentManager:
             rid = None
         if not rid:
             return
+        tracked_ids = self._tracked_unit_ids(unit)
         self.oathOfMomentBackupTargetUnitId = str(rid)
         try:
             self.oathOfMomentBackupTargetName = str(getattr(root, "name", "") or "")
         except Exception:
             self.oathOfMomentBackupTargetName = None
+        self.oathOfMomentBackupTargetTrackedUnitIds = tracked_ids
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentBackupTargetUnitId", self.oathOfMomentBackupTargetUnitId)
                 setattr(self.army, "oathOfMomentBackupTargetName", self.oathOfMomentBackupTargetName)
+                setattr(self.army, "oathOfMomentBackupTargetTrackedUnitIds", self.oathOfMomentBackupTargetTrackedUnitIds)
             except Exception:
                 pass
 
     def is_oath_target(self, target_unit) -> bool:
         if target_unit is None:
             return False
-        if not self.oathOfMomentTargetUnitId and not self.oathOfMomentSecondaryTargetUnitId:
+        if (
+            not self.oathOfMomentTargetUnitId
+            and not self.oathOfMomentSecondaryTargetUnitId
+            and not self.oathOfMomentTargetTrackedUnitIds
+            and not self.oathOfMomentSecondaryTargetTrackedUnitIds
+        ):
             return False
-        try:
-            root = target_unit.get_attached_unit_root()
-        except Exception:
-            root = target_unit
-        try:
-            tid = getattr(target_unit, "_id", None)
-            rid = getattr(root, "_id", None)
-        except Exception:
-            tid = getattr(target_unit, "_id", None)
-            rid = None
-        ids = {str(tid or ""), str(rid or "")}
+        ids = {tracked_id for tracked_id in self._tracked_unit_ids(target_unit) if tracked_id}
         primary_id = str(self.oathOfMomentTargetUnitId or "")
         secondary_id = str(self.oathOfMomentSecondaryTargetUnitId or "")
-        return bool((primary_id and primary_id in ids) or (secondary_id and secondary_id in ids))
+        primary_tracked_ids = {
+            str(tracked_id or "").strip()
+            for tracked_id in list(self.oathOfMomentTargetTrackedUnitIds or ())
+            if str(tracked_id or "").strip()
+        }
+        secondary_tracked_ids = {
+            str(tracked_id or "").strip()
+            for tracked_id in list(self.oathOfMomentSecondaryTargetTrackedUnitIds or ())
+            if str(tracked_id or "").strip()
+        }
+        return bool(
+            (primary_id and primary_id in ids)
+            or (secondary_id and secondary_id in ids)
+            or primary_tracked_ids.intersection(ids)
+            or secondary_tracked_ids.intersection(ids)
+        )
 
     def can_reroll_hit(self, attacker_unit, target_unit) -> bool:
         if not self._army_has_oath():

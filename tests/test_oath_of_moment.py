@@ -36,6 +36,23 @@ class _GameStub:
 
 
 class TestOathOfMoment(unittest.TestCase):
+    def test_codex_detachment_includes_bastion_and_orbital_faction_pack_detachments(self):
+        from warhammer40k_ai.roster.army import Army
+
+        expectations = {
+            "Bastion Task Force": True,
+            "Orbital Assault Force": True,
+            "Shadowmark Talon": False,
+        }
+        for detachment_name, expected in expectations.items():
+            with self.subTest(detachment=detachment_name):
+                army = Army("Space Marines", detachment_name)
+                army.faction_id = "SM"
+                army.configure_rule_managers(force=True)
+                mgr = getattr(army, "space_marines_detachments", None)
+                self.assertIsNotNone(mgr)
+                self.assertEqual(bool(mgr.is_codex_detachment()), bool(expected))
+
     def test_oath_command_phase_clears_and_selects_target(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
@@ -292,6 +309,75 @@ class TestOathOfMoment(unittest.TestCase):
         self.assertTrue(apply_result.ok)
 
         self.assertEqual(mgr.oathOfMomentTargetUnitId, available._id)
+
+    def test_oath_persists_on_surviving_leader_after_attached_target_splits(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
+
+        class _Unit:
+            def __init__(self, name: str):
+                self.name = name
+                self._id = name
+                self.embarked_in = None
+                self.attached_to = None
+                self.attached_leaders = []
+                self._alive = True
+
+            def get_attached_unit_root(self):
+                return self.attached_to if self.attached_to is not None else self
+
+            def get_attached_unit_members(self):
+                root = self.get_attached_unit_root()
+                return [root] + list(getattr(root, "attached_leaders", []) or [])
+
+            @property
+            def is_embarked(self):
+                return self.embarked_in is not None
+
+            def is_alive(self):
+                return bool(self._alive)
+
+            def detach_from_unit(self):
+                bodyguard = self.attached_to
+                if bodyguard is None:
+                    return
+                leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+                if self in leaders:
+                    leaders.remove(self)
+                bodyguard.attached_leaders = leaders
+                self.attached_to = None
+
+        bodyguard = _Unit("Bodyguard")
+        leader = _Unit("Leader")
+        leader.attached_to = bodyguard
+        bodyguard.attached_leaders = [leader]
+        backup = _Unit("Backup")
+
+        player = SimpleNamespace(name="P1", id="P1")
+        army = Army("Space Marines", "Gladius Task Force")
+        army.faction_id = "SM"
+        army.player = player
+        player.get_army = lambda: army
+        army.units = [bodyguard, leader, backup]
+
+        mgr = OathOfMomentManager(army)
+        army.oath_of_moment = mgr
+        mgr.set_target(bodyguard, queue_followups=False)
+        mgr.set_backup_target(backup)
+
+        self.assertTrue(mgr.is_oath_target(bodyguard))
+        self.assertTrue(mgr.is_oath_target(leader))
+
+        bodyguard._alive = False
+        leader.detach_from_unit()
+
+        changed = mgr.on_oath_target_destroyed(bodyguard, player=player)
+
+        self.assertTrue(bool(changed))
+        self.assertEqual(str(mgr.oathOfMomentTargetUnitId or ""), leader._id)
+        self.assertEqual(str(mgr.oathOfMomentBackupTargetUnitId or ""), backup._id)
+        self.assertTrue(mgr.is_oath_target(leader))
+        self.assertFalse(mgr.is_oath_target(bodyguard))
 
     def test_extremis_level_threat_queues_activates_and_expires(self):
         from warhammer40k_ai.roster.army import Army
