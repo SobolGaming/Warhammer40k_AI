@@ -20636,6 +20636,42 @@ def _stratagem_support(
             "End of opponent Fight phase: selected SPACE WOLVES unit wholly within 9\" of one or more battlefield edges and not in Engagement Range enters Strategic Reserves.",
             name_u,
         )
+    if stratagem_id == "000010266002":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES CHARACTER unit that has not yet been selected to fight gains [LETHAL HITS] on melee weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010266003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected SPACE WOLVES CHARACTER unit that has not yet been selected to shoot or fight can re-roll Hit rolls until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010266004":
+        return (
+            "Implemented",
+            "Your Command phase: selected Wolf Guard Headtaker or Wolf Guard Terminator Pack Leader model gains the CHARACTER keyword until the start of your next Command phase, and its unit counts as a CHARACTER unit while the effect lasts.",
+            name_u,
+        )
+    if stratagem_id == "000010266005":
+        return (
+            "Implemented",
+            "Your Charge phase: selected ADEPTUS ASTARTES CHARACTER unit can declare a charge after Advancing until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010266006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy unit selects targets: selected SPACE WOLVES CHARACTER unit targeted by that attacker reduces incoming Damage by 1 until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010266007":
+        return (
+            "Implemented",
+            "End of opponent Charge phase: selected ADEPTUS ASTARTES CHARACTER unit within 6\" of one or more enemy units it could charge declares an out-of-turn charge against those enemies and does not receive the Charge bonus this turn.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

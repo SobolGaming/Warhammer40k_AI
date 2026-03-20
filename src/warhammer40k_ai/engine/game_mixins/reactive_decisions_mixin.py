@@ -4176,6 +4176,7 @@ class GameReactiveDecisionsMixin:
         target_units: list,
         candidates: list[dict],
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
     ) -> DecisionRequest | None:
         if player is None or charging_unit is None:
             return None
@@ -4244,6 +4245,7 @@ class GameReactiveDecisionsMixin:
                 if maybe_entity_id(target)
             ],
             "out_of_turn": bool(out_of_turn),
+            "count_as_charged": bool(count_as_charged),
         }
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
@@ -4262,6 +4264,7 @@ class GameReactiveDecisionsMixin:
         charging_unit,
         candidates: list,
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
         prompt: str,
         reason: str,
     ) -> DecisionRequest | None:
@@ -4316,6 +4319,7 @@ class GameReactiveDecisionsMixin:
             context={
                 "unit_id": charging_unit_id,
                 "out_of_turn": bool(out_of_turn),
+                "count_as_charged": bool(count_as_charged),
                 "charge_retarget_reason": str(reason),
             },
         )

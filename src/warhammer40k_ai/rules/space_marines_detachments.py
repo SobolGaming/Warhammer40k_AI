@@ -5093,6 +5093,116 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                 changed = bool(boast_changed or changed)
         return changed
 
+    def _saga_of_the_bold_phase_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        expires_phase_key: str,
+        require_space_wolves: bool = False,
+        require_character: bool = False,
+        require_current_player_owner: bool = True,
+        game=None,
+    ) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if require_space_wolves and not (
+            self._attached_unit_has_keyword(root, "SPACE WOLVES")
+            or str(self.get_committed_chapter_keyword() or "").strip().upper() == "SPACE WOLVES"
+        ):
+            return False
+        if require_character and not self._attached_unit_has_keyword(root, "CHARACTER"):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key, False)):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        exp = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        if exp and phase_name and exp != phase_name:
+            return False
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        effect_owner = str(sr.get(owner_key, "") or "").strip()
+        current_owner = ""
+        if game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+        if require_current_player_owner and effect_owner and current_owner and effect_owner != current_owner:
+            return False
+        return True
+
+    def saga_of_the_bold_alpha_strike_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        return self._saga_of_the_bold_phase_effect_active(
+            unit,
+            active_key="space_marines_alpha_strike_active",
+            owner_key="space_marines_alpha_strike_turn_owner",
+            turn_key="space_marines_alpha_strike_turn",
+            expires_phase_key="space_marines_alpha_strike_expires_phase",
+            require_character=True,
+            game=game,
+        )
+
+    def saga_of_the_bold_champions_guidance_reroll_hit(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None:
+            return False, ""
+        attack_type_key = str(attack_type or "").strip().lower()
+        if attack_type_key not in {"any", "melee", "ranged"}:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        if not self._saga_of_the_bold_phase_effect_active(
+            unit,
+            active_key="space_marines_champions_guidance_active",
+            owner_key="space_marines_champions_guidance_turn_owner",
+            turn_key="space_marines_champions_guidance_turn",
+            expires_phase_key="space_marines_champions_guidance_expires_phase",
+            require_space_wolves=True,
+            require_character=True,
+            require_current_player_owner=False,
+            game=game,
+        ):
+            return False, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, ""
+        game_obj = self._resolve_game_context(game=game)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if attack_type_key == "ranged" and phase_name != "SHOOTING_PHASE":
+            return False, ""
+        if attack_type_key == "melee" and phase_name != "FIGHT_PHASE":
+            return False, ""
+        source = str(sr.get("space_marines_champions_guidance_source", "") or "Champion's Guidance").strip()
+        return True, source or "Champion's Guidance"
+
     def _armoured_wrath_phase_key(self, *, game=None, unit=None) -> str:
         game_obj = self._resolve_game_context(game=game)
         if game_obj is None and unit is not None:

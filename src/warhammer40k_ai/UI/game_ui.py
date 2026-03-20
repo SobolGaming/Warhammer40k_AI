@@ -3406,7 +3406,8 @@ class GameView:
 
         if decision_type == DECISION_DECLARE_CHARGE:
             ctx = dict(getattr(request, "context", {}) or {})
-            if str(ctx.get("charge_retarget_reason", "") or "").strip().lower() == "emergency_combat_embarkation":
+            reason = str(ctx.get("charge_retarget_reason", "") or "").strip().lower()
+            if bool(ctx.get("out_of_turn", False)) or reason == "emergency_combat_embarkation":
                 player = self._resolve_player_by_id(getattr(request, "player_id", None))
                 if player is None:
                     return

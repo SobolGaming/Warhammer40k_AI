@@ -2952,7 +2952,14 @@ class BattlePhaseHandler(BasePhaseHandler):
                 pending_targets = targets
                 if bool(getattr(declared, "get", lambda *_args, **_kwargs: False)("charge_pending", False)):
                     pending_targets = []
-                self._queue_pending_charge(charging_unit, pending_targets, suppress_charge_bonus=False)
+                suppress_charge_bonus = not bool(
+                    getattr(declared, "get", lambda *_args, **_kwargs: True)("count_as_charged", True)
+                )
+                self._queue_pending_charge(
+                    charging_unit,
+                    pending_targets,
+                    suppress_charge_bonus=suppress_charge_bonus,
+                )
                 # If the roll already resolved (headless), open movement now.
                 try:
                     if getattr(charging_unit.round_state, "charge_roll", 0):

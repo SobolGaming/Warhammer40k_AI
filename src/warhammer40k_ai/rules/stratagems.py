@@ -79,6 +79,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "REVENGE OF THE RUBRICAE",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
+    "ALPHA STRIKE",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
@@ -115,6 +116,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "IN THE SHADOW OF GREAT WINGS",
     "INTRACTABLE",
     "IMPETUOSITY",
+    "INSPIRING PRESENCE",
     "INSTANT OF GRACE",
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
@@ -164,7 +166,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
+    "BIRTH OF A SAGA",
     "CARRY FORTH THE FAITHFUL",
+    "CHAMPION'S GUIDANCE",
+    "CHAMPION’S GUIDANCE",
     "CLOUDSTRIKE",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
@@ -202,6 +207,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MURDER-CALL",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
+    "COUNTERCHARGE",
     "EPIC CHALLENGE",
     "FIRE OVERWATCH",
     "OVERWATCH",
@@ -589,6 +595,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
+    "COUNTERCHARGE",
     "FIRE OVERWATCH",
     "OVERWATCH",
     "GO TO GROUND",
@@ -2089,6 +2096,7 @@ class StratagemManager(
             "RIGID DISCIPLINE",
             "GUERRILLA TACTICS",
             "COORDINATED STRIKE",
+            "COUNTERCHARGE",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -5291,7 +5299,13 @@ class StratagemManager(
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+            "ALPHA STRIKE": "Target: your ADEPTUS ASTARTES CHARACTER unit; until end of the Charge phase it can declare a charge after Advancing",
             "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
+            "BIRTH OF A SAGA": "Target: one Wolf Guard Headtaker or Wolf Guard Terminator Pack Leader model from your army; it gains the CHARACTER keyword until the start of your next Command phase and its unit counts as a CHARACTER unit",
+            "CHAMPION'S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
+            "CHAMPION’S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
+            "COUNTERCHARGE": "End of opponent's Charge phase: target your ADEPTUS ASTARTES CHARACTER unit within 6\" of enemy units it could charge; it declares an out-of-turn charge against only those enemies and does not receive the Charge bonus",
+            "INSPIRING PRESENCE": "Target: your ADEPTUS ASTARTES CHARACTER unit that has not been selected to fight this phase; its melee weapons gain [LETHAL HITS] until end of phase",
             "PINNING FIRE": "Target: ADEPTUS ASTARTES unit that has not been selected to shoot this phase; after it shoots, select one hit enemy CHARACTER, MONSTER, or VEHICLE unit to be pinned (Move -2, Charge -2) until the start of your next Shooting phase",
             "COORDINATED STRIKE": "Target: your SPACE WOLVES unit wholly within 9\" of one or more battlefield edges and not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves",
             "IMPETUOSITY": "Target: your WULFEN INFANTRY or BLOOD CLAWS unit selected as a target of enemy shooting; after that enemy unit has shot, if one or more models were destroyed, it can make an Impetuous move up to D6\" toward the closest non-AIRCRAFT enemy unit and can end in Engagement Range of it",
@@ -6191,6 +6205,10 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_saga_of_the_beastslayer_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_saga_of_the_bold_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7244,6 +7262,7 @@ class StratagemManager(
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_saga_of_the_beastslayer_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_saga_of_the_bold_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
@@ -7252,6 +7271,7 @@ class StratagemManager(
             self._cleanup_space_marines_unforgiven_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
@@ -16811,6 +16831,9 @@ class StratagemManager(
         vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
         if vindication_result is not None:
             return vindication_result
+        saga_bold_result = self._use_space_marines_saga_of_the_bold_stratagem(s, **kwargs)
+        if saga_bold_result is not None:
+            return saga_bold_result
         saga_beastslayer_result = self._use_space_marines_saga_of_the_beastslayer_stratagem(s, **kwargs)
         if saga_beastslayer_result is not None:
             return saga_beastslayer_result

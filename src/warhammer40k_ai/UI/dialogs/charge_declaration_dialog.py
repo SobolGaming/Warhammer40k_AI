@@ -191,7 +191,9 @@ class ChargeDeclarationDialog(BaseDialog):
         if game is None:
             logger.error(f"ERROR: Charge eligibility check failed: No game context")
             return False
-        eligible = bool(self.unit.can_declare_charge(game))
+        ctx = dict(getattr(self.decision_request, "context", {}) or {})
+        out_of_turn = bool(ctx.get("out_of_turn", False))
+        eligible = bool(self.unit.can_declare_charge(game, out_of_turn=out_of_turn))
         if not eligible:
             logger.error(f"ERROR: {self.unit.name} is not eligible to charge")
         return eligible
@@ -251,7 +253,9 @@ class ChargeDeclarationDialog(BaseDialog):
             game = getattr(self.game_view, "game", None)
         except Exception:
             game = None
-        if game is None or not self.unit.can_declare_charge(game):
+        ctx = dict(getattr(self.decision_request, "context", {}) or {})
+        out_of_turn = bool(ctx.get("out_of_turn", False))
+        if game is None or not self.unit.can_declare_charge(game, out_of_turn=out_of_turn):
             return {"valid": False, "reason": "Unit is not eligible to charge"}
         
         # Check if unit advanced this round
@@ -287,7 +291,10 @@ class ChargeDeclarationDialog(BaseDialog):
         # Check if path is blocked (simplified)
         if self.game_map.is_path_blocked(self.unit, target):
             return {"valid": False, "reason": "Path to target is blocked"}
-        
+
+        if not self.unit.can_declare_charge_against(target, game, out_of_turn=out_of_turn):
+            return {"valid": False, "reason": "Unit cannot declare a charge against this target"}
+
         reason = f"Distance: {distance:.1f}\" (max {max_distance:.1f}\")"
         if mod_text:
             reason = f"{reason} mods: {mod_text}"

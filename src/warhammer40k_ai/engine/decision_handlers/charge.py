@@ -72,6 +72,7 @@ def _apply_declare_charge(game: object, request: DecisionRequest, result: Decisi
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     out_of_turn = bool(payload.get("out_of_turn", False) or request.context.get("out_of_turn", False))
+    count_as_charged = bool(payload.get("count_as_charged", request.context.get("count_as_charged", True)))
     attacker = get_unit(game, str(payload.get("unit_id", "") or ""))
     selected_ids = list(result.payload.get("target_unit_ids", []) or [])
     if not selected_ids:
@@ -84,7 +85,12 @@ def _apply_declare_charge(game: object, request: DecisionRequest, result: Decisi
     declare_fn = getattr(game, "declare_charge", None)
     if not callable(declare_fn):
         raise RuntimeError("Game missing declare_charge.")
-    return declare_fn(attacker, targets, out_of_turn=out_of_turn)
+    return declare_fn(
+        attacker,
+        targets,
+        out_of_turn=out_of_turn,
+        count_as_charged=count_as_charged,
+    )
 
 
 register_decision_handler(DECISION_DECLARE_CHARGE, validate=_validate_declare_charge, apply=_apply_declare_charge)

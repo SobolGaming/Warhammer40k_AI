@@ -13107,6 +13107,7 @@ class Game(
         targets: list['Unit'],
         *,
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
     ) -> bool:
         if charging_unit is None or not targets:
             return False
@@ -13247,6 +13248,7 @@ class Game(
             target_units=targets,
             candidates=candidates,
             out_of_turn=out_of_turn,
+            count_as_charged=count_as_charged,
         )
         return request is not None
 
@@ -13256,6 +13258,7 @@ class Game(
         targets: list['Unit'],
         *,
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
         publish_charge_declared: bool = True,
     ) -> dict | None:
         if not targets:
@@ -13340,6 +13343,7 @@ class Game(
                 "roll_id": None,
                 "target_unit_ids": [get_entity_id(t) for t in targets],
                 "miracle_used": False,
+                "count_as_charged": bool(count_as_charged),
             }
 
         spec = self._get_charge_roll_spec(charging_unit, target_unit=targets[0])
@@ -13489,6 +13493,7 @@ class Game(
             "roll_id": roll_id,
             "target_unit_ids": [get_entity_id(t) for t in targets],
             "miracle_used": bool(miracle_used),
+            "count_as_charged": bool(count_as_charged),
         }
         if auto_resolve:
             try:
@@ -13523,6 +13528,7 @@ class Game(
         target_unit_ids: list[str],
         *,
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
     ) -> dict | None:
         if charging_unit is None:
             return None
@@ -13555,11 +13561,13 @@ class Game(
                 "target_unit_ids": [],
                 "miracle_used": False,
                 "charge_cancelled": True,
+                "count_as_charged": bool(count_as_charged),
             }
         return self._complete_charge_declaration(
             charging_unit,
             valid_targets,
             out_of_turn=out_of_turn,
+            count_as_charged=count_as_charged,
             publish_charge_declared=True,
         )
 
@@ -13572,6 +13580,7 @@ class Game(
         charging_unit: 'Unit',
         original_target_unit_ids: list[str],
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
     ) -> dict | None:
         if charging_unit is None:
             return None
@@ -13581,6 +13590,7 @@ class Game(
                 charging_unit,
                 original_target_unit_ids,
                 out_of_turn=out_of_turn,
+                count_as_charged=count_as_charged,
             )
         ability_name = str(spec.get("source", "") or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
         self._mark_emergency_combat_embarkation_used_this_turn(transport, ability_name=ability_name)
@@ -13592,6 +13602,7 @@ class Game(
                 "miracle_used": False,
                 "charge_cancelled": True,
                 "embarked": True,
+                "count_as_charged": bool(count_as_charged),
             }
         player = getattr(getattr(charging_unit, "get_parent_army", lambda: None)(), "player", None)
         request = self._queue_charge_retarget_decision(
@@ -13599,6 +13610,7 @@ class Game(
             charging_unit=charging_unit,
             candidates=candidates,
             out_of_turn=out_of_turn,
+            count_as_charged=count_as_charged,
             prompt="Emergency Combat Embarkation: select new targets for the charge.",
             reason="emergency_combat_embarkation",
         )
@@ -13609,6 +13621,7 @@ class Game(
             "embarked": True,
             "charge_pending": bool(request is not None),
             "retarget_pending": bool(request is not None),
+            "count_as_charged": bool(count_as_charged),
         }
 
     def declare_charge(
@@ -13617,6 +13630,7 @@ class Game(
         target_units: list['Unit'],
         *,
         out_of_turn: bool = False,
+        count_as_charged: bool = True,
     ) -> dict | None:
         """
         Single source of truth for charge declaration bookkeeping + rolling:
@@ -13698,18 +13712,21 @@ class Game(
             charging_unit,
             targets,
             out_of_turn=out_of_turn,
+            count_as_charged=count_as_charged,
         ):
             return {
                 "roll_id": None,
                 "target_unit_ids": [get_entity_id(t) for t in targets],
                 "miracle_used": False,
                 "charge_pending": True,
+                "count_as_charged": bool(count_as_charged),
             }
 
         return self._complete_charge_declaration(
             charging_unit,
             targets,
             out_of_turn=out_of_turn,
+            count_as_charged=count_as_charged,
             publish_charge_declared=True,
         )
 

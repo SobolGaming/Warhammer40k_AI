@@ -19497,6 +19497,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     charging_unit,
                     original_target_unit_ids,
                     out_of_turn=bool(ctx.get("out_of_turn", False)),
+                    count_as_charged=bool(ctx.get("count_as_charged", True)),
                 )
         if ability == "master_of_shadows":
             payload = _option_payload(request, result)
@@ -22451,6 +22452,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     charging_unit,
                     original_target_unit_ids,
                     out_of_turn=out_of_turn,
+                    count_as_charged=bool(ctx.get("count_as_charged", True)),
                 )
             try:
                 cname = str(getattr(charging_unit, "name", "Charging unit") or "Charging unit")
@@ -22473,6 +22475,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     charging_unit=charging_unit,
                     original_target_unit_ids=original_target_unit_ids,
                     out_of_turn=out_of_turn,
+                    count_as_charged=bool(ctx.get("count_as_charged", True)),
                 )
             try:
                 tname = str(getattr(passenger, "name", "Unit") or "Unit")

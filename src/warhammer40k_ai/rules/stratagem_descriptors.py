@@ -3930,6 +3930,92 @@ _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010266002": StratagemToolDescriptor(
+        stratagem_id="000010266002",
+        name="Inspiring Presence",
+        timing="fight_phase_on_select_to_fight",
+        target="adeptus_astartes_character_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_keywords_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "grant_keywords": ["LETHAL HITS"],
+            "required_keywords_all": ["ADEPTUS ASTARTES", "CHARACTER"],
+        },
+    ),
+    "000010266003": StratagemToolDescriptor(
+        stratagem_id="000010266003",
+        name="Champion's Guidance",
+        timing="shooting_or_fight_phase_on_select",
+        target="space_wolves_character_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="phase_hit_reroll",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "required_keywords_all": ["CHARACTER"],
+            "reroll_hit_full": True,
+        },
+    ),
+    "000010266004": StratagemToolDescriptor(
+        stratagem_id="000010266004",
+        name="Birth of a Saga",
+        timing="your_command_phase",
+        target="wolf_guard_headtaker_or_wolf_guard_terminator_pack_leader_model",
+        duration="until_start_of_your_next_command_phase",
+        effect="temporary_model_character_keyword_and_unit_character_status",
+        cp_cost=1,
+        effect_params={
+            "selected_model_keyword": "CHARACTER",
+            "selected_unit_counts_as_keyword": "CHARACTER",
+        },
+    ),
+    "000010266005": StratagemToolDescriptor(
+        stratagem_id="000010266005",
+        name="Alpha Strike",
+        timing="your_charge_phase",
+        target="adeptus_astartes_character_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["ADEPTUS ASTARTES", "CHARACTER"]},
+    ),
+    "000010266006": StratagemToolDescriptor(
+        stratagem_id="000010266006",
+        name="Heroic Resolve",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="space_wolves_character_unit_targeted_by_enemy_shooter",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "required_keywords_all": ["CHARACTER"],
+            "damage_reduction": 1,
+        },
+    ),
+    "000010266007": StratagemToolDescriptor(
+        stratagem_id="000010266007",
+        name="Countercharge",
+        timing="end_of_opponent_charge_phase",
+        target="adeptus_astartes_character_unit_within_6_of_enemy_unit_it_can_charge",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "CHARACTER"],
+            "count_as_charged": False,
+        },
+    ),
+}
+
+_SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _FIRST_COMPANY_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008495005": StratagemToolDescriptor(
         stratagem_id="000008495005",
@@ -6844,6 +6930,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6957,6 +7046,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _THE_LOST_BRETHREN_STRATAGEM_BY_NAME.get(key)
         or _UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
+        or _SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)

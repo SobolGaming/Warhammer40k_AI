@@ -6376,6 +6376,19 @@ class ActionsMovementMixin:
                     reroll_hit_reasons.append("Codex Discipline: re-roll Hit rolls of 1")
         except Exception:
             pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "saga_of_the_bold_champions_guidance_reroll_hit", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = reroll_fn(attacker_model, attack_type=atype, game=game)
+                if bool(applies):
+                    mods["reroll_hit_full"] = True
+                    source_name = str(source or "Champion's Guidance").strip() or "Champion's Guidance"
+                    reroll_hit_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        except Exception:
+            pass
 
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Hit rolls of 1.
         try:
@@ -18229,6 +18242,11 @@ class ActionsMovementMixin:
             if callable(heresy_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if heresy_fn(self, game=game):
+                    return True
+            bold_fn = getattr(mgr, "saga_of_the_bold_alpha_strike_charge_after_advance_applies", None) if mgr is not None else None
+            if callable(bold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bold_fn(self, game=game):
                     return True
             liberator_fn = getattr(mgr, "liberator_can_charge_after_advance_applies", None) if mgr is not None else None
             if callable(liberator_fn):
