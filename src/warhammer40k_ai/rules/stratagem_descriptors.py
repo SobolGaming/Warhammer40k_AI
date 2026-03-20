@@ -4329,6 +4329,96 @@ _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_LIBRARIUS_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009791006": StratagemToolDescriptor(
+        stratagem_id="000009791006",
+        name="Assail",
+        timing="your_shooting_phase",
+        target="adeptus_astartes_psyker_unit_eligible_to_shoot_with_visible_enemy_within_18",
+        duration="immediate",
+        effect="psyker_mortal_wound_burst_with_conditional_telekinesis_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "PSYKER"],
+            "range": 18,
+            "requires_visibility": True,
+            "enemy_excludes_lone_operative": True,
+            "dice_count": 6,
+            "success_on": 4,
+            "roll_bonus_if_discipline_active": {"TELEKINESIS": 1},
+            "mortal_wounds_per_success": 1,
+        },
+    ),
+    "000009791004": StratagemToolDescriptor(
+        stratagem_id="000009791004",
+        name="Fiery Shield",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_astartes_infantry_or_mounted_unit_targeted_and_within_18_of_friendly_psyker",
+        duration="until_end_of_phase",
+        effect="defensive_hit_penalty_and_conditional_melee_hazardous_on_targeting",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "required_keywords_any": ["INFANTRY", "MOUNTED"],
+            "range_to_friendly_psyker": 18,
+            "hit_penalty": 1,
+            "grant_hazardous_if_discipline_active": {"PYROMANCY": True},
+        },
+    ),
+    "000009791005": StratagemToolDescriptor(
+        stratagem_id="000009791005",
+        name="Iron Arm",
+        timing="fight_phase_before_selected",
+        target="adeptus_astartes_infantry_unit_within_18_of_friendly_psyker_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_strength_bonus_and_conditional_biomancy_bonus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "INFANTRY"],
+            "range_to_friendly_psyker": 18,
+            "base_strength_bonus": 1,
+            "discipline_strength_bonus": {"BIOMANCY": 2},
+            "attack_type": "melee",
+        },
+    ),
+    "000009791007": StratagemToolDescriptor(
+        stratagem_id="000009791007",
+        name="Prescient Precision",
+        timing="your_shooting_phase",
+        target="adeptus_astartes_psyker_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits_and_conditional_divination_ignores_cover",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "PSYKER"],
+            "attack_type": "ranged",
+            "base_keywords": ["LETHAL HITS"],
+            "discipline_bonus_keywords": {"DIVINATION": ["IGNORES COVER"]},
+        },
+    ),
+    "000009791002": StratagemToolDescriptor(
+        stratagem_id="000009791002",
+        name="Sensory Assault",
+        timing="either_command_phase",
+        target="adeptus_astartes_psyker_unit_with_visible_enemy_within_18",
+        duration="until_start_of_your_next_turn",
+        effect="pin_enemy_unit_and_conditional_telepathy_battleshock",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES", "PSYKER"],
+            "range": 18,
+            "requires_visibility": True,
+            "move_penalty": -2,
+            "charge_penalty": -2,
+            "force_battleshock_if_discipline_active": {"TELEPATHY": {"modifier": -1}},
+        },
+    ),
+}
+
+_LIBRARIUS_CONCLAVE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LIBRARIUS_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _LIBERATOR_ASSAULT_GROUP_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008375006": StratagemToolDescriptor(
         stratagem_id="000008375006",
@@ -5979,6 +6069,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INNER_CIRCLE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LIBRARIUS_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ANVIL_SIEGE_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6109,6 +6202,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _IRONSTORM_SPEARHEAD_STRATAGEM_BY_NAME.get(key)
         or _LIBERATOR_ASSAULT_GROUP_STRATAGEM_BY_NAME.get(key)
         or _INNER_CIRCLE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _LIBRARIUS_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _ANVIL_SIEGE_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BASTION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _GLADIUS_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

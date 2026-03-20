@@ -7549,14 +7549,20 @@ class WargearProfile:
                 hazardous_active = True
                 hazardous_source_count += 1
         target_melee_hazardous = False
+        target_melee_hazardous_sources = []
         if is_melee_weapon:
             target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
             fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
             if callable(fn):
-                target_melee_hazardous = bool(fn())
+                target_melee_hazardous_sources = list(fn() or [])
+                target_melee_hazardous = bool(target_melee_hazardous_sources)
         if target_melee_hazardous:
             hazardous_active = True
             hazardous_source_count += 1
+            for source_name in list(target_melee_hazardous_sources or []):
+                note = f"{str(source_name or 'Target rule').strip() or 'Target rule'}: [HAZARDOUS] (melee)"
+                if note not in attack_result.attacks_special_modifiers:
+                    attack_result.attacks_special_modifiers.append(note)
         target_ranged_hazardous = False
         attacker_ranged_hazardous = False
         if is_ranged_weapon:
@@ -11254,6 +11260,43 @@ class WargearProfile:
                 if penalty:
                     src = entry.get("source") or "Defensive stratagem"
                     _add_hit_mod(-penalty, f"-{penalty} to hit from {src}")
+            sr = getattr(troot, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("space_marines_librarius_fiery_shield_active"):
+                apply_penalty = True
+                exp = str(sr.get("space_marines_librarius_fiery_shield_expires_phase", "") or "").strip().upper()
+                if exp and phase_key and phase_key != exp:
+                    apply_penalty = False
+                if apply_penalty:
+                    owner_id = str(sr.get("space_marines_librarius_fiery_shield_turn_owner", "") or "")
+                    if owner_id:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            player = getattr(army, "player", None) if army is not None else None
+                        except Exception:
+                            player = None
+                        attacker_id = ""
+                        if player is not None:
+                            try:
+                                attacker_id = get_entity_id(player)
+                            except Exception:
+                                attacker_id = str(getattr(player, "id", "") or "")
+                        if attacker_id and attacker_id == owner_id:
+                            apply_penalty = False
+                if apply_penalty:
+                    try:
+                        turn = int(sr.get("space_marines_librarius_fiery_shield_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if turn:
+                        try:
+                            game = getattr(getattr(attacker.parent_unit.get_parent_army(), "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is not None and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                            apply_penalty = False
+                if apply_penalty:
+                    source = str(sr.get("space_marines_librarius_fiery_shield_source", "") or "FIERY SHIELD").strip()
+                    _add_hit_mod(-1, f"-1 from {source}")
         except Exception:
             pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.

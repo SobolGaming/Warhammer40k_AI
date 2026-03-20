@@ -3227,6 +3227,37 @@ class Unit(
             root._ability_cache = {}
             cache = root._ability_cache
         cache[cache_key] = deduped
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_librarius_fiery_shield_active")):
+            return deduped
+
+        apply_effect = True
+        phase_name = ""
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            expires_phase = str(sr.get("space_marines_librarius_fiery_shield_expires_phase", "") or "").strip().upper()
+            if expires_phase and phase_name and phase_name != expires_phase:
+                apply_effect = False
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get("space_marines_librarius_fiery_shield_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                apply_effect = False
+        if not bool(sr.get("space_marines_librarius_fiery_shield_melee_hazardous")):
+            apply_effect = False
+        if not apply_effect:
+            return deduped
+
+        source_name = str(sr.get("space_marines_librarius_fiery_shield_source", "") or "FIERY SHIELD").strip() or "FIERY SHIELD"
+        if source_name not in deduped:
+            deduped = list(deduped) + [source_name]
         return deduped
 
     _CANNOT_BE_WARLORD_RE = re.compile(

@@ -20321,6 +20321,37 @@ def _stratagem_support(
     if stratagem_id in {"000010624003", "000010624004", "000010624005", "000010624006"}:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
 
+    if stratagem_id == "000009791002":
+        return (
+            "Implemented",
+            "Either Command phase: selected ADEPTUS ASTARTES PSYKER unit picks one enemy within 18\" and visible to one of its PSYKER models; that enemy is pinned until the start of your next turn, and Telepathy also forces a Battle-shock test at -1.",
+            name_u,
+        )
+    if stratagem_id == "000009791004":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 18\" of a friendly PSYKER is -1 to hit until end of phase, and Pyromancy also makes melee weapons that target it [HAZARDOUS].",
+            name_u,
+        )
+    if stratagem_id == "000009791005":
+        return (
+            "Implemented",
+            "Fight phase: selected ADEPTUS ASTARTES INFANTRY unit within 18\" of a friendly PSYKER and not yet selected to fight gains +1 Strength on melee weapons, or +2 while Biomancy is active.",
+            name_u,
+        )
+    if stratagem_id == "000009791006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES PSYKER unit eligible to shoot picks one visible enemy within 18\" of one of its PSYKER models, excluding Lone Operative units, then rolls six D6, adding 1 to each roll while Telekinesis is active, and deals 1 mortal wound for each 4+.",
+            name_u,
+        )
+    if stratagem_id == "000009791007":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES PSYKER unit that has not yet been selected to shoot gains [LETHAL HITS] on ranged weapons until end of phase, and Divination also grants [IGNORES COVER].",
+            name_u,
+        )
+
     if stratagem_id == "000008775003":
         return (
             "Implemented",

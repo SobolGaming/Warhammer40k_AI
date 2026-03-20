@@ -114,6 +114,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ONRUSHING STORM",
     "ORBITAL TELEPORTARIUM",
     "POWER OF THE MACHINE SPIRIT",
+    "PRESCIENT PRECISION",
     "PIOUS ENMITY",
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
@@ -301,6 +302,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "YRIEL\u2019S EXAMPLE",
     "PIRATES' DUE",
     "PIRATES’ DUE",
+    "ASSAIL",
+    "FIERY SHIELD",
+    "IRON ARM",
+    "SENSORY ASSAULT",
     "VENGEFUL SORROW",
     "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
@@ -6037,6 +6042,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_librarius_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_liberator_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7267,6 +7276,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_inner_circle_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_librarius_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -11191,6 +11204,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_inner_circle_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_librarius_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16531,6 +16551,9 @@ class StratagemManager(
         inner_circle_result = self._use_space_marines_inner_circle_task_force_stratagem(s, **kwargs)
         if inner_circle_result is not None:
             return inner_circle_result
+        librarius_result = self._use_space_marines_librarius_conclave_stratagem(s, **kwargs)
+        if librarius_result is not None:
+            return librarius_result
         liberator_result = self._use_space_marines_liberator_assault_group_stratagem(s, **kwargs)
         if liberator_result is not None:
             return liberator_result
