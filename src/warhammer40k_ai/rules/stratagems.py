@@ -173,10 +173,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOODY VENGEANCE",
     "BRAZEN IDOL",
     "BRAZEN CONTEMPT",
+    "BRUTE FERVOUR",
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
     "BIRTH OF A SAGA",
     "CARRY FORTH THE FAITHFUL",
+    "CASTIGATE THE DEMAGOGUES",
     "CHAMPION'S GUIDANCE",
     "CHAMPION’S GUIDANCE",
     "CLOUDSTRIKE",
@@ -247,6 +249,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RED RAMPAGE",
     "REDIRECTED STRIKE",
     "RECLAIM OUR HONOUR!",
+    "RELENTLESS MOMENTUM",
     "REFUSAL TO BE OUTDONE",
     "REFUSAL TO YIELD",
     "MEET FORCE WITH FORCE",
@@ -265,6 +268,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPOOR OF THE UNHOLY",
     "SUPPRESS AND OVERWHELM",
     "SUMMONED BY SLAUGHTER",
+    "VOICE OF DEVOTION",
     "WALL OF MIRRORS",
     "WITHDRAW AND REGROUP",
     "INVISIBLE HUNTER",
@@ -2153,6 +2157,7 @@ class StratagemManager(
             "BALEFUL HALO",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
+            "BRUTE FERVOUR",
             "BLIND GRENADES",
             "HYPERSTIMMS",
             "BRAZEN CONTEMPT",
@@ -2184,6 +2189,7 @@ class StratagemManager(
             "PEERLESS WARRIOR",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
+            "RELENTLESS MOMENTUM",
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
             "CHRONOSHIFT",
@@ -6296,6 +6302,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_wrathful_procession_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7347,6 +7357,7 @@ class StratagemManager(
             self._queue_space_marines_saga_of_the_bold_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_vindication_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_wrath_of_the_rock_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_space_marines_wrathful_procession_phase_end_effects(phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
@@ -16985,6 +16996,9 @@ class StratagemManager(
         wrath_of_the_rock_result = self._use_space_marines_wrath_of_the_rock_stratagem(s, **kwargs)
         if wrath_of_the_rock_result is not None:
             return wrath_of_the_rock_result
+        wrathful_procession_result = self._use_space_marines_wrathful_procession_stratagem(s, **kwargs)
+        if wrathful_procession_result is not None:
+            return wrathful_procession_result
         saga_bold_result = self._use_space_marines_saga_of_the_bold_stratagem(s, **kwargs)
         if saga_bold_result is not None:
             return saga_bold_result

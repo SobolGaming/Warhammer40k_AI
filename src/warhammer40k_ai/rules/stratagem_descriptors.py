@@ -6703,6 +6703,69 @@ _WRATH_OF_THE_ROCK_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WRATH_OF_THE_ROCK_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WRATHFUL_PROCESSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009844004": StratagemToolDescriptor(
+        stratagem_id="000009844004",
+        name="Castigate the Demagogues",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "grant_keywords": ["PRECISION"],
+        },
+    ),
+    "000009844005": StratagemToolDescriptor(
+        stratagem_id="000009844005",
+        name="Brute Fervour",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="ignore_skill_hit_wound_modifiers",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_hit_values": [1],
+            "ignore_modifiers": ["weapon_skill", "hit_roll", "wound_roll"],
+        },
+    ),
+    "000009844006": StratagemToolDescriptor(
+        stratagem_id="000009844006",
+        name="Relentless Momentum",
+        timing="fight_phase_before_selected_to_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight_in_engagement_range",
+        duration="until_end_of_phase",
+        effect="fight_eligibility_within_3",
+        cp_cost=1,
+        effect_params={
+            "range_in": 3.0,
+            "requires_unit_engagement_range": True,
+        },
+    ),
+    "000009844007": StratagemToolDescriptor(
+        stratagem_id="000009844007",
+        name="Voice of Devotion",
+        timing="your_command_phase",
+        target="adeptus_astartes_infantry_or_mounted_unit",
+        duration="until_end_of_battle_round",
+        effect="unit_specific_zealous_litany_override",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                "CHORUS_OF_RELENTLESS_HATE",
+                "RITE_OF_PERFERVID_WRATH",
+                "CHANT_OF_DEATHLESS_DEVOTION",
+            ],
+        },
+    ),
+}
+
+_WRATHFUL_PROCESSION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WRATHFUL_PROCESSION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010198007": StratagemToolDescriptor(
         stratagem_id="000010198007",
@@ -7429,6 +7492,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _WRATH_OF_THE_ROCK_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WRATHFUL_PROCESSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7546,6 +7612,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _WRATH_OF_THE_ROCK_STRATAGEM_BY_NAME.get(key)
+        or _WRATHFUL_PROCESSION_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)

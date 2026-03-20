@@ -9424,6 +9424,21 @@ class WargearProfile:
                 vindication_rule = None
             if isinstance(vindication_rule, dict) and vindication_rule:
                 return vindication_rule
+        brute_fervour_rule_fn = (
+            getattr(sm_mgr, "wrathful_procession_brute_fervour_ignore_hit_modifiers_rule", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(brute_fervour_rule_fn):
+            try:
+                brute_fervour_rule = brute_fervour_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                brute_fervour_rule = None
+            if isinstance(brute_fervour_rule, dict) and brute_fervour_rule:
+                return brute_fervour_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None
@@ -9586,6 +9601,27 @@ class WargearProfile:
                 "attack_type": "any",
                 "allow_wound": True,
             }
+
+        try:
+            army = root.get_parent_army() if root is not None else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        brute_fervour_rule_fn = (
+            getattr(sm_mgr, "wrathful_procession_brute_fervour_ignore_wound_modifiers_rule", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(brute_fervour_rule_fn):
+            try:
+                brute_fervour_rule = brute_fervour_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                brute_fervour_rule = None
+            if isinstance(brute_fervour_rule, dict) and brute_fervour_rule:
+                return brute_fervour_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -13015,6 +13051,21 @@ class WargearProfile:
                 if bool(reroll_hit_ones):
                     reroll_hit_values.add(1)
                     source_name = str(source or "Pious Enmity").strip() or "Pious Enmity"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
+        # Space Marines: Wrathful Procession (Brute Fervour).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "wrathful_procession_brute_fervour_reroll_hit_ones", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, source = reroll_fn(attacker, attack_type=attack_type, game=game)
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Brute Fervour").strip() or "Brute Fervour"
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass

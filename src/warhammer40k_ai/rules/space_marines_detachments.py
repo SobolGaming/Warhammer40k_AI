@@ -241,6 +241,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.wrathful_procession_active_litany_player_id: str = ""
         self.wrathful_procession_litany_selection_round: int = 0
         self.wrathful_procession_litany_selection_player_id: str = ""
+        self.wrathful_procession_voice_of_devotion_unit_id: str = ""
+        self.wrathful_procession_voice_of_devotion_litany_key: str = ""
+        self.wrathful_procession_voice_of_devotion_round: int = 0
+        self.wrathful_procession_voice_of_devotion_player_id: str = ""
         self.master_of_wolves_selected_pack_keys: tuple[str, ...] = ()
         self.master_of_wolves_active_pack_key: str = ""
         self.master_of_wolves_active_round: int = 0
@@ -1245,6 +1249,12 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.wrathful_procession_active_litany_round = 0
         self.wrathful_procession_active_litany_player_id = ""
 
+    def clear_wrathful_procession_voice_of_devotion(self) -> None:
+        self.wrathful_procession_voice_of_devotion_unit_id = ""
+        self.wrathful_procession_voice_of_devotion_litany_key = ""
+        self.wrathful_procession_voice_of_devotion_round = 0
+        self.wrathful_procession_voice_of_devotion_player_id = ""
+
     def get_available_zealous_litanies(self) -> list[str]:
         return list(self._ZEALOUS_LITANY_KEYS)
 
@@ -1275,28 +1285,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def zealous_litany_is_active(self, key: str, *, game=None, battle_round=None) -> bool:
         norm = self._normalize_zealous_litany_key(key)
-        active_key = str(getattr(self, "wrathful_procession_active_litany_key", "") or "").strip().upper()
+        active_key = self._wrathful_procession_active_litany_key(game=game, battle_round=battle_round)
         if active_key != norm:
             return False
-        try:
-            selected_round = int(getattr(self, "wrathful_procession_active_litany_round", 0) or 0)
-        except Exception:
-            return False
-        if selected_round <= 0:
-            return False
-        if battle_round is None:
-            game_obj = self._resolve_game_context(game=game)
-            if game_obj is not None:
-                try:
-                    battle_round = int(getattr(game_obj, "turn", 0) or 0)
-                except Exception:
-                    battle_round = None
-        if battle_round is None:
-            return True
-        try:
-            return int(selected_round) == int(battle_round or 0)
-        except Exception:
-            return False
+        return bool(active_key)
 
     def select_zealous_litany(self, choice_key: str, *, battle_round=None, player_id: str = "") -> bool:
         if not self.is_wrathful_procession():
@@ -1321,6 +1313,39 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.wrathful_procession_active_litany_player_id = player
         return True
 
+    def _wrathful_procession_litany_round_matches(self, selected_round: int, *, game=None, battle_round=None) -> bool:
+        if int(selected_round or 0) <= 0:
+            return False
+        if battle_round is None:
+            game_obj = self._resolve_game_context(game=game)
+            if game_obj is not None:
+                try:
+                    battle_round = int(getattr(game_obj, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    battle_round = None
+        if battle_round is None:
+            return True
+        try:
+            return int(selected_round) == int(battle_round or 0)
+        except (TypeError, ValueError):
+            return False
+
+    def _wrathful_procession_active_litany_key(self, *, game=None, battle_round=None) -> str:
+        active_key = self._normalize_zealous_litany_key(getattr(self, "wrathful_procession_active_litany_key", ""))
+        if active_key not in self._ZEALOUS_LITANY_KEYS:
+            return ""
+        try:
+            selected_round = int(getattr(self, "wrathful_procession_active_litany_round", 0) or 0)
+        except (TypeError, ValueError):
+            return ""
+        if not self._wrathful_procession_litany_round_matches(
+            selected_round,
+            game=game,
+            battle_round=battle_round,
+        ):
+            return ""
+        return active_key
+
     def _wrathful_procession_litany_unit_is_eligible(self, unit) -> bool:
         if not self.is_wrathful_procession():
             return False
@@ -1339,23 +1364,80 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             or self._attached_unit_has_keyword(root, "MOUNTED")
         )
 
-    def wrathful_procession_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
-        if not self.zealous_litany_is_active(
-            self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE,
-            game=game,
-        ):
-            return 0, ""
+    def set_wrathful_procession_voice_of_devotion(
+        self,
+        unit,
+        choice_key: str,
+        *,
+        battle_round=None,
+        player_id: str = "",
+    ) -> bool:
+        if not self.is_wrathful_procession():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._wrathful_procession_litany_unit_is_eligible(root):
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return False
+        key = self._normalize_zealous_litany_key(choice_key)
+        if key not in self._ZEALOUS_LITANY_KEYS:
+            return False
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round or 0)
+            except (TypeError, ValueError):
+                round_now = 0
+        self.wrathful_procession_voice_of_devotion_unit_id = unit_id
+        self.wrathful_procession_voice_of_devotion_litany_key = key
+        self.wrathful_procession_voice_of_devotion_round = int(round_now or 0)
+        self.wrathful_procession_voice_of_devotion_player_id = str(player_id or "")
+        return True
+
+    def wrathful_procession_effective_litany_key(self, unit, *, game=None, battle_round=None) -> str:
         if not self._wrathful_procession_litany_unit_is_eligible(unit):
+            return ""
+        root = self._attached_unit_root(unit)
+        root_id = str(get_entity_id(root) or "") if root is not None else ""
+        voice_key = self._normalize_zealous_litany_key(
+            getattr(self, "wrathful_procession_voice_of_devotion_litany_key", "")
+        )
+        voice_unit_id = str(getattr(self, "wrathful_procession_voice_of_devotion_unit_id", "") or "")
+        if voice_key in self._ZEALOUS_LITANY_KEYS and voice_unit_id and root_id and voice_unit_id == root_id:
+            try:
+                voice_round = int(getattr(self, "wrathful_procession_voice_of_devotion_round", 0) or 0)
+            except (TypeError, ValueError):
+                voice_round = 0
+            if self._wrathful_procession_litany_round_matches(
+                voice_round,
+                game=game,
+                battle_round=battle_round,
+            ):
+                return voice_key
+            self.clear_wrathful_procession_voice_of_devotion()
+        return self._wrathful_procession_active_litany_key(game=game, battle_round=battle_round)
+
+    def wrathful_procession_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if self.wrathful_procession_effective_litany_key(
+            unit,
+            game=game,
+        ) != self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE:
             return 0, ""
         return 2, "Zealous Litanies (Chorus of Relentless Hate)"
 
     def wrathful_procession_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
-        if not self.zealous_litany_is_active(
-            self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE,
+        if self.wrathful_procession_effective_litany_key(
+            unit,
             game=game,
-        ):
-            return 0, ""
-        if not self._wrathful_procession_litany_unit_is_eligible(unit):
+        ) != self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE:
             return 0, ""
         return 1, "Zealous Litanies (Chorus of Relentless Hate)"
 
@@ -1366,11 +1448,6 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         weapon_profile=None,
         game=None,
     ) -> tuple[int, str]:
-        if not self.zealous_litany_is_active(
-            self._ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH,
-            game=game,
-        ):
-            return 0, ""
         if attacker_model is None:
             return 0, ""
         if weapon_profile is not None:
@@ -1378,21 +1455,148 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
                 return 0, ""
         attacker_unit = getattr(attacker_model, "parent_unit", None)
-        if not self._wrathful_procession_litany_unit_is_eligible(attacker_unit):
+        if self.wrathful_procession_effective_litany_key(
+            attacker_unit,
+            game=game,
+        ) != self._ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH:
             return 0, ""
         return 1, "Zealous Litanies (Rite of Perfervid Wrath)"
 
     def wrathful_procession_ranged_invulnerable_save(self, unit, *, attack_type: str = "", game=None) -> tuple[int, str]:
-        if not self.zealous_litany_is_active(
-            self._ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION,
-            game=game,
-        ):
-            return 0, ""
         if str(attack_type or "").strip().lower() != "ranged":
             return 0, ""
-        if not self._wrathful_procession_litany_unit_is_eligible(unit):
+        if self.wrathful_procession_effective_litany_key(
+            unit,
+            game=game,
+        ) != self._ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION:
             return 0, ""
         return 5, "Zealous Litanies (Chant of Deathless Devotion)"
+
+    def clear_wrathful_procession_brute_fervour(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "space_marines_wrathful_procession_brute_fervour_active",
+            "space_marines_wrathful_procession_brute_fervour_expires_phase",
+            "space_marines_wrathful_procession_brute_fervour_turn_owner",
+            "space_marines_wrathful_procession_brute_fervour_turn",
+            "space_marines_wrathful_procession_brute_fervour_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _wrathful_procession_brute_fervour_state(self, unit, *, game=None):
+        if not self.is_wrathful_procession():
+            return None, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return None, ""
+        except Exception:
+            return None, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None, ""
+        sr = getattr(root, "special_rules", None)
+        if not (
+            isinstance(sr, dict)
+            and bool(sr.get("space_marines_wrathful_procession_brute_fervour_active"))
+        ):
+            return None, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+            expected_phase = str(
+                sr.get("space_marines_wrathful_procession_brute_fervour_expires_phase", "") or ""
+            ).strip().upper()
+            if expected_phase and current_phase and expected_phase != current_phase:
+                self.clear_wrathful_procession_brute_fervour(root)
+                return None, ""
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            try:
+                effect_turn = int(sr.get("space_marines_wrathful_procession_brute_fervour_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                self.clear_wrathful_procession_brute_fervour(root)
+                return None, ""
+            owner_id = str(sr.get("space_marines_wrathful_procession_brute_fervour_turn_owner", "") or "")
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                self.clear_wrathful_procession_brute_fervour(root)
+                return None, ""
+        source = str(
+            sr.get("space_marines_wrathful_procession_brute_fervour_source", "") or "Brute Fervour"
+        ).strip() or "Brute Fervour"
+        return root, source
+
+    def wrathful_procession_brute_fervour_reroll_hit_ones(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None:
+            return False, ""
+        if str(attack_type or "").strip().lower() not in {"any", "melee"}:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root, source = self._wrathful_procession_brute_fervour_state(unit, game=game)
+        if root is None:
+            return False, ""
+        model_root = self._attached_unit_root(unit)
+        if model_root is None or str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+            return False, ""
+        return True, source
+
+    def wrathful_procession_brute_fervour_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        root, source = self._wrathful_procession_brute_fervour_state(
+            getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None,
+            game=game,
+        )
+        if root is None:
+            return None
+        return {
+            "name": source,
+            "attack_type": "melee",
+            "skill_kinds": {"weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def wrathful_procession_brute_fervour_ignore_wound_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        root, source = self._wrathful_procession_brute_fervour_state(
+            getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None,
+            game=game,
+        )
+        if root is None:
+            return None
+        return {
+            "name": source,
+            "attack_type": "melee",
+            "allow_wound": True,
+            "default_choice": "ignore_negative",
+        }
 
     def _wrathful_procession_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)
@@ -2541,10 +2745,12 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def _on_battle_round_start_wrathful_procession_litanies(self, battle_round: int, *, game=None) -> None:
         if not self.is_wrathful_procession():
             self.clear_wrathful_procession_active_litany()
+            self.clear_wrathful_procession_voice_of_devotion()
             self.wrathful_procession_litany_selection_round = 0
             self.wrathful_procession_litany_selection_player_id = ""
             return
         self.clear_wrathful_procession_active_litany()
+        self.clear_wrathful_procession_voice_of_devotion()
         game_obj = self._resolve_game_context(game=game)
         if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
             return

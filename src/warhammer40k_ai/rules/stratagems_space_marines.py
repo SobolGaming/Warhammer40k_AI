@@ -190,6 +190,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_wrath_of_the_rock", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_wrathful_procession_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_wrathful_procession", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_angelic_inheritors_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_angelic_inheritors", None) if mgr is not None else None
@@ -4301,6 +4306,60 @@ class SpaceMarinesStratagemMixin:
             enemy_map[self._sm_sort_key(root)] = list(enemy_candidates)
         return (sorted(candidates, key=self._sm_sort_key), enemy_map)
 
+    def _space_marines_wrathful_procession_voice_of_devotion_candidates(self) -> list[Any]:
+        if not self._is_wrathful_procession_detachment():
+            return []
+        mgr = self._sm_detachment_mgr()
+        eligible_fn = getattr(mgr, "_wrathful_procession_litany_unit_is_eligible", None) if mgr is not None else None
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if callable(eligible_fn):
+                if not bool(eligible_fn(root)):
+                    continue
+            elif not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_wrathful_procession_fight_phase_candidates(self, *, require_engaged: bool = False) -> list[Any]:
+        if not self._is_wrathful_procession_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            if require_engaged and not self._sm_unit_is_engaged(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _sm_wrathful_procession_litany_options(self) -> list[dict[str, str]]:
+        mgr = self._sm_detachment_mgr()
+        get_keys = getattr(mgr, "get_available_zealous_litanies", None) if mgr is not None else None
+        label_fn = getattr(mgr, "zealous_litany_label", None) if mgr is not None else None
+        keys = list(get_keys() or []) if callable(get_keys) else []
+        options: list[dict[str, str]] = []
+        for key in keys:
+            choice_key = str(key or "").strip().upper()
+            if not choice_key:
+                continue
+            choice_name = str(label_fn(choice_key) if callable(label_fn) else choice_key).strip() or choice_key
+            options.append(
+                {
+                    "choice_key": choice_key,
+                    "choice_name": choice_name,
+                }
+            )
+        return options
+
     def _space_marines_anvil_shooting_candidates(self) -> list[Any]:
         if not self._is_anvil_siege_force_detachment():
             return []
@@ -6777,6 +6836,149 @@ class SpaceMarinesStratagemMixin:
                 if len(enemy_candidates) == 1:
                     payload["enemy_unit"] = enemy_candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_wrathful_procession_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_wrathful_procession_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "COMMAND_PHASE":
+            if player is not self.player or active_player is not self.player:
+                return
+            stratagem = self.get_by_name("VOICE OF DEVOTION")
+            candidates = self._space_marines_wrathful_procession_voice_of_devotion_candidates()
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Command phase",
+            ):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Command phase",
+                "phase_name": "Command phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+                "choice_options": self._sm_wrathful_procession_litany_options(),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+
+        fight_candidates = self._space_marines_wrathful_procession_fight_phase_candidates(require_engaged=False)
+        engaged_candidates = self._space_marines_wrathful_procession_fight_phase_candidates(require_engaged=True)
+        for stratagem_name, candidates in (
+            ("BRUTE FERVOUR", fight_candidates),
+            ("CASTIGATE THE DEMAGOGUES", fight_candidates),
+            ("RELENTLESS MOMENTUM", engaged_candidates),
+        ):
+            if not candidates:
+                continue
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_wrathful_procession_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_wrathful_procession_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            brute_exp = str(sr.get("space_marines_wrathful_procession_brute_fervour_expires_phase", "") or "").strip().upper()
+            if bool(sr.get("space_marines_wrathful_procession_brute_fervour_active")) and (not brute_exp or brute_exp == "FIGHT_PHASE"):
+                for key in (
+                    "space_marines_wrathful_procession_brute_fervour_active",
+                    "space_marines_wrathful_procession_brute_fervour_expires_phase",
+                    "space_marines_wrathful_procession_brute_fervour_turn_owner",
+                    "space_marines_wrathful_procession_brute_fervour_turn",
+                    "space_marines_wrathful_procession_brute_fervour_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            relentless_exp = str(
+                sr.get("space_marines_wrathful_procession_relentless_momentum_expires_phase", "") or ""
+            ).strip().upper()
+            if bool(sr.get("space_marines_wrathful_procession_relentless_momentum_active")) and (
+                not relentless_exp or relentless_exp == "FIGHT_PHASE"
+            ):
+                if bool(sr.get("space_marines_wrathful_procession_relentless_momentum_added_fight_within_3")) and "fight_within_3" in sr:
+                    sr.pop("fight_within_3", None)
+                    changed = True
+                source_name = str(
+                    sr.get("space_marines_wrathful_procession_relentless_momentum_source", "") or "RELENTLESS MOMENTUM"
+                ).strip() or "RELENTLESS MOMENTUM"
+                if str(sr.get("fight_within_3_active_source", "") or "").strip() == source_name:
+                    for key in ("fight_within_3_active", "fight_within_3_active_source"):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+                for key in (
+                    "space_marines_wrathful_procession_relentless_momentum_active",
+                    "space_marines_wrathful_procession_relentless_momentum_expires_phase",
+                    "space_marines_wrathful_procession_relentless_momentum_turn_owner",
+                    "space_marines_wrathful_procession_relentless_momentum_turn",
+                    "space_marines_wrathful_procession_relentless_momentum_source",
+                    "space_marines_wrathful_procession_relentless_momentum_added_fight_within_3",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if changed:
+                root.special_rules = sr
 
     def _queue_space_marines_anvil_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_anvil_siege_force_detachment():
@@ -18642,6 +18844,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_tactical_mastery(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_wrathful_procession_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_wrathful_procession_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("’", "'")
+        if name_u == "BRUTE FERVOUR":
+            return self._use_space_marines_brute_fervour(stratagem, **kwargs)
+        if name_u == "CASTIGATE THE DEMAGOGUES":
+            return self._use_space_marines_castigate_the_demagogues(stratagem, **kwargs)
+        if name_u == "FUELLED BY FAITH":
+            return self._use_space_marines_mortal_wound_stratagem(stratagem, **kwargs)
+        if name_u == "RELENTLESS MOMENTUM":
+            return self._use_space_marines_relentless_momentum(stratagem, **kwargs)
+        if name_u == "VOICE OF DEVOTION":
+            return self._use_space_marines_voice_of_devotion(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_angelic_inheritors_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -22691,6 +22911,42 @@ class SpaceMarinesStratagemMixin:
             unit = candidates[0]
         return (unit, candidates, trigger_unit, target_units, choice_payload, action, from_pending)
 
+    def _sm_wrathful_procession_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        choice_payload = (
+            kwargs.get("choice")
+            or kwargs.get("choice_key")
+            or kwargs.get("litany_key")
+            or kwargs.get("selection")
+        )
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if choice_payload is None:
+                choice_payload = (
+                    reaction.get("choice")
+                    or reaction.get("choice_key")
+                    or reaction.get("litany_key")
+                    or reaction.get("selection")
+                )
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, candidates, choice_payload, from_pending)
+
     def _sm_vehemence_context(
         self,
         stratagem_name: str,
@@ -26148,6 +26404,59 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
+    def _sm_wrathful_procession_normalize_litany_choice_key(self, choice_payload: Any) -> str:
+        if isinstance(choice_payload, dict):
+            choice_payload = (
+                choice_payload.get("choice_key")
+                or choice_payload.get("litany_key")
+                or choice_payload.get("key")
+                or choice_payload.get("selection")
+            )
+        mgr = self._sm_detachment_mgr()
+        normalize_fn = getattr(mgr, "_normalize_zealous_litany_key", None) if mgr is not None else None
+        if callable(normalize_fn):
+            return str(normalize_fn(choice_payload)).strip().upper()
+        return str(choice_payload or "").strip().upper()
+
+    def _sm_grant_temporary_melee_weapon_keywords(
+        self,
+        root: Any,
+        *,
+        keywords: list[str],
+        source: str,
+        key_prefix: str,
+    ) -> int:
+        applied = 0
+        normalized_keywords = [str(keyword or "").strip().upper() for keyword in list(keywords or []) if str(keyword or "").strip()]
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                set_keywords(
+                    key=f"{key_prefix}:{model_id}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=normalized_keywords,
+                    source=source,
+                    expires_phase="FIGHT_PHASE",
+                    attack_type="melee",
+                )
+                applied += 1
+        return applied
+
     def _use_space_marines_surgical_strikes(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "fight phase":
@@ -26187,31 +26496,12 @@ class SpaceMarinesStratagemMixin:
             return False
 
         source = str(getattr(stratagem, "name", "") or "SURGICAL STRIKES").strip() or "SURGICAL STRIKES"
-        for model in self._sm_unit_models(root):
-            is_alive_attr = getattr(model, "is_alive", True)
-            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
-            if not is_alive:
-                continue
-            model_id = str(get_entity_id(model) or "")
-            for wargear in list(getattr(model, "wargear", []) or []):
-                if wargear is None:
-                    continue
-                is_melee = getattr(wargear, "is_melee", None)
-                if not callable(is_melee) or not bool(is_melee()):
-                    continue
-                weapon_name = str(getattr(wargear, "name", "") or "").strip()
-                if not weapon_name:
-                    continue
-                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
-                if callable(set_keywords):
-                    set_keywords(
-                        key=f"space_marines_vanguard_surgical_strikes:{model_id}:{weapon_name}".lower(),
-                        weapon_name=weapon_name,
-                        keywords=["PRECISION"],
-                        source=source,
-                        expires_phase="FIGHT_PHASE",
-                        attack_type="melee",
-                    )
+        self._sm_grant_temporary_melee_weapon_keywords(
+            root,
+            keywords=["PRECISION"],
+            source=source,
+            key_prefix="space_marines_vanguard_surgical_strikes",
+        )
 
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
@@ -27741,6 +28031,272 @@ class SpaceMarinesStratagemMixin:
                 getattr(root, "name", "Unit"),
                 getattr(enemy_root, "name", "Enemy"),
             )
+        return True
+
+    def _use_space_marines_voice_of_devotion(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: VOICE OF DEVOTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: VOICE OF DEVOTION: not your Command phase")
+            return False
+
+        unit, candidates, choice_payload, from_pending = self._sm_wrathful_procession_context(
+            "VOICE OF DEVOTION",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: VOICE OF DEVOTION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: VOICE OF DEVOTION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: VOICE OF DEVOTION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: VOICE OF DEVOTION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_is_mounted_unit(root)):
+            logger.error("ERROR: VOICE OF DEVOTION: target must be ADEPTUS ASTARTES INFANTRY or MOUNTED")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrathful_procession_voice_of_devotion_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: VOICE OF DEVOTION: selected unit is not currently eligible")
+            return False
+
+        choice_key = self._sm_wrathful_procession_normalize_litany_choice_key(choice_payload)
+        valid_choice_keys = {
+            str(option.get("choice_key", "") or "").strip().upper()
+            for option in list(self._sm_wrathful_procession_litany_options() or [])
+            if str(option.get("choice_key", "") or "").strip()
+        }
+        if not choice_key or choice_key not in valid_choice_keys:
+            logger.error("ERROR: VOICE OF DEVOTION: selected litany is not currently eligible")
+            return False
+
+        mgr = self._sm_detachment_mgr()
+        apply_fn = getattr(mgr, "set_wrathful_procession_voice_of_devotion", None) if mgr is not None else None
+        label_fn = getattr(mgr, "zealous_litany_label", None) if mgr is not None else None
+        if not callable(apply_fn):
+            logger.error("ERROR: VOICE OF DEVOTION: detachment manager is unavailable")
+            return False
+        if not str(get_entity_id(root) or ""):
+            logger.error("ERROR: VOICE OF DEVOTION: target unit is missing a stable entity id")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: VOICE OF DEVOTION: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if not apply_fn(
+            root,
+            choice_key,
+            battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            player_id=str(getattr(self.player, "id", "") or ""),
+        ):
+            logger.error("ERROR: VOICE OF DEVOTION: failed to apply litany override")
+            return False
+        choice_name = str(label_fn(choice_key) if callable(label_fn) else choice_key).strip() or choice_key
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: VOICE OF DEVOTION: %s gains %s until end of battle round.",
+            getattr(root, "name", "Unit"),
+            choice_name,
+        )
+        return True
+
+    def _use_space_marines_brute_fervour(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BRUTE FERVOUR: wrong phase")
+            return False
+
+        unit, candidates, _choice_payload, from_pending = self._sm_wrathful_procession_context(
+            "BRUTE FERVOUR",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: BRUTE FERVOUR: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: BRUTE FERVOUR: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BRUTE FERVOUR: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: BRUTE FERVOUR: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: BRUTE FERVOUR: target has already been selected to fight this phase")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrathful_procession_fight_phase_candidates(require_engaged=False)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: BRUTE FERVOUR: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: BRUTE FERVOUR: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        source_name = str(getattr(stratagem, "name", "") or "BRUTE FERVOUR").strip() or "BRUTE FERVOUR"
+        sr["space_marines_wrathful_procession_brute_fervour_active"] = True
+        sr["space_marines_wrathful_procession_brute_fervour_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_wrathful_procession_brute_fervour_turn_owner"] = str(
+            getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["space_marines_wrathful_procession_brute_fervour_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        sr["space_marines_wrathful_procession_brute_fervour_source"] = source_name
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: BRUTE FERVOUR: %s re-rolls Hit rolls of 1 and can ignore melee WS/Hit/Wound modifiers this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_castigate_the_demagogues(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: wrong phase")
+            return False
+
+        unit, candidates, _choice_payload, from_pending = self._sm_wrathful_procession_context(
+            "CASTIGATE THE DEMAGOGUES",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: target has already been selected to fight this phase")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrathful_procession_fight_phase_candidates(require_engaged=False)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: CASTIGATE THE DEMAGOGUES: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        self._sm_grant_temporary_melee_weapon_keywords(
+            root,
+            keywords=["PRECISION"],
+            source=str(getattr(stratagem, "name", "") or "CASTIGATE THE DEMAGOGUES").strip() or "CASTIGATE THE DEMAGOGUES",
+            key_prefix="space_marines_wrathful_procession_castigate_the_demagogues",
+        )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: CASTIGATE THE DEMAGOGUES: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_relentless_momentum(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RELENTLESS MOMENTUM: wrong phase")
+            return False
+
+        unit, candidates, _choice_payload, from_pending = self._sm_wrathful_procession_context(
+            "RELENTLESS MOMENTUM",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: RELENTLESS MOMENTUM: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELENTLESS MOMENTUM: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RELENTLESS MOMENTUM: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: RELENTLESS MOMENTUM: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: RELENTLESS MOMENTUM: target has already been selected to fight this phase")
+            return False
+        if not self._sm_unit_is_engaged(root):
+            logger.error("ERROR: RELENTLESS MOMENTUM: target must be within Engagement Range of an enemy unit")
+            return False
+        valid_candidates = list(candidates) or self._space_marines_wrathful_procession_fight_phase_candidates(require_engaged=True)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: RELENTLESS MOMENTUM: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: RELENTLESS MOMENTUM: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        source_name = str(getattr(stratagem, "name", "") or "RELENTLESS MOMENTUM").strip() or "RELENTLESS MOMENTUM"
+        if not sr.get("fight_within_3"):
+            sr["fight_within_3"] = [{"name": source_name}]
+            sr["space_marines_wrathful_procession_relentless_momentum_added_fight_within_3"] = True
+        set_active = getattr(root, "set_fight_within_3_active", None)
+        if callable(set_active):
+            root.special_rules = sr
+            set_active(True, source=source_name)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+        else:
+            sr["fight_within_3_active"] = True
+            sr["fight_within_3_active_source"] = source_name
+        sr["space_marines_wrathful_procession_relentless_momentum_active"] = True
+        sr["space_marines_wrathful_procession_relentless_momentum_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_wrathful_procession_relentless_momentum_turn_owner"] = str(
+            getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["space_marines_wrathful_procession_relentless_momentum_turn"] = (
+            int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        )
+        sr["space_marines_wrathful_procession_relentless_momentum_source"] = source_name
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True or from_pending)
+        logger.info(
+            "INFO: RELENTLESS MOMENTUM: %s can fight with eligible models within 3\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
         return True
 
     def _use_space_marines_litanies_of_purgation(self, stratagem: Any, **kwargs) -> bool:
