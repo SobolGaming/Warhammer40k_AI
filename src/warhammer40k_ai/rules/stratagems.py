@@ -60,10 +60,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL WEAPONRY",
     "EXEMPLAR'S WISDOM",
     "EXEMPLAR’S WISDOM",
+    "AUTOSTIMULANTS",
+    "DELAYED MUTATIONS",
+    "DIABOLIC REGENERATION",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
+    "MASTERS ARE WATCHING",
     "MORTAL THRALLS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
@@ -81,6 +85,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "SELFLESS DEMISE",
+    "SPECIMENS FOR THE SPIDER",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
     "ALPHA STRIKE",
@@ -2055,6 +2060,7 @@ class StratagemManager(
             "FIGHT TO THE END",
             "FINAL RETRIBUTION",
             "SELFLESS DEMISE",
+            "MASTERS ARE WATCHING",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
@@ -11461,6 +11467,13 @@ class StratagemManager(
             raise
         try:
             self._queue_chaos_cult_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_creations_of_bile_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

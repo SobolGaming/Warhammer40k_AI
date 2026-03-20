@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from ..engine.decisions import DecisionOption, DecisionRequest
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
@@ -83,6 +85,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_chaos_cult", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_creations_of_bile_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_creations_of_bile", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -110,6 +117,27 @@ class ChaosSpaceMarinesStratagemMixin:
         if callable(checker):
             return bool(checker(root))
         return self._csm_has_keyword(root, "DAMNED")
+
+    def _is_creations_eligible_unit(self, unit: Any) -> bool:
+        root = self._csm_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "_unit_is_creations_eligible", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return bool(self._is_heretic_astartes_infantry(root) and not self._is_damned_unit(root))
+
+    def _csm_model_is_character(self, model: Any) -> bool:
+        if model is None:
+            return False
+        char_attr = getattr(model, "is_character", None)
+        if bool(char_attr() if callable(char_attr) else char_attr):
+            return True
+        if self._csm_has_keyword(model, "CHARACTER"):
+            return True
+        parent = getattr(model, "parent_unit", None)
+        return bool(parent is not None and self._csm_has_keyword(parent, "CHARACTER"))
 
     def _is_cabal_psyker_source_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
@@ -308,6 +336,94 @@ class ChaosSpaceMarinesStratagemMixin:
             require_damned=True,
             require_not_attempted_charge=True,
         )
+
+    def _creations_of_bile_targetable_units(
+        self,
+        *,
+        require_infantry: bool = True,
+        require_creations_eligible: bool = False,
+        require_not_fought: bool = False,
+        require_not_attempted_charge: bool = False,
+        require_destroyed_non_character_model: bool = False,
+    ) -> list[Any]:
+        if not self._is_creations_of_bile_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if require_infantry and not self._is_heretic_astartes_infantry(root):
+                continue
+            if require_creations_eligible and not self._is_creations_eligible_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_not_attempted_charge and bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
+            if require_destroyed_non_character_model:
+                destroyed_pool = list(getattr(root, "models_lost", []) or [])
+                eligible_destroyed = [model for model in destroyed_pool if not self._csm_model_is_character(model)]
+                if not eligible_destroyed:
+                    continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _creations_of_bile_autostimulants_candidates(self) -> list[Any]:
+        return self._creations_of_bile_targetable_units(require_not_attempted_charge=True)
+
+    def _creations_of_bile_delayed_mutations_candidates(self) -> list[Any]:
+        return self._creations_of_bile_targetable_units(require_creations_eligible=True)
+
+    def _creations_of_bile_diabolic_regeneration_candidates(self) -> list[Any]:
+        return self._creations_of_bile_targetable_units(
+            require_creations_eligible=True,
+            require_destroyed_non_character_model=True,
+        )
+
+    def _creations_of_bile_specimens_for_the_spider_candidates(self) -> list[Any]:
+        return self._creations_of_bile_targetable_units(require_not_fought=True)
+
+    def _creations_of_bile_masters_are_watching_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_infantry(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
 
     def _csm_find_pending_reaction(self, stratagem_name: str, *, unit: Any = None):
         name_u = str(stratagem_name or "").strip().upper()
@@ -689,6 +805,47 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_creations_of_bile_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_creations_of_bile_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None:
+            return
+        if self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("MASTERS ARE WATCHING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._creations_of_bile_masters_are_watching_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MASTERS ARE WATCHING":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_cabal_of_chaos_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -723,6 +880,8 @@ class ChaosSpaceMarinesStratagemMixin:
                     "chaos_cult_infernal_sacrifice",
                     "chaos_cult_selfless_demise",
                     "chaos_cult_mortal_thralls",
+                    "creations_of_bile_masters_are_watching",
+                    "creations_of_bile_specimens_for_the_spider",
                 )
                 remove_keys = [
                     key
@@ -1671,6 +1830,415 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_creations_of_bile_autostimulants(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            if len(candidates) == 1:
+                unit = candidates[0]
+            else:
+                candidates = self._creations_of_bile_autostimulants_candidates()
+                if len(candidates) == 1:
+                    unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: AUTOSTIMULANTS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_creations_of_bile_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: AUTOSTIMULANTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AUTOSTIMULANTS: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: AUTOSTIMULANTS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: AUTOSTIMULANTS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: AUTOSTIMULANTS: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: AUTOSTIMULANTS: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+            logger.error("ERROR: AUTOSTIMULANTS: target has already attempted a charge")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["warp_surge_charge_after_advance"] = True
+        sr["warp_surge_expires_phase"] = "CHARGE_PHASE"
+        sr["warp_surge_source"] = str(stratagem.name or "AUTOSTIMULANTS")
+        root.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AUTOSTIMULANTS: %s can charge after Advancing this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_creations_of_bile_delayed_mutations(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            if len(candidates) == 1:
+                unit = candidates[0]
+            else:
+                candidates = self._creations_of_bile_delayed_mutations_candidates()
+                if len(candidates) == 1:
+                    unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DELAYED MUTATIONS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_creations_of_bile_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: DELAYED MUTATIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DELAYED MUTATIONS: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: DELAYED MUTATIONS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DELAYED MUTATIONS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DELAYED MUTATIONS: target cannot be selected")
+            return False
+        if not self._is_creations_eligible_unit(root):
+            logger.error("ERROR: DELAYED MUTATIONS: target must be eligible HERETIC ASTARTES INFANTRY excluding DAMNED")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        apply_self_mortals = getattr(mgr, "_apply_chaos_cult_self_mortals", None) if mgr is not None else None
+        mortal_wounds = int(apply_self_mortals(root, roll_spec="D3", game=self.game) or 0) if callable(apply_self_mortals) else 0
+        still_alive = self._csm_is_alive(root) and self._csm_is_on_battlefield(root)
+        choice_key = str(kwargs.get("choice_key") or kwargs.get("augmentation_key") or "").strip().upper()
+
+        if still_alive and choice_key:
+            activate = getattr(mgr, "activate_creations_of_bile_delayed_mutations", None) if mgr is not None else None
+            outcome = (
+                activate(
+                    root,
+                    choice_key=choice_key,
+                    game=self.game,
+                    player=self.player,
+                    source=stratagem.name or "DELAYED MUTATIONS",
+                )
+                if callable(activate)
+                else {"ok": False}
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: DELAYED MUTATIONS: invalid augmentation choice")
+                return False
+            self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: DELAYED MUTATIONS: %s suffers %d mortal wound(s) and gains %s until next Command phase.",
+                getattr(root, "name", "Unit"),
+                int(mortal_wounds),
+                str(outcome.get("choice_name", choice_key) or choice_key),
+            )
+            return True
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if not still_alive:
+            logger.info(
+                "INFO: DELAYED MUTATIONS: %s was destroyed by the self-inflicted mortal wounds.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "") != "csm_creations_delayed_mutations_choice":
+                    continue
+                if str(pending_ctx.get("unit_id", "") or "") == str(get_entity_id(root) or ""):
+                    return True
+
+        options = []
+        available_choice_keys = []
+        catalog_fn = getattr(mgr, "experimental_augmentations_catalog", None) if mgr is not None else None
+        catalog = list(catalog_fn() or []) if callable(catalog_fn) else []
+        for augmentation in list(catalog or []):
+            choice = str(getattr(augmentation, "key", "") or "").strip().upper()
+            if not choice:
+                continue
+            label = str(getattr(augmentation, "name", "") or choice).strip() or choice
+            options.append(DecisionOption.create(label, payload={"choice_key": choice}))
+            available_choice_keys.append(choice)
+        if not options:
+            logger.error("ERROR: DELAYED MUTATIONS: no augmentation options available")
+            return False
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Delayed Mutations: select an augmentation.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "csm_creations_delayed_mutations_choice",
+                "ability_name": str(stratagem.name or "Delayed Mutations"),
+                "unit_id": get_entity_id(root),
+                "army_id": get_entity_id(getattr(self.player, "army", None)),
+                "battle_round": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn_owner_id": str(getattr(self.player, "id", "") or ""),
+                "available_choice_keys": list(available_choice_keys),
+                "optional": False,
+            },
+        )
+        self.game.request_decision(request)
+        logger.info(
+            "INFO: DELAYED MUTATIONS: %s suffers %d mortal wound(s); choose an augmentation.",
+            getattr(root, "name", "Unit"),
+            int(mortal_wounds),
+        )
+        return True
+
+    def _use_creations_of_bile_diabolic_regeneration(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            if len(candidates) == 1:
+                unit = candidates[0]
+            else:
+                candidates = self._creations_of_bile_diabolic_regeneration_candidates()
+                if len(candidates) == 1:
+                    unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DIABOLIC REGENERATION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_creations_of_bile_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: DIABOLIC REGENERATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DIABOLIC REGENERATION: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: DIABOLIC REGENERATION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DIABOLIC REGENERATION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DIABOLIC REGENERATION: target cannot be selected")
+            return False
+        if not self._is_creations_eligible_unit(root):
+            logger.error("ERROR: DIABOLIC REGENERATION: target must be eligible HERETIC ASTARTES INFANTRY excluding DAMNED")
+            return False
+
+        destroyed_candidates = [
+            model
+            for model in list(getattr(root, "models_lost", []) or [])
+            if not self._csm_model_is_character(model)
+        ]
+        if not destroyed_candidates:
+            logger.error("ERROR: DIABOLIC REGENERATION: no destroyed non-CHARACTER models can be returned")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        return_amount = 1
+        if self._csm_has_keyword(root, "BATTLELINE"):
+            return_amount = max(0, int(dice_module.get_roll("D3") or 0))
+        queue_return = getattr(self.game, "_queue_bodyguard_return_decision", None) if self.game is not None else None
+        if not callable(queue_return):
+            logger.error("ERROR: DIABOLIC REGENERATION: bodyguard return queue is unavailable")
+            return False
+        allowed_ids = [
+            str(get_entity_id(model) or "")
+            for model in list(destroyed_candidates or [])
+            if str(get_entity_id(model) or "")
+        ]
+        request = queue_return(
+            player=self.player,
+            leader_unit=root,
+            bodyguard_unit=root,
+            ability={"name": str(stratagem.name or "DIABOLIC REGENERATION")},
+            remaining=int(max(1, return_amount)),
+            allowed_model_ids=list(allowed_ids),
+            allow_skip=False,
+        )
+        if request is None:
+            logger.error("ERROR: DIABOLIC REGENERATION: no eligible return decision could be queued")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DIABOLIC REGENERATION: %s will return up to %d destroyed non-CHARACTER model(s).",
+            getattr(root, "name", "Unit"),
+            int(max(1, return_amount)),
+        )
+        return True
+
+    def _use_creations_of_bile_masters_are_watching(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("MASTERS ARE WATCHING", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MASTERS ARE WATCHING: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_creations_of_bile_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MASTERS ARE WATCHING: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: MASTERS ARE WATCHING: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: MASTERS ARE WATCHING: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: MASTERS ARE WATCHING: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MASTERS ARE WATCHING: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: MASTERS ARE WATCHING: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_creations_of_bile_phase_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: MASTERS ARE WATCHING: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_PREFIX,
+            source=stratagem.name or "MASTERS ARE WATCHING",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MASTERS ARE WATCHING: %s gains melee fight-on-death until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_creations_of_bile_specimens_for_the_spider(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            if len(candidates) == 1:
+                unit = candidates[0]
+            else:
+                candidates = self._creations_of_bile_specimens_for_the_spider_candidates()
+                if len(candidates) == 1:
+                    unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_creations_of_bile_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: target has already fought this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_creations_of_bile_phase_effect_state", None) if mgr is not None else None
+        collect_destroyed = getattr(mgr, "_collect_destroyed_enemy_character_model_ids", None) if mgr is not None else None
+        if not callable(set_state) or not callable(collect_destroyed):
+            logger.error("ERROR: SPECIMENS FOR THE SPIDER: detachment effect helpers are unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX,
+            source=stratagem.name or "SPECIMENS FOR THE SPIDER",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_enemy_character_model_ids": list(
+                    collect_destroyed(root, game=self.game)
+                ),
+                f"{mgr._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_enemy_warlord_model_ids": list(
+                    collect_destroyed(root, warlord_only=True, game=self.game)
+                ),
+                f"{mgr._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_resolved": False,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SPECIMENS FOR THE SPIDER: %s gains melee wound re-rolls vs CHARACTER targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_chaos_space_marines_cabal_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -1699,4 +2267,14 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_cabal_soulseekers(stratagem, **kwargs)
         if name_u == "UNHOLY HASTE":
             return self._use_cabal_unholy_haste(stratagem, **kwargs)
+        if name_u == "AUTOSTIMULANTS":
+            return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
+        if name_u == "DELAYED MUTATIONS":
+            return self._use_creations_of_bile_delayed_mutations(stratagem, **kwargs)
+        if name_u == "DIABOLIC REGENERATION":
+            return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
+        if name_u == "MASTERS ARE WATCHING":
+            return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
+        if name_u == "SPECIMENS FOR THE SPIDER":
+            return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         return None

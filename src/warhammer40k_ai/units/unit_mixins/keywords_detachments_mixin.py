@@ -1602,6 +1602,14 @@ class KeywordsDetachmentsMixin:
         has finished making its attacks, and is then removed from play."
         """
         cache_key = f"melee_fight_on_death_after_attacks:{get_entity_id(model) if model is not None else 'unit'}"
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
 
         too_arrogant_rule = self._temporary_orks_too_arrogant_to_die_rule(expected_phase="FIGHT_PHASE")
         if too_arrogant_rule is not None:
@@ -1753,7 +1761,7 @@ class KeywordsDetachmentsMixin:
             return rule
 
         # Adepta Sororitas: Penitent Host (Death Before Disgrace) temporary vow.
-        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else army
         as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
         vow_rule_fn = (
             getattr(as_mgr, "desperate_for_redemption_melee_fight_on_death_rule", None)
@@ -1772,6 +1780,23 @@ class KeywordsDetachmentsMixin:
                         str(vow_rule.get("source", "") or "Desperate for Redemption (Death Before Disgrace)").strip()
                         or "Desperate for Redemption (Death Before Disgrace)"
                     )
+                    return {"threshold": int(threshold), "source": source}
+
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        csm_rule_fn = (
+            getattr(csm_mgr, "creations_of_bile_masters_are_watching_fight_on_death_rule", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(csm_rule_fn):
+            csm_rule = csm_rule_fn(self, model=model, game=game)
+            if isinstance(csm_rule, dict):
+                try:
+                    threshold = int(csm_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(csm_rule.get("source", "") or "Masters Are Watching").strip() or "Masters Are Watching"
                     return {"threshold": int(threshold), "source": source}
 
         if cache_key in getattr(self, "_ability_cache", {}):
@@ -16659,6 +16684,27 @@ class KeywordsDetachmentsMixin:
                         reroll_reasons.append(
                             f"{source}: re-roll Wound rolls of 1 vs targets below Starting Strength"
                         )
+        if model is not None and target is not None:
+            try:
+                army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            except Exception:
+                army = None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "creations_of_bile_specimens_for_the_spider_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                applies, source = reroll_fn(
+                    model,
+                    target_unit=target,
+                    attack_type=str(attack_type or "any"),
+                )
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Specimens for the Spider").strip() or "Specimens for the Spider"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll vs CHARACTER targets")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

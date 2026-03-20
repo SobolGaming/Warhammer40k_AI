@@ -1343,6 +1343,7 @@ class GameShootingFightHandlersMixin:
         attacker_player = attacker_unit.get_parent_army().player
         if attacker_player is None:
             raise RuntimeError("Post-fight Battle-shock requires an attacker player.")
+        self._on_fight_attacks_resolved_creations_of_bile_specimens_for_the_spider(attacker_unit=attacker_unit)
         if attacker_player is not self.get_current_player():
             return
 
@@ -1813,6 +1814,81 @@ class GameShootingFightHandlersMixin:
                 },
             )
             self.request_decision(request)
+
+    def _on_fight_attacks_resolved_creations_of_bile_specimens_for_the_spider(self, *, attacker_unit=None) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        try:
+            attacker_army = attacker_root.get_parent_army()
+        except Exception:
+            attacker_army = None
+        csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        resolve_fn = (
+            getattr(csm_mgr, "creations_of_bile_specimens_for_the_spider_post_fight_resolution", None)
+            if csm_mgr is not None
+            else None
+        )
+        if not callable(resolve_fn):
+            return
+        outcome = resolve_fn(attacker_root, game=self)
+        if not isinstance(outcome, dict):
+            return
+
+        candidate_units = [candidate for candidate in list(outcome.get("candidate_units", []) or []) if candidate is not None]
+        if not candidate_units:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if bool(outcome.get("warlord_destroyed", False)):
+            for candidate in list(candidate_units or []):
+                candidate.take_battle_shock_test(current_turn)
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+
+        ability_name = str(outcome.get("source", "") or "Specimens for the Spider").strip() or "Specimens for the Spider"
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+                    continue
+                if str(ctx.get("ability_name", "") or "").strip().lower() != ability_name.lower():
+                    continue
+                return
+
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(candidate)},
+            )
+            for candidate in list(candidate_units or [])
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            f"{ability_name}: select a unit to take a Battle-shock test.",
+            player_id=getattr(getattr(attacker_army, "player", None), "id", None),
+            options=options,
+            context={
+                "attacker_unit_id": get_entity_id(attacker_root),
+                "model_id": None,
+                "ability_name": ability_name,
+            },
+        )
+        self.request_decision(request)
 
     def _on_fight_attacks_resolved_post_fight_suppression(
         self,

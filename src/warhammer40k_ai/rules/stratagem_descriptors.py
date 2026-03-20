@@ -2117,6 +2117,81 @@ _CHAOS_CULT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_CULT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CREATIONS_OF_BILE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009774003": StratagemToolDescriptor(
+        stratagem_id="000009774003",
+        name="Masters Are Watching",
+        timing="either_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_infantry_unit_targeted_by_enemy_melee_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "roll_required": True,
+            "roll_threshold": 4,
+            "damned_roll_modifier": -1,
+            "attack_type": "melee",
+        },
+    ),
+    "000009774004": StratagemToolDescriptor(
+        stratagem_id="000009774004",
+        name="Specimens for the Spider",
+        timing="either_fight_phase_on_select_to_fight",
+        target="heretic_astartes_infantry_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_wound_reroll_vs_character_with_post_fight_battleshock",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_wound_full_vs_character": True,
+            "post_fight_battleshock_range": 6.0,
+            "warlord_destroyed_tests_all": True,
+        },
+    ),
+    "000009774005": StratagemToolDescriptor(
+        stratagem_id="000009774005",
+        name="Delayed Mutations",
+        timing="command_phase",
+        target="creations_of_bile_heretic_astartes_infantry_unit_excluding_damned",
+        duration="until_start_of_next_command_phase",
+        effect="self_mortal_wounds_then_gain_experimental_augmentation",
+        cp_cost=2,
+        effect_params={
+            "self_mortal_wounds": "D3",
+            "augmentation_source": "experimental_augmentations",
+            "grants_additional_augmentation": True,
+        },
+    ),
+    "000009774006": StratagemToolDescriptor(
+        stratagem_id="000009774006",
+        name="Diabolic Regeneration",
+        timing="command_phase",
+        target="creations_of_bile_heretic_astartes_infantry_unit_with_destroyed_non_character_models",
+        duration="immediate",
+        effect="return_models",
+        cp_cost=1,
+        effect_params={
+            "return_models_max": 1,
+            "battleline_return_models_roll": "D3",
+            "exclude_character": True,
+        },
+    ),
+    "000009774007": StratagemToolDescriptor(
+        stratagem_id="000009774007",
+        name="Autostimulants",
+        timing="charge_phase",
+        target="heretic_astartes_infantry_unit_not_yet_selected_to_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
+}
+
+_CREATIONS_OF_BILE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CREATIONS_OF_BILE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7379,6 +7454,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CHAOS_CULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CREATIONS_OF_BILE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7624,6 +7702,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
+        or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

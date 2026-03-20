@@ -4070,6 +4070,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if available and choice not in available:
                 return ("Experimental Augmentations choice is not in this request's candidate list.",)
         return ()
+    if ability == "csm_creations_delayed_mutations_choice":
+        if is_skip_choice(request, result):
+            return ("Delayed Mutations selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Delayed Mutations army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        is_creations = getattr(mgr, "is_creations_of_bile", None) if mgr is not None else None
+        if not callable(is_creations) or not bool(is_creations()):
+            return ("Delayed Mutations requires Creations of Bile.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "").strip()
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_player_id and current_player_id != turn_owner_id:
+                return ("Delayed Mutations selection is no longer valid.")
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return ("Delayed Mutations can only be selected in your Command phase.")
+        try:
+            request_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            request_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if request_turn and current_turn and request_turn != current_turn:
+            return ("Delayed Mutations selection is no longer valid.")
+        unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if unit is None:
+            return ("Delayed Mutations target unit was not found.",)
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return ("Delayed Mutations target unit was not found.",)
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return ("Delayed Mutations target unit is no longer alive.",)
+        if not bool(getattr(root, "deployed", True)):
+            return ("Delayed Mutations target unit is no longer on the battlefield.",)
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return ("Delayed Mutations target unit is no longer on the battlefield.",)
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return ("Delayed Mutations target unit is no longer on the battlefield.",)
+        is_eligible = getattr(mgr, "_unit_is_creations_eligible", None) if mgr is not None else None
+        if not callable(is_eligible) or not bool(is_eligible(root)):
+            return ("Delayed Mutations target unit is no longer eligible.",)
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return ("Delayed Mutations selection requires choice_key.",)
+        available = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("available_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if available and choice_key not in available:
+            return ("Delayed Mutations choice is not in this request's candidate list.",)
+        return ()
     if ability == "deceptors_falsehood_declare_reserves":
         if is_skip_choice(request, result):
             return ("Falsehood deployment selection cannot be skipped.",)
@@ -11065,6 +11127,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: rolled {rolls_text}; active augmentations {selected_label or 'none'}.",
         )
         return dict(outcome)
+    if ability == "csm_creations_delayed_mutations_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if unit is None:
+            return None
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return None
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return None
+        activate_fn = getattr(mgr, "activate_creations_of_bile_delayed_mutations", None)
+        if not callable(activate_fn):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Delayed Mutations").strip() or "Delayed Mutations"
+        outcome = activate_fn(
+            root,
+            choice_key=choice_key,
+            game=game,
+            player=player,
+            source=ability_name,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        choice_name = str(outcome.get("choice_name", choice_key) or choice_key).strip() or choice_key
+        unit_name = str(getattr(root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} gained {choice_name} until the start of your next Command phase.",
+        )
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+            "choice_key": choice_key,
+            "choice_name": choice_name,
+        }
     if ability == "deceptors_falsehood_declare_reserves":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

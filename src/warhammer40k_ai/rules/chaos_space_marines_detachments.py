@@ -148,6 +148,12 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _CHAOS_CULT_SELFLESS_DEMISE_SOURCE = "Selfless Demise"
     _CHAOS_CULT_MORTAL_THRALLS_PREFIX = "chaos_cult_mortal_thralls"
     _CHAOS_CULT_MORTAL_THRALLS_SOURCE = "Mortal Thralls"
+    _CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX = "creations_of_bile_delayed_mutations"
+    _CREATIONS_OF_BILE_DELAYED_MUTATIONS_SOURCE = "Delayed Mutations"
+    _CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_PREFIX = "creations_of_bile_masters_are_watching"
+    _CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_SOURCE = "Masters Are Watching"
+    _CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX = "creations_of_bile_specimens_for_the_spider"
+    _CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_SOURCE = "Specimens for the Spider"
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
     _TWISTED_DOCTRINE_ALLOWED_ACTIONS = {"move", "advance", "fall_back", "set_up"}
 
@@ -3526,14 +3532,18 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "finalized": True,
         }
 
-    def get_active_experimental_augmentation_keys_for_model(self, model) -> set[str]:
+    def get_active_experimental_augmentation_keys_for_model(self, model, *, game=None) -> set[str]:
         if not self.is_creations_of_bile():
-            return set()
-        if not self.experimental_augmentations_selected:
             return set()
         if not self._model_is_creations_eligible(model):
             return set()
-        return set(self.experimental_augmentations_active_keys)
+        active_keys = set(self.experimental_augmentations_active_keys) if self.experimental_augmentations_selected else set()
+        _root, sr = self._creations_of_bile_delayed_mutations_state(getattr(model, "parent_unit", None), game=game)
+        if isinstance(sr, dict):
+            choice_key = str(sr.get(f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_choice_key", "") or "").strip().upper()
+            if choice_key in EXPERIMENTAL_AUGMENTATION_BY_KEY:
+                active_keys.add(choice_key)
+        return active_keys
 
     def experimental_augmentations_movement_bonus(self, model=None, unit=None, *, game=None) -> tuple[int, str]:
         target_model = model
@@ -3612,6 +3622,96 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if MACROTENSILE_SINEWS.key not in keys:
             return 0, ""
         return 1, MACROTENSILE_SINEWS.name
+
+    def creations_of_bile_masters_are_watching_fight_on_death_rule(self, unit, *, model=None, game=None) -> Optional[dict]:
+        root, sr = self._creations_of_bile_phase_effect_state(
+            unit,
+            prefix=self._CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return None
+        threshold = 5 if self._unit_is_damned(root) else 4
+        source = str(
+            sr.get(f"{self._CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_PREFIX}_source", "")
+            or self._CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_SOURCE
+        ).strip() or self._CREATIONS_OF_BILE_MASTERS_ARE_WATCHING_SOURCE
+        return {"threshold": int(threshold), "source": source}
+
+    def creations_of_bile_specimens_for_the_spider_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        attack_type: str = "melee",
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        attack_key = str(attack_type or "").strip().lower()
+        if attack_key not in {"any", "melee"}:
+            return False, ""
+        if target_unit is None or not self._unit_has_keyword(target_unit, "CHARACTER"):
+            return False, ""
+        root, sr = self._creations_of_bile_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        source = str(
+            sr.get(f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_source", "")
+            or self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_SOURCE
+        ).strip() or self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_SOURCE
+        return True, source
+
+    def creations_of_bile_specimens_for_the_spider_post_fight_resolution(self, unit, *, game=None) -> Optional[dict]:
+        root, sr = self._creations_of_bile_phase_effect_state(
+            unit,
+            prefix=self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX,
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return None
+        if bool(sr.get(f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_resolved", False)):
+            return None
+
+        source = str(
+            sr.get(f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_source", "")
+            or self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_SOURCE
+        ).strip() or self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_SOURCE
+
+        baseline_character_ids = {
+            str(value or "").strip()
+            for value in list(
+                sr.get(f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_enemy_character_model_ids", []) or []
+            )
+            if str(value or "").strip()
+        }
+        baseline_warlord_ids = {
+            str(value or "").strip()
+            for value in list(
+                sr.get(f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_enemy_warlord_model_ids", []) or []
+            )
+            if str(value or "").strip()
+        }
+        current_character_ids = set(self._collect_destroyed_enemy_character_model_ids(root, game=game))
+        current_warlord_ids = set(self._collect_destroyed_enemy_character_model_ids(root, warlord_only=True, game=game))
+        new_character_ids = sorted(current_character_ids - baseline_character_ids)
+        new_warlord_ids = sorted(current_warlord_ids - baseline_warlord_ids)
+        candidates = self._enemy_units_within_range_of_unit(root, range_in=6.0, game=game)
+
+        sr[f"{self._CREATIONS_OF_BILE_SPECIMENS_FOR_THE_SPIDER_PREFIX}_resolved"] = True
+        root.special_rules = sr
+
+        if not new_character_ids:
+            return None
+        return {
+            "source": source,
+            "warlord_destroyed": bool(new_warlord_ids),
+            "candidate_units": list(candidates),
+        }
 
     def creations_of_bile_prime_test_subject_melee_reroll_hit_applies(
         self,
@@ -3699,6 +3799,302 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 return owner_id
         army_player = getattr(self.army, "player", None) if self.army is not None else None
         return str(getattr(army_player, "id", "") or "").strip()
+
+    @staticmethod
+    def _player_index_for_id(resolved_game, player_id: str) -> Optional[int]:
+        if resolved_game is None:
+            return None
+        target_id = str(player_id or "").strip()
+        if not target_id:
+            return None
+        for index, player in enumerate(list(getattr(resolved_game, "players", []) or [])):
+            if str(getattr(player, "id", "") or "").strip() == target_id:
+                return int(index)
+        return None
+
+    @classmethod
+    def _remove_special_rule_prefix(cls, root, prefix: str) -> bool:
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        remove_keys = [key for key in list(sr.keys()) if str(key).startswith(str(prefix))]
+        if not remove_keys:
+            return False
+        for key in remove_keys:
+            sr.pop(key, None)
+        root.special_rules = sr
+        cls._clear_unit_ability_cache(root)
+        return True
+
+    def _creations_of_bile_phase_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_creations_of_bile():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_creations_of_bile_phase_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    @staticmethod
+    def _character_model_id(model) -> str:
+        if model is None:
+            return ""
+        entity_id = str(get_entity_id(model) or "").strip()
+        if entity_id:
+            return entity_id
+        return str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+
+    def _model_is_character_for_creations(self, model) -> bool:
+        if model is None:
+            return False
+        char_attr = getattr(model, "is_character", None)
+        if bool(char_attr() if callable(char_attr) else char_attr):
+            return True
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("CHARACTER")):
+            return True
+        has_keyword = getattr(model, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("CHARACTER")):
+            return True
+        parent = getattr(model, "parent_unit", None)
+        return bool(parent is not None and self._unit_has_keyword(parent, "CHARACTER"))
+
+    def _model_is_warlord_for_creations(self, model) -> bool:
+        if model is None:
+            return False
+        warlord_attr = getattr(model, "is_warlord", None)
+        if bool(warlord_attr() if callable(warlord_attr) else warlord_attr):
+            return True
+        parent = getattr(model, "parent_unit", None)
+        if parent is None:
+            return False
+        if bool(getattr(parent, "is_warlord", False)):
+            return True
+        army = getattr(parent, "get_parent_army", lambda: None)()
+        warlord = getattr(army, "warlord", None) if army is not None else None
+        if warlord is None:
+            return False
+        try:
+            warlord_root = warlord.get_attached_unit_root()
+        except Exception:
+            warlord_root = warlord
+        try:
+            parent_root = parent.get_attached_unit_root()
+        except Exception:
+            parent_root = parent
+        return parent_root is not None and warlord_root is parent_root
+
+    def _collect_destroyed_enemy_character_model_ids(self, source_unit, *, warlord_only: bool = False, game=None) -> list[str]:
+        root = self._unit_root(source_unit)
+        if root is None:
+            return []
+        source_army = getattr(root, "get_parent_army", lambda: None)()
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return []
+
+        out: set[str] = set()
+        for player in list(getattr(resolved_game, "players", []) or []):
+            army = getattr(player, "get_army", lambda: None)()
+            if army is None or army is source_army:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                unit_root = self._unit_root(unit)
+                if unit_root is None:
+                    continue
+                members_fn = getattr(unit_root, "get_attached_unit_members", None)
+                members = list(members_fn() or []) if callable(members_fn) else [unit_root]
+                if not members:
+                    members = [unit_root]
+                for member in list(members or []):
+                    for model in list(getattr(member, "models_lost", []) or []):
+                        if not self._model_is_character_for_creations(model):
+                            continue
+                        if warlord_only and not self._model_is_warlord_for_creations(model):
+                            continue
+                        model_id = self._character_model_id(model)
+                        if model_id:
+                            out.add(model_id)
+        return sorted(out)
+
+    def _enemy_units_within_range_of_unit(self, source_unit, *, range_in: float, game=None) -> list:
+        root = self._unit_root(source_unit)
+        resolved_game = self._resolve_game(game=game)
+        game_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+        if root is None or game_map is None or float(range_in or 0.0) <= 0:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        candidates: list = []
+        seen: set[str] = set()
+        for unit in list(get_enemy_units(root) or []):
+            enemy_root = self._unit_root(unit)
+            if enemy_root is None:
+                continue
+            unit_id = self._unit_entity_key(enemy_root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._unit_on_battlefield(enemy_root):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, float(range_in), use_attached_aggregate=True):
+                continue
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._unit_entity_key)
+
+    def _creations_of_bile_delayed_mutations_is_expired(self, sr: dict, *, game=None) -> bool:
+        if not isinstance(sr, dict):
+            return True
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        try:
+            activation_round = int(sr.get(f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            activation_round = 0
+        if activation_round <= 0:
+            return False
+        try:
+            current_round = int(getattr(resolved_game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        if current_round <= activation_round:
+            return False
+        if current_round > activation_round + 1:
+            return True
+
+        owner_id = str(sr.get(f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_activating_player_id", "") or "").strip()
+        if not owner_id:
+            return True
+        owner_index = self._player_index_for_id(resolved_game, owner_id)
+        if owner_index is None:
+            current_owner = self._current_turn_owner_id(game=resolved_game)
+            return bool(current_owner and current_owner == owner_id and self._current_phase_name(game=resolved_game))
+        try:
+            raw_current_index = getattr(resolved_game, "current_player_index", None)
+            current_index = -1 if raw_current_index is None else int(raw_current_index)
+        except (TypeError, ValueError):
+            current_index = -1
+        if current_index < 0:
+            return False
+        if current_index < owner_index:
+            return False
+        if current_index > owner_index:
+            return True
+        return bool(self._current_phase_name(game=resolved_game))
+
+    def _creations_of_bile_delayed_mutations_state(self, unit, *, game=None):
+        if not self.is_creations_of_bile():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_active", False)):
+            return None, None
+        choice_key = str(sr.get(f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_choice_key", "") or "").strip().upper()
+        if choice_key not in EXPERIMENTAL_AUGMENTATION_BY_KEY:
+            self._remove_special_rule_prefix(root, self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX)
+            return None, None
+        if self._creations_of_bile_delayed_mutations_is_expired(sr, game=game):
+            self._remove_special_rule_prefix(root, self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX)
+            return None, None
+        return root, sr
+
+    def activate_creations_of_bile_delayed_mutations(
+        self,
+        unit,
+        *,
+        choice_key: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict:
+        if not self.is_creations_of_bile():
+            return {"ok": False, "reason": "Creations of Bile is not active."}
+        root = self._unit_root(unit)
+        if root is None or not self._unit_is_creations_eligible(root):
+            return {"ok": False, "reason": "Target unit is not eligible for Delayed Mutations."}
+        key = str(choice_key or "").strip().upper()
+        if key not in EXPERIMENTAL_AUGMENTATION_BY_KEY:
+            return {"ok": False, "reason": "Invalid augmentation choice."}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_active"] = True
+        sr[f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_choice_key"] = key
+        sr[f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_source"] = (
+            str(source or self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_SOURCE).strip()
+            or self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_SOURCE
+        )
+        sr[f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_turn"] = self._current_turn(game=game)
+        sr[f"{self._CREATIONS_OF_BILE_DELAYED_MUTATIONS_PREFIX}_activating_player_id"] = self._current_turn_owner_id(
+            game=game,
+            player=player,
+        )
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+        return {
+            "ok": True,
+            "unit_id": self._unit_entity_key(root),
+            "choice_key": key,
+            "choice_name": self.experimental_augmentation_name(key),
+        }
 
     def soulforged_warpack_can_invoke_contract(self, unit, *, game=None) -> bool:
         if not self.is_soulforged_warpack():
