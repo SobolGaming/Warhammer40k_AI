@@ -248,6 +248,50 @@ class SpaceMarinesStratagemMixin:
         name = str(getattr(unit, "name", "") or "").strip().lower()
         return "thunderwolf cavalry" in name
 
+    def _sm_is_space_wolves_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("SPACE WOLVES")):
+            return True
+        has_keyword = getattr(root, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("SPACE WOLVES")):
+            return True
+        mgr = self._sm_detachment_mgr()
+        chapter_getter = getattr(mgr, "get_committed_chapter_keyword", None) if mgr is not None else None
+        if callable(chapter_getter):
+            return str(chapter_getter() or "").strip().upper() == "SPACE WOLVES"
+        return False
+
+    @staticmethod
+    def _sm_is_blood_claws_unit(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("BLOOD CLAWS")):
+            return True
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword("BLOOD CLAWS")):
+            return True
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "blood claws" in name
+
+    def _sm_is_wulfen_infantry_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None or not self._sm_is_infantry_unit(root):
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any) and (bool(has_any("WULFEN INFANTRY")) or bool(has_any("WULFEN"))):
+            return True
+        has_keyword = getattr(root, "has_keyword", None)
+        if callable(has_keyword) and (bool(has_keyword("WULFEN INFANTRY")) or bool(has_keyword("WULFEN"))):
+            return True
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "wulfen" in name
+
     @staticmethod
     def _sm_is_terminator_unit(unit: Any) -> bool:
         if unit is None:
@@ -3048,6 +3092,134 @@ class SpaceMarinesStratagemMixin:
             if not self._is_adeptus_astartes_unit(root):
                 continue
             if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_beastslayer_unbridled_ferocity_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_beastslayer_coordinated_strike_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_beastslayer_impetuosity_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return []
+        attacker_root = self._sm_root(attacking_unit)
+        if attacker_root is None or self._sm_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if not (self._sm_is_wulfen_infantry_unit(root) or self._sm_is_blood_claws_unit(root)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_beastslayer_thunderous_pursuit_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return []
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player):
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_unit_is_engaged(root):
+                continue
+            distance = self._sm_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
                 continue
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
@@ -6554,6 +6726,244 @@ class SpaceMarinesStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_beastslayer_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("UNBRIDLED FEROCITY")
+        candidates = self._space_marines_beastslayer_unbridled_ferocity_candidates()
+        if stratagem is None or not candidates:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_beastslayer_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        if player is self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("COORDINATED STRIKE")
+        candidates = self._space_marines_beastslayer_coordinated_strike_candidates()
+        if stratagem is None or not candidates:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_beastslayer_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("IMPETUOSITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_beastslayer_impetuosity_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_beastslayer_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        enemy_root = self._sm_root(unit)
+        if enemy_root is None or not self._sm_is_alive(enemy_root):
+            return
+        if self._sm_owned_by_player(enemy_root, self.player):
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
+            return
+        stratagem = self.get_by_name("THUNDEROUS PURSUIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_beastslayer_thunderous_pursuit_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    @staticmethod
+    def _clear_space_marines_beastslayer_impetuosity_pending(root: Any) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "space_marines_beastslayer_impetuosity_pending",
+            "space_marines_beastslayer_impetuosity_attacker_id",
+            "space_marines_beastslayer_impetuosity_models_before",
+            "space_marines_beastslayer_impetuosity_owner",
+            "space_marines_beastslayer_impetuosity_turn",
+            "space_marines_beastslayer_impetuosity_expires_phase",
+            "space_marines_beastslayer_impetuosity_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _resolve_space_marines_saga_of_the_beastslayer_after_shooting(self, *, attacker_unit: Any) -> None:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        attacker_id = self._sm_sort_key(attacker_root)
+        if attacker_root is None or not attacker_id or self._sm_owned_by_player(attacker_root, self.player):
+            return
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            return
+
+        for root in list(self._sm_owned_army_roots() or []):
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("space_marines_beastslayer_impetuosity_pending")):
+                continue
+            if str(sr.get("space_marines_beastslayer_impetuosity_attacker_id", "") or "") != attacker_id:
+                continue
+
+            try:
+                models_before = int(sr.get("space_marines_beastslayer_impetuosity_models_before", 0) or 0)
+            except (TypeError, ValueError):
+                models_before = 0
+            self._clear_space_marines_beastslayer_impetuosity_pending(root)
+            if models_before <= 0:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if self._sm_alive_model_count(root) >= models_before:
+                continue
+
+            max_distance = int(dice_module.get_roll("D6") or 0)
+            if max_distance <= 0:
+                continue
+            request = queue_move(
+                player=self.player,
+                unit=root,
+                max_distance=int(max_distance),
+                kind="impetuosity",
+                movement_type="bestial_rage",
+                reactive_movement_type="bestial_rage",
+                source=str(sr.get("space_marines_beastslayer_impetuosity_source", "") or "IMPETUOSITY"),
+                attacker_unit=attacker_root,
+                allow_engagement_range=True,
+                allow_skip=True,
+            )
+            if request is not None:
+                request.context["reactive_move_allow_engagement_range"] = True
 
     def _cleanup_space_marines_companions_of_vehemence_phase_end_effects(self, *, phase: Any) -> None:
         if not self._is_companions_of_vehemence_detachment():
@@ -12058,6 +12468,9 @@ class SpaceMarinesStratagemMixin:
                     ):
                         sr.pop(key, None)
                     self._sm_clear_ability_cache(root, "unit_post_shoot_pinned_specs")
+                exp = str(sr.get("space_marines_beastslayer_impetuosity_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_beastslayer_impetuosity_pending") is True and (not exp or exp == phase_name):
+                    self._clear_space_marines_beastslayer_impetuosity_pending(root)
             root.special_rules = sr
 
     def _queue_space_marines_mortal_wound_reactions(
@@ -14445,10 +14858,18 @@ class SpaceMarinesStratagemMixin:
 
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "COORDINATED STRIKE":
+            return self._use_space_marines_coordinated_strike(stratagem, **kwargs)
+        if name_u == "IMPETUOSITY":
+            return self._use_space_marines_impetuosity(stratagem, **kwargs)
         if name_u == "SHOCK CAVALRY":
             return self._use_space_marines_shock_cavalry(stratagem, **kwargs)
         if name_u == "PINNING FIRE":
             return self._use_space_marines_pinning_fire(stratagem, **kwargs)
+        if name_u == "THUNDEROUS PURSUIT":
+            return self._use_space_marines_thunderous_pursuit(stratagem, **kwargs)
+        if name_u == "UNBRIDLED FEROCITY":
+            return self._use_space_marines_unbridled_ferocity(stratagem, **kwargs)
         if name_u in {"ANGELIC GRACE", "FUELLED BY FAITH"}:
             return self._use_space_marines_mortal_wound_stratagem(stratagem, **kwargs)
         return None
@@ -18296,6 +18717,50 @@ class SpaceMarinesStratagemMixin:
         if objective is None and len(objective_candidates) == 1:
             objective = objective_candidates[0]
         return (unit, candidates, objective, objective_candidates, attacking_unit, target_units, choice_payload, from_pending)
+
+    def _sm_beastslayer_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        trigger_unit = (
+            kwargs.get("moving_unit")
+            or kwargs.get("charging_unit")
+            or kwargs.get("attacking_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("enemy_unit")
+        )
+        target_units = list(kwargs.get("target_units") or [])
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if trigger_unit is None:
+                trigger_unit = (
+                    reaction.get("moving_unit")
+                    or reaction.get("charging_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("attacker_unit")
+                    or reaction.get("enemy_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        return (unit, candidates, trigger_unit, target_units, action, from_pending)
 
     def _sm_vehemence_context(
         self,
@@ -22659,6 +23124,303 @@ class SpaceMarinesStratagemMixin:
         logger.info(
             "INFO: LITANIES OF PURGATION: %s improves AP by 1 while it or its target is within objective range this phase.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_unbridled_ferocity(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: UNBRIDLED FEROCITY: wrong phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_beastslayer_context(
+            "UNBRIDLED FEROCITY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: UNBRIDLED FEROCITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNBRIDLED FEROCITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNBRIDLED FEROCITY: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: UNBRIDLED FEROCITY: target must be a Space Wolves unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: UNBRIDLED FEROCITY: target has already been selected to fight this phase")
+            return False
+
+        eligible = candidates or self._space_marines_beastslayer_unbridled_ferocity_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNBRIDLED FEROCITY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "UNBRIDLED FEROCITY").strip() or "UNBRIDLED FEROCITY"
+        for model in self._sm_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_bonus = getattr(model, "set_temporary_weapon_wound_crit_bonus", None)
+                if callable(set_bonus):
+                    set_bonus(
+                        key=f"space_marines_unbridled_ferocity:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        wound_bonus=1,
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNBRIDLED FEROCITY: %s gains +1 to wound in melee this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_coordinated_strike(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: COORDINATED STRIKE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COORDINATED STRIKE: not opponent's Fight phase")
+            return False
+
+        unit, candidates, _trigger_unit, _target_units, _action, _from_pending = self._sm_beastslayer_context(
+            "COORDINATED STRIKE",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: COORDINATED STRIKE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: COORDINATED STRIKE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: COORDINATED STRIKE: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: COORDINATED STRIKE: target must be a Space Wolves unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: COORDINATED STRIKE: target must not be within Engagement Range")
+            return False
+        if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+            logger.error("ERROR: COORDINATED STRIKE: target must be wholly within 9\" of a battlefield edge")
+            return False
+
+        eligible = candidates or self._space_marines_beastslayer_coordinated_strike_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: COORDINATED STRIKE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if not self._sm_place_unit_into_strategic_reserves(
+            root,
+            reason=str(getattr(stratagem, "name", "") or "COORDINATED STRIKE"),
+        ):
+            logger.error("ERROR: COORDINATED STRIKE: failed to place target into Strategic Reserves")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COORDINATED STRIKE: %s enters Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_impetuosity(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: IMPETUOSITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: IMPETUOSITY: not opponent's Shooting phase")
+            return False
+
+        unit, candidates, trigger_unit, target_units, _action, from_pending = self._sm_beastslayer_context(
+            "IMPETUOSITY",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: IMPETUOSITY: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacker_root = self._sm_root(trigger_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: IMPETUOSITY: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: IMPETUOSITY: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: IMPETUOSITY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: IMPETUOSITY: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: IMPETUOSITY: target must be a Space Wolves unit")
+            return False
+        if not (self._sm_is_wulfen_infantry_unit(root) or self._sm_is_blood_claws_unit(root)):
+            logger.error("ERROR: IMPETUOSITY: target must be a WULFEN INFANTRY or BLOOD CLAWS unit")
+            return False
+
+        eligible = candidates or self._space_marines_beastslayer_impetuosity_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        )
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: IMPETUOSITY: selected unit is not currently eligible")
+            return False
+        if not from_pending and target_units and not any(self._sm_root(target) is root for target in list(target_units or [])):
+            logger.error("ERROR: IMPETUOSITY: target unit was not selected as a target of the enemy attacks")
+            return False
+
+        models_before = self._sm_alive_model_count(root)
+        if models_before <= 0:
+            logger.error("ERROR: IMPETUOSITY: target has no living models")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_beastslayer_impetuosity_pending"] = True
+        sr["space_marines_beastslayer_impetuosity_attacker_id"] = str(self._sm_sort_key(attacker_root) or "")
+        sr["space_marines_beastslayer_impetuosity_models_before"] = int(models_before)
+        sr["space_marines_beastslayer_impetuosity_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_beastslayer_impetuosity_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_beastslayer_impetuosity_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_beastslayer_impetuosity_source"] = str(getattr(stratagem, "name", "") or "IMPETUOSITY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: IMPETUOSITY: %s is primed to make an Impetuous move if %s destroys one or more of its models.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_space_marines_thunderous_pursuit(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: THUNDEROUS PURSUIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: THUNDEROUS PURSUIT: not opponent's Movement phase")
+            return False
+
+        unit, candidates, trigger_unit, _target_units, action, from_pending = self._sm_beastslayer_context(
+            "THUNDEROUS PURSUIT",
+            kwargs,
+        )
+        if unit is None:
+            logger.error("ERROR: THUNDEROUS PURSUIT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        enemy_root = self._sm_root(trigger_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: THUNDEROUS PURSUIT: missing enemy move trigger")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if not from_pending and action_key not in {"move", "normal", "normal_move", "advance", "fall_back"}:
+            logger.error("ERROR: THUNDEROUS PURSUIT: invalid trigger action")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: THUNDEROUS PURSUIT: trigger unit must be enemy")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: THUNDEROUS PURSUIT: enemy unit is not on the battlefield")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: THUNDEROUS PURSUIT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: THUNDEROUS PURSUIT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: THUNDEROUS PURSUIT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_unit_is_engaged(root):
+            logger.error("ERROR: THUNDEROUS PURSUIT: target must not be within Engagement Range")
+            return False
+        distance = self._sm_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: THUNDEROUS PURSUIT: target must be within 9\" of the enemy unit")
+            return False
+
+        eligible = candidates or self._space_marines_beastslayer_thunderous_pursuit_candidates(enemy_unit=enemy_root)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THUNDEROUS PURSUIT: selected unit is not currently eligible")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: THUNDEROUS PURSUIT: reactive move queue unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        max_distance = 6 if (
+            (self._sm_is_space_wolves_unit(root) and self._sm_is_infantry_unit(root))
+            or self._sm_is_thunderwolf_cavalry(root)
+        ) else int(dice_module.get_roll("D6") or 0)
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="thunderous_pursuit",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "THUNDEROUS PURSUIT"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: THUNDEROUS PURSUIT: failed to queue reactive move")
+            return False
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THUNDEROUS PURSUIT: %s can make a Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
         )
         return True
 

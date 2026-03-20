@@ -3830,6 +3830,20 @@ _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME = {
 }
 
 _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010270002": StratagemToolDescriptor(
+        stratagem_id="000010270002",
+        name="Unbridled Ferocity",
+        timing="fight_phase_on_select",
+        target="space_wolves_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_plus_one_to_wound_on_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "attack_type": "melee",
+            "wound_bonus": 1,
+        },
+    ),
     "000010270003": StratagemToolDescriptor(
         stratagem_id="000010270003",
         name="Shock Cavalry",
@@ -3863,6 +3877,51 @@ _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescripto
             "pinned_move_penalty": -2,
             "pinned_charge_penalty": -2,
             "pinned_expires_phase": "SHOOTING_PHASE",
+        },
+    ),
+    "000010270005": StratagemToolDescriptor(
+        stratagem_id="000010270005",
+        name="Thunderous Pursuit",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="adeptus_astartes_unit_within_9_of_enemy_not_engaged",
+        duration="immediate",
+        effect="reactive_normal_move_with_space_wolves_or_thunderwolf_fixed_six",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+            "distance_roll": "D6",
+            "space_wolves_infantry_fixed_distance": 6,
+            "thunderwolf_cavalry_fixed_distance": 6,
+        },
+    ),
+    "000010270006": StratagemToolDescriptor(
+        stratagem_id="000010270006",
+        name="Impetuosity",
+        timing="opponent_shooting_phase_after_targets_selected_then_after_enemy_shoots",
+        target="wulfen_infantry_or_blood_claws_unit_targeted_by_enemy",
+        duration="until_trigger_resolution_or_end_of_phase",
+        effect="post_shoot_if_models_destroyed_make_impetuous_move_toward_closest_enemy",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "required_keywords_any": ["SPACE WOLVES"],
+            "eligible_unit_keywords_any": ["WULFEN INFANTRY", "BLOOD CLAWS"],
+            "allow_engagement_range": True,
+            "closest_enemy_exclude_keywords": ["AIRCRAFT"],
+        },
+    ),
+    "000010270007": StratagemToolDescriptor(
+        stratagem_id="000010270007",
+        name="Coordinated Strike",
+        timing="end_of_opponent_fight_phase",
+        target="space_wolves_unit_wholly_within_9_of_battlefield_edge_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "battlefield_edge_distance": 9.0,
         },
     ),
 }

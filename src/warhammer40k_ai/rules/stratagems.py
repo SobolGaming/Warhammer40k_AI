@@ -49,6 +49,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A GRIM WARNING",
     "A DEADLY SNARE",
     "AUTOMATED REPAIR DRONES",
+    "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
@@ -113,6 +114,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
     "INTRACTABLE",
+    "IMPETUOSITY",
     "INSTANT OF GRACE",
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
@@ -233,6 +235,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHOCK CAVALRY",
     "SCINTILLATING TEMPO",
     "PINNING FIRE",
+    "THUNDEROUS PURSUIT",
     "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
@@ -251,6 +254,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CUT DOWN THE WEAK",
     "SNAP TO IT",
     "UNBOUND ARROGANCE",
+    "UNBRIDLED FEROCITY",
     "UNLEASH THE LIONS",
     "UNTRAMMELLED FEROCITY",
     "UNBRIDLED CARNAGE",
@@ -560,6 +564,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
+    "COORDINATED STRIKE",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATH FRENZY",
@@ -578,6 +583,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FEIGNED RETREAT",
     "GUIDED DISRUPTION",
     "IMPLACABLE GUARDIANS",
+    "IMPETUOSITY",
     "GLIMMERSHIFT PORTAL",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
@@ -610,6 +616,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SAVAGE ECHOES",
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
+    "THUNDEROUS PURSUIT",
     "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
@@ -1762,6 +1769,7 @@ class StratagemManager(
             "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
             "A DEADLY PRIZE",
+            "THUNDEROUS PURSUIT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1844,6 +1852,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
         if "GRIM RETRIBUTION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_unforgiven_task_force)
+        if "IMPETUOSITY" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_saga_of_the_beastslayer)
         if "STRIKE FROM THE SHADOWS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_vanguard_spearhead)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
@@ -1951,6 +1961,7 @@ class StratagemManager(
             "PSYCHIC SHIELD",
             "ILLUMINATING FIRE",
             "RIDE HARD, RIDE FAST",
+            "IMPETUOSITY",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2077,6 +2088,7 @@ class StratagemManager(
             "ORBITAL TELEPORTARIUM",
             "RIGID DISCIPLINE",
             "GUERRILLA TACTICS",
+            "COORDINATED STRIKE",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -5281,6 +5293,10 @@ class StratagemManager(
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
             "PINNING FIRE": "Target: ADEPTUS ASTARTES unit that has not been selected to shoot this phase; after it shoots, select one hit enemy CHARACTER, MONSTER, or VEHICLE unit to be pinned (Move -2, Charge -2) until the start of your next Shooting phase",
+            "COORDINATED STRIKE": "Target: your SPACE WOLVES unit wholly within 9\" of one or more battlefield edges and not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves",
+            "IMPETUOSITY": "Target: your WULFEN INFANTRY or BLOOD CLAWS unit selected as a target of enemy shooting; after that enemy unit has shot, if one or more models were destroyed, it can make an Impetuous move up to D6\" toward the closest non-AIRCRAFT enemy unit and can end in Engagement Range of it",
+            "THUNDEROUS PURSUIT": "Target: your ADEPTUS ASTARTES unit within 9\" of an enemy that just ended a Normal, Advance, or Fall Back move and not within Engagement Range; it can make a reactive Normal move up to D6\", or 6\" if it is SPACE WOLVES INFANTRY or THUNDERWOLF CAVALRY",
+            "UNBRIDLED FEROCITY": "Target: your SPACE WOLVES unit that has not been selected to fight this phase; add 1 to wound rolls for its melee attacks until end of phase",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
@@ -6171,6 +6187,10 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_champions_of_fenris_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_saga_of_the_beastslayer_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7223,6 +7243,7 @@ class StratagemManager(
             self._queue_space_marines_black_spear_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_angelic_inheritors_phase_end_reactions(player=player, phase=phase)
             self._queue_space_marines_champions_of_fenris_phase_end_reactions(player=player, phase=phase)
+            self._queue_space_marines_saga_of_the_beastslayer_phase_end_reactions(player=player, phase=phase)
             self._cleanup_space_marines_companions_of_vehemence_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
@@ -9168,6 +9189,7 @@ class StratagemManager(
         self._queue_space_marines_unforgiven_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_saga_of_the_beastslayer_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
@@ -9898,6 +9920,9 @@ class StratagemManager(
     def _on_unit_shooting_resolved_space_marines_unforgiven_task_force(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_unforgiven_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_space_marines_saga_of_the_beastslayer(self, attacker_unit=None, **_kwargs):
+        self._resolve_space_marines_saga_of_the_beastslayer_after_shooting(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_bastion_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -10286,6 +10311,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_champions_of_fenris_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_saga_of_the_beastslayer_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

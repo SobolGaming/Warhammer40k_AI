@@ -20612,6 +20612,30 @@ def _stratagem_support(
             "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected gains [LETHAL HITS] on the current phase's weapons until end of phase, and scores Critical Hits on 5+ while one or more friendly ADEPTUS ASTARTES units are Battle-shocked.",
             name_u,
         )
+    if stratagem_id == "000010270002":
+        return (
+            "Implemented",
+            "Fight phase: selected SPACE WOLVES unit that has not yet been selected to fight gains +1 to wound on melee attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010270005":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES unit within 9\" and not within Engagement Range can make a reactive Normal move up to D6\", or up to 6\" if it is SPACE WOLVES INFANTRY or THUNDERWOLF CAVALRY.",
+            name_u,
+        )
+    if stratagem_id == "000010270006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after enemy targets are selected: selected WULFEN INFANTRY or BLOOD CLAWS unit that was targeted records the attacking unit, and after that attacker resolves its shooting the unit can make an impetuous move up to D6\" toward the closest non-AIRCRAFT enemy if one or more of its models were destroyed.",
+            name_u,
+        )
+    if stratagem_id == "000010270007":
+        return (
+            "Implemented",
+            "End of opponent Fight phase: selected SPACE WOLVES unit wholly within 9\" of one or more battlefield edges and not in Engagement Range enters Strategic Reserves.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (
