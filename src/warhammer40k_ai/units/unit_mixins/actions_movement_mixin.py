@@ -17186,6 +17186,17 @@ class ActionsMovementMixin:
             turn_key="space_marines_angelic_host_death_from_the_skies_turn",
         ):
             found = True
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="space_marines_lost_brethren_wrathful_rampage_active",
+            owner_key="space_marines_lost_brethren_wrathful_rampage_turn_owner",
+            turn_key="space_marines_lost_brethren_wrathful_rampage_turn",
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            sr = getattr(root, "special_rules", None)
+            found = bool(isinstance(sr, dict) and sr.get("space_marines_lost_brethren_wrathful_rampage_shoot_after_advance"))
         else:
             found = self._has_simple_eligibility_rule([
                 "eligible to shoot in a turn in which it advanced",
@@ -17257,6 +17268,12 @@ class ActionsMovementMixin:
             active_key="space_marines_angelic_host_death_from_the_skies_active",
             owner_key="space_marines_angelic_host_death_from_the_skies_turn_owner",
             turn_key="space_marines_angelic_host_death_from_the_skies_turn",
+        ):
+            found = True
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="space_marines_lost_brethren_wrathful_rampage_active",
+            owner_key="space_marines_lost_brethren_wrathful_rampage_turn_owner",
+            turn_key="space_marines_lost_brethren_wrathful_rampage_turn",
         ):
             found = True
         else:

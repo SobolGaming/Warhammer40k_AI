@@ -945,6 +945,53 @@ class KeywordsDetachmentsMixin:
             self.special_rules = sr
         return None
 
+    def _space_marines_lost_brethren_final_retribution_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        _ = model
+        sr = getattr(self, "special_rules", None)
+        if not (isinstance(sr, dict) and sr.get("space_marines_lost_brethren_final_retribution_active")):
+            return None
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            marked_turn = int(sr.get("space_marines_lost_brethren_final_retribution_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        exp = str(sr.get("space_marines_lost_brethren_final_retribution_expires_phase", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+            if not (marked_turn and current_turn and marked_turn != current_turn):
+                mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                chaplain_support_fn = (
+                    getattr(mgr, "lost_brethren_has_friendly_chaplain_support", None)
+                    if mgr is not None
+                    else None
+                )
+                threshold = 4
+                if callable(chaplain_support_fn) and bool(chaplain_support_fn(self, range_inches=12.0)):
+                    threshold = 3
+                source = str(
+                    sr.get("space_marines_lost_brethren_final_retribution_source", "") or "FINAL RETRIBUTION"
+                ).strip()
+                source = source or "FINAL RETRIBUTION"
+                return {
+                    "threshold": max(2, min(6, int(threshold))),
+                    "source": source,
+                }
+        if phase_name and phase_name != "FIGHT_PHASE":
+            for key in (
+                "space_marines_lost_brethren_final_retribution_active",
+                "space_marines_lost_brethren_final_retribution_expires_phase",
+                "space_marines_lost_brethren_final_retribution_turn_owner",
+                "space_marines_lost_brethren_final_retribution_turn",
+                "space_marines_lost_brethren_final_retribution_source",
+            ):
+                sr.pop(key, None)
+            self.special_rules = sr
+        return None
+
     def _space_marines_duty_unto_death_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         sr = getattr(self, "special_rules", None)
         if not (isinstance(sr, dict) and sr.get("space_marines_duty_unto_death_active")):
@@ -1690,6 +1737,10 @@ class KeywordsDetachmentsMixin:
             pass
 
         rule = self._space_marines_reclamation_fight_to_the_end_rule(model=model)
+        if rule is not None:
+            return rule
+
+        rule = self._space_marines_lost_brethren_final_retribution_rule(model=model)
         if rule is not None:
             return rule
 

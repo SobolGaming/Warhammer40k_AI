@@ -165,6 +165,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_the_angelic_host", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_the_lost_brethren_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_the_lost_brethren", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _sm_owned_by_player(unit: Any, player: Any) -> bool:
         if unit is None or player is None:
@@ -655,6 +660,45 @@ class SpaceMarinesStratagemMixin:
         for member in list(members or []):
             names.append(str(getattr(member, "name", "") or "").strip().lower())
         return any("chaplain" in name or "judiciar" in name for name in names if name)
+
+    def _sm_is_chaplain_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "attached_unit_is_chaplain", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        if self._sm_has_keyword(root, "CHAPLAIN"):
+            return True
+        names = [str(getattr(root, "name", "") or "").strip().lower()]
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else []
+        for member in list(members or []):
+            names.append(str(getattr(member, "name", "") or "").strip().lower())
+        return any("chaplain" in name for name in names if name)
+
+    def _sm_is_death_company_unit(self, unit: Any) -> bool:
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "attached_unit_is_death_company", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        if self._sm_has_keyword(root, "DEATH COMPANY"):
+            return True
+        return "death company" in str(getattr(root, "name", "") or "").strip().lower()
+
+    def _sm_lost_brethren_has_friendly_chaplain_support(self, unit: Any, *, range_inches: float = 12.0) -> bool:
+        if not self._is_the_lost_brethren_detachment():
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "lost_brethren_has_friendly_chaplain_support", None) if mgr is not None else None
+        return bool(checker(root, range_inches=float(range_inches))) if callable(checker) else False
 
     def _sm_distance_between_units(self, first: Any, second: Any) -> Optional[float]:
         game_map = self._sm_game_map()
@@ -1467,6 +1511,38 @@ class SpaceMarinesStratagemMixin:
             if float(distance_between_bases_3d(model.model_base, target_model.model_base)) <= float(range_inches) + 1e-6:
                 return True
         return False
+
+    @staticmethod
+    def _sm_model_within_objective_range(model: Any, objective_point: Any) -> bool:
+        if model is None or objective_point is None:
+            return False
+        objective_x = float(getattr(objective_point, "x", 0.0) or 0.0)
+        objective_y = float(getattr(objective_point, "y", 0.0) or 0.0)
+        control_radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+        if control_radius <= 0.0:
+            return False
+
+        model_base = getattr(model, "model_base", None)
+        model_x = float(getattr(model_base, "x", objective_x) or objective_x) if model_base is not None else objective_x
+        model_y = float(getattr(model_base, "y", objective_y) or objective_y) if model_base is not None else objective_y
+        if model_base is None:
+            get_location = getattr(model, "get_location", None)
+            if callable(get_location):
+                location = get_location()
+                if location:
+                    model_x = float(location[0] or 0.0)
+                    model_y = float(location[1] or 0.0)
+        base_radius = 1.0
+        if model_base is not None:
+            get_radius = getattr(model_base, "get_radius", None)
+            if callable(get_radius):
+                try:
+                    base_radius = float(get_radius() or 1.0)
+                except (TypeError, ValueError):
+                    base_radius = 1.0
+        dx = model_x - objective_x
+        dy = model_y - objective_y
+        return ((dx * dx) + (dy * dy)) ** 0.5 <= (control_radius + base_radius + 1e-6)
 
     def _sm_unit_within_range_of_friendly_psyker(self, unit: Any, *, range_inches: float) -> bool:
         root = self._sm_root(unit)
@@ -3533,6 +3609,114 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_lost_brethren_death_company_fight_candidates(
+        self,
+        *,
+        require_below_starting_strength: bool = False,
+    ) -> list[Any]:
+        if not self._is_the_lost_brethren_detachment():
+            return []
+        out: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_death_company_unit(root):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            if require_below_starting_strength and not bool(getattr(root, "is_below_starting_strength", lambda: False)()):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_lost_brethren_final_retribution_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_the_lost_brethren_detachment():
+            return []
+        target_ids = {
+            self._sm_sort_key(self._sm_root(target))
+            for target in list(target_units or [])
+            if self._sm_root(target) is not None
+        }
+        if not target_ids:
+            return []
+        out: list[Any] = []
+        for unit in self._sm_owned_army_roots():
+            root = self._sm_root(unit)
+            if root is None or self._sm_sort_key(root) not in target_ids:
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if not self._sm_is_death_company_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_lost_brethren_wrathful_rampage_candidates(self, *, moved_unit: Any) -> list[Any]:
+        if not self._is_the_lost_brethren_detachment():
+            return []
+        root = self._sm_root(moved_unit)
+        if root is None:
+            return []
+        if not self._sm_owned_by_player(root, self.player):
+            return []
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._is_adeptus_astartes_unit(root):
+            return []
+        if not self._sm_is_death_company_unit(root):
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            return []
+        return [root]
+
+    def _space_marines_lost_brethren_glorious_sacrifice_objective_candidates(
+        self,
+        *,
+        unit: Any,
+        last_model: Any,
+    ) -> list[Any]:
+        if not self._is_the_lost_brethren_detachment():
+            return []
+        root = self._sm_root(unit)
+        game_map = self._sm_game_map()
+        if root is None or last_model is None or game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = str(get_entity_id(objective) or getattr(objective, "id", getattr(objective, "_id", "")) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            if not self._sm_model_within_objective_range(last_model, location):
+                continue
+            out.append(objective)
+        return sorted(
+            out,
+            key=lambda objective: (
+                str(getattr(objective, "name", "") or ""),
+                float(getattr(getattr(objective, "location", None), "x", 0.0) or 0.0),
+                float(getattr(getattr(objective, "location", None), "y", 0.0) or 0.0),
+            ),
+        )
+
     def the_angelic_host_unbridled_ardour_applies(self, attacker_unit: Any, target_unit: Any) -> bool:
         if not self._is_the_angelic_host_detachment():
             return False
@@ -3902,6 +4086,204 @@ class SpaceMarinesStratagemMixin:
             },
             use_timer=False,
         )
+
+    def _queue_space_marines_lost_brethren_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_the_lost_brethren_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+
+        phase_reactions: tuple[tuple[str, list[Any]], ...] = (
+            ("FURIOUS ONSLAUGHT", self._space_marines_lost_brethren_death_company_fight_candidates()),
+            (
+                "LOST TO RAGE",
+                self._space_marines_lost_brethren_death_company_fight_candidates(
+                    require_below_starting_strength=True
+                ),
+            ),
+        )
+        for stratagem_name, candidates in phase_reactions:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None or not candidates:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                continue
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_lost_brethren_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_the_lost_brethren_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key != "advance":
+            return
+        root = self._sm_root(unit)
+        candidates = self._space_marines_lost_brethren_wrathful_rampage_candidates(moved_unit=root)
+        if root is None or not candidates:
+            return
+        stratagem = self.get_by_name("WRATHFUL RAMPAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "moving_unit": root,
+            "candidates": candidates,
+            "action": str(action or ""),
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_lost_brethren_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_the_lost_brethren_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or not self._sm_is_alive(attacking_root):
+            return
+        if self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("FINAL RETRIBUTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_lost_brethren_final_retribution_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_lost_brethren_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+        last_model: Any = None,
+    ) -> None:
+        if not self._is_the_lost_brethren_detachment():
+            return
+        if destroyed_unit is None or last_model is None:
+            return
+        destroyed_root = self._sm_root(destroyed_unit)
+        enemy_root = self._sm_root(destroyed_by_unit)
+        if destroyed_root is None:
+            return
+        if not self._sm_owned_by_player(destroyed_root, self.player):
+            return
+        if self._sm_is_alive(destroyed_root):
+            return
+        if not self._is_adeptus_astartes_unit(destroyed_root):
+            return
+        if not self._sm_is_death_company_unit(destroyed_root):
+            return
+        objectives = self._space_marines_lost_brethren_glorious_sacrifice_objective_candidates(
+            unit=destroyed_root,
+            last_model=last_model,
+        )
+        if not objectives:
+            return
+        stratagem = self.get_by_name("GLORIOUS SACRIFICE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip()
+        if not phase_name:
+            phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "").replace("_", " ").title()
+        if self._sm_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            target_unit=destroyed_root,
+        ):
+            return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": destroyed_root,
+            "target_unit": destroyed_root,
+            "destroyed_unit": destroyed_root,
+            "destroyed_by_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "last_model": last_model,
+            "candidates": [destroyed_root],
+            "objective_candidates": objectives,
+        }
+        if len(objectives) == 1:
+            payload["objective"] = objectives[0]
+            payload["objective_marker"] = objectives[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_space_marines_anvil_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_anvil_siege_force_detachment():
@@ -7725,6 +8107,44 @@ class SpaceMarinesStratagemMixin:
                 ):
                     sr.pop(key, None)
             root.special_rules = sr
+
+    def _cleanup_space_marines_lost_brethren_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_the_lost_brethren_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        for root in self._sm_owned_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in (
+                "space_marines_lost_brethren_final_retribution_active",
+                "space_marines_lost_brethren_final_retribution_expires_phase",
+                "space_marines_lost_brethren_final_retribution_turn_owner",
+                "space_marines_lost_brethren_final_retribution_turn",
+                "space_marines_lost_brethren_final_retribution_source",
+                "space_marines_lost_brethren_furious_onslaught_active",
+                "space_marines_lost_brethren_furious_onslaught_expires_phase",
+                "space_marines_lost_brethren_furious_onslaught_turn_owner",
+                "space_marines_lost_brethren_furious_onslaught_turn",
+                "space_marines_lost_brethren_furious_onslaught_source",
+                "space_marines_lost_brethren_wrathful_rampage_active",
+                "space_marines_lost_brethren_wrathful_rampage_turn_owner",
+                "space_marines_lost_brethren_wrathful_rampage_turn",
+                "space_marines_lost_brethren_wrathful_rampage_shoot_after_advance",
+                "space_marines_lost_brethren_wrathful_rampage_source",
+                "bearer_unit_pile_in_distance_override",
+            ):
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+                invalidate = getattr(root, "_invalidate_ability_cache", None)
+                if callable(invalidate):
+                    invalidate()
 
     def _queue_space_marines_stormlance_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_stormlance_task_force_detachment():
@@ -13236,6 +13656,24 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_unbridled_ardour(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_the_lost_brethren_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_the_lost_brethren_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("’", "'")
+        if name_u == "FINAL RETRIBUTION":
+            return self._use_space_marines_final_retribution(stratagem, **kwargs)
+        if name_u == "FURIOUS ONSLAUGHT":
+            return self._use_space_marines_furious_onslaught(stratagem, **kwargs)
+        if name_u == "GLORIOUS SACRIFICE":
+            return self._use_space_marines_glorious_sacrifice(stratagem, **kwargs)
+        if name_u == "LOST TO RAGE":
+            return self._use_space_marines_lost_to_rage(stratagem, **kwargs)
+        if name_u == "WRATHFUL RAMPAGE":
+            return self._use_space_marines_wrathful_rampage(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_blade_of_ultramar_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -13831,6 +14269,58 @@ class SpaceMarinesStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         return (unit, enemy_unit, candidates, from_pending)
+
+    def _sm_lost_brethren_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, list[Any], Any, list[Any], Any, list[Any], str, bool]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = (
+            kwargs.get("attacking_unit")
+            or kwargs.get("enemy_unit")
+            or kwargs.get("destroyed_by_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("moving_unit")
+        )
+        target_units = list(kwargs.get("target_units") or [])
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = (
+                    reaction.get("attacking_unit")
+                    or reaction.get("enemy_unit")
+                    or reaction.get("destroyed_by_unit")
+                    or reaction.get("attacker_unit")
+                    or reaction.get("moving_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if objective is None:
+                objective = reaction.get("objective") or reaction.get("objective_marker")
+            if not objective_candidates:
+                objective_candidates = list(reaction.get("objective_candidates") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        return (unit, candidates, attacking_unit, target_units, objective, objective_candidates, action, from_pending)
 
     def _sm_black_spear_mission_tactic_options(self) -> list[dict[str, str]]:
         mgr = self._sm_detachment_mgr()
@@ -14593,6 +15083,350 @@ class SpaceMarinesStratagemMixin:
         logger.info(
             "INFO: UNBRIDLED ARDOUR: friendly Sanguinary Guard units can re-roll Hit and Wound rolls against %s for the battle.",
             getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_space_marines_final_retribution(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FINAL RETRIBUTION: wrong phase")
+            return False
+
+        unit, candidates, attacking_unit, target_units, _objective, _objective_candidates, _action, from_pending = (
+            self._sm_lost_brethren_context("FINAL RETRIBUTION", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: FINAL RETRIBUTION: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        attacking_root = self._sm_root(attacking_unit)
+        if root is None or attacking_root is None:
+            logger.error("ERROR: FINAL RETRIBUTION: missing attacking unit context")
+            return False
+        if self._sm_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: FINAL RETRIBUTION: attacking unit must be enemy")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FINAL RETRIBUTION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=False):
+            logger.error("ERROR: FINAL RETRIBUTION: target must be on the battlefield")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FINAL RETRIBUTION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_death_company_unit(root):
+            logger.error("ERROR: FINAL RETRIBUTION: target must be a DEATH COMPANY unit")
+            return False
+
+        valid_candidates = candidates or self._space_marines_lost_brethren_final_retribution_candidates(
+            target_units=list(target_units or [])
+        )
+        if not valid_candidates or not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FINAL RETRIBUTION: target unit was not selected as an attack target")
+            return False
+        if not from_pending and target_units and not any(self._sm_root(target) is root for target in list(target_units or [])):
+            logger.error("ERROR: FINAL RETRIBUTION: target unit was not selected as a fight target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_lost_brethren_final_retribution_active"] = True
+        sr["space_marines_lost_brethren_final_retribution_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_lost_brethren_final_retribution_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_lost_brethren_final_retribution_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_lost_brethren_final_retribution_source"] = str(
+            getattr(stratagem, "name", "") or "FINAL RETRIBUTION"
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FINAL RETRIBUTION: %s fights on death on 4+, improving to 3+ while supported by a Chaplain, until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_furious_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FURIOUS ONSLAUGHT: wrong phase")
+            return False
+
+        unit, candidates, _attacking_unit, _target_units, _objective, _objective_candidates, _action, _from_pending = (
+            self._sm_lost_brethren_context("FURIOUS ONSLAUGHT", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: FURIOUS ONSLAUGHT: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_death_company_unit(root):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: target must be a DEATH COMPANY unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_lost_brethren_death_company_fight_candidates()
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: FURIOUS ONSLAUGHT: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        chaplain_support = self._sm_lost_brethren_has_friendly_chaplain_support(root)
+        below_starting = bool(getattr(root, "is_below_starting_strength", lambda: False)())
+        max_distance = 6.0 if chaplain_support or below_starting else float(max(1, int(dice_module.get_roll("D3") or 0) + 3))
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_lost_brethren_furious_onslaught_active"] = True
+        sr["space_marines_lost_brethren_furious_onslaught_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_lost_brethren_furious_onslaught_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_lost_brethren_furious_onslaught_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_lost_brethren_furious_onslaught_source"] = str(
+            getattr(stratagem, "name", "") or "FURIOUS ONSLAUGHT"
+        )
+        sr["bearer_unit_pile_in_distance_override"] = max(
+            float(sr.get("bearer_unit_pile_in_distance_override", 0.0) or 0.0),
+            float(max_distance),
+        )
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FURIOUS ONSLAUGHT: %s can Pile-in up to %.0f\" this phase.",
+            getattr(root, "name", "Unit"),
+            float(max_distance),
+        )
+        return True
+
+    def _use_space_marines_glorious_sacrifice(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _attacking_unit, _target_units, objective, objective_candidates, _action, _from_pending = (
+            self._sm_lost_brethren_context("GLORIOUS SACRIFICE", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: GLORIOUS SACRIFICE: no destroyed unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: GLORIOUS SACRIFICE: target unit is not yours")
+            return False
+        if self._sm_is_alive(root):
+            logger.error("ERROR: GLORIOUS SACRIFICE: target unit must be destroyed")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: GLORIOUS SACRIFICE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_death_company_unit(root):
+            logger.error("ERROR: GLORIOUS SACRIFICE: target must be a DEATH COMPANY unit")
+            return False
+        valid_candidates = candidates or [root]
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: GLORIOUS SACRIFICE: selected unit is not currently eligible")
+            return False
+        if objective is None:
+            logger.error("ERROR: GLORIOUS SACRIFICE: no objective marker selected")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: GLORIOUS SACRIFICE: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: GLORIOUS SACRIFICE: objective marker location unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="space_marines_lost_brethren_glorious_sacrifice")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "space_marines_lost_brethren_glorious_sacrifice"
+            objective_location.controlling_player = self.player
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: GLORIOUS SACRIFICE: selected objective remains under your control until broken.")
+        return True
+
+    def _use_space_marines_lost_to_rage(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: LOST TO RAGE: wrong phase")
+            return False
+
+        unit, candidates, _attacking_unit, _target_units, _objective, _objective_candidates, _action, _from_pending = (
+            self._sm_lost_brethren_context("LOST TO RAGE", kwargs)
+        )
+        if unit is None:
+            logger.error("ERROR: LOST TO RAGE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LOST TO RAGE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LOST TO RAGE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LOST TO RAGE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_death_company_unit(root):
+            logger.error("ERROR: LOST TO RAGE: target must be a DEATH COMPANY unit")
+            return False
+        if not bool(getattr(root, "is_below_starting_strength", lambda: False)()):
+            logger.error("ERROR: LOST TO RAGE: target must be below Starting Strength")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: LOST TO RAGE: target has already been selected to fight this phase")
+            return False
+
+        valid_candidates = candidates or self._space_marines_lost_brethren_death_company_fight_candidates(
+            require_below_starting_strength=True
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: LOST TO RAGE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        source = str(getattr(stratagem, "name", "") or "LOST TO RAGE").strip() or "LOST TO RAGE"
+        chaplain_support = self._sm_lost_brethren_has_friendly_chaplain_support(root)
+        for model in self._sm_unit_models(root):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None or not bool(getattr(wargear, "is_melee", lambda: False)()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if callable(set_bonus):
+                    set_bonus(
+                        key=f"space_marines_lost_brethren_lost_to_rage:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        attacks_bonus=1,
+                        strength_bonus=1,
+                        ap_bonus=1,
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                    )
+                if chaplain_support:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"space_marines_lost_brethren_lost_to_rage_hazardous:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["HAZARDOUS"],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LOST TO RAGE: %s improves melee Attacks, Strength and AP by 1%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            "" if chaplain_support else " and its melee weapons become [HAZARDOUS]",
+        )
+        return True
+
+    def _use_space_marines_wrathful_rampage(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WRATHFUL RAMPAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: WRATHFUL RAMPAGE: not your Movement phase")
+            return False
+
+        unit, candidates, moving_unit, _target_units, _objective, _objective_candidates, action, from_pending = (
+            self._sm_lost_brethren_context("WRATHFUL RAMPAGE", kwargs)
+        )
+        if unit is None:
+            unit = moving_unit
+        if unit is None:
+            logger.error("ERROR: WRATHFUL RAMPAGE: no target unit provided")
+            return False
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key != "advance":
+            logger.error("ERROR: WRATHFUL RAMPAGE: target must have just Advanced")
+            return False
+        valid_candidates = candidates or self._space_marines_lost_brethren_wrathful_rampage_candidates(moved_unit=root)
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: WRATHFUL RAMPAGE: selected unit is not currently eligible")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: WRATHFUL RAMPAGE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: WRATHFUL RAMPAGE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: WRATHFUL RAMPAGE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if not self._sm_is_death_company_unit(root):
+            logger.error("ERROR: WRATHFUL RAMPAGE: target must be a DEATH COMPANY unit")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            logger.error("ERROR: WRATHFUL RAMPAGE: target must have Advanced this phase")
+            return False
+        if not from_pending and moving_unit is not None and self._sm_root(moving_unit) is not root:
+            logger.error("ERROR: WRATHFUL RAMPAGE: trigger unit context does not match target")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        shoot_after_advance = self._sm_lost_brethren_has_friendly_chaplain_support(root) or bool(
+            getattr(root, "is_below_starting_strength", lambda: False)()
+        )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_lost_brethren_wrathful_rampage_active"] = True
+        sr["space_marines_lost_brethren_wrathful_rampage_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_lost_brethren_wrathful_rampage_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_lost_brethren_wrathful_rampage_shoot_after_advance"] = bool(shoot_after_advance)
+        sr["space_marines_lost_brethren_wrathful_rampage_source"] = str(
+            getattr(stratagem, "name", "") or "WRATHFUL RAMPAGE"
+        )
+        root.special_rules = sr
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WRATHFUL RAMPAGE: %s can charge after Advancing%s until end of turn.",
+            getattr(root, "name", "Unit"),
+            " and can also shoot" if shoot_after_advance else "",
         )
         return True
 

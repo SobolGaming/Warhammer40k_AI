@@ -95,6 +95,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOCUSED FURY",
     "FOR THE EMPEROR'S HONOUR!",
     "FURY OF THE FIRST",
+    "FINAL RETRIBUTION",
+    "FURIOUS ONSLAUGHT",
+    "GLORIOUS SACRIFICE",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
     "ANCIENT FURY",
@@ -108,6 +111,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
     "LIGHT OF VENGEANCE",
+    "LOST TO RAGE",
     "MERCY IS WEAKNESS",
     "NO THREAT TOO GREAT",
     "NOT ONE BACKWARDS STEP",
@@ -133,6 +137,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNTO THE BURNING SKIES",
     "ULTRAMARIAN ADAPTIVITY",
     "VENGEFUL ANIMUS",
+    "WRATHFUL RAMPAGE",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -1732,6 +1737,7 @@ class StratagemManager(
             "SQUIG FLINGIN'",
             "LEGENDARY FORTITUDE",
             "HERESY BEGETS RETRIBUTION",
+            "WRATHFUL RAMPAGE",
             "WRATHFUL INFERNO",
             "AGGRESSIVE ONSLAUGHT",
             "RELENTLESS ASSAULT",
@@ -1770,6 +1776,8 @@ class StratagemManager(
             "UNBOUND ARROGANCE",
             "TERRIFYING SPECTACLE",
             "DIVINE INTERVENTION",
+            "GLORIOUS SACRIFICE",
+            "UNBRIDLED ARDOUR",
             "SUSTAINED BY AGONY",
             "ECSTATIC SLAUGHTER",
             "TERRIFYING PROFICIENCY",
@@ -1948,6 +1956,7 @@ class StratagemManager(
             "ONLY IN DEATH DOES DUTY END",
             "THE FOE FORESEEN",
             "FIGHT TO THE END",
+            "FINAL RETRIBUTION",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
@@ -6116,6 +6125,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_lost_brethren_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_blade_of_ultramar_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7180,6 +7193,7 @@ class StratagemManager(
             self._cleanup_space_marines_lions_blade_phase_end_effects(phase=phase)
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
             self._cleanup_space_marines_reclamation_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_lost_brethren_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
@@ -9113,6 +9127,7 @@ class StratagemManager(
         self._queue_space_marines_reclamation_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_lost_brethren_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
@@ -11291,6 +11306,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_gladius_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_lost_brethren_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13624,6 +13646,14 @@ class StratagemManager(
             self._queue_space_marines_angelic_host_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_lost_brethren_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+                last_model=last_model,
             )
         except Exception:
             raise
@@ -16604,6 +16634,9 @@ class StratagemManager(
         angelic_host_result = self._use_space_marines_the_angelic_host_stratagem(s, **kwargs)
         if angelic_host_result is not None:
             return angelic_host_result
+        lost_brethren_result = self._use_space_marines_the_lost_brethren_stratagem(s, **kwargs)
+        if lost_brethren_result is not None:
+            return lost_brethren_result
         blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
         if blade_result is not None:
             return blade_result

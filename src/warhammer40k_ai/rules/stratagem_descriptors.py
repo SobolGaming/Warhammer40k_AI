@@ -5824,6 +5824,89 @@ _THE_ANGELIC_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THE_ANGELIC_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_THE_LOST_BRETHREN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009187004": StratagemToolDescriptor(
+        stratagem_id="000009187004",
+        name="Final Retribution",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="death_company_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "fight_on_death_after_attacks": True,
+            "threshold": 4,
+            "threshold_with_friendly_chaplain_within_12": 3,
+            "required_keywords_any": ["DEATH COMPANY"],
+        },
+    ),
+    "000009187005": StratagemToolDescriptor(
+        stratagem_id="000009187005",
+        name="Furious Onslaught",
+        timing="fight_phase_before_pile_in",
+        target="death_company_unit",
+        duration="until_end_of_phase",
+        effect="pile_in_distance_override",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance_roll": "D3+3",
+            "pile_in_distance_if_friendly_chaplain_within_12": 6,
+            "pile_in_distance_if_below_starting_strength": 6,
+            "required_keywords_any": ["DEATH COMPANY"],
+        },
+    ),
+    "000009187002": StratagemToolDescriptor(
+        stratagem_id="000009187002",
+        name="Glorious Sacrifice",
+        timing="any_phase_on_destroyed",
+        target="destroyed_death_company_unit_on_controlled_objective",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["DEATH COMPANY"],
+            "requires_destroyed": True,
+        },
+    ),
+    "000009187006": StratagemToolDescriptor(
+        stratagem_id="000009187006",
+        name="Lost to Rage",
+        timing="fight_phase_on_select_to_fight",
+        target="death_company_unit_below_starting_strength_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_weapon_bonus_and_conditional_hazardous",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "attacks_bonus": 1,
+            "strength_bonus": 1,
+            "ap_bonus": 1,
+            "grant_keywords_unless_friendly_chaplain_within_12": ["HAZARDOUS"],
+            "required_keywords_any": ["DEATH COMPANY"],
+        },
+    ),
+    "000009187007": StratagemToolDescriptor(
+        stratagem_id="000009187007",
+        name="Wrathful Rampage",
+        timing="your_movement_phase_after_advance",
+        target="death_company_unit_that_just_advanced",
+        duration="until_end_of_turn",
+        effect="charge_after_advance_and_conditional_shoot_after_advance",
+        cp_cost=1,
+        effect_params={
+            "advance_and_charge": True,
+            "advance_and_shoot_if_friendly_chaplain_within_12": True,
+            "advance_and_shoot_if_below_starting_strength": True,
+            "required_keywords_any": ["DEATH COMPANY"],
+        },
+    ),
+}
+
+_THE_LOST_BRETHREN_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THE_LOST_BRETHREN_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
@@ -6538,6 +6621,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _THE_ANGELIC_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _THE_LOST_BRETHREN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6650,6 +6736,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _STORMLANCE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _THE_ANGELIC_HOST_STRATAGEM_BY_NAME.get(key)
+        or _THE_LOST_BRETHREN_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

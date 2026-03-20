@@ -9085,6 +9085,72 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         name = str(getattr(root, "name", "") or "").strip().upper()
         return "DEATH COMPANY" in name
 
+    def attached_unit_is_death_company(self, unit) -> bool:
+        return self._unit_is_death_company(unit)
+
+    def attached_unit_is_chaplain(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "CHAPLAIN"):
+            return True
+        try:
+            root = unit.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            root = unit
+        name = str(getattr(root, "name", "") or "").strip().upper()
+        return "CHAPLAIN" in name
+
+    def lost_brethren_has_friendly_chaplain_support(self, unit, *, range_inches: float = 12.0) -> bool:
+        if unit is None or not self.is_the_lost_brethren() or self.army is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            root = unit
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        seen: set[str] = set()
+        for candidate in list(getattr(self.army, "units", []) or []):
+            try:
+                candidate_root = candidate.get_attached_unit_root()
+            except (AttributeError, TypeError, ValueError):
+                candidate_root = candidate
+            if candidate_root is None or candidate_root is root:
+                continue
+            candidate_id = str(get_entity_id(candidate_root) or "")
+            if candidate_id and candidate_id in seen:
+                continue
+            if candidate_id:
+                seen.add(candidate_id)
+            try:
+                if candidate_root.get_parent_army() is not self.army:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self.attached_unit_is_chaplain(candidate_root):
+                continue
+            if not bool(getattr(candidate_root, "deployed", False)):
+                continue
+            if bool(getattr(candidate_root, "is_embarked", False)):
+                continue
+            reserve_check = getattr(candidate_root, "is_in_reserves", None)
+            if callable(reserve_check) and bool(reserve_check()):
+                continue
+            alive_check = getattr(candidate_root, "is_alive", None)
+            if callable(alive_check) and not bool(alive_check()):
+                continue
+            if unit_within_range_of_unit(candidate_root, root, float(range_inches), use_attached_aggregate=True):
+                return True
+        return False
+
     def apply_company_of_hunters_battleline_keywords(self, unit=None) -> None:
         if not self.is_company_of_hunters() or self.army is None:
             return

@@ -20547,6 +20547,36 @@ def _stratagem_support(
             "Any phase reaction when one of your ADEPTUS ASTARTES units is destroyed: friendly Sanguinary Guard units can re-roll Hit rolls and Wound rolls against the enemy unit that destroyed it for the rest of the battle.",
             name_u,
         )
+    if stratagem_id == "000009187004":
+        return (
+            "Implemented",
+            "Fight phase reaction after enemy targets are selected: selected DEATH COMPANY unit fights on death on a 4+, improving to 3+ while within 12\" of a friendly Chaplain, until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000009187005":
+        return (
+            "Implemented",
+            "Fight phase: selected DEATH COMPANY unit can Pile-in up to D3+3\", improving to 6\" while within 12\" of a friendly Chaplain or while below Starting Strength, until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000009187002":
+        return (
+            "Implemented",
+            "Any phase reaction when a friendly DEATH COMPANY unit is destroyed while within range of a controlled objective marker: the selected objective remains sticky under your control until the opponent takes it.",
+            name_u,
+        )
+    if stratagem_id == "000009187006":
+        return (
+            "Implemented",
+            "Fight phase: selected below-Starting-Strength DEATH COMPANY unit that has not yet fought gains +1 Attacks, +1 Strength and +1 AP on melee weapons until end of phase, and gains [HAZARDOUS] unless supported by a friendly Chaplain within 12\".",
+            name_u,
+        )
+    if stratagem_id == "000009187007":
+        return (
+            "Implemented",
+            "Your Movement phase just after a DEATH COMPANY unit Advances: that unit can charge after Advancing until end of turn, and can also shoot after Advancing while within 12\" of a friendly Chaplain or while below Starting Strength.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (
