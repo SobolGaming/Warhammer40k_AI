@@ -20577,6 +20577,36 @@ def _stratagem_support(
             "Your Movement phase just after a DEATH COMPANY unit Advances: that unit can charge after Advancing until end of turn, and can also shoot after Advancing while within 12\" of a friendly Chaplain or while below Starting Strength.",
             name_u,
         )
+    if stratagem_id == "000008389005":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected ADEPTUS ASTARTES unit that has not yet been selected to shoot gains [ASSAULT], [HEAVY], and [IGNORES COVER] on ranged weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008389006":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy unit shoots: selected ADEPTUS ASTARTES unit that lost one or more models can make a reactive shooting attack against that attacker.",
+            name_u,
+        )
+    if stratagem_id == "000008389004":
+        return (
+            "Implemented",
+            "Your Movement phase just after an ADEPTUS ASTARTES unit Falls Back: that unit can shoot and charge after Falling Back until end of turn.",
+            name_u,
+        )
+    if stratagem_id == "000008389007":
+        return (
+            "Implemented",
+            "Opponent Charge phase reaction after an enemy unit ends a Charge move: selected ADEPTUS ASTARTES unit within Engagement Range of that charger imposes -1 to wound against incoming attacks in the Fight phase this turn.",
+            name_u,
+        )
+    if stratagem_id == "000008389003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected gains [LETHAL HITS] on the current phase's weapons until end of phase, and scores Critical Hits on 5+ while one or more friendly ADEPTUS ASTARTES units are Battle-shocked.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

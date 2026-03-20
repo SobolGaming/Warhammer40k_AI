@@ -96,8 +96,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOR THE EMPEROR'S HONOUR!",
     "FURY OF THE FIRST",
     "FINAL RETRIBUTION",
+    "FIRE DISCIPLINE",
     "FURIOUS ONSLAUGHT",
     "GLORIOUS SACRIFICE",
+    "GRIM RETRIBUTION",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
     "ANCIENT FURY",
@@ -107,6 +109,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HERESY UNDONE",
     "HEROES OF THE CHAPTER",
     "IN THE SHADOW OF GREAT WINGS",
+    "INTRACTABLE",
     "INSTANT OF GRACE",
     "KRAKEN ROUNDS",
     "LEGENDARY FORTITUDE",
@@ -135,6 +138,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TERRIFYING PROFICIENCY",
     "UNBOWED CONVICTION",
     "UNTO THE BURNING SKIES",
+    "UNBREAKABLE LINES",
+    "UNFORGIVEN FURY",
     "ULTRAMARIAN ADAPTIVITY",
     "VENGEFUL ANIMUS",
     "WRATHFUL RAMPAGE",
@@ -515,9 +520,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HUNTR’S MARK",
     "ORDERED RETREAT",
     "REACTIVE REPRISAL",
+    "GRIM RETRIBUTION",
     "HAIL OF VENGEANCE",
+    "INTRACTABLE",
     "POWER OF THE MACHINE SPIRIT",
     "RIGID DISCIPLINE",
+    "UNBREAKABLE LINES",
     "VENGEFUL ANIMUS",
     "VOID HARDENED",
 }
@@ -1737,12 +1745,14 @@ class StratagemManager(
             "SQUIG FLINGIN'",
             "LEGENDARY FORTITUDE",
             "HERESY BEGETS RETRIBUTION",
+            "INTRACTABLE",
             "WRATHFUL RAMPAGE",
             "WRATHFUL INFERNO",
             "AGGRESSIVE ONSLAUGHT",
             "RELENTLESS ASSAULT",
             "SAVAGE ECHOES",
             "SQUAD TACTICS",
+            "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
@@ -1823,6 +1833,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_anvil_siege_force)
         if "POWER OF THE MACHINE SPIRIT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_ironstorm_spearhead)
+        if "GRIM RETRIBUTION" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_unforgiven_task_force)
         if names & {"GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_bastion_task_force)
         if "DEATH ON THE WIND" in names:
@@ -1982,7 +1994,7 @@ class StratagemManager(
 
         if (names & shooting_reaction_names) or has_generic_defensive_shooting:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
-        elif names & {"HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT"}:
+        elif names & {"GRIM RETRIBUTION", "HAIL OF VENGEANCE", "POWER OF THE MACHINE SPIRIT"}:
             add("shooting_targets_selected", self._on_shooting_targets_selected)
 
         if (names & fight_reaction_names) or has_generic_defensive_fight:
@@ -6129,6 +6141,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_unforgiven_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_blade_of_ultramar_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7194,6 +7210,7 @@ class StratagemManager(
             self._cleanup_space_marines_orbital_assault_phase_end_effects(phase=phase)
             self._cleanup_space_marines_reclamation_phase_end_effects(phase=phase)
             self._cleanup_space_marines_lost_brethren_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_unforgiven_phase_end_effects(phase=phase)
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
@@ -9128,6 +9145,7 @@ class StratagemManager(
         self._queue_space_marines_stormlance_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_angelic_host_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_lost_brethren_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_unforgiven_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
@@ -9853,6 +9871,9 @@ class StratagemManager(
     def _on_unit_shooting_resolved_space_marines_ironstorm_spearhead(self, attacker_unit=None, **_kwargs):
         self._queue_space_marines_ironstorm_shooting_resolved_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_space_marines_unforgiven_task_force(self, attacker_unit=None, **_kwargs):
+        self._queue_space_marines_unforgiven_shooting_resolved_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_space_marines_bastion_task_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         self._queue_space_marines_bastion_shooting_resolved_reactions(
             attacker_unit=attacker_unit,
@@ -10240,6 +10261,13 @@ class StratagemManager(
             raise
         try:
             self._capture_space_marines_ironstorm_shooting_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._capture_space_marines_unforgiven_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -16637,6 +16665,9 @@ class StratagemManager(
         lost_brethren_result = self._use_space_marines_the_lost_brethren_stratagem(s, **kwargs)
         if lost_brethren_result is not None:
             return lost_brethren_result
+        unforgiven_result = self._use_space_marines_unforgiven_task_force_stratagem(s, **kwargs)
+        if unforgiven_result is not None:
+            return unforgiven_result
         blade_result = self._use_space_marines_blade_of_ultramar_stratagem(s, **kwargs)
         if blade_result is not None:
             return blade_result

@@ -5907,6 +5907,75 @@ _THE_LOST_BRETHREN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THE_LOST_BRETHREN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_UNFORGIVEN_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008389005": StratagemToolDescriptor(
+        stratagem_id="000008389005",
+        name="Fire Discipline",
+        timing="your_shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_assault_heavy_ignores_cover",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["ASSAULT", "HEAVY", "IGNORES COVER"],
+        },
+    ),
+    "000008389006": StratagemToolDescriptor(
+        stratagem_id="000008389006",
+        name="Grim Retribution",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="adeptus_astartes_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_shooting_against_attacker_after_losing_models",
+        cp_cost=1,
+        effect_params={"target_restriction": "attacking_enemy_unit_only"},
+    ),
+    "000008389004": StratagemToolDescriptor(
+        stratagem_id="000008389004",
+        name="Intractable",
+        timing="your_movement_phase_after_fall_back",
+        target="adeptus_astartes_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000008389007": StratagemToolDescriptor(
+        stratagem_id="000008389007",
+        name="Unbreakable Lines",
+        timing="opponent_charge_phase_after_enemy_charge_move_end",
+        target="adeptus_astartes_unit_within_engagement_range_of_charger",
+        duration="until_end_of_turn",
+        effect="defensive_wound_penalty",
+        cp_cost=2,
+        effect_params={
+            "wound_roll_modifier": -1,
+            "attack_type": "any",
+        },
+    ),
+    "000008389003": StratagemToolDescriptor(
+        stratagem_id="000008389003",
+        name="Unforgiven Fury",
+        timing="your_shooting_or_either_fight_phase_on_select",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="phase_lethal_hits_and_conditional_crit_hit_threshold",
+        cp_cost=1,
+        effect_params={
+            "conditional_attack_type_by_phase": {
+                "shooting": "ranged",
+                "fight": "melee",
+            },
+            "grant_keywords": ["LETHAL HITS"],
+            "critical_hit_threshold_if_any_friendly_adeptus_astartes_unit_is_battle_shocked": 5,
+        },
+    ),
+}
+
+_UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _UNFORGIVEN_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010397003": StratagemToolDescriptor(
         stratagem_id="000010397003",
@@ -6624,6 +6693,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _THE_LOST_BRETHREN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _UNFORGIVEN_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -6737,6 +6809,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ANGELIC_INHERITORS_STRATAGEM_BY_NAME.get(key)
         or _THE_ANGELIC_HOST_STRATAGEM_BY_NAME.get(key)
         or _THE_LOST_BRETHREN_STRATAGEM_BY_NAME.get(key)
+        or _UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

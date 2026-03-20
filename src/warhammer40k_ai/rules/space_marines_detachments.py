@@ -825,6 +825,222 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             source = "Pennant of Remembrance"
         return int(max(2, value)), source
 
+    @staticmethod
+    def _clear_unforgiven_effect_keys(root, keys: tuple[str, ...]) -> None:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in keys:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def _unforgiven_turn_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        turn_key: str,
+        owner_key: str,
+        clear_keys: tuple[str, ...],
+        game=None,
+    ) -> bool:
+        if not self.is_unforgiven_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get(active_key, False))):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        effect_player_id = str(sr.get(owner_key, "") or "").strip()
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        if (effect_turn and current_turn and effect_turn != current_turn) or (
+            effect_player_id and current_player_id and effect_player_id != current_player_id
+        ):
+            self._clear_unforgiven_effect_keys(root, clear_keys)
+            return False
+        return True
+
+    def unforgiven_has_battle_shocked_adeptus_astartes_unit(self) -> bool:
+        if not self.is_unforgiven_task_force():
+            return False
+        for root in self._iter_unique_army_roots():
+            if root is None:
+                continue
+            if not self.attached_unit_is_adeptus_astartes(root):
+                continue
+            if not self._unit_has_models_or_is_alive(root):
+                continue
+            is_battle_shocked = getattr(root, "is_battle_shocked", None)
+            if callable(is_battle_shocked) and bool(is_battle_shocked()):
+                return True
+        return False
+
+    def unforgiven_intractable_shoot_after_fall_back_applies(
+        self,
+        unit,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> bool:
+        if not self._unforgiven_turn_effect_active(
+            unit,
+            active_key="space_marines_unforgiven_intractable_active",
+            turn_key="space_marines_unforgiven_intractable_turn",
+            owner_key="space_marines_unforgiven_intractable_turn_owner",
+            clear_keys=(
+                "space_marines_unforgiven_intractable_active",
+                "space_marines_unforgiven_intractable_turn_owner",
+                "space_marines_unforgiven_intractable_turn",
+                "space_marines_unforgiven_intractable_expires_phase",
+                "space_marines_unforgiven_intractable_source",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def unforgiven_intractable_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        if not self._unforgiven_turn_effect_active(
+            unit,
+            active_key="space_marines_unforgiven_intractable_active",
+            turn_key="space_marines_unforgiven_intractable_turn",
+            owner_key="space_marines_unforgiven_intractable_turn_owner",
+            clear_keys=(
+                "space_marines_unforgiven_intractable_active",
+                "space_marines_unforgiven_intractable_turn_owner",
+                "space_marines_unforgiven_intractable_turn",
+                "space_marines_unforgiven_intractable_expires_phase",
+                "space_marines_unforgiven_intractable_source",
+            ),
+            game=game,
+        ):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        return bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False))
+
+    def unforgiven_fury_crit_hit_threshold(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None or not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_unforgiven_fury_active", False))):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            attack_type = str(sr.get("space_marines_unforgiven_fury_attack_type", "") or "").strip().lower()
+            if attack_type == "ranged":
+                if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                    return 0, ""
+            elif attack_type == "melee":
+                if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                    return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            effect_owner_id = str(sr.get("space_marines_unforgiven_fury_turn_owner", "") or "").strip()
+            effect_turn = int(sr.get("space_marines_unforgiven_fury_turn", 0) or 0)
+            expires_phase = str(sr.get("space_marines_unforgiven_fury_expires_phase", "") or "").strip().upper()
+            if (effect_turn and current_turn and effect_turn != current_turn) or (
+                effect_owner_id and current_player_id and effect_owner_id != current_player_id
+            ) or (expires_phase and current_phase and expires_phase != current_phase):
+                self._clear_unforgiven_effect_keys(
+                    root,
+                    (
+                        "space_marines_unforgiven_fury_active",
+                        "space_marines_unforgiven_fury_attack_type",
+                        "space_marines_unforgiven_fury_crit_hit_threshold",
+                        "space_marines_unforgiven_fury_turn_owner",
+                        "space_marines_unforgiven_fury_turn",
+                        "space_marines_unforgiven_fury_expires_phase",
+                        "space_marines_unforgiven_fury_source",
+                    ),
+                )
+                return 0, ""
+        try:
+            threshold = int(sr.get("space_marines_unforgiven_fury_crit_hit_threshold", 0) or 0)
+        except Exception:
+            threshold = 0
+        if threshold <= 0:
+            return 0, ""
+        source = str(sr.get("space_marines_unforgiven_fury_source", "") or "Unforgiven Fury").strip()
+        if not source:
+            source = "Unforgiven Fury"
+        return max(2, min(6, threshold)), source
+
+    def unforgiven_unbreakable_lines_defensive_wound_mod_entry(self, unit, *, game=None) -> Optional[dict]:
+        if not self.is_unforgiven_task_force():
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None or not self.attached_unit_is_adeptus_astartes(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("space_marines_unforgiven_unbreakable_lines_active", False))):
+            return None
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            effect_owner_id = str(sr.get("space_marines_unforgiven_unbreakable_lines_turn_owner", "") or "").strip()
+            effect_turn = int(sr.get("space_marines_unforgiven_unbreakable_lines_turn", 0) or 0)
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if (effect_turn and current_turn and effect_turn != current_turn) or (
+                effect_owner_id and current_player_id and effect_owner_id != current_player_id
+            ) or (current_phase and current_phase != "FIGHT_PHASE"):
+                self._clear_unforgiven_effect_keys(
+                    root,
+                    (
+                        "space_marines_unforgiven_unbreakable_lines_active",
+                        "space_marines_unforgiven_unbreakable_lines_turn_owner",
+                        "space_marines_unforgiven_unbreakable_lines_turn",
+                        "space_marines_unforgiven_unbreakable_lines_source",
+                    ),
+                )
+                return None
+        source = str(
+            sr.get("space_marines_unforgiven_unbreakable_lines_source", "") or "Unbreakable Lines"
+        ).strip()
+        if not source:
+            source = "Unbreakable Lines"
+        return {
+            "value": 1,
+            "attack_type": "any",
+            "source": source,
+        }
+
     def _unit_is_on_battlefield(self, unit) -> bool:
         if unit is None:
             return False

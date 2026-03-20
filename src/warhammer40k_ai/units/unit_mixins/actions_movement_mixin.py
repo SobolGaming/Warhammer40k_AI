@@ -17876,6 +17876,11 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if reclamation_fn(self, weapon_profile=profile, game=game):
                     return True
+            unforgiven_fn = getattr(mgr, "unforgiven_intractable_shoot_after_fall_back_applies", None) if mgr is not None else None
+            if callable(unforgiven_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if unforgiven_fn(self, weapon_profile=profile, game=game):
+                    return True
         except Exception:
             pass
         try:
@@ -18358,6 +18363,11 @@ class ActionsMovementMixin:
             if callable(reclamation_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if reclamation_fn(self, game=game):
+                    return True
+            unforgiven_fn = getattr(mgr, "unforgiven_intractable_charge_after_fall_back_applies", None) if mgr is not None else None
+            if callable(unforgiven_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if unforgiven_fn(self, game=game):
                     return True
         except Exception:
             pass

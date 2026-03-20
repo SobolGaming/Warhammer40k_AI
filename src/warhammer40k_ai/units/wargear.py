@@ -4800,6 +4800,20 @@ class WargearProfile:
                     if not atk_type or entry_attack_type in ("any", atk_type):
                         out.append(dict(extra_entry))
 
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            unforgiven_entry_fn = (
+                getattr(sm_mgr, "unforgiven_unbreakable_lines_defensive_wound_mod_entry", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(unforgiven_entry_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                extra_entry = unforgiven_entry_fn(root, game=game)
+                if isinstance(extra_entry, dict):
+                    entry_attack_type = str(extra_entry.get("attack_type") or "any").strip().lower()
+                    if not atk_type or entry_attack_type in ("any", atk_type):
+                        out.append(dict(extra_entry))
+
             # If no leaders or no enhancement, fall through.
         return out
 
@@ -14844,6 +14858,20 @@ class WargearProfile:
                 if int(threshold or 0):
                     crit_threshold = min(int(crit_threshold), int(threshold))
                     source_name = str(source or "Mercy Is Weakness").strip() or "Mercy Is Weakness"
+                    crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            threshold_fn = getattr(sm_mgr, "unforgiven_fury_crit_hit_threshold", None) if sm_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                threshold, source = threshold_fn(attacker, weapon_profile=self, game=game)
+                if int(threshold or 0):
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    source_name = str(source or "Unforgiven Fury").strip() or "Unforgiven Fury"
                     crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         except Exception:
             pass
