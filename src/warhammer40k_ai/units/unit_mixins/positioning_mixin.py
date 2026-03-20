@@ -7497,9 +7497,20 @@ class PositioningMixin:
                 stratagem_source = str(sr.get("stratagem_choreographer_of_war_source", "") or "").strip()
                 if stratagem_source:
                     active = True
-                    exp_phase = str(sr.get("carnival_violent_crescendo_expires_phase", "") or "").strip().upper()
-                    owner_id = str(sr.get("carnival_violent_crescendo_owner", "") or "")
-                    effect_turn = int(sr.get("carnival_violent_crescendo_turn", 0) or 0)
+                    exp_phase = str(
+                        sr.get("stratagem_choreographer_of_war_expires_phase", "")
+                        or sr.get("carnival_violent_crescendo_expires_phase", "")
+                        or ""
+                    ).strip().upper()
+                    owner_id = str(
+                        sr.get("stratagem_choreographer_of_war_turn_owner", "")
+                        or sr.get("carnival_violent_crescendo_owner", "")
+                        or ""
+                    )
+                    effect_turn = int(
+                        sr.get("stratagem_choreographer_of_war_turn", sr.get("carnival_violent_crescendo_turn", 0))
+                        or 0
+                    )
                     game = None
                     try:
                         army = root.get_parent_army()

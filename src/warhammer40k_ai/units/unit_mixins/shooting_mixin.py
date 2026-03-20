@@ -1263,6 +1263,9 @@ class ShootingMixin:
         lock_check = getattr(root, "_gsc_integrated_tactics_target_locked_to", None)
         if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
             return False
+        lock_check = getattr(root, "_space_marines_hunter_marked_for_destruction_target_locked_to", None)
+        if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
+            return False
 
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.

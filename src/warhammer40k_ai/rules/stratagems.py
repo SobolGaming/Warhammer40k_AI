@@ -2000,6 +2000,7 @@ class StratagemManager(
             "IMMORTAL FURY",
             "WRATH UNDENIABLE",
             "OVERWHELMING EXCESS",
+            "OVERWHELMING ONSLAUGHT",
             "ARMOUR OF CONTEMPT",
             "ONLY IN DEATH DOES DUTY END",
             "THE FOE FORESEEN",
@@ -2051,7 +2052,7 @@ class StratagemManager(
         if needs_attacker_cleanup_shooting:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
 
-        if names & {"A WORTHY SKULL", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
+        if names & {"A WORTHY SKULL", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT", "TERRITORIAL ADVANTAGE"}:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
         if has_consolidate_spec:
@@ -6224,6 +6225,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_saga_of_the_hunter_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_saga_of_the_great_wolf_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7288,6 +7293,7 @@ class StratagemManager(
             self._cleanup_space_marines_stormlance_phase_end_effects(phase=phase)
             self._cleanup_space_marines_vanguard_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_bold_phase_end_effects(phase=phase)
+            self._cleanup_space_marines_saga_of_the_hunter_phase_end_effects(phase=phase)
             self._cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(phase=phase)
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
@@ -9227,6 +9233,7 @@ class StratagemManager(
         self._queue_space_marines_liberator_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_forgefathers_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_saga_of_the_beastslayer_move_end_reactions(unit=unit, action=action)
+        self._queue_space_marines_saga_of_the_hunter_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
@@ -11458,6 +11465,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_space_marines_saga_of_the_hunter_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_votann_needgaard_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -12359,6 +12373,11 @@ class StratagemManager(
             self._capture_space_marines_bastion_fight_attacks_resolved(
                 unit=unit,
                 hits_by_target=_kwargs.get("hits_by_target"),
+            )
+            self._queue_space_marines_saga_of_the_hunter_fight_attacks_resolved_reactions(
+                attacker_unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             s = self.get_by_name("A WORTHY SKULL")
             if not s:
@@ -16854,6 +16873,9 @@ class StratagemManager(
         saga_bold_result = self._use_space_marines_saga_of_the_bold_stratagem(s, **kwargs)
         if saga_bold_result is not None:
             return saga_bold_result
+        saga_hunter_result = self._use_space_marines_saga_of_the_hunter_stratagem(s, **kwargs)
+        if saga_hunter_result is not None:
+            return saga_hunter_result
         saga_great_wolf_result = self._use_space_marines_saga_of_the_great_wolf_stratagem(s, **kwargs)
         if saga_great_wolf_result is not None:
             return saga_great_wolf_result

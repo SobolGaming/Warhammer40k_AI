@@ -20702,6 +20702,42 @@ def _stratagem_support(
             "Opponent Shooting phase reaction after an enemy unit has shot: selected Space Wolves unit that was targeted by that attacker can make a reactive Normal move up to D6\".",
             name_u,
         )
+    if stratagem_id == "000010262002":
+        return (
+            "Implemented",
+            "Fight phase: selected Space Wolves non-MONSTER, non-VEHICLE unit that has not yet been selected to fight can Pile-in and Consolidate up to 6\", and those moves only need to end as close as possible to the closest enemy unit.",
+            name_u,
+        )
+    if stratagem_id == "000010262003":
+        return (
+            "Implemented",
+            "Fight phase reaction after an ADEPTUS ASTARTES unit from your army destroys an enemy unit: select one controlled objective that unit is within range of and make it sticky until your opponent has greater control at the end of a phase.",
+            name_u,
+        )
+    if stratagem_id == "000010262004":
+        return (
+            "Implemented",
+            "Fight phase reaction after an enemy unit selects its targets: select either two eligible ADEPTUS ASTARTES units or one eligible Space Wolves BEASTS unit within Engagement Range of that enemy, and that enemy suffers -1 to hit until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010262005":
+        return (
+            "Implemented",
+            "Your Movement phase just after a Space Wolves unit Falls Back: that unit can shoot and declare a charge after Falling Back until the end of the turn.",
+            name_u,
+        )
+    if stratagem_id == "000010262006":
+        return (
+            "Implemented",
+            "Your Movement or Charge phase: selected Space Wolves INFANTRY or BEASTS unit that has not yet moved or charged can move through models this phase, TITANIC models still block, and Normal, Advance, and Fall Back moves can pass within but not end within Engagement Range.",
+            name_u,
+        )
+    if stratagem_id == "000010262007":
+        return (
+            "Implemented",
+            "Your Shooting phase: select two ADEPTUS ASTARTES non-BEASTS units that have not yet been selected to shoot and one enemy unit visible to both; the selected units can only target that enemy this phase and re-roll Wound rolls of 1 against it.",
+            name_u,
+        )
 
     if stratagem_id == "000008483003":
         return (

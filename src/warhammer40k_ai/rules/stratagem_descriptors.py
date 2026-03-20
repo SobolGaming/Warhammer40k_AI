@@ -4016,6 +4016,106 @@ _SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SAGA_OF_THE_HUNTER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010262002": StratagemToolDescriptor(
+        stratagem_id="000010262002",
+        name="Hunters' Trail",
+        timing="fight_phase_on_select_to_fight",
+        target="space_wolves_non_monster_non_vehicle_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="extend_pile_in_and_consolidate_to_six_and_ignore_closest_model_requirement",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance": 6,
+            "consolidate_distance": 6,
+            "required_keywords_any": ["SPACE WOLVES"],
+            "excluded_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000010262003": StratagemToolDescriptor(
+        stratagem_id="000010262003",
+        name="Territorial Advantage",
+        timing="fight_phase_after_destroying_enemy_unit",
+        target="adeptus_astartes_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "requires_destroy_enemy_unit": True,
+            "requires_controlled_objective_in_range": True,
+        },
+    ),
+    "000010262004": StratagemToolDescriptor(
+        stratagem_id="000010262004",
+        name="Overwhelming Onslaught",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="two_adeptus_astartes_units_or_one_space_wolves_beasts_unit_within_engagement_range_of_enemy",
+        duration="until_end_of_phase",
+        effect="attacking_enemy_hit_penalty",
+        cp_cost=1,
+        effect_params={
+            "hit_roll_modifier": -1,
+            "multi_target_mode": "two_adeptus_astartes_or_one_space_wolves_beasts",
+        },
+    ),
+    "000010262005": StratagemToolDescriptor(
+        stratagem_id="000010262005",
+        name="Chosen Prey",
+        timing="your_movement_phase_after_fall_back",
+        target="that_space_wolves_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+        },
+    ),
+    "000010262006": StratagemToolDescriptor(
+        stratagem_id="000010262006",
+        name="Bounding Advance",
+        timing="movement_or_charge_phase_on_select",
+        target="space_wolves_infantry_or_beasts_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_models_with_titanic_block_and_movement_phase_engagement_pass",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["SPACE WOLVES"],
+            "required_keywords_one_of": [["INFANTRY"], ["BEASTS"]],
+            "phase_move_types": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            },
+            "move_through_models": True,
+            "block_enemy_keywords": ["TITANIC"],
+            "movement_phase_allow_move_within_engagement_range": True,
+            "movement_phase_cannot_end_in_engagement_range": True,
+        },
+    ),
+    "000010262007": StratagemToolDescriptor(
+        stratagem_id="000010262007",
+        name="Marked for Destruction",
+        timing="shooting_phase_on_select_to_shoot",
+        target="two_adeptus_astartes_non_beasts_units_and_one_visible_shared_enemy_unit",
+        duration="until_end_of_phase",
+        effect="shared_target_lock_and_reroll_wound_ones",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ADEPTUS ASTARTES"],
+            "excluded_keywords_any": ["BEASTS"],
+            "required_unit_count": 2,
+            "reroll_wound_values": [1],
+            "target_lock": True,
+        },
+    ),
+}
+
+_SAGA_OF_THE_HUNTER_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_HUNTER_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010661003": StratagemToolDescriptor(
         stratagem_id="000010661003",
@@ -7013,6 +7113,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SAGA_OF_THE_BOLD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SAGA_OF_THE_HUNTER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7130,6 +7233,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _UNFORGIVEN_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BOLD_STRATAGEM_BY_NAME.get(key)
+        or _SAGA_OF_THE_HUNTER_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_GREAT_WOLF_STRATAGEM_BY_NAME.get(key)
         or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

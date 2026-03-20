@@ -7373,6 +7373,72 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _space_marines_hunter_marked_for_destruction_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("space_marines_marked_for_destruction_active")):
+            return None
+        target_id = str(sr.get("space_marines_marked_for_destruction_target_id", "") or "")
+        if not target_id:
+            return None
+        source = str(
+            sr.get("space_marines_marked_for_destruction_source", "") or "MARKED FOR DESTRUCTION"
+        ).strip() or "MARKED FOR DESTRUCTION"
+        reroll_values: list[int] = []
+        for value in list(sr.get("space_marines_marked_for_destruction_reroll_wound_values", []) or []):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                reroll_values.append(parsed)
+        context = {
+            "target_id": target_id,
+            "target_lock": bool(sr.get("space_marines_marked_for_destruction_target_lock", True)),
+            "reroll_wound_values": tuple(sorted(set(reroll_values))),
+            "source": source,
+        }
+        if game is None:
+            return context
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("space_marines_marked_for_destruction_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("space_marines_marked_for_destruction_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("space_marines_marked_for_destruction_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return context
+
+    def _space_marines_hunter_marked_for_destruction_target_locked_to(self, target_unit, *, game=None) -> bool:
+        context = self._space_marines_hunter_marked_for_destruction_context(game=game)
+        if not isinstance(context, dict):
+            return True
+        if not bool(context.get("target_lock", True)):
+            return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        expected_target_id = str(context.get("target_id", "") or "")
+        if expected_target_id and current_target_id and expected_target_id != current_target_id:
+            return False
+        return True
+
     def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None, weapon_profile=None) -> dict:
         """
         Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.
@@ -8604,6 +8670,18 @@ class ActionsMovementMixin:
                                 or "NO THREAT TOO GREAT"
                             )
                             reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs MONSTER/VEHICLE target")
+        army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        game_local = getattr(getattr(army_local, "player", None), "game", None) if army_local is not None else None
+        context = self._space_marines_hunter_marked_for_destruction_context(game=game_local)
+        if isinstance(context, dict):
+            target_ok = True
+            if target is not None:
+                target_ok = self._space_marines_hunter_marked_for_destruction_target_locked_to(target, game=game_local)
+            if target_ok:
+                source = str(context.get("source", "") or "MARKED FOR DESTRUCTION").strip() or "MARKED FOR DESTRUCTION"
+                for value in list(context.get("reroll_wound_values", ()) or ()):
+                    reroll_wound_values.add(int(value))
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of {int(value)}")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
@@ -17389,6 +17467,19 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("space_marines_chosen_prey_active")):
+            owner = str(sr.get("space_marines_chosen_prey_turn_owner", "") or "")
+            turn = int(sr.get("space_marines_chosen_prey_turn", 0) or 0)
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is None:
+                return True
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            if owner and current_owner and owner == current_owner and turn == current_turn:
+                return True
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
@@ -18371,6 +18462,18 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "interlocking_tactics_charge_after_fall_back_applies", None):
                 if mgr.interlocking_tactics_charge_after_fall_back_applies(self):
+                    return True
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("space_marines_chosen_prey_active")):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                owner = str(sr.get("space_marines_chosen_prey_turn_owner", "") or "")
+                turn = int(sr.get("space_marines_chosen_prey_turn", 0) or 0)
+                if game is None:
+                    return True
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                current_turn = int(getattr(game, "turn", 0) or 0)
+                if owner and current_owner and owner == current_owner and turn == current_turn:
                     return True
             heresy_fn = getattr(mgr, "heresy_undone_charge_after_fall_back_applies", None) if mgr is not None else None
             if callable(heresy_fn):

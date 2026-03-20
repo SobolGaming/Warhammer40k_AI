@@ -42,6 +42,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_saga_of_the_bold", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_saga_of_the_hunter_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_saga_of_the_hunter", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_saga_of_the_great_wolf_detachment(self) -> bool:
         mgr = self._sm_detachment_mgr()
         checker = getattr(mgr, "is_saga_of_the_great_wolf", None) if mgr is not None else None
@@ -1074,6 +1079,30 @@ class SpaceMarinesStratagemMixin:
             if root_id:
                 seen.add(root_id)
             roots.append(root)
+        return sorted(roots, key=self._sm_sort_key)
+
+    def _sm_enemy_army_roots(self) -> list[Any]:
+        if self.game is None:
+            return []
+        roots: list[Any] = []
+        seen: set[str] = set()
+        for player in list(getattr(self.game, "players", []) or []):
+            if player is None or player is self.player:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._sm_root(unit)
+                if root is None:
+                    continue
+                root_id = self._sm_sort_key(root)
+                if root_id and root_id in seen:
+                    continue
+                if root_id:
+                    seen.add(root_id)
+                roots.append(root)
         return sorted(roots, key=self._sm_sort_key)
 
     def _sm_unit_was_set_up_this_turn(self, unit: Any) -> bool:
@@ -3471,6 +3500,185 @@ class SpaceMarinesStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
+
+    @staticmethod
+    def _sm_hunter_pair_key(first: Any, second: Any) -> str:
+        first_id = str(get_entity_id(first) or "")
+        second_id = str(get_entity_id(second) or "")
+        ids = sorted([item for item in (first_id, second_id) if item])
+        return "|".join(ids)
+
+    def _space_marines_hunter_bounding_advance_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"movement phase", "charge phase"}:
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if not (self._sm_is_infantry_unit(root) or self._sm_has_keyword(root, "BEASTS")):
+                continue
+            if phase_key == "movement phase" and self._sm_selected_to_move_this_phase(root):
+                continue
+            if phase_key == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_hunter_hunters_trail_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._sm_is_space_wolves_unit(root):
+                continue
+            if self._sm_is_vehicle_unit(root) or self._sm_has_keyword(root, "MONSTER"):
+                continue
+            if self._sm_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
+    def _space_marines_hunter_chosen_prey_candidates(self, *, moved_unit: Any, action: str) -> list[Any]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return []
+        if str(action or "").strip().lower() != "fall_back":
+            return []
+        root = self._sm_root(moved_unit)
+        if root is None:
+            return []
+        if not self._sm_owned_by_player(root, self.player):
+            return []
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._sm_is_space_wolves_unit(root):
+            return []
+        return [root]
+
+    def _space_marines_hunter_marked_for_destruction_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return ([], {})
+        shooters: list[Any] = []
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_has_keyword(root, "BEASTS"):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            if not self._sm_unit_has_ranged_weapon(root):
+                continue
+            shooters.append(root)
+        if len(shooters) < 2:
+            return ([], {})
+
+        pair_enemy_map: dict[str, list[Any]] = {}
+        eligible_ids: set[str] = set()
+        enemy_units = self._sm_enemy_army_roots()
+        for index, first in enumerate(list(shooters or [])):
+            for second in list(shooters or [])[index + 1 :]:
+                shared_enemies: list[Any] = []
+                seen_enemy_ids: set[str] = set()
+                for enemy_root in list(enemy_units or []):
+                    if not self._sm_on_battlefield(enemy_root, require_targetable=True):
+                        continue
+                    enemy_id = self._sm_sort_key(enemy_root)
+                    if not enemy_id or enemy_id in seen_enemy_ids:
+                        continue
+                    if not self._sm_unit_visible_to_unit(first, enemy_root):
+                        continue
+                    if not self._sm_unit_visible_to_unit(second, enemy_root):
+                        continue
+                    seen_enemy_ids.add(enemy_id)
+                    shared_enemies.append(enemy_root)
+                if not shared_enemies:
+                    continue
+                pair_enemy_map[self._sm_hunter_pair_key(first, second)] = sorted(shared_enemies, key=self._sm_sort_key)
+                eligible_ids.add(self._sm_sort_key(first))
+                eligible_ids.add(self._sm_sort_key(second))
+        if not pair_enemy_map:
+            return ([], {})
+        candidates = [root for root in list(shooters or []) if self._sm_sort_key(root) in eligible_ids]
+        return (sorted(candidates, key=self._sm_sort_key), pair_enemy_map)
+
+    def _space_marines_hunter_overwhelming_onslaught_candidates(
+        self,
+        *,
+        enemy_unit: Any,
+    ) -> tuple[list[Any], list[Any]]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return ([], [])
+        enemy_root = self._sm_root(enemy_unit)
+        game_map = self._sm_game_map()
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if enemy_root is None or self._sm_owned_by_player(enemy_root, self.player) or not callable(is_within_engagement):
+            return ([], [])
+        astartes_candidates: list[Any] = []
+        beast_candidates: list[Any] = []
+        combined: list[Any] = []
+        seen: set[str] = set()
+        for root in self._sm_owned_army_roots():
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            try:
+                if not bool(is_within_engagement(root, enemy_root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if self._is_adeptus_astartes_unit(root):
+                astartes_candidates.append(root)
+            if self._sm_is_space_wolves_unit(root) and self._sm_has_keyword(root, "BEASTS"):
+                beast_candidates.append(root)
+            root_id = self._sm_sort_key(root)
+            if root_id and root_id not in seen:
+                seen.add(root_id)
+                combined.append(root)
+        if len(astartes_candidates) < 2 and not beast_candidates:
+            return ([], [])
+        return (sorted(combined, key=self._sm_sort_key), sorted(beast_candidates, key=self._sm_sort_key))
+
+    def _space_marines_hunter_territorial_advantage_candidates(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: Any = None,
+    ) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_saga_of_the_hunter_detachment():
+            return ([], {})
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None:
+            return ([], {})
+        if not self._sm_owned_by_player(attacker_root, self.player):
+            return ([], {})
+        if not self._sm_on_battlefield(attacker_root, require_targetable=True):
+            return ([], {})
+        if not self._is_adeptus_astartes_unit(attacker_root):
+            return ([], {})
+        destroyed_enemy = False
+        for target_unit, killed_models in list((killing_models_by_target or {}).items() if isinstance(killing_models_by_target, dict) else []):
+            if not killed_models:
+                continue
+            target_root = self._sm_root(target_unit)
+            if target_root is None or self._sm_owned_by_player(target_root, self.player):
+                continue
+            if self._sm_is_alive(target_root):
+                continue
+            destroyed_enemy = True
+            break
+        if not destroyed_enemy:
+            return ([], {})
+        objectives = self._sm_objective_candidates_you_control(attacker_root)
+        if not objectives:
+            return ([], {})
+        return ([attacker_root], {self._sm_sort_key(attacker_root): list(objectives)})
 
     def _space_marines_great_wolf_unrelenting_hunters_candidates(self) -> list[Any]:
         if not self._is_saga_of_the_great_wolf_detachment():
@@ -7442,6 +7650,136 @@ class SpaceMarinesStratagemMixin:
                 payload["enemy_unit"] = valid_enemies[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_space_marines_saga_of_the_hunter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_saga_of_the_hunter_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if phase_key == "MOVEMENT_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("BOUNDING ADVANCE")
+            candidates = self._space_marines_hunter_bounding_advance_candidates(phase_name="Movement phase")
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Movement phase",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("MARKED FOR DESTRUCTION")
+            candidates, enemy_candidates_by_pair = self._space_marines_hunter_marked_for_destruction_candidates()
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+                "max_units": 2,
+                "enemy_candidates_by_pair": enemy_candidates_by_pair,
+            }
+            if len(candidates) == 2:
+                payload["units"] = list(candidates)
+                payload["selected_units"] = list(candidates)
+                pair_enemy_candidates = list(
+                    enemy_candidates_by_pair.get(self._sm_hunter_pair_key(candidates[0], candidates[1])) or []
+                )
+                if pair_enemy_candidates:
+                    payload["enemy_candidates"] = pair_enemy_candidates
+                    if len(pair_enemy_candidates) == 1:
+                        payload["enemy_unit"] = pair_enemy_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "CHARGE_PHASE" and player is self.player and active_player is self.player:
+            stratagem = self.get_by_name("BOUNDING ADVANCE")
+            candidates = self._space_marines_hunter_bounding_advance_candidates(phase_name="Charge phase")
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Charge phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Charge phase",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self.get_by_name("HUNTERS' TRAIL")
+            candidates = self._space_marines_hunter_hunters_trail_candidates()
+            if stratagem is None or not candidates:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._sm_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Fight phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
     def _queue_space_marines_saga_of_the_great_wolf_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_saga_of_the_great_wolf_detachment():
             return
@@ -7623,6 +7961,278 @@ class SpaceMarinesStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_hunter_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_saga_of_the_hunter_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        moved_root = self._sm_root(unit)
+        if moved_root is None or not self._sm_owned_by_player(moved_root, self.player):
+            return
+        stratagem = self.get_by_name("CHOSEN PREY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._space_marines_hunter_chosen_prey_candidates(moved_unit=moved_root, action=action)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            attacking_unit=moved_root,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": moved_root,
+            "unit": moved_root,
+            "target_unit": moved_root,
+            "candidates": candidates,
+            "action": action,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_hunter_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_saga_of_the_hunter_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._sm_root(attacking_unit)
+        if attacking_root is None or self._sm_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("OVERWHELMING ONSLAUGHT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, beast_candidates = self._space_marines_hunter_overwhelming_onslaught_candidates(enemy_unit=attacking_root)
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_root,
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+            "beast_candidates": beast_candidates,
+            "max_units": 2,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_space_marines_saga_of_the_hunter_fight_attacks_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        target_unit: Any,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        if not self._is_saga_of_the_hunter_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._sm_root(attacker_unit)
+        if attacker_root is None or not self._sm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("TERRITORIAL ADVANTAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, objective_map = self._space_marines_hunter_territorial_advantage_candidates(
+            attacker_unit=attacker_root,
+            killing_models_by_target=killing_models_by_target,
+        )
+        if not candidates:
+            return
+        if self._sm_reaction_already_queued(
+            event_name="fight_attacks_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=attacker_root,
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "fight_attacks_resolved",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "enemy_unit": self._sm_root(target_unit),
+            "killing_models_by_target": killing_models_by_target,
+            "candidates": candidates,
+            "objective_candidates_by_unit": objective_map,
+        }
+        objective_candidates = list(objective_map.get(self._sm_sort_key(attacker_root)) or [])
+        if objective_candidates:
+            payload["objective_candidates"] = objective_candidates
+            if len(objective_candidates) == 1:
+                payload["objective"] = objective_candidates[0]
+                payload["objective_marker"] = objective_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_space_marines_saga_of_the_hunter_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_saga_of_the_hunter_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        active_owner_id = str(getattr(active_player, "id", "") or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+
+        def _iter_unique_roots(roots: list[Any]) -> list[Any]:
+            out: list[Any] = []
+            seen: set[str] = set()
+            for unit in list(roots or []):
+                root = self._sm_root(unit)
+                if root is None:
+                    continue
+                root_id = self._sm_sort_key(root)
+                if root_id and root_id in seen:
+                    continue
+                if root_id:
+                    seen.add(root_id)
+                out.append(root)
+            return out
+
+        for root in _iter_unique_roots(self._sm_owned_army_roots()):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_name in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                expires_phase = str(sr.get("space_marines_bounding_advance_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_bounding_advance_active") is True and (not expires_phase or expires_phase == phase_name):
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_models_only_types",
+                        "space_marines_bounding_advance_added_phase_move_models_only_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_models_only_block_titanic_types",
+                        "space_marines_bounding_advance_added_phase_move_models_only_block_titanic_types",
+                    )
+                    self._sm_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_engagement_types",
+                        "space_marines_bounding_advance_added_phase_move_engagement_types",
+                    )
+                    for key in (
+                        "space_marines_bounding_advance_active",
+                        "space_marines_bounding_advance_expires_phase",
+                        "space_marines_bounding_advance_turn_owner",
+                        "space_marines_bounding_advance_turn",
+                        "space_marines_bounding_advance_source",
+                        "space_marines_bounding_advance_added_phase_move_models_only_types",
+                        "space_marines_bounding_advance_added_phase_move_models_only_block_titanic_types",
+                        "space_marines_bounding_advance_added_phase_move_engagement_types",
+                    ):
+                        sr.pop(key, None)
+            if phase_name == "SHOOTING_PHASE":
+                expires_phase = str(sr.get("space_marines_marked_for_destruction_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_marked_for_destruction_active") is True and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "space_marines_marked_for_destruction_active",
+                        "space_marines_marked_for_destruction_expires_phase",
+                        "space_marines_marked_for_destruction_turn_owner",
+                        "space_marines_marked_for_destruction_turn",
+                        "space_marines_marked_for_destruction_source",
+                        "space_marines_marked_for_destruction_target_id",
+                        "space_marines_marked_for_destruction_target_lock",
+                        "space_marines_marked_for_destruction_reroll_wound_values",
+                    ):
+                        sr.pop(key, None)
+            if phase_name == "FIGHT_PHASE":
+                expires_phase = str(sr.get("space_marines_hunter_hunters_trail_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_hunter_hunters_trail_active") is True and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "space_marines_hunter_hunters_trail_active",
+                        "space_marines_hunter_hunters_trail_expires_phase",
+                        "space_marines_hunter_hunters_trail_turn_owner",
+                        "space_marines_hunter_hunters_trail_turn",
+                        "space_marines_hunter_hunters_trail_source",
+                        "stratagem_choreographer_of_war_source",
+                        "stratagem_choreographer_of_war_expires_phase",
+                        "stratagem_choreographer_of_war_turn_owner",
+                        "stratagem_choreographer_of_war_turn",
+                    ):
+                        sr.pop(key, None)
+                    self._sm_clear_ability_cache(root, "choreographer_of_war_source")
+                effect_owner = str(sr.get("space_marines_chosen_prey_turn_owner", "") or "").strip()
+                try:
+                    effect_turn = int(sr.get("space_marines_chosen_prey_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                if (
+                    sr.get("space_marines_chosen_prey_active") is True
+                    and effect_owner
+                    and active_owner_id
+                    and effect_owner == active_owner_id
+                    and (not effect_turn or not current_turn or effect_turn == current_turn)
+                ):
+                    for key in (
+                        "space_marines_chosen_prey_active",
+                        "space_marines_chosen_prey_turn_owner",
+                        "space_marines_chosen_prey_turn",
+                        "space_marines_chosen_prey_source",
+                    ):
+                        sr.pop(key, None)
+            root.special_rules = sr
+
+        if phase_name != "FIGHT_PHASE":
+            return
+        for root in _iter_unique_roots(self._sm_enemy_army_roots()):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            expires_phase = str(sr.get("space_marines_overwhelming_onslaught_expires_phase", "") or "").strip().upper()
+            if sr.get("space_marines_overwhelming_onslaught_active") is not True or (expires_phase and expires_phase != phase_name):
+                continue
+            for key in (
+                "space_marines_overwhelming_onslaught_active",
+                "space_marines_overwhelming_onslaught_expires_phase",
+                "space_marines_overwhelming_onslaught_turn_owner",
+                "space_marines_overwhelming_onslaught_turn",
+                "space_marines_overwhelming_onslaught_source",
+                "space_marines_overwhelming_onslaught_hit_modifier",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
 
     def _cleanup_space_marines_saga_of_the_great_wolf_phase_end_effects(self, *, phase: Any = None) -> None:
         if not self._is_saga_of_the_great_wolf_detachment():
@@ -8473,6 +9083,111 @@ class SpaceMarinesStratagemMixin:
             enemy_candidates,
             hits_by_target,
             attacking_unit,
+            from_pending,
+        )
+
+    def _sm_hunter_context(
+        self,
+        stratagem_name: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[list[Any], list[Any], Any, list[Any], dict[str, list[Any]], Any, list[Any], dict[str, list[Any]], Any, list[Any], list[Any], str, bool]:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("selected_units")
+            or kwargs.get("target_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or kwargs.get("target_candidates") or [])
+        enemy_candidates_by_pair = dict(kwargs.get("enemy_candidates_by_pair") or {})
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        objective_candidates_by_unit = dict(kwargs.get("objective_candidates_by_unit") or {})
+        trigger_unit = (
+            kwargs.get("moving_unit")
+            or kwargs.get("charging_unit")
+            or kwargs.get("attacking_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("enemy_unit")
+        )
+        target_units = list(kwargs.get("target_units") or [])
+        beast_candidates = list(kwargs.get("beast_candidates") or [])
+        action = str(kwargs.get("action") or "").strip()
+        from_pending = False
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            from_pending = True
+            if selected is None:
+                selected = (
+                    reaction.get("units")
+                    or reaction.get("selected_units")
+                    or reaction.get("target_units")
+                    or reaction.get("unit")
+                    or reaction.get("target_unit")
+                )
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or reaction.get("target_candidates") or [])
+            if not enemy_candidates_by_pair:
+                enemy_candidates_by_pair = dict(reaction.get("enemy_candidates_by_pair") or {})
+            if objective is None:
+                objective = reaction.get("objective") or reaction.get("objective_marker")
+            if not objective_candidates:
+                objective_candidates = list(reaction.get("objective_candidates") or [])
+            if not objective_candidates_by_unit:
+                objective_candidates_by_unit = dict(reaction.get("objective_candidates_by_unit") or {})
+            if trigger_unit is None:
+                trigger_unit = (
+                    reaction.get("moving_unit")
+                    or reaction.get("charging_unit")
+                    or reaction.get("attacking_unit")
+                    or reaction.get("attacker_unit")
+                    or reaction.get("enemy_unit")
+                )
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not beast_candidates:
+                beast_candidates = list(reaction.get("beast_candidates") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                kwargs["phase_name"] = reaction.get("phase_name")
+            break
+
+        selected_roots = [root for root in list(self._sm_resolve_units(selected) or []) if root is not None]
+        if not selected_roots and len(candidates) == 1:
+            selected_roots = [self._sm_root(candidates[0])]
+        if len(selected_roots) == 2 and not enemy_candidates and enemy_candidates_by_pair:
+            enemy_candidates = list(
+                enemy_candidates_by_pair.get(self._sm_hunter_pair_key(selected_roots[0], selected_roots[1])) or []
+            )
+        if len(selected_roots) == 1 and not objective_candidates and objective_candidates_by_unit:
+            objective_candidates = list(
+                objective_candidates_by_unit.get(self._sm_sort_key(selected_roots[0])) or []
+            )
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        return (
+            selected_roots,
+            candidates,
+            enemy_unit,
+            enemy_candidates,
+            enemy_candidates_by_pair,
+            objective,
+            objective_candidates,
+            objective_candidates_by_unit,
+            trigger_unit,
+            target_units,
+            beast_candidates,
+            action,
             from_pending,
         )
 
@@ -15723,6 +16438,26 @@ class SpaceMarinesStratagemMixin:
             return self._use_space_marines_inspiring_presence(stratagem, **kwargs)
         return None
 
+    def _use_space_marines_saga_of_the_hunter_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_saga_of_the_hunter_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BOUNDING ADVANCE":
+            return self._use_space_marines_bounding_advance(stratagem, **kwargs)
+        if name_u == "CHOSEN PREY":
+            return self._use_space_marines_chosen_prey(stratagem, **kwargs)
+        if name_u == "HUNTERS' TRAIL":
+            return self._use_space_marines_hunters_trail(stratagem, **kwargs)
+        if name_u == "MARKED FOR DESTRUCTION":
+            return self._use_space_marines_marked_for_destruction(stratagem, **kwargs)
+        if name_u == "OVERWHELMING ONSLAUGHT":
+            return self._use_space_marines_overwhelming_onslaught(stratagem, **kwargs)
+        if name_u == "TERRITORIAL ADVANTAGE":
+            return self._use_space_marines_territorial_advantage(stratagem, **kwargs)
+        return None
+
     def _use_space_marines_saga_of_the_great_wolf_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -15786,7 +16521,7 @@ class SpaceMarinesStratagemMixin:
         if name_u == "DEATH ON THE WIND":
             return self._use_space_marines_death_on_the_wind(stratagem, **kwargs)
         if name_u == "HUNTERS' TRAIL":
-            return self._use_space_marines_hunters_trail(stratagem, **kwargs)
+            return self._use_space_marines_company_of_hunters_hunters_trail(stratagem, **kwargs)
         if name_u == "RAPID REAPPRAISAL":
             return self._use_space_marines_rapid_reappraisal(stratagem, **kwargs)
         if name_u == "TALON STRIKE":
@@ -23307,7 +24042,7 @@ class SpaceMarinesStratagemMixin:
         )
         return True
 
-    def _use_space_marines_hunters_trail(self, stratagem: Any, **kwargs) -> bool:
+    def _use_space_marines_company_of_hunters_hunters_trail(self, stratagem: Any, **kwargs) -> bool:
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "command phase":
             logger.error("ERROR: HUNTERS' TRAIL: wrong phase")
@@ -24555,6 +25290,535 @@ class SpaceMarinesStratagemMixin:
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: INSPIRING PRESENCE: %s gains [LETHAL HITS] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_bounding_advance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: BOUNDING ADVANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BOUNDING ADVANCE: not your turn")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            _enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            _trigger_unit,
+            _target_units,
+            _beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "BOUNDING ADVANCE"), kwargs)
+        root = selected_roots[0] if selected_roots else None
+        if root is None and len(candidates) == 1:
+            root = self._sm_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: BOUNDING ADVANCE: no target unit provided")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: BOUNDING ADVANCE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: BOUNDING ADVANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: BOUNDING ADVANCE: target must be a SPACE WOLVES unit")
+            return False
+        if not (self._sm_is_infantry_unit(root) or self._sm_has_keyword(root, "BEASTS")):
+            logger.error("ERROR: BOUNDING ADVANCE: target must be a SPACE WOLVES INFANTRY or BEASTS unit")
+            return False
+        if phase_name == "movement phase" and self._sm_selected_to_move_this_phase(root):
+            logger.error("ERROR: BOUNDING ADVANCE: target has already been selected to move this phase")
+            return False
+        if phase_name == "charge phase" and self._sm_selected_to_charge_this_phase(root):
+            logger.error("ERROR: BOUNDING ADVANCE: target has already declared a charge this phase")
+            return False
+
+        eligible = candidates or self._space_marines_hunter_bounding_advance_candidates(phase_name=phase_name)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BOUNDING ADVANCE: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        move_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else {"charge"}
+        engagement_move_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else set()
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_models_only_types",
+            "space_marines_bounding_advance_added_phase_move_models_only_types",
+            set(move_types),
+        )
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_models_only_block_titanic_types",
+            "space_marines_bounding_advance_added_phase_move_models_only_block_titanic_types",
+            set(move_types),
+        )
+        self._sm_merge_phase_move_types(
+            sr,
+            "bearer_unit_phase_move_engagement_types",
+            "space_marines_bounding_advance_added_phase_move_engagement_types",
+            set(engagement_move_types),
+        )
+        sr["space_marines_bounding_advance_active"] = True
+        sr["space_marines_bounding_advance_expires_phase"] = "MOVEMENT_PHASE" if phase_name == "movement phase" else "CHARGE_PHASE"
+        sr["space_marines_bounding_advance_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_bounding_advance_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_bounding_advance_source"] = str(getattr(stratagem, "name", "") or "BOUNDING ADVANCE")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BOUNDING ADVANCE: %s can move through models this phase, with TITANIC models still blocking.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_chosen_prey(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CHOSEN PREY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CHOSEN PREY: not your Movement phase")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            _enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            trigger_unit,
+            _target_units,
+            _beast_candidates,
+            action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "CHOSEN PREY"), kwargs)
+        root = selected_roots[0] if selected_roots else self._sm_root(trigger_unit)
+        if root is None and len(candidates) == 1:
+            root = self._sm_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: CHOSEN PREY: no target unit provided")
+            return False
+        if str(action or "").strip().lower() != "fall_back":
+            logger.error("ERROR: CHOSEN PREY: target unit must have just Fallen Back")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: CHOSEN PREY: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CHOSEN PREY: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: CHOSEN PREY: target must be a SPACE WOLVES unit")
+            return False
+
+        eligible = candidates or self._space_marines_hunter_chosen_prey_candidates(moved_unit=root, action=action)
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CHOSEN PREY: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_chosen_prey_active"] = True
+        sr["space_marines_chosen_prey_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_chosen_prey_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_chosen_prey_source"] = str(getattr(stratagem, "name", "") or "CHOSEN PREY")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CHOSEN PREY: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_hunters_trail(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: HUNTERS' TRAIL: wrong phase")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            _enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            _trigger_unit,
+            _target_units,
+            _beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "HUNTERS' TRAIL"), kwargs)
+        root = selected_roots[0] if selected_roots else None
+        if root is None and len(candidates) == 1:
+            root = self._sm_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: HUNTERS' TRAIL: no target unit provided")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: HUNTERS' TRAIL: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: HUNTERS' TRAIL: target must be on the battlefield and targetable")
+            return False
+        if not self._sm_is_space_wolves_unit(root):
+            logger.error("ERROR: HUNTERS' TRAIL: target must be a SPACE WOLVES unit")
+            return False
+        if self._sm_is_vehicle_unit(root) or self._sm_has_keyword(root, "MONSTER"):
+            logger.error("ERROR: HUNTERS' TRAIL: target cannot be a MONSTER or VEHICLE unit")
+            return False
+        if self._sm_selected_to_fight_this_phase(root):
+            logger.error("ERROR: HUNTERS' TRAIL: target has already been selected to fight this phase")
+            return False
+
+        eligible = candidates or self._space_marines_hunter_hunters_trail_candidates()
+        if eligible and not self._sm_unit_in_candidates(root, eligible):
+            logger.error("ERROR: HUNTERS' TRAIL: selected unit is not currently eligible")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        effect_owner = str(getattr(active_player, "id", "") or "")
+        if not effect_owner:
+            effect_owner = str(getattr(self.player, "id", "") or "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_hunter_hunters_trail_active"] = True
+        sr["space_marines_hunter_hunters_trail_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_hunter_hunters_trail_turn_owner"] = effect_owner
+        sr["space_marines_hunter_hunters_trail_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_hunter_hunters_trail_source"] = str(getattr(stratagem, "name", "") or "HUNTERS' TRAIL")
+        sr["stratagem_choreographer_of_war_source"] = sr["space_marines_hunter_hunters_trail_source"]
+        sr["stratagem_choreographer_of_war_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_choreographer_of_war_turn_owner"] = effect_owner
+        sr["stratagem_choreographer_of_war_turn"] = sr["space_marines_hunter_hunters_trail_turn"]
+        root.special_rules = sr
+        self._sm_clear_ability_cache(root, "choreographer_of_war_source")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HUNTERS' TRAIL: %s can Pile-in and Consolidate up to 6\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_marked_for_destruction(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: MARKED FOR DESTRUCTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MARKED FOR DESTRUCTION: not your Shooting phase")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            enemy_unit,
+            enemy_candidates,
+            enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            _trigger_unit,
+            _target_units,
+            _beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "MARKED FOR DESTRUCTION"), kwargs)
+        if len(selected_roots) != 2:
+            logger.error("ERROR: MARKED FOR DESTRUCTION: exactly two target units must be selected")
+            return False
+        first, second = selected_roots
+        if self._sm_sort_key(first) == self._sm_sort_key(second):
+            logger.error("ERROR: MARKED FOR DESTRUCTION: target units must be distinct")
+            return False
+        for root in (first, second):
+            if not self._sm_owned_by_player(root, self.player):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: all target units must be yours")
+                return False
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: targets must be on the battlefield and targetable")
+                return False
+            if not self._is_adeptus_astartes_unit(root):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: targets must be ADEPTUS ASTARTES units")
+                return False
+            if self._sm_has_keyword(root, "BEASTS"):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: targets cannot be BEASTS units")
+                return False
+            if self._sm_selected_to_shoot_this_phase(root):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: targets have already been selected to shoot this phase")
+                return False
+            if not self._sm_unit_has_ranged_weapon(root):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: targets must have ranged weapons")
+                return False
+
+        eligible, valid_enemy_candidates_by_pair = (
+            (candidates, enemy_candidates_by_pair)
+            if candidates or enemy_candidates_by_pair
+            else self._space_marines_hunter_marked_for_destruction_candidates()
+        )
+        for root in (first, second):
+            if eligible and not self._sm_unit_in_candidates(root, eligible):
+                logger.error("ERROR: MARKED FOR DESTRUCTION: one or more selected units are not currently eligible")
+                return False
+        pair_key = self._sm_hunter_pair_key(first, second)
+        valid_enemy_candidates = enemy_candidates or list(valid_enemy_candidates_by_pair.get(pair_key) or [])
+        enemy_root = self._sm_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: MARKED FOR DESTRUCTION: no enemy unit provided")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MARKED FOR DESTRUCTION: enemy target is invalid")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=True):
+            logger.error("ERROR: MARKED FOR DESTRUCTION: enemy target must be on the battlefield")
+            return False
+        if valid_enemy_candidates and not self._sm_unit_in_candidates(enemy_root, valid_enemy_candidates):
+            logger.error("ERROR: MARKED FOR DESTRUCTION: enemy unit is not a shared visible target")
+            return False
+        if not self._sm_unit_visible_to_unit(first, enemy_root) or not self._sm_unit_visible_to_unit(second, enemy_root):
+            logger.error("ERROR: MARKED FOR DESTRUCTION: enemy unit must be visible to both selected units")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=first):
+            return False
+
+        target_id = self._sm_sort_key(enemy_root)
+        source = str(getattr(stratagem, "name", "") or "MARKED FOR DESTRUCTION")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        owner_id = str(getattr(self.player, "id", "") or "")
+        for root in (first, second):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["space_marines_marked_for_destruction_active"] = True
+            sr["space_marines_marked_for_destruction_expires_phase"] = "SHOOTING_PHASE"
+            sr["space_marines_marked_for_destruction_turn_owner"] = owner_id
+            sr["space_marines_marked_for_destruction_turn"] = turn
+            sr["space_marines_marked_for_destruction_source"] = source
+            sr["space_marines_marked_for_destruction_target_id"] = target_id
+            sr["space_marines_marked_for_destruction_target_lock"] = True
+            sr["space_marines_marked_for_destruction_reroll_wound_values"] = [1]
+            root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MARKED FOR DESTRUCTION: %s and %s are locked onto %s this phase.",
+            getattr(first, "name", "Unit"),
+            getattr(second, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_space_marines_overwhelming_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: wrong phase")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            _objective,
+            _objective_candidates,
+            _objective_candidates_by_unit,
+            trigger_unit,
+            _target_units,
+            beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "OVERWHELMING ONSLAUGHT"), kwargs)
+        if not selected_roots:
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: no target units provided")
+            return False
+        if len(selected_roots) not in {1, 2}:
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: select either one or two target units")
+            return False
+        enemy_root = self._sm_root(enemy_unit or trigger_unit)
+        if enemy_root is None:
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: no enemy unit provided")
+            return False
+        if self._sm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: triggering unit must be an enemy unit")
+            return False
+        if not self._sm_on_battlefield(enemy_root, require_targetable=True):
+            logger.error("ERROR: OVERWHELMING ONSLAUGHT: triggering unit must be on the battlefield")
+            return False
+
+        valid_candidates, valid_beast_candidates = self._space_marines_hunter_overwhelming_onslaught_candidates(enemy_unit=enemy_root)
+        if candidates:
+            valid_candidates = list(candidates)
+        if beast_candidates:
+            valid_beast_candidates = list(beast_candidates)
+        adeptus_candidates = [root for root in list(valid_candidates or []) if self._is_adeptus_astartes_unit(root)]
+
+        chosen_ids: set[str] = set()
+        for root in list(selected_roots):
+            root_id = self._sm_sort_key(root)
+            if root_id and root_id in chosen_ids:
+                logger.error("ERROR: OVERWHELMING ONSLAUGHT: target units must be distinct")
+                return False
+            if root_id:
+                chosen_ids.add(root_id)
+            if not self._sm_owned_by_player(root, self.player):
+                logger.error("ERROR: OVERWHELMING ONSLAUGHT: target units must be yours")
+                return False
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: OVERWHELMING ONSLAUGHT: targets must be on the battlefield and targetable")
+                return False
+
+        if len(selected_roots) == 1:
+            if not self._sm_unit_in_candidates(selected_roots[0], valid_beast_candidates):
+                logger.error("ERROR: OVERWHELMING ONSLAUGHT: single-target use requires an eligible SPACE WOLVES BEASTS unit")
+                return False
+        else:
+            if len(adeptus_candidates) < 2:
+                logger.error("ERROR: OVERWHELMING ONSLAUGHT: two eligible ADEPTUS ASTARTES units are not available")
+                return False
+            for root in list(selected_roots):
+                if not self._sm_unit_in_candidates(root, adeptus_candidates):
+                    logger.error("ERROR: OVERWHELMING ONSLAUGHT: both targets must be eligible ADEPTUS ASTARTES units")
+                    return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=selected_roots[0]):
+            return False
+
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_overwhelming_onslaught_active"] = True
+        sr["space_marines_overwhelming_onslaught_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_overwhelming_onslaught_turn_owner"] = str(
+            getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["space_marines_overwhelming_onslaught_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_overwhelming_onslaught_source"] = str(getattr(stratagem, "name", "") or "OVERWHELMING ONSLAUGHT")
+        sr["space_marines_overwhelming_onslaught_hit_modifier"] = -1
+        enemy_root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: OVERWHELMING ONSLAUGHT: %s suffers -1 to hit for the rest of the phase.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_space_marines_territorial_advantage(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_hunter_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: wrong phase")
+            return False
+
+        (
+            selected_roots,
+            candidates,
+            _enemy_unit,
+            _enemy_candidates,
+            _enemy_candidates_by_pair,
+            objective,
+            objective_candidates,
+            objective_candidates_by_unit,
+            trigger_unit,
+            _target_units,
+            _beast_candidates,
+            _action,
+            _from_pending,
+        ) = self._sm_hunter_context(str(getattr(stratagem, "name", "") or "TERRITORIAL ADVANTAGE"), kwargs)
+        root = selected_roots[0] if selected_roots else self._sm_root(trigger_unit)
+        if root is None and len(candidates) == 1:
+            root = self._sm_root(candidates[0])
+        if root is None:
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: no target unit provided")
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: target must be an ADEPTUS ASTARTES unit")
+            return False
+
+        valid_candidates, valid_objective_map = (
+            (candidates, objective_candidates_by_unit)
+            if candidates or objective_candidates_by_unit
+            else self._space_marines_hunter_territorial_advantage_candidates(
+                attacker_unit=root,
+                killing_models_by_target=kwargs.get("killing_models_by_target"),
+            )
+        )
+        if valid_candidates and not self._sm_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: selected unit is not currently eligible")
+            return False
+        if not objective_candidates:
+            objective_candidates = list(valid_objective_map.get(self._sm_sort_key(root)) or [])
+        if objective is None:
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: no objective marker selected")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: TERRITORIAL ADVANTAGE: objective marker location unavailable")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="space_marines_territorial_advantage")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "space_marines_territorial_advantage"
+            objective_location.controlling_player = self.player
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TERRITORIAL ADVANTAGE: %s makes the selected objective sticky.",
             getattr(root, "name", "Unit"),
         )
         return True

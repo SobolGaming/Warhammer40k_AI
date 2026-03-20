@@ -10983,6 +10983,37 @@ class WargearProfile:
                     _add_hit_mod(int(pack_bonus), f"+{int(pack_bonus)} from {source_name}")
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("space_marines_overwhelming_onslaught_active")):
+            owner_id = str(sr.get("space_marines_overwhelming_onslaught_turn_owner", "") or "")
+            effect_phase = str(sr.get("space_marines_overwhelming_onslaught_expires_phase", "") or "").strip().upper()
+            effect_turn = int(sr.get("space_marines_overwhelming_onslaught_turn", 0) or 0)
+            current_owner = ""
+            current_phase = ""
+            current_turn = 0
+            army = root.get_parent_army() if root is not None and hasattr(root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            active = True
+            if owner_id and current_owner and owner_id != current_owner:
+                active = False
+            if active and effect_phase and current_phase and effect_phase != current_phase:
+                active = False
+            if active and effect_turn and current_turn and effect_turn != current_turn:
+                active = False
+            if active:
+                modifier = int(sr.get("space_marines_overwhelming_onslaught_hit_modifier", -1) or -1)
+                source_name = str(
+                    sr.get("space_marines_overwhelming_onslaught_source", "") or "OVERWHELMING ONSLAUGHT"
+                ).strip() or "OVERWHELMING ONSLAUGHT"
+                _add_hit_mod(int(modifier), f"{int(modifier):+d} from {source_name}")
         # Space Marines: The Lost Brethren (Vengeful Onslaught) +1 to hit
         # for DEATH COMPANY models until the end of the owner's next turn after the bearer is destroyed.
         try:
