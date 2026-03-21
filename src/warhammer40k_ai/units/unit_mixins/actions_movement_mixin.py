@@ -17927,6 +17927,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, profile=profile, game=game)):
                     return True
+            deceptors_apply_fn = (
+                getattr(mgr, "deceptors_coils_of_deception_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(deceptors_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(deceptors_apply_fn(self, profile=profile, game=game)):
+                    return True
             twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_shoot_after_fall_back", None) if mgr is not None else None
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None

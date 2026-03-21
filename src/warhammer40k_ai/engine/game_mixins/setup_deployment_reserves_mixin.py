@@ -925,6 +925,23 @@ class GameSetupDeploymentReservesMixin:
                     "source_model_id": resolved_bearer_id,
                 }
             )
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        deceptors_denial_fn = (
+            getattr(csm_mgr, "deceptors_scrambled_coordinates_reserves_denial", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(deceptors_denial_fn):
+            entry = deceptors_denial_fn(root, game=self)
+            if isinstance(entry, dict):
+                try:
+                    denial_range = float(entry.get("range", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    denial_range = 0.0
+                if denial_range > 0.0:
+                    ranges.append(dict(entry))
         return ranges
 
     def _reserves_denial_violated(self, unit, prospective: list[Tuple[float, float, float, float]]) -> bool:
@@ -1614,6 +1631,17 @@ class GameSetupDeploymentReservesMixin:
         )
         if callable(queue_falsehood):
             queue_falsehood(game=self, player=current_player)
+        for player in list(getattr(self, "players", []) or []):
+            if player is None or player is current_player:
+                continue
+            stratagem_mgr = getattr(player, "stratagems", None)
+            queue_reaction = (
+                getattr(stratagem_mgr, "_queue_deceptors_reinforcements_step_reactions", None)
+                if stratagem_mgr is not None
+                else None
+            )
+            if callable(queue_reaction):
+                queue_reaction(current_player=current_player)
 
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)

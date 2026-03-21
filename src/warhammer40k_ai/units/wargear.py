@@ -12912,6 +12912,21 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Chosen for Glory").strip() or "Chosen for Glory"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        pick_them_off_hit_fn = (
+            getattr(csm_mgr, "deceptors_pick_them_off_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(pick_them_off_hit_fn):
+            reroll_full, source = pick_them_off_hit_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Pick Them Off").strip() or "Pick Them Off"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):
@@ -19107,6 +19122,28 @@ class WargearProfile:
             if mgr is not None and getattr(mgr, "extremis_level_threat_reroll_wound_applies", None):
                 if mgr.extremis_level_threat_reroll_wound_applies(unit, target):
                     reroll_full_reasons.append("Extremis-level Threat")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "deceptors_pick_them_off_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Pick Them Off").strip() or "Pick Them Off"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
 

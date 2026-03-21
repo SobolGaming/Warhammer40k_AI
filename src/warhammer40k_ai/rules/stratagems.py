@@ -61,8 +61,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLAR'S WISDOM",
     "EXEMPLAR’S WISDOM",
     "AUTOSTIMULANTS",
+    "COILS OF DECEPTION",
     "DELAYED MUTATIONS",
+    "DETONATOR",
     "DIABOLIC REGENERATION",
+    "FROM ALL SIDES",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
     "INFERNAL SACRIFICE",
@@ -72,10 +75,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "OVERRIDE INSTINCTS",
+    "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
     "POINT-BLANK AMBUSH",
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
+    "RELENTLESS PURSUIT",
+    "SCRAMBLED COORDINATES",
     "SKYBORNE ANNIHILATION",
     "SWOOPING MOCKERY",
     "VICIOUS BLADES",
@@ -1822,6 +1828,8 @@ class StratagemManager(
             "A DEADLY PRIZE",
             "RAPTORIAL VIGILANCE",
             "THUNDEROUS PURSUIT",
+            "COILS OF DECEPTION",
+            "RELENTLESS PURSUIT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1874,7 +1882,14 @@ class StratagemManager(
         }:
             add("model_destroyed", self._on_model_destroyed)
 
-        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH", "VENGEFUL ANIMUS"}:
+        if names & {
+            "SUMMONED BY SLAUGHTER",
+            "PUTRID DETONATION",
+            "SANCTIFIED IMMOLATION",
+            "STAGED DEATH",
+            "VENGEFUL ANIMUS",
+            "DETONATOR",
+        }:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
             "ANGELIC GRACE",
@@ -2163,6 +2178,8 @@ class StratagemManager(
             "COORDINATED STRIKE",
             "COUNTERCHARGE",
             "LEONINE AGGRESSION",
+            "FROM ALL SIDES",
+            "PICK THEM OFF",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2286,6 +2303,9 @@ class StratagemManager(
             "CLOAK AND SHADOW",
             "FOCUSED FIREPOWER",
             "IMPEDING FIRE",
+            "COILS OF DECEPTION",
+            "FROM ALL SIDES",
+            "PICK THEM OFF",
             "LETHAL RUSE",
             "NO PREY TOO BIG",
             "OUTCAST AMBUSH",
@@ -2338,6 +2358,7 @@ class StratagemManager(
             "BLAZING EARTH",
             "RIDE HARD, RIDE FAST",
             "SHOCK ASSAULT",
+            "SCRAMBLED COORDINATES",
             "ONLY IN DEATH DOES DUTY END",
         }
         needs_phase_end = bool(
@@ -6373,6 +6394,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_deceptors_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._reset_world_eaters_vessels_phase_start_trackers(phase=phase)
         except Exception:
             raise
@@ -8376,6 +8401,10 @@ class StratagemManager(
             self._cleanup_cabal_of_chaos_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._cleanup_deceptors_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
         try:
             self._cleanup_emperors_children_court_phase_end_effects(phase=phase)
@@ -9329,6 +9358,7 @@ class StratagemManager(
         self._queue_space_marines_saga_of_the_hunter_move_end_reactions(unit=unit, action=action)
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
+        self._queue_deceptors_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -13704,6 +13734,10 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_ironstorm_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_deceptors_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

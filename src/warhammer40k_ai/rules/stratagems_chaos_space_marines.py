@@ -90,6 +90,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_creations_of_bile", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_deceptors_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_deceptors", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -107,6 +112,14 @@ class ChaosSpaceMarinesStratagemMixin:
         if not self._is_heretic_astartes_unit(root):
             return False
         return self._csm_has_keyword(root, "INFANTRY")
+
+    def _is_heretic_astartes_mounted(self, unit: Any) -> bool:
+        root = self._csm_root(unit)
+        if root is None:
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            return False
+        return self._csm_has_keyword(root, "MOUNTED")
 
     def _is_damned_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
@@ -421,6 +434,119 @@ class ChaosSpaceMarinesStratagemMixin:
             if self._unit_cannot_be_target_of_stratagem(root):
                 continue
             if not self._is_heretic_astartes_infantry(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _csm_unit_is_engaged(self, unit: Any) -> bool:
+        root = self._csm_root(unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if root is None or game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(within_engagement):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._csm_root(enemy)
+            if enemy_root is None or not self._csm_is_alive(enemy_root):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            if within_engagement(root, enemy_root):
+                return True
+        return False
+
+    def _deceptors_targetable_units(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_fell_back: bool = False,
+        require_character: bool = False,
+        require_infantry_or_mounted: bool = False,
+        require_not_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_deceptors_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_character and not self._csm_has_keyword(root, "CHARACTER"):
+                continue
+            if require_infantry_or_mounted and not (
+                self._is_heretic_astartes_infantry(root) or self._is_heretic_astartes_mounted(root)
+            ):
+                continue
+            if require_not_engaged and self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _deceptors_detonator_candidates(self, *, destroyed_model: Any) -> list[Any]:
+        if destroyed_model is None:
+            return []
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        for root in self._deceptors_targetable_units(require_character=True):
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                if model is None or not bool(getattr(model, "is_alive", False)):
+                    continue
+                try:
+                    distance = float(distance_between_models_bases_3d(model, destroyed_model))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if distance <= 18.0 + 1e-6:
+                    candidates.append(root)
+                    break
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _deceptors_relentless_pursuit_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        for root in self._deceptors_targetable_units(
+            require_infantry_or_mounted=True,
+            require_not_engaged=True,
+        ):
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
@@ -846,6 +972,243 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_deceptors_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_deceptors_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if player is not self.player:
+            return
+
+        if phase_key == "CHARGE_PHASE":
+            stratagem = self.get_by_name("FROM ALL SIDES")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._deceptors_targetable_units()
+            if not candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Charge phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Charge phase",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "SHOOTING_PHASE":
+            return
+        stratagem = self.get_by_name("PICK THEM OFF")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._deceptors_targetable_units(require_not_shot=True)
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_deceptors_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_deceptors_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        moving_root = self._csm_root(unit)
+        if moving_root is None:
+            return
+
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            if phase_name != "movement phase" or action_key not in {"fall_back", "fallback"}:
+                return
+            if not self._csm_owned_by_player(moving_root, self.player):
+                return
+            stratagem = self.get_by_name("COILS OF DECEPTION")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=moving_root):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._deceptors_targetable_units(require_fell_back=True)
+            if moving_root not in candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="unit_move_ended",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+                target_unit=moving_root,
+            ):
+                return
+            self._queue_reaction(
+                {
+                    "event": "unit_move_ended",
+                    "phase_name": "Movement phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "unit": moving_root,
+                    "target_unit": moving_root,
+                    "action": str(action or ""),
+                    "candidates": [moving_root],
+                },
+                use_timer=False,
+            )
+            return
+
+        if phase_name != "movement phase" or action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        if self._csm_owned_by_player(moving_root, self.player):
+            return
+        stratagem = self.get_by_name("RELENTLESS PURSUIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._deceptors_relentless_pursuit_candidates(enemy_unit=moving_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if self._csm_root(reaction.get("moving_unit")) is moving_root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": moving_root,
+            "enemy_unit": moving_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_deceptors_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if not self._is_deceptors_detachment():
+            return
+        destroyed_root = self._csm_root(unit)
+        if destroyed_root is None or model is None:
+            return
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            return
+        if self._csm_has_keyword(destroyed_root, "TITANIC"):
+            return
+        has_deadly_demise = getattr(destroyed_root, "has_deadly_demise", None)
+        deadly_demise = has_deadly_demise() if callable(has_deadly_demise) else (False, None)
+        if not bool(deadly_demise[0]):
+            return
+
+        stratagem = self.get_by_name("DETONATOR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._deceptors_detonator_candidates(destroyed_model=model)
+        if not candidates:
+            return
+        destroyed_model_id = str(get_entity_id(model) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == destroyed_model_id:
+                return
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": destroyed_root,
+            "destroyed_model": model,
+            "destroyed_model_id": destroyed_model_id,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_deceptors_reinforcements_step_reactions(self, *, current_player: Any) -> None:
+        if not self._is_deceptors_detachment():
+            return
+        if current_player is None or current_player is self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        stratagem = self.get_by_name("SCRAMBLED COORDINATES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._deceptors_targetable_units()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "reinforcements_step_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if str(reaction.get("current_player_id", "") or "") == str(getattr(current_player, "id", "") or ""):
+                return
+        payload = {
+            "event": "reinforcements_step_start",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player_id": str(getattr(current_player, "id", "") or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_cabal_of_chaos_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -912,6 +1275,490 @@ class ChaosSpaceMarinesStratagemMixin:
                         remove_keys.append(str(key))
                 for key in remove_keys:
                     effects.pop(key, None)
+
+    def _cleanup_deceptors_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "MOVEMENT_PHASE": (mgr._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX,),
+            "SHOOTING_PHASE": (mgr._DECEPTORS_PICK_THEM_OFF_PREFIX,),
+            "CHARGE_PHASE": (mgr._DECEPTORS_FROM_ALL_SIDES_PREFIX,),
+            "FIGHT_PHASE": (mgr._DECEPTORS_COILS_OF_DECEPTION_PREFIX,),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+        if not prefixes:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+
+    def _use_deceptors_coils_of_deception(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("COILS OF DECEPTION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: COILS OF DECEPTION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_deceptors_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: COILS OF DECEPTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: COILS OF DECEPTION: not your Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: COILS OF DECEPTION: target did not Fall Back")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: COILS OF DECEPTION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: COILS OF DECEPTION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: COILS OF DECEPTION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: COILS OF DECEPTION: target must be HERETIC ASTARTES")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: COILS OF DECEPTION: target has not Fell Back this round")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_deceptors_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: COILS OF DECEPTION: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DECEPTORS_COILS_OF_DECEPTION_PREFIX,
+            source=stratagem.name or "COILS OF DECEPTION",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COILS OF DECEPTION: %s can shoot after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_deceptors_detonator(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        destroyed_model = kwargs.get("destroyed_model")
+        destroyed_unit = kwargs.get("destroyed_unit")
+        pending = None
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "DETONATOR":
+                continue
+            pending = reaction
+            break
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if destroyed_model is None:
+                destroyed_model = pending.get("destroyed_model")
+            if destroyed_unit is None:
+                destroyed_unit = pending.get("destroyed_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DETONATOR: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        destroyed_root = self._csm_root(destroyed_unit)
+        if root is None or destroyed_root is None or destroyed_model is None or not self._is_deceptors_detachment():
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: DETONATOR: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DETONATOR: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DETONATOR: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root) or not self._csm_has_keyword(root, "CHARACTER"):
+            logger.error("ERROR: DETONATOR: target must be a HERETIC ASTARTES CHARACTER unit")
+            return False
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            logger.error("ERROR: DETONATOR: destroyed unit must be an enemy unit")
+            return False
+        if self._csm_has_keyword(destroyed_root, "TITANIC"):
+            logger.error("ERROR: DETONATOR: TITANIC units are not eligible")
+            return False
+        has_deadly_demise = getattr(destroyed_root, "has_deadly_demise", None)
+        deadly_demise = has_deadly_demise() if callable(has_deadly_demise) else (False, None)
+        if not bool(deadly_demise[0]):
+            logger.error("ERROR: DETONATOR: destroyed unit does not have Deadly Demise")
+            return False
+        model_alive_attr = getattr(destroyed_model, "is_alive", None)
+        model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+        if model_alive:
+            logger.error("ERROR: DETONATOR: destroyed model is not destroyed")
+            return False
+        eligible = candidates or self._deceptors_detonator_candidates(destroyed_model=destroyed_model)
+        if eligible and root not in eligible:
+            logger.error("ERROR: DETONATOR: target unit is not within 18\" of the destroyed model")
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            logger.error("ERROR: DETONATOR: map context unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        setattr(destroyed_model, "_deceptors_detonator_auto_trigger_once", True)
+        setattr(destroyed_model, "_skip_deadly_demise_once", True)
+        trigger_fn = getattr(destroyed_root, "trigger_deadly_demise_manually", None)
+        if callable(trigger_fn):
+            trigger_fn(destroyed_model, game_map)
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DETONATOR: %s automatically triggers Deadly Demise via %s.",
+            getattr(destroyed_root, "name", "Unit"),
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_deceptors_from_all_sides(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("FROM ALL SIDES", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FROM ALL SIDES: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_deceptors_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: FROM ALL SIDES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FROM ALL SIDES: not your Charge phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: FROM ALL SIDES: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: FROM ALL SIDES: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FROM ALL SIDES: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: FROM ALL SIDES: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+            logger.error("ERROR: FROM ALL SIDES: target has already attempted a charge")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_deceptors_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: FROM ALL SIDES: detachment effect state helper is unavailable")
+            return False
+        baseline_charged_ids: list[str] = []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        seen_ids: set[str] = set()
+        for candidate in list(getattr(army, "units", []) or []):
+            candidate_root = self._csm_root(candidate)
+            if candidate_root is None or not self._is_heretic_astartes_unit(candidate_root):
+                continue
+            candidate_id = str(get_entity_id(candidate_root) or "")
+            if candidate_id and candidate_id in seen_ids:
+                continue
+            if candidate_id:
+                seen_ids.add(candidate_id)
+            if bool(getattr(getattr(candidate_root, "round_state", None), "charged_this_round", False)):
+                baseline_charged_ids.append(candidate_id)
+        set_state(
+            root,
+            prefix=mgr._DECEPTORS_FROM_ALL_SIDES_PREFIX,
+            source=stratagem.name or "FROM ALL SIDES",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._DECEPTORS_FROM_ALL_SIDES_PREFIX}_baseline_charged_unit_ids": baseline_charged_ids,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FROM ALL SIDES: %s gains charge-roll bonuses from other friendly chargers this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_deceptors_pick_them_off(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PICK THEM OFF", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PICK THEM OFF: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_deceptors_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PICK THEM OFF: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PICK THEM OFF: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PICK THEM OFF: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PICK THEM OFF: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PICK THEM OFF: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: PICK THEM OFF: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: PICK THEM OFF: target has already shot this round")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_deceptors_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PICK THEM OFF: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DECEPTORS_PICK_THEM_OFF_PREFIX,
+            source=stratagem.name or "PICK THEM OFF",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PICK THEM OFF: %s gains ranged hit/wound re-roll support against weakened targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_deceptors_relentless_pursuit(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("moving_unit") or kwargs.get("enemy_unit")
+        action = kwargs.get("action")
+        pending = None
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "RELENTLESS PURSUIT":
+                continue
+            pending = reaction
+            break
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("moving_unit") or pending.get("enemy_unit")
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RELENTLESS PURSUIT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        enemy_root = self._csm_root(enemy_unit)
+        if root is None or enemy_root is None or not self._is_deceptors_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RELENTLESS PURSUIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: RELENTLESS PURSUIT: not opponent's Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: RELENTLESS PURSUIT: invalid trigger action")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: RELENTLESS PURSUIT: trigger unit must be an enemy unit")
+            return False
+        if not self._csm_is_alive(enemy_root) or not bool(getattr(enemy_root, "deployed", False)):
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: RELENTLESS PURSUIT: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELENTLESS PURSUIT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: RELENTLESS PURSUIT: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: RELENTLESS PURSUIT: target must be HERETIC ASTARTES")
+            return False
+        if not (self._is_heretic_astartes_infantry(root) or self._is_heretic_astartes_mounted(root)):
+            logger.error("ERROR: RELENTLESS PURSUIT: target must be INFANTRY or MOUNTED")
+            return False
+        if self._csm_unit_is_engaged(root):
+            logger.error("ERROR: RELENTLESS PURSUIT: target must not be within Engagement Range")
+            return False
+        eligible = candidates or self._deceptors_relentless_pursuit_candidates(enemy_unit=enemy_root)
+        if eligible and root not in eligible:
+            logger.error("ERROR: RELENTLESS PURSUIT: target must be within 9\" of the enemy unit")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: RELENTLESS PURSUIT: reactive move queue unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="relentless_pursuit",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "RELENTLESS PURSUIT"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: RELENTLESS PURSUIT: failed to queue reactive move")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RELENTLESS PURSUIT: %s can make a reactive Normal move up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_deceptors_scrambled_coordinates(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SCRAMBLED COORDINATES", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SCRAMBLED COORDINATES: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_deceptors_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SCRAMBLED COORDINATES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SCRAMBLED COORDINATES: not opponent's Movement phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SCRAMBLED COORDINATES: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SCRAMBLED COORDINATES: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SCRAMBLED COORDINATES: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: SCRAMBLED COORDINATES: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_deceptors_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: SCRAMBLED COORDINATES: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX,
+            source=stratagem.name or "SCRAMBLED COORDINATES",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX}_range": 12.0,
+                f"{mgr._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX}_horizontal_only": True,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCRAMBLED COORDINATES: enemy Reinforcements must remain outside 12\" of %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_cabal_baleful_blessing(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -2269,12 +3116,24 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_cabal_unholy_haste(stratagem, **kwargs)
         if name_u == "AUTOSTIMULANTS":
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
+        if name_u == "COILS OF DECEPTION":
+            return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
+        if name_u == "DETONATOR":
+            return self._use_deceptors_detonator(stratagem, **kwargs)
         if name_u == "DELAYED MUTATIONS":
             return self._use_creations_of_bile_delayed_mutations(stratagem, **kwargs)
         if name_u == "DIABOLIC REGENERATION":
             return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
+        if name_u == "FROM ALL SIDES":
+            return self._use_deceptors_from_all_sides(stratagem, **kwargs)
         if name_u == "MASTERS ARE WATCHING":
             return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
+        if name_u == "PICK THEM OFF":
+            return self._use_deceptors_pick_them_off(stratagem, **kwargs)
+        if name_u == "RELENTLESS PURSUIT":
+            return self._use_deceptors_relentless_pursuit(stratagem, **kwargs)
+        if name_u == "SCRAMBLED COORDINATES":
+            return self._use_deceptors_scrambled_coordinates(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         return None

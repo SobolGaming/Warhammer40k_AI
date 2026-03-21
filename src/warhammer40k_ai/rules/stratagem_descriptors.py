@@ -2192,6 +2192,73 @@ _CREATIONS_OF_BILE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CREATIONS_OF_BILE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DECEPTORS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008965002": StratagemToolDescriptor(
+        stratagem_id="000008965002",
+        name="Detonator",
+        timing="any_phase_on_enemy_deadly_demise_destroyed",
+        target="heretic_astartes_character_unit_within_18_of_destroyed_model",
+        duration="immediate",
+        effect="auto_trigger_enemy_deadly_demise",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={"exclude_keywords": ["TITANIC"]},
+    ),
+    "000008965003": StratagemToolDescriptor(
+        stratagem_id="000008965003",
+        name="From All Sides",
+        timing="charge_phase_start",
+        target="heretic_astartes_unit",
+        duration="until_end_of_phase",
+        effect="charge_roll_bonus_per_other_friendly_charge",
+        cp_cost=1,
+        effect_params={"max_bonus": 3, "other_friendly_keyword": "HERETIC ASTARTES"},
+    ),
+    "000008965004": StratagemToolDescriptor(
+        stratagem_id="000008965004",
+        name="Pick Them Off",
+        timing="shooting_phase_on_select_to_shoot",
+        target="heretic_astartes_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_reroll_vs_below_starting_and_wound_reroll_vs_below_half",
+        cp_cost=1,
+    ),
+    "000008965005": StratagemToolDescriptor(
+        stratagem_id="000008965005",
+        name="Coils of Deception",
+        timing="movement_phase_after_fall_back",
+        target="heretic_astartes_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_after_fall_back",
+        cp_cost=1,
+    ),
+    "000008965006": StratagemToolDescriptor(
+        stratagem_id="000008965006",
+        name="Relentless Pursuit",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="heretic_astartes_infantry_or_mounted_unit_within_9_not_engaged",
+        duration="immediate",
+        effect="reactive_normal_move_up_to_6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"max_distance": 6},
+    ),
+    "000008965007": StratagemToolDescriptor(
+        stratagem_id="000008965007",
+        name="Scrambled Coordinates",
+        timing="opponent_movement_phase_reinforcements_step_start",
+        target="heretic_astartes_unit",
+        duration="until_end_of_phase",
+        effect="enemy_reserves_arrival_min_distance_from_unit",
+        cp_cost=1,
+        effect_params={"min_distance": 12, "distance_type": "horizontal"},
+    ),
+}
+
+_DECEPTORS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DECEPTORS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7457,6 +7524,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CREATIONS_OF_BILE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DECEPTORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7703,6 +7773,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)
+        or _DECEPTORS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

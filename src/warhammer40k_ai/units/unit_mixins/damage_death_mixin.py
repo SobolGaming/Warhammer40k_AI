@@ -2094,10 +2094,15 @@ class DamageDeathMixin:
             pass
 
         auto_trigger = False
+        deceptors_auto_trigger = False
         putrid_auto_trigger = False
         sanctified_auto_trigger = False
         emotionless_auto_trigger = False
         emotionless_source = ""
+        try:
+            deceptors_auto_trigger = bool(getattr(dying_model, "_deceptors_detonator_auto_trigger_once", False))
+        except Exception:
+            deceptors_auto_trigger = False
         try:
             putrid_auto_trigger = bool(getattr(dying_model, "_putrid_detonation_auto_trigger_once", False))
         except Exception:
@@ -2126,7 +2131,18 @@ class DamageDeathMixin:
             except Exception:
                 emotionless_auto_trigger = False
                 emotionless_source = ""
-        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger or vengeful_auto_trigger or emotionless_auto_trigger)
+        auto_trigger = bool(
+            deceptors_auto_trigger
+            or putrid_auto_trigger
+            or sanctified_auto_trigger
+            or vengeful_auto_trigger
+            or emotionless_auto_trigger
+        )
+        if deceptors_auto_trigger:
+            try:
+                setattr(dying_model, "_deceptors_detonator_auto_trigger_once", False)
+            except Exception:
+                pass
         if putrid_auto_trigger:
             try:
                 setattr(dying_model, "_putrid_detonation_auto_trigger_once", False)
@@ -2165,6 +2181,8 @@ class DamageDeathMixin:
                 logger.info("Deadly Demise auto-triggered (Vengeful Animus).")
             elif emotionless_auto_trigger:
                 logger.info(f"Deadly Demise auto-triggered ({str(emotionless_source or 'Emotionless Clarity')}).")
+            elif deceptors_auto_trigger:
+                logger.info("Deadly Demise auto-triggered (Detonator).")
             else:
                 logger.info("Deadly Demise auto-triggered (Putrid Detonation).")
 

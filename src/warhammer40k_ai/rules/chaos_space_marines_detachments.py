@@ -88,6 +88,14 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _DECEPTORS_FALSEHOOD_SOURCE = "Falsehood"
     _DECEPTORS_SOUL_LINK_ABILITY = "deceptors_soul_link_target"
     _DECEPTORS_SOUL_LINK_SOURCE = "Soul Link"
+    _DECEPTORS_COILS_OF_DECEPTION_PREFIX = "deceptors_coils_of_deception"
+    _DECEPTORS_COILS_OF_DECEPTION_SOURCE = "Coils of Deception"
+    _DECEPTORS_FROM_ALL_SIDES_PREFIX = "deceptors_from_all_sides"
+    _DECEPTORS_FROM_ALL_SIDES_SOURCE = "From All Sides"
+    _DECEPTORS_PICK_THEM_OFF_PREFIX = "deceptors_pick_them_off"
+    _DECEPTORS_PICK_THEM_OFF_SOURCE = "Pick Them Off"
+    _DECEPTORS_SCRAMBLED_COORDINATES_PREFIX = "deceptors_scrambled_coordinates"
+    _DECEPTORS_SCRAMBLED_COORDINATES_SOURCE = "Scrambled Coordinates"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
@@ -4520,6 +4528,77 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def _chaos_cult_effect_source(self, sr: dict, *, prefix: str, default: str) -> str:
         return str(sr.get(f"{prefix}_source", "") or default).strip() or default
 
+    def _deceptors_effect_source(self, sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _deceptors_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_deceptors():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_deceptors_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -4532,6 +4611,145 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         else:
             checker = getattr(parent, "is_ranged", None)
         return not callable(checker) or bool(checker())
+
+    def deceptors_coils_of_deception_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._deceptors_effect_state(
+            unit,
+            prefix=self._DECEPTORS_COILS_OF_DECEPTION_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root))
+
+    def deceptors_from_all_sides_charge_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        root, sr = self._deceptors_effect_state(
+            unit,
+            prefix=self._DECEPTORS_FROM_ALL_SIDES_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        baseline = {
+            str(value or "").strip()
+            for value in list(sr.get(f"{self._DECEPTORS_FROM_ALL_SIDES_PREFIX}_baseline_charged_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        bonus = 0
+        if self.army is not None:
+            root_id = self._unit_entity_key(root)
+            for candidate in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+                if candidate is None or not self._unit_is_heretic_astartes(candidate):
+                    continue
+                candidate_id = self._unit_entity_key(candidate)
+                if not candidate_id or candidate_id == root_id or candidate_id in baseline:
+                    continue
+                if not bool(getattr(getattr(candidate, "round_state", None), "charged_this_round", False)):
+                    continue
+                bonus += 1
+                if bonus >= 3:
+                    break
+        if bonus <= 0:
+            return 0, ""
+        return bonus, self._deceptors_effect_source(
+            sr,
+            prefix=self._DECEPTORS_FROM_ALL_SIDES_PREFIX,
+            default=self._DECEPTORS_FROM_ALL_SIDES_SOURCE,
+        )
+
+    def deceptors_pick_them_off_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        below_starting = getattr(target_root, "is_below_starting_strength", None) if target_root is not None else None
+        if not callable(below_starting) or not bool(below_starting()):
+            return False, ""
+        root, sr = self._deceptors_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._DECEPTORS_PICK_THEM_OFF_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._deceptors_effect_source(
+            sr,
+            prefix=self._DECEPTORS_PICK_THEM_OFF_PREFIX,
+            default=self._DECEPTORS_PICK_THEM_OFF_SOURCE,
+        )
+
+    def deceptors_pick_them_off_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        below_half = getattr(target_root, "is_below_half_strength", None) if target_root is not None else None
+        if not callable(below_half) or not bool(below_half()):
+            return False, ""
+        root, sr = self._deceptors_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._DECEPTORS_PICK_THEM_OFF_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._deceptors_effect_source(
+            sr,
+            prefix=self._DECEPTORS_PICK_THEM_OFF_PREFIX,
+            default=self._DECEPTORS_PICK_THEM_OFF_SOURCE,
+        )
+
+    def deceptors_scrambled_coordinates_reserves_denial(self, unit, *, game=None) -> Optional[dict]:
+        root, sr = self._deceptors_effect_state(
+            unit,
+            prefix=self._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root) or not self._unit_on_battlefield(root):
+            return None
+        try:
+            min_distance = float(sr.get(f"{self._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX}_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            min_distance = 12.0
+        if min_distance <= 0.0:
+            return None
+        horizontal_only = bool(sr.get(f"{self._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX}_horizontal_only", True))
+        source_model_id = ""
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not self._model_alive(model):
+                continue
+            source_model_id = str(get_entity_id(model) or "").strip()
+            if source_model_id:
+                break
+        return {
+            "range": float(min_distance),
+            "horizontal_only": bool(horizontal_only),
+            "source": self._deceptors_effect_source(
+                sr,
+                prefix=self._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX,
+                default=self._DECEPTORS_SCRAMBLED_COORDINATES_SOURCE,
+            ),
+            "source_model_id": source_model_id,
+        }
 
     def chaos_cult_chosen_for_glory_reroll_hit_applies(
         self,

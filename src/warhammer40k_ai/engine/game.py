@@ -14340,6 +14340,16 @@ class Game(
             )
             if int(bonus or 0):
                 modifiers.append((int(bonus), str(source or "Eager for Vengeance").strip() or "Eager for Vengeance"))
+        deceptors_charge_bonus_fn = (
+            getattr(csm_mgr, "deceptors_from_all_sides_charge_roll_bonus", None) if csm_mgr is not None else None
+        )
+        if callable(deceptors_charge_bonus_fn):
+            bonus, source = deceptors_charge_bonus_fn(
+                charging_unit,
+                game=self,
+            )
+            if int(bonus or 0):
+                modifiers.append((int(bonus), str(source or "From All Sides").strip() or "From All Sides"))
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         synaptic_charge_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_charge_roll_bonus", None) if tyr_mgr is not None else None
         if callable(synaptic_charge_bonus_fn):
