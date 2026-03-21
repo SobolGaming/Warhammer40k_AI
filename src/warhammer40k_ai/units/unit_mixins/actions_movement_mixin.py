@@ -12158,6 +12158,16 @@ class ActionsMovementMixin:
             bonus, source = csm_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Empyric Symbiote")))
+        raiders_bonus_fn = (
+            getattr(csm_mgr, "renegade_raiders_reavers_haste_charge_roll_bonus", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(raiders_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = raiders_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Reavers' Haste")))
         return modifiers
 
     def _charge_roll_target_keyword_specs(self) -> list[dict]:
@@ -18569,6 +18579,15 @@ class ActionsMovementMixin:
             if callable(pactbound_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(pactbound_apply_fn(self, game=game)):
+                    return True
+            renegade_raiders_apply_fn = (
+                getattr(mgr, "renegade_raiders_reavers_haste_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(renegade_raiders_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(renegade_raiders_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

@@ -10782,6 +10782,28 @@ class WargearProfile:
         except Exception:
             pass
 
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            precision_fn = (
+                getattr(csm_mgr, "renegade_raiders_scour_and_seize_precision_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(precision_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                precision_applies, _source = precision_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(precision_applies):
+                    attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
+
         # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
         try:
             if attack_is_melee:
@@ -13040,6 +13062,21 @@ class WargearProfile:
             )
             if bool(reroll_full):
                 source_name = str(source or "Dread Reaver").strip() or "Dread Reaver"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        ruinous_raid_hit_fn = (
+            getattr(csm_mgr, "renegade_raiders_ruinous_raid_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(ruinous_raid_hit_fn):
+            reroll_full, source = ruinous_raid_hit_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Ruinous Raid").strip() or "Ruinous Raid"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         prime_test_subject_fn = (
             getattr(csm_mgr, "creations_of_bile_prime_test_subject_melee_reroll_hit_applies", None)
@@ -19428,6 +19465,29 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Persistent Assailants").strip() or "Persistent Assailants"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "renegade_raiders_ruinous_raid_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Ruinous Raid").strip() or "Ruinous Raid"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass

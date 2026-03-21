@@ -2474,6 +2474,97 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008969002": StratagemToolDescriptor(
+        stratagem_id="000008969002",
+        name="Unfailingly Obdurate",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="heretic_astartes_unit_targeted_excluding_damned",
+        duration="until_attacking_unit_finishes_attacks",
+        effect="defensive_ap_worsen",
+        cp_cost=1,
+        effect_params={
+            "ap_worsen": 1,
+            "excluded_keywords_any": ["DAMNED"],
+        },
+    ),
+    "000008969003": StratagemToolDescriptor(
+        stratagem_id="000008969003",
+        name="Scour and Seize",
+        timing="fight_phase_before_selected_to_fight",
+        target="heretic_astartes_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="conditional_precision_if_target_within_objective_range",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "granted_weapon_keywords": ["PRECISION"],
+            "requires_target_within_objective_range": True,
+        },
+    ),
+    "000008969004": StratagemToolDescriptor(
+        stratagem_id="000008969004",
+        name="Opportunistic Raiders",
+        timing="end_of_fight_phase",
+        target="heretic_astartes_unit_eligible_to_fight_this_phase",
+        duration="immediate",
+        effect="end_of_fight_reactive_move_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "requires_eligible_to_fight_this_phase": True,
+            "normal_move_distance": 6,
+            "mounted_normal_move_distance": 12,
+            "fall_back_if_engaged": True,
+            "forbid_embark_if_disembarked_this_turn": True,
+        },
+    ),
+    "000008969005": StratagemToolDescriptor(
+        stratagem_id="000008969005",
+        name="Warpcharged Engines",
+        timing="your_movement_phase_before_selected_to_move",
+        target="heretic_astartes_transport_or_mounted_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_fixed_distance",
+        cp_cost=1,
+        effect_params={
+            "fixed_advance_distance": 6,
+            "required_keywords_any": ["TRANSPORT", "MOUNTED"],
+        },
+    ),
+    "000008969006": StratagemToolDescriptor(
+        stratagem_id="000008969006",
+        name="Ruinous Raid",
+        timing="your_shooting_or_fight_phase_before_selected_to_shoot_or_fight",
+        target="heretic_astartes_unit_that_disembarked_this_turn_and_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_hit_and_wound_reroll_if_target_within_objective_range",
+        cp_cost=1,
+        effect_params={
+            "reroll_hit_full": True,
+            "reroll_wound_full": True,
+            "requires_disembarked_from_transport_this_turn": True,
+            "requires_target_within_objective_range": True,
+        },
+    ),
+    "000008969007": StratagemToolDescriptor(
+        stratagem_id="000008969007",
+        name="Reavers' Haste",
+        timing="your_charge_phase",
+        target="heretic_astartes_infantry_or_mounted_unit_not_yet_attempted_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance_and_conditional_charge_bonus_vs_objective_target",
+        cp_cost=1,
+        effect_params={
+            "allow_charge_after_advance": True,
+            "charge_bonus_if_target_within_objective_range": 1,
+        },
+    ),
+}
+
+_RENEGADE_RAIDERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008358002": StratagemToolDescriptor(
         stratagem_id="000008358002",
@@ -7923,6 +8014,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8179,6 +8273,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_STRATAGEM_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)

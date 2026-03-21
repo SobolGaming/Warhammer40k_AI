@@ -21033,6 +21033,42 @@ def _stratagem_support(
             "Opponent Shooting phase reaction after an enemy selects targets: selected HERETIC ASTARTES unit gains Stealth until end of phase and, if it is a NURGLE unit, can only be targeted by ranged attacks from within 18\".",
             name_u,
         )
+    if stratagem_id == "000008969002":
+        return (
+            "Implemented",
+            "Opponent Shooting or Fight phase reaction after an enemy selects targets: selected non-DAMNED HERETIC ASTARTES unit worsens the attacking unit's AP by 1 for the rest of that attack sequence.",
+            name_u,
+        )
+    if stratagem_id == "000008969003":
+        return (
+            "Implemented",
+            "Fight phase: selected HERETIC ASTARTES unit that has not yet fought gains Precision on melee attacks against enemy units within range of an objective marker until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008969004":
+        return (
+            "Implemented",
+            "End of the Fight phase: selected HERETIC ASTARTES unit that was eligible to fight this phase can make a Normal move up to 6\", or 12\" if MOUNTED, or a full Fall Back move if engaged.",
+            name_u,
+        )
+    if stratagem_id == "000008969005":
+        return (
+            "Implemented",
+            "Your Movement phase: selected HERETIC ASTARTES TRANSPORT or MOUNTED unit that has not yet moved adds a fixed 6\" instead of rolling to Advance until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008969006":
+        return (
+            "Implemented",
+            "Your Shooting or Fight phase: selected HERETIC ASTARTES unit that disembarked from a TRANSPORT this turn and has not yet shot or fought re-rolls Hit and Wound rolls against objective targets until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008969007":
+        return (
+            "Implemented",
+            "Your Charge phase: selected HERETIC ASTARTES INFANTRY or MOUNTED unit can charge after Advancing this phase and gains +1 to Charge rolls against targets within range of an objective marker.",
+            name_u,
+        )
     if stratagem_id == "000010642002":
         return (
             "Implemented",

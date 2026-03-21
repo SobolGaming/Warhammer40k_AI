@@ -149,7 +149,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE = "Despot's Claim"
     _RENEGADE_RAIDERS_DREAD_REAVER_SOURCE = "Dread Reaver"
     _RENEGADE_RAIDERS_MARK_OF_THE_HOUND_SOURCE = "Mark of the Hound"
+    _RENEGADE_RAIDERS_OPPORTUNISTIC_RAIDERS_SOURCE = "Opportunistic Raiders"
+    _RENEGADE_RAIDERS_REAVERS_HASTE_PREFIX = "renegade_raiders_reavers_haste"
+    _RENEGADE_RAIDERS_REAVERS_HASTE_SOURCE = "Reavers' Haste"
+    _RENEGADE_RAIDERS_RUINOUS_RAID_PREFIX = "renegade_raiders_ruinous_raid"
+    _RENEGADE_RAIDERS_RUINOUS_RAID_SOURCE = "Ruinous Raid"
+    _RENEGADE_RAIDERS_SCOUR_AND_SEIZE_PREFIX = "renegade_raiders_scour_and_seize"
+    _RENEGADE_RAIDERS_SCOUR_AND_SEIZE_SOURCE = "Scour and Seize"
     _RENEGADE_RAIDERS_TYRANTS_LASH_SOURCE = "Tyrant's Lash"
+    _RENEGADE_RAIDERS_UNFAILINGLY_OBDURATE_SOURCE = "Unfailingly Obdurate"
+    _RENEGADE_RAIDERS_WARPCHARGED_ENGINES_SOURCE = "Warpcharged Engines"
     _RENEGADE_WARBAND_EYES_OF_THE_HUNTER_SOURCE = "Eyes of the Hunter"
     _RENEGADE_WARBAND_FRATRICIDAL_TROPHIES_SOURCE = "Fratricidal Trophies"
     _RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE = "Empyric Symbiote"
@@ -5172,6 +5181,74 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    def _renegade_raiders_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_renegade_raiders():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_renegade_raiders_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -8185,6 +8262,142 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if bool(within_objective(target_unit, game_map)):
             return 1
         return 0
+
+    @staticmethod
+    def _renegade_raiders_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _renegade_raiders_target_within_objective_range(self, attacker_unit, target_unit, *, game=None) -> bool:
+        root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None:
+            return False
+        within_objective = getattr(root, "_target_within_objective_range", None)
+        if not callable(within_objective):
+            return False
+        resolved_game = self._resolve_game(game=game)
+        game_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+        try:
+            return bool(within_objective(target_root, game_map))
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    def renegade_raiders_reavers_haste_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._renegade_raiders_effect_state(
+            unit,
+            prefix=self._RENEGADE_RAIDERS_REAVERS_HASTE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(self._unit_has_keyword(root, "INFANTRY") or self._unit_has_keyword(root, "MOUNTED"))
+
+    def renegade_raiders_reavers_haste_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        root, sr = self._renegade_raiders_effect_state(
+            unit,
+            prefix=self._RENEGADE_RAIDERS_REAVERS_HASTE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        if not (self._unit_has_keyword(root, "INFANTRY") or self._unit_has_keyword(root, "MOUNTED")):
+            return 0, ""
+        targets = list(target_units or [])
+        if not targets:
+            return 0, ""
+        if not any(self._renegade_raiders_target_within_objective_range(root, target, game=game) for target in targets):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._RENEGADE_RAIDERS_REAVERS_HASTE_PREFIX}_charge_roll_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._renegade_raiders_effect_source(
+            sr,
+            prefix=self._RENEGADE_RAIDERS_REAVERS_HASTE_PREFIX,
+            default=self._RENEGADE_RAIDERS_REAVERS_HASTE_SOURCE,
+        )
+
+    def renegade_raiders_ruinous_raid_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = weapon_profile
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return False, ""
+        root, sr = self._renegade_raiders_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._RENEGADE_RAIDERS_RUINOUS_RAID_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        if not self._renegade_raiders_target_within_objective_range(root, target_unit, game=game):
+            return False, ""
+        return True, self._renegade_raiders_effect_source(
+            sr,
+            prefix=self._RENEGADE_RAIDERS_RUINOUS_RAID_PREFIX,
+            default=self._RENEGADE_RAIDERS_RUINOUS_RAID_SOURCE,
+        )
+
+    def renegade_raiders_ruinous_raid_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = weapon_profile
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return False, ""
+        root, sr = self._renegade_raiders_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._RENEGADE_RAIDERS_RUINOUS_RAID_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        if not self._renegade_raiders_target_within_objective_range(root, target_unit, game=game):
+            return False, ""
+        return True, self._renegade_raiders_effect_source(
+            sr,
+            prefix=self._RENEGADE_RAIDERS_RUINOUS_RAID_PREFIX,
+            default=self._RENEGADE_RAIDERS_RUINOUS_RAID_SOURCE,
+        )
+
+    def renegade_raiders_scour_and_seize_precision_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return False, ""
+        root, sr = self._renegade_raiders_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._RENEGADE_RAIDERS_SCOUR_AND_SEIZE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        if not self._renegade_raiders_target_within_objective_range(root, target_unit, game=game):
+            return False, ""
+        return True, self._renegade_raiders_effect_source(
+            sr,
+            prefix=self._RENEGADE_RAIDERS_SCOUR_AND_SEIZE_PREFIX,
+            default=self._RENEGADE_RAIDERS_SCOUR_AND_SEIZE_SOURCE,
+        )
 
     def _renegade_raiders_enhancement_source_member(
         self,
