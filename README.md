@@ -102,14 +102,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 #### Headless Self-Play Data (Baseline)
 ```bash
 # Generate headless self-play DecisionRecords (with reward labels)
-python scripts/run_headless_self_play.py \
-  --games 5 \
-  --workers 2 \
-  --reserve-policy forced_only \
-  --max-reserves-arrival-seconds 10 \
-  --player1-army army_lists/chaos_test.txt \
-  --player2-army army_lists/aeldari_test.txt \
-  --output data/headless_self_play_decision_records.json
+python scripts/run_headless_self_play.py --games 5 --workers 2 --reserve-policy forced_only --max-reserves-arrival-seconds 10 --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt --output data/headless_self_play_decision_records.json
 
 # Relabel records to a target rules bundle before gate enforcement
 python scripts/relabel_decision_records.py \
@@ -122,12 +115,8 @@ python scripts/annotate_decision_rewards.py \
   --output data/headless_self_play_decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
 
-# Build and enforce the canonical pre-ML manifest gate
-python scripts/build_training_manifest.py \
-  --input data/headless_self_play_decision_records_rewarded.json \
-  --output data/training_manifest.json \
-  --source-tag self_play \
-  --enforce-gate-profile
+# Build and enforce the canonical pre-ML manifest gate (judges whether the games were meaningful)
+python scripts/build_training_manifest.py --input data/headless_self_play_decision_records_rewarded.json --output data/training_manifest.json --source-tag self_play --enforce-gate-profile
 
 # Gate profile now checks dataset quality in addition to schema coverage:
 # - minimum games observed / game_id coverage
