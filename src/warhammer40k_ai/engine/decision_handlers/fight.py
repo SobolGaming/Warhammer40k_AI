@@ -8,7 +8,6 @@ from ..decision_kinds import (
     DECISION_ALLOCATE_MELEE_TARGETS,
     DECISION_ALLOCATE_TARGETS,
     DECISION_DECLARE_MELEE_WEAPONS,
-    DECISION_SELECT_FIGHTER,
     DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_EXPLODING_HORRORS_MODELS,
     DECISION_SELECT_EXPLODING_HORRORS_TARGET,
@@ -24,24 +23,6 @@ from ._helpers import find_option, is_skip_choice, resolve_model, resolve_unit, 
 def _option_payload(request: DecisionRequest, result: DecisionResult) -> dict:
     opt = find_option(request, result.option_id)
     return dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-
-
-def _validate_select_fighter(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
-    errors = list(validate_option_choice(request, result))
-    if errors:
-        return errors
-    payload = _option_payload(request, result)
-    unit_val = payload.get("unit_id", payload.get("unit"))
-    unit = resolve_unit(game, unit_val)
-    if unit is None:
-        return ("Fight selection requires a valid unit.",)
-    return ()
-
-
-def _apply_select_fighter(game: object, request: DecisionRequest, result: DecisionResult):
-    payload = _option_payload(request, result)
-    unit_val = payload.get("unit_id", payload.get("unit"))
-    return resolve_unit(game, unit_val)
 
 
 def _validate_select_targets(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -598,7 +579,6 @@ def _apply_allocate_damage(game: object, request: DecisionRequest, result: Decis
     return model
 
 
-register_decision_handler(DECISION_SELECT_FIGHTER, validate=_validate_select_fighter, apply=_apply_select_fighter)
 register_decision_handler(DECISION_SELECT_FIGHT_TARGETS, validate=_validate_select_targets, apply=_apply_select_targets)
 register_decision_handler(
     DECISION_SELECT_EXPLODING_HORRORS_TARGET,

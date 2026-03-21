@@ -11976,6 +11976,9 @@ class Game(
             self._maybe_apply_optional_ability_confirmation(request, result)
             self._maybe_queue_movement_phase_move_units_followup(request, result)
             self._maybe_queue_movement_phase_reinforcements_followup(request, result)
+            self._maybe_queue_shooting_phase_followup(request, result)
+            self._maybe_queue_charge_phase_followup(request, result)
+            self._maybe_queue_fight_phase_followup(request, result)
             self._maybe_queue_bodyguard_return_followup(request, result)
             self._maybe_apply_choice_samples_followup(request, result)
             self._maybe_apply_spirit_snare_followup(request, result)
@@ -13732,6 +13735,42 @@ class Game(
             publish_charge_declared=True,
         )
 
+    def _finalize_successful_charge_move(
+        self,
+        charging_unit: 'Unit',
+        target_units: list['Unit'],
+        *,
+        count_as_charged: bool = True,
+    ) -> None:
+        charging_unit.round_state.charged_this_round = True
+        for target_unit in list(target_units or []):
+            if target_unit is None:
+                continue
+            try:
+                target_unit.round_state.was_charged_this_round = True
+            except Exception:
+                pass
+        try:
+            charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
+        try:
+            current_player = self.get_current_player()
+            charging_unit.round_state.charged_turn_owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            charging_unit.round_state.charged_turn_owner = ""
+        if not count_as_charged:
+            try:
+                charging_unit.mark_charge_bonus_suppressed(self)
+            except Exception:
+                pass
+        charging_unit._apply_charge_move_devastating_wounds()
+        charging_unit._apply_charge_end_model_melee_strength_ap_bonuses()
+        charging_unit._apply_charge_end_unit_melee_strength_bonuses()
+        charging_unit._apply_charge_end_model_weapon_attacks_bonuses()
+        charging_unit._apply_charge_move_model_weapon_profile_attacks_bonuses()
+        charging_unit._apply_charge_move_weapon_keyword_bonuses()
+
     def roll_blood_surge_distance(self, unit: 'Unit') -> int:
         """Roll Blood Surge distance (D6+2), optionally applying leader-provided rerolls."""
         if unit is None:
@@ -14065,31 +14104,11 @@ class Game(
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
 
             if final_distance <= 1.0:
-                charging_unit.round_state.charged_this_round = True
-                try:
-                    target_unit.round_state.was_charged_this_round = True
-                except Exception:
-                    pass
-                try:
-                    charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
-                except Exception:
-                    charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
-                try:
-                    current_player = self.get_current_player()
-                    charging_unit.round_state.charged_turn_owner = str(getattr(current_player, "id", "") or "")
-                except Exception:
-                    charging_unit.round_state.charged_turn_owner = ""
-                if not count_as_charged:
-                    try:
-                        charging_unit.mark_charge_bonus_suppressed(self)
-                    except Exception:
-                        pass
-                charging_unit._apply_charge_move_devastating_wounds()
-                charging_unit._apply_charge_end_model_melee_strength_ap_bonuses()
-                charging_unit._apply_charge_end_unit_melee_strength_bonuses()
-                charging_unit._apply_charge_end_model_weapon_attacks_bonuses()
-                charging_unit._apply_charge_move_model_weapon_profile_attacks_bonuses()
-                charging_unit._apply_charge_move_weapon_keyword_bonuses()
+                self._finalize_successful_charge_move(
+                    charging_unit,
+                    [target_unit],
+                    count_as_charged=count_as_charged,
+                )
                 logger.info(f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
                     f"edge-to-edge distance with {target_unit.name}")
                 return True

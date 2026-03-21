@@ -2324,7 +2324,6 @@ class BattlePhaseHandler(BasePhaseHandler):
         self._decision_subscription_enabled = False
         # Pending dice-driven movement flows
         self._pending_advance_units: set[str] = set()
-        self._pending_charge_units: Dict[str, dict] = {}
         self._pending_move_modifier_actions: Dict[str, dict] = {}
         self._pending_pre_move_ability_actions: Dict[str, dict] = {}
         if self.game is not None:
@@ -2469,6 +2468,60 @@ class BattlePhaseHandler(BasePhaseHandler):
             self._handle_fight_phase_selection(unit)
         else:
             logger.error(f"ERROR: Unit selection not available in {current_phase.name}")
+
+    def _pending_phase_select_unit_request(self, unit, *, phase_name: str, phase_step: str | None = None):
+        from ...engine.decision_kinds import DECISION_SELECT_UNIT
+        from ...utility.entity_ids import maybe_entity_id
+
+        unit_id = str(maybe_entity_id(unit) or "")
+        for req in list(self.game.decision_queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_SELECT_UNIT:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name or "").strip().upper():
+                continue
+            if phase_step is not None and str(ctx.get("phase_step", "") or "").strip().upper() != str(phase_step or "").strip().upper():
+                continue
+            allowed_unit_ids = {
+                str(value or "").strip()
+                for value in list(ctx.get("allowed_unit_ids", []) or [])
+                if str(value or "").strip()
+            }
+            if unit_id and allowed_unit_ids and unit_id not in allowed_unit_ids:
+                continue
+            return req
+        return None
+
+    def _resolve_phase_select_unit_request(self, unit, request) -> bool:
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...utility.entity_ids import maybe_entity_id
+
+        if request is None:
+            return False
+        unit_id = str(maybe_entity_id(unit) or "")
+        matching_option = next(
+            (
+                opt
+                for opt in list(getattr(request, "options", []) or [])
+                if str((getattr(opt, "payload", {}) or {}).get("unit_id", "") or "").strip() == unit_id
+            ),
+            None,
+        )
+        if matching_option is None:
+            logger.error("ERROR: %s is not an allowed activation target", getattr(unit, "name", "Unit"))
+            return False
+        payload = {
+            "decision_id": request.decision_id,
+            "option_id": matching_option.option_id,
+            "result_payload": {"unit_id": unit_id},
+        }
+        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=request.player_id, payload=payload)
+        cmd_result = self.game.apply_command(cmd)
+        if cmd_result is None or not bool(getattr(cmd_result, "ok", False)):
+            logger.error("ERROR: Unit activation decision rejected for %s", getattr(unit, "name", "Unit"))
+            return False
+        return True
     
     def _handle_movement_phase_selection(self, unit) -> None:
         """Handle unit selection during movement phase"""
@@ -2646,6 +2699,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Handle unit selection during shooting phase"""
         if not unit or not unit.is_alive():
             return
+
+        select_unit_req = self._pending_phase_select_unit_request(
+            unit,
+            phase_name="SHOOTING_PHASE",
+            phase_step="SHOOT_UNITS",
+        )
+        if select_unit_req is not None:
+            if not self._resolve_phase_select_unit_request(unit, select_unit_req):
+                return
         
         # Check if unit can shoot
         action_lock_active = bool(getattr(unit.round_state, "action_locked_until_turn_end", False))
@@ -2746,25 +2808,13 @@ class BattlePhaseHandler(BasePhaseHandler):
             def on_shooting_complete(_executed: bool):
                 self._clear_shooting_selection()
             from ...engine.decision_kinds import DECISION_DECLARE_SHOTS
-            from ...engine.decisions import DecisionOption, DecisionRequest
             from ...utility.entity_ids import get_entity_id
 
             unit_id = get_entity_id(unit)
-            options = [
-                DecisionOption.create(
-                    "Execute shooting",
-                    payload={"unit_id": unit_id, "action": "confirm"},
-                ),
-                DecisionOption.create(
-                    "Skip shooting",
-                    payload={"unit_id": unit_id, "action": "skip"},
-                ),
-            ]
             req = _require_pending_decision_request(self.game,
                 DECISION_DECLARE_SHOTS,
                 f"Declare shots for {getattr(unit, 'name', 'Unit')}",
                 player_id=getattr(self.game.get_current_player(), "id", None),
-                options=options,
                 context={"unit_id": unit_id, "out_of_phase": False},
 
             )
@@ -2918,6 +2968,15 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_charge_phase_selection(self, unit) -> None:
         """Handle unit selection during charge phase"""
+        select_unit_req = self._pending_phase_select_unit_request(
+            unit,
+            phase_name="CHARGE_PHASE",
+            phase_step="DECLARE_CHARGES",
+        )
+        if select_unit_req is not None:
+            if not self._resolve_phase_select_unit_request(unit, select_unit_req):
+                return
+
         # Check if unit has already charged this round
         if hasattr(unit.round_state, 'attempted_charge_this_round') and unit.round_state.attempted_charge_this_round:
             logger.error(f"ERROR: {unit.name} has already attempted a charge this round")
@@ -2932,50 +2991,14 @@ class BattlePhaseHandler(BasePhaseHandler):
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decision_kinds import DECISION_DECLARE_CHARGE
-        from ...engine.decisions import DecisionOption, DecisionRequest
         from ...utility.entity_ids import get_entity_id
+        req = _require_pending_decision_request(self.game,
+            DECISION_DECLARE_CHARGE,
+            f"Declare charge for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(self.game.get_current_player(), "id", None),
+            context={"unit_id": get_entity_id(unit)},
 
-        def _pending_request():
-            for req in list(self.game.decision_queue.list() or []):
-                if getattr(req, "decision_type", None) != DECISION_DECLARE_CHARGE:
-                    continue
-                if str(getattr(req, "context", {}).get("unit_id", "")) == get_entity_id(unit):
-                    return req
-            return None
-
-        req = _pending_request()
-        if req is None:
-            options = []
-            enemy_units = [u for u in self.game.map.get_enemy_units(unit) if u.is_alive()]
-            try:
-                enemy_units.sort(key=lambda t: self.game.map.get_distance_between_units(unit, t))
-            except Exception:
-                pass
-            for target in enemy_units:
-                valid = False
-                try:
-                    valid = bool(unit.can_declare_charge_against(target, self.game))
-                except Exception:
-                    valid = False
-                label = getattr(target, "name", "Target")
-                options.append(
-                    DecisionOption.create(
-                        label,
-                        payload={
-                            "unit_id": get_entity_id(unit),
-                            "target_unit_id": get_entity_id(target),
-                            "valid": valid,
-                        },
-                    )
-                )
-            req = _require_pending_decision_request(self.game,
-                DECISION_DECLARE_CHARGE,
-                f"Declare charge for {getattr(unit, 'name', 'Unit')}",
-                player_id=getattr(self.game.get_current_player(), "id", None),
-                options=options,
-                context={"unit_id": get_entity_id(unit)},
-
-            )
+        )
 
         self._open_charge_declaration_request(unit, req)
 
@@ -2997,42 +3020,18 @@ class BattlePhaseHandler(BasePhaseHandler):
             if not targets:
                 return False
             option_id = _option_id_for_target(targets[0])
-            def _after_battle_focus():
-                # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
-                declared = None
-                if option_id:
-                    payload = {
-                        "decision_id": req.decision_id,
-                        "option_id": option_id,
-                        "result_payload": {"target_unit_ids": [get_entity_id(t) for t in targets]},
-                    }
-                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
-                    cmd_result = self.game.apply_command(cmd)
-                    apply_result = getattr(cmd_result, "value", None)
-                    if apply_result is not None and getattr(apply_result, "ok", False):
-                        declared = getattr(apply_result, "value", None)
-                if not declared:
-                    return
-                pending_targets = targets
-                if bool(getattr(declared, "get", lambda *_args, **_kwargs: False)("charge_pending", False)):
-                    pending_targets = []
-                suppress_charge_bonus = not bool(
-                    getattr(declared, "get", lambda *_args, **_kwargs: True)("count_as_charged", True)
-                )
-                self._queue_pending_charge(
-                    charging_unit,
-                    pending_targets,
-                    suppress_charge_bonus=suppress_charge_bonus,
-                )
-                # If the roll already resolved (headless), open movement now.
-                try:
-                    if getattr(charging_unit.round_state, "charge_roll", 0):
-                        self._handle_charge_roll_ready(charging_unit, [get_entity_id(t) for t in targets])
-                except Exception:
-                    pass
-
-            primary_target = targets[0] if targets else None
-            self.game_view._maybe_prompt_battle_focus_charge(charging_unit, primary_target, _after_battle_focus)
+            if not option_id:
+                return False
+            payload = {
+                "decision_id": req.decision_id,
+                "option_id": option_id,
+                "result_payload": {"target_unit_ids": [get_entity_id(t) for t in targets]},
+            }
+            cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+            cmd_result = self.game.apply_command(cmd)
+            apply_result = getattr(cmd_result, "value", None)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                return False
             return True  # Charge declaration selection complete
 
         self.game_view.charge_declaration_dialog.show(
@@ -3050,6 +3049,11 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Initialize fight phase manager if not already done
         if not self.fight_phase_manager:
             self._initialize_fight_phase_manager(current_player, opponent_player)
+
+        select_unit_req = self._pending_phase_select_unit_request(unit, phase_name="FIGHT_PHASE")
+        if select_unit_req is not None:
+            self._resolve_phase_select_unit_request(unit, select_unit_req)
+            return
         
         # Check if it's this player's turn to select a unit
         active_player = self.fight_phase_manager.get_active_player()
@@ -3071,67 +3075,27 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Unit is valid - process the selection
         logger.info(f"OK: {unit_owner.name} selected {unit.name} to fight")
-        def _after_battle_focus():
-            self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
-        self.game_view._maybe_prompt_battle_focus_sudden_strike(unit, _after_battle_focus)
+        self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
     
     def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
         """Initialize the fight phase manager with proper callbacks."""
         logger.info("INFO: Initializing Fight Phase Manager")
-        self.fight_phase_manager = FightPhaseManager(self.game)
+        ensure_manager = getattr(self.game, "_ensure_fight_phase_manager_started", None)
+        if callable(ensure_manager):
+            manager = ensure_manager()
+        else:
+            manager = None
+        if manager is None:
+            manager = getattr(self.game, "fight_phase_manager", None)
+        if manager is None:
+            manager = FightPhaseManager(self.game)
+            manager.start_fight_phase(current_player, opponent_player)
+        self.fight_phase_manager = manager
         try:
             self.game.fight_phase_manager = self.fight_phase_manager
         except Exception:
             pass
         
-        # Set up callbacks for local player interaction
-        def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
-            logger.debug(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.control.name})")
-            logger.debug(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
-
-            if active_player.has_control():
-                logger.info(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
-                logger.info(f"   Eligible units: {[unit.name for unit in eligible_units]}")
-                from ...engine.decision_kinds import DECISION_SELECT_FIGHTER
-                from ...engine.decisions import DecisionOption, DecisionRequest
-                from ...utility.decision_utils import resolve_decision_value
-                from ...utility.entity_ids import get_entity_id
-
-                options = []
-                for unit in list(eligible_units or []):
-                    unit_id = get_entity_id(unit)
-                    label = getattr(unit, "name", "Unit")
-                    options.append(DecisionOption.create(label, payload={"unit_id": unit_id}))
-                req = _require_pending_decision_request(self.game,
-                    DECISION_SELECT_FIGHTER,
-                    f"Select unit to fight ({stage.value})",
-                    player_id=getattr(active_player, "id", None),
-                    options=options,
-
-                )
-                # Show fight unit selection dialog
-                if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
-                    def on_unit_selected(option_id):
-                        value, apply_result = resolve_decision_value(self.game, req, option_id)
-                        if value is None or not getattr(apply_result, "ok", False):
-                            logger.error("ERROR: Failed to resolve fight unit selection decision")
-                            return
-                        selected_unit = value
-                        logger.debug(f"DEBUG: Unit selected callback called for {selected_unit.name}")
-                        def _after_battle_focus():
-                            self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
-                        self.game_view._maybe_prompt_battle_focus_sudden_strike(selected_unit, _after_battle_focus)
-
-                    def on_cancel():
-                        logger.info("Fight unit selection cancelled")
-
-                    self.game_view.ui_interface.show_fight_unit_selection_dialog(
-                        stage.value, eligible_units, on_unit_selected, on_cancel, decision_request=req
-                    )
-            else:
-                logger.info(f"Waiting for remote unit selection: {active_player.name}")
-                return
-
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
             if not active_player.has_control():
                 logger.info(f"Waiting for remote target selection: {active_player.name}")
@@ -3447,14 +3411,14 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 _show_weapons()
 
-        self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
         self.fight_phase_manager.on_target_selection_required = on_target_selection_required
         self.fight_phase_manager.on_stage_complete = on_stage_complete
         self.fight_phase_manager.on_movement_required = on_movement_required
         self.fight_phase_manager.on_weapon_selection_required = on_weapon_selection_required
         
         # Start the fight phase
-        self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
+        if getattr(self.fight_phase_manager, "_current_player", None) is None:
+            self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
 
     def _ensure_decision_subscription(self) -> None:
         if self._decision_subscription_enabled:
@@ -5014,8 +4978,6 @@ class BattlePhaseHandler(BasePhaseHandler):
         roll_type = str(roll_type or "").strip().lower()
         if roll_type == "advance":
             self._handle_advance_roll_ready(unit)
-        elif roll_type == "charge":
-            self._handle_charge_roll_ready(unit, kwargs.get("target_unit_ids"))
 
     def _handle_advance_roll_ready(self, unit) -> None:
         try:
@@ -5059,111 +5021,6 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.selected_model_for_movement = None
 
         self._request_move_unit_decision(unit, "advance", _on_complete, max_distance=max_distance)
-
-    def _queue_pending_charge(self, unit, targets, *, suppress_charge_bonus: bool = False, on_complete=None) -> None:
-        try:
-            unit_id = get_entity_id(unit)
-        except Exception:
-            return
-        clean_targets = [t for t in list(targets or []) if t is not None]
-        self._pending_charge_units[unit_id] = {
-            "unit": unit,
-            "targets": clean_targets,
-            "suppress_charge_bonus": bool(suppress_charge_bonus),
-            "on_complete": on_complete,
-        }
-
-    def _handle_charge_roll_ready(self, unit, target_unit_ids=None) -> None:
-        try:
-            unit_id = get_entity_id(unit)
-        except Exception:
-            return
-        entry = self._pending_charge_units.get(unit_id)
-        if entry is None:
-            return
-        from ...engine.decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
-        pending_req = self._pending_decision_for_unit(DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES, unit)
-        pending_flag = False
-        try:
-            pending_flag = bool(getattr(unit.round_state, "charge_modifier_choice_pending", False))
-        except Exception:
-            pending_flag = False
-        if pending_req is not None or pending_flag:
-            return
-        entry = self._pending_charge_units.pop(unit_id, None)
-        if entry is None:
-            return
-        targets = list(entry.get("targets") or [])
-        if not targets and target_unit_ids:
-            resolved = []
-            registry = getattr(self.game, "entity_registry", None)
-            for tid in list(target_unit_ids or []):
-                try:
-                    if registry is not None:
-                        tgt = registry.get(str(tid), kind="unit")
-                        if tgt is not None:
-                            resolved.append(tgt)
-                except Exception:
-                    continue
-            targets = resolved
-        if not targets:
-            return
-
-        try:
-            base_roll = int(getattr(getattr(unit, "round_state", None), "charge_roll", 0) or 0)
-        except Exception:
-            base_roll = 0
-        if base_roll <= 0:
-            return
-        getter = getattr(self.game, "get_charge_roll_modifiers", None)
-        mod_totals = []
-        if callable(getter):
-            for tgt in targets:
-                mods = list(getter(unit, target_unit=tgt) or [])
-                mod_total = sum(int(val) for val, _source in mods if isinstance(val, (int, float)))
-                mod_totals.append(mod_total)
-        mod_total = min(mod_totals) if mod_totals else 0
-        max_charge_distance = max(0, base_roll + mod_total)
-        suppress_bonus = bool(entry.get("suppress_charge_bonus", False))
-        callback = entry.get("on_complete")
-
-        def _on_charge_complete(completed: bool):
-            success = False
-            if completed:
-                ok, reason = unit.validate_charge_end_state(targets, self.game.map)
-                if ok:
-                    unit.round_state.charged_this_round = True
-                    if suppress_bonus:
-                        try:
-                            unit.mark_charge_bonus_suppressed(self.game)
-                        except Exception:
-                            pass
-                    success = True
-                    if callback is None:
-                        logger.info(f"{unit.name} charge successful - achieved engagement range for all targets")
-                else:
-                    unit.round_state.charged_this_round = False
-                    if callback is None:
-                        logger.error(f"{unit.name} charge failed - {reason}")
-            else:
-                if callback is None:
-                    logger.error(f"{unit.name} charge movement failed or skipped")
-            self.game_view.selected_unit_for_movement = None
-            self.game_view.movement_action = None
-            self.game_view.selected_model_for_movement = None
-            if callable(callback):
-                try:
-                    callback(completed, success, unit, targets)
-                except Exception:
-                    pass
-
-        self._request_move_unit_decision(
-            unit,
-            "charge",
-            _on_charge_complete,
-            max_distance=max_charge_distance,
-            target_unit=targets[0] if targets else None,
-        )
 
     def _show_transport_embark_dialog(self, transport_unit) -> None:
         """Show a dialog listing only valid units that can embark into the selected transport."""

@@ -4,6 +4,23 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GamePhaseHandlersMixin:
+    def _pending_select_unit_request(self, *, phase_name: str, phase_step: str):
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        from ..decision_kinds import DECISION_SELECT_UNIT
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name or "").strip().upper():
+                continue
+            if str(ctx.get("phase_step", "") or "").strip().upper() != str(phase_step or "").strip().upper():
+                continue
+            return request
+        return None
+
     def _movement_phase_move_units_eligible_units(self, player=None) -> list[object]:
         if not bool(getattr(self, "is_authoritative", True)):
             return []
@@ -39,21 +56,7 @@ class GamePhaseHandlersMixin:
         return eligible
 
     def _pending_movement_move_units_select_unit_request(self):
-        queue = getattr(self, "decision_queue", None)
-        if queue is None or not hasattr(queue, "list"):
-            return None
-        from ..decision_kinds import DECISION_SELECT_UNIT
-
-        for request in list(queue.list() or []):
-            if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
-                continue
-            ctx = dict(getattr(request, "context", {}) or {})
-            if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
-                continue
-            if str(ctx.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
-                continue
-            return request
-        return None
+        return self._pending_select_unit_request(phase_name="MOVEMENT_PHASE", phase_step="MOVE_UNITS")
 
     def _movement_flow_blocking_yes_no_request(self, unit_id: str):
         queue = getattr(self, "decision_queue", None)
@@ -182,6 +185,303 @@ class GamePhaseHandlersMixin:
             },
         )
 
+    def _shooting_phase_eligible_units(self, player=None) -> list[object]:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return []
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return []
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return []
+        army = self._get_player_army(active_player)
+        if army is None:
+            return []
+        from ..decision_requests import _eligible_units_for_phase_step, build_declare_shots_request
+
+        candidates = _eligible_units_for_phase_step(getattr(army, "units", []) or [], require_in_reserves=False)
+        eligible: list[object] = []
+        for unit in list(candidates or []):
+            if unit is None:
+                continue
+            if build_declare_shots_request(
+                unit,
+                player_id=getattr(active_player, "id", None),
+                out_of_phase=False,
+                context={
+                    "phase_name": "SHOOTING_PHASE",
+                    "phase_step": "SHOOT_UNITS",
+                    "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+                },
+            ) is None:
+                continue
+            eligible.append(unit)
+        return eligible
+
+    def _queue_shooting_phase_selection(self, player=None):
+        pending = self._pending_select_unit_request(phase_name="SHOOTING_PHASE", phase_step="SHOOT_UNITS")
+        if pending is not None:
+            return pending
+        active_player = player if player is not None else self.get_current_player()
+        eligible = self._shooting_phase_eligible_units(active_player)
+        if not eligible:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        return queue_select_unit_request(
+            self,
+            eligible,
+            player_id=getattr(active_player, "id", None),
+            phase_name="SHOOTING_PHASE",
+            phase_step="SHOOT_UNITS",
+            selection_purpose="ACTIVATE_SHOOTING_UNIT",
+            allow_pass=True,
+            context={"battle_round": int(getattr(self, "turn", 0) or 0)},
+        )
+
+    def _queue_shooting_phase_declare_shots_request(self, unit: object):
+        if unit is None:
+            return None
+        from ..decision_requests import queue_declare_shots_request
+
+        return queue_declare_shots_request(
+            self,
+            unit,
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            out_of_phase=False,
+            context={
+                "phase_name": "SHOOTING_PHASE",
+                "phase_step": "SHOOT_UNITS",
+                "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
+            },
+        )
+
+    def _charge_phase_eligible_units(self, player=None) -> list[object]:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return []
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return []
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return []
+        army = self._get_player_army(active_player)
+        if army is None:
+            return []
+        from ..decision_requests import _eligible_units_for_phase_step, build_declare_charge_request
+
+        candidates = _eligible_units_for_phase_step(getattr(army, "units", []) or [], require_in_reserves=False)
+        eligible: list[object] = []
+        for unit in list(candidates or []):
+            if unit is None:
+                continue
+            if build_declare_charge_request(
+                self,
+                unit,
+                player_id=getattr(active_player, "id", None),
+                out_of_turn=False,
+                context={
+                    "phase_name": "CHARGE_PHASE",
+                    "phase_step": "DECLARE_CHARGES",
+                    "selection_purpose": "ACTIVATE_CHARGING_UNIT",
+                },
+            ) is None:
+                continue
+            eligible.append(unit)
+        return eligible
+
+    def _queue_charge_phase_selection(self, player=None):
+        pending = self._pending_select_unit_request(phase_name="CHARGE_PHASE", phase_step="DECLARE_CHARGES")
+        if pending is not None:
+            return pending
+        active_player = player if player is not None else self.get_current_player()
+        eligible = self._charge_phase_eligible_units(active_player)
+        if not eligible:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        return queue_select_unit_request(
+            self,
+            eligible,
+            player_id=getattr(active_player, "id", None),
+            phase_name="CHARGE_PHASE",
+            phase_step="DECLARE_CHARGES",
+            selection_purpose="ACTIVATE_CHARGING_UNIT",
+            allow_pass=True,
+            context={"battle_round": int(getattr(self, "turn", 0) or 0)},
+        )
+
+    def _queue_charge_phase_declare_request(self, unit: object):
+        if unit is None:
+            return None
+        from ..decision_requests import queue_declare_charge_request
+
+        return queue_declare_charge_request(
+            self,
+            unit,
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            out_of_turn=False,
+            context={
+                "phase_name": "CHARGE_PHASE",
+                "phase_step": "DECLARE_CHARGES",
+                "selection_purpose": "ACTIVATE_CHARGING_UNIT",
+            },
+        )
+
+    def _pending_charge_move_request(self, *, unit_id: str) -> DecisionRequest | None:
+        if not unit_id:
+            return None
+        from ..decision_kinds import DECISION_MOVE_UNIT
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "").strip() != DECISION_MOVE_UNIT:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("movement_type", "") or "").strip().lower() != "charge":
+                continue
+            if str(ctx.get("unit_id", "") or "").strip() != str(unit_id):
+                continue
+            return request
+        return None
+
+    def _charge_targets_from_ids(self, target_unit_ids: list[str]) -> list[object]:
+        resolved: list[object] = []
+        seen: set[str] = set()
+        registry = getattr(self, "entity_registry", None)
+        for raw_id in list(target_unit_ids or []):
+            target_id = str(raw_id or "").strip()
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            target = registry.get(target_id, kind="unit") if registry is not None else None
+            if target is None:
+                continue
+            get_root = getattr(target, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else target
+            if root is None:
+                continue
+            resolved.append(root)
+        return resolved
+
+    def _charge_move_max_distance(self, unit: object, targets: list[object]) -> float:
+        try:
+            base_roll = int(getattr(getattr(unit, "round_state", None), "charge_roll", 0) or 0)
+        except Exception:
+            base_roll = 0
+        if base_roll <= 0:
+            return 0.0
+        getter = getattr(self, "get_charge_roll_modifiers", None)
+        if not callable(getter) or not targets:
+            return float(base_roll)
+        mod_totals: list[int] = []
+        for target in list(targets or []):
+            try:
+                modifiers = list(getter(unit, target_unit=target) or [])
+            except Exception:
+                modifiers = []
+            mod_total = 0
+            for value, _source in list(modifiers or []):
+                try:
+                    mod_total += int(value)
+                except (TypeError, ValueError):
+                    continue
+            mod_totals.append(mod_total)
+        modifier = min(mod_totals) if mod_totals else 0
+        return float(max(0, base_roll + modifier))
+
+    def _queue_charge_phase_move_request(
+        self,
+        *,
+        unit: object,
+        target_unit_ids: list[str],
+        count_as_charged: bool = True,
+    ) -> DecisionRequest | None:
+        if unit is None:
+            return None
+        unit_id = str(get_entity_id(unit) or "").strip()
+        if not unit_id or self._pending_charge_move_request(unit_id=unit_id) is not None:
+            return None
+        targets = self._charge_targets_from_ids(target_unit_ids)
+        if not targets:
+            return None
+        max_distance = self._charge_move_max_distance(unit, targets)
+        if max_distance <= 0.0:
+            return None
+        from ..decision_requests import queue_move_unit_request
+
+        return queue_move_unit_request(
+            self,
+            unit,
+            movement_type="charge",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            max_distance=max_distance,
+            allow_skip=True,
+            context={
+                "phase_name": "CHARGE_PHASE",
+                "phase_step": "DECLARE_CHARGES",
+                "selection_purpose": "ACTIVATE_CHARGING_UNIT",
+                "target_unit_ids": [str(get_entity_id(target) or "") for target in list(targets or []) if get_entity_id(target)],
+                "count_as_charged": bool(count_as_charged),
+            },
+        )
+
+    def _resume_pending_fight_unit_selection(self, *, unit_id: str) -> None:
+        manager = getattr(self, "fight_phase_manager", None)
+        if manager is None:
+            return
+        resume = getattr(manager, "resume_pending_target_selection", None)
+        if callable(resume):
+            resume(unit_id=unit_id)
+
+    @staticmethod
+    def _fight_phase_step_name(stage) -> str:
+        stage_name = str(getattr(stage, "name", stage) or "").strip().upper()
+        if stage_name in {"FIGHT_FIRST", "REMAINING_COMBATANTS"}:
+            return stage_name
+        return ""
+
+    def _queue_fight_phase_selection(self, *, player=None, eligible_units=None, stage=None):
+        phase_step = self._fight_phase_step_name(stage)
+        if not phase_step:
+            return None
+        pending = self._pending_select_unit_request(phase_name="FIGHT_PHASE", phase_step=phase_step)
+        if pending is not None:
+            return pending
+        active_player = player if player is not None else self.get_current_player()
+        eligible = [unit for unit in list(eligible_units or []) if unit is not None]
+        if active_player is None or not eligible:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        return queue_select_unit_request(
+            self,
+            eligible,
+            player_id=getattr(active_player, "id", None),
+            phase_name="FIGHT_PHASE",
+            phase_step=phase_step,
+            selection_purpose="ACTIVATE_FIGHTING_UNIT",
+            allow_pass=False,
+            context={"battle_round": int(getattr(self, "turn", 0) or 0)},
+        )
+
+    def _ensure_fight_phase_manager_started(self):
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return None
+        manager = getattr(self, "fight_phase_manager", None)
+        if manager is not None and not bool(getattr(manager, "is_complete", lambda: False)()):
+            return manager
+        from ..fight_phase_manager import FightPhaseManager
+
+        current_player = self.get_current_player()
+        opponent_player = self.get_opponent()
+        if current_player is None or opponent_player is None:
+            return None
+        manager = FightPhaseManager(self)
+        self.fight_phase_manager = manager
+        manager.start_fight_phase(current_player, opponent_player)
+        return manager
+
     def on_select_unit_resolved(
         self,
         *,
@@ -192,22 +492,138 @@ class GamePhaseHandlersMixin:
         pass_selected: bool = False,
     ):
         ctx = dict(getattr(request, "context", {}) or {})
-        if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
-            return None
-        if str(ctx.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
-            return None
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
         if bool(pass_selected) or selected_unit is None or not selected_unit_id:
             return {
                 "selected_unit_id": selected_unit_id,
                 "pass_selected": bool(pass_selected),
                 "payload": dict(payload or {}),
             }
-        self._queue_move_units_movement_action_request(selected_unit)
+        if phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
+            self._queue_move_units_movement_action_request(selected_unit)
+        elif phase_name == "SHOOTING_PHASE" and phase_step == "SHOOT_UNITS":
+            self._queue_shooting_phase_declare_shots_request(selected_unit)
+        elif phase_name == "CHARGE_PHASE" and phase_step == "DECLARE_CHARGES":
+            self._queue_charge_phase_declare_request(selected_unit)
+        elif phase_name == "FIGHT_PHASE" and phase_step in {"FIGHT_FIRST", "REMAINING_COMBATANTS"}:
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is not None:
+                manager.unit_selected(selected_unit, self.get_current_player(), self.get_opponent())
+        else:
+            return None
         return {
             "selected_unit_id": selected_unit_id,
-            "pass_selected": False,
+            "pass_selected": bool(pass_selected),
             "payload": dict(payload or {}),
         }
+
+    def _maybe_queue_shooting_phase_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        from ..decision_kinds import DECISION_DECLARE_SHOTS
+
+        if str(getattr(request, "decision_type", "") or "").strip() != DECISION_DECLARE_SHOTS:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if bool(ctx.get("out_of_phase", False)):
+            return
+        if str(ctx.get("phase_name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        self._queue_shooting_phase_selection(player=self.get_current_player())
+
+    def _maybe_queue_charge_phase_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        from ..decision_handlers._helpers import find_option
+        from ..decision_kinds import (
+            DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+            DECISION_DECLARE_CHARGE,
+            DECISION_MOVE_UNIT,
+            DECISION_REQUEST_DICE_ROLL,
+        )
+
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        ctx = dict(getattr(request, "context", {}) or {})
+        if decision_type == DECISION_MOVE_UNIT:
+            if str(ctx.get("movement_type", "") or "").strip().lower() != "charge":
+                return
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "CHARGE_PHASE":
+                return
+            if not bool(ctx.get("out_of_turn", False)):
+                self._queue_charge_phase_selection(player=self.get_current_player())
+            return
+
+        unit_id = ""
+        target_unit_ids: list[str] = []
+        count_as_charged = bool(ctx.get("count_as_charged", True))
+        if decision_type == DECISION_DECLARE_CHARGE:
+            selected_option = find_option(request, getattr(result, "option_id", ""))
+            option_payload = dict(getattr(selected_option, "payload", {}) or {}) if selected_option is not None else {}
+            unit_id = str(option_payload.get("unit_id", "") or ctx.get("unit_id", "") or "")
+            target_unit_ids = [str(value or "") for value in list(getattr(result, "payload", {}).get("target_unit_ids", []) or []) if str(value or "")]
+            if not target_unit_ids:
+                target_id = str(option_payload.get("target_unit_id", "") or "")
+                if target_id:
+                    target_unit_ids = [target_id]
+            count_as_charged = bool(option_payload.get("count_as_charged", ctx.get("count_as_charged", True)))
+        elif decision_type == DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+            unit_id = str(ctx.get("unit_id", "") or "")
+            target_unit_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
+        elif decision_type == DECISION_REQUEST_DICE_ROLL:
+            roll_spec = dict(ctx.get("roll_spec", {}) or {})
+            if str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "")).strip().lower() != "charge":
+                return
+            unit_id = str(roll_spec.get("unit_id", "") or "").strip()
+            target_unit_ids = [str(value or "") for value in list(roll_spec.get("target_unit_ids", []) or []) if str(value or "")]
+        else:
+            return
+
+        if not unit_id:
+            return
+        unit = self._resolve_unit_by_id(unit_id)
+        if unit is None:
+            return
+        pending_modifier_request = None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "").strip() != DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("unit_id", "") or "").strip() == unit_id:
+                    pending_modifier_request = pending
+                    break
+        pending_modifier_flag = bool(getattr(getattr(unit, "round_state", None), "charge_modifier_choice_pending", False))
+        if pending_modifier_request is not None or pending_modifier_flag:
+            return
+        if not target_unit_ids:
+            target_unit_ids = [str(value or "") for value in list(getattr(getattr(unit, "round_state", None), "charge_modifier_choice_targets", []) or []) if str(value or "")]
+        self._queue_charge_phase_move_request(
+            unit=unit,
+            target_unit_ids=target_unit_ids,
+            count_as_charged=count_as_charged,
+        )
+
+    def _maybe_queue_fight_phase_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        from ..decision_kinds import DECISION_CONFIRM_YES_NO
+        if str(getattr(request, "decision_type", "") or "").strip() != DECISION_CONFIRM_YES_NO:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("ability", "") or "").strip().lower() != "battle_focus_sudden_strike":
+            return
+        unit_id = str(ctx.get("unit_id", "") or "").strip()
+        if not unit_id:
+            return
+        self._resume_pending_fight_unit_selection(unit_id=unit_id)
 
     def _maybe_queue_movement_phase_move_units_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
         if request is None or result is None:

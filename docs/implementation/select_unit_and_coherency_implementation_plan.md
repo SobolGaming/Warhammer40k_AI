@@ -455,40 +455,40 @@ Recommended UI mapping changes:
 - casualty resolution remains deterministic and replay-stable
 
 ## Recommended PR Breakdown
-### PR 1 - Add `SELECT_UNIT` scaffolding
+### PR 1 - Add `SELECT_UNIT` scaffolding - DONE
 - add decision kind
 - add handler
 - add request builder helpers
 - update docs
 
-### PR 2 - Movement `MOVE_UNITS`
+### PR 2 - Movement `MOVE_UNITS` - DONE
 - queue `SELECT_UNIT` for `MOVE_UNITS`
 - wire selection to `SELECT_MOVEMENT_ACTION`
 - refactor local UI to resolve pending `SELECT_UNIT`
 - update headless controller
 
-### PR 3 - Movement `REINFORCEMENTS`
+### PR 3 - Movement `REINFORCEMENTS` - DONE
 - queue `SELECT_UNIT` for `REINFORCEMENTS`
 - wire selection to placement-style `MOVE_UNIT`
 - enforce reserve-entry legality and battle-round restrictions
 - update headless controller ranking
 
-### PR 4 - Coherency remediation on casualties
+### PR 4 - Coherency remediation on casualties - DONE
 - centralize post-death coherency checks
 - queue `RESOLVE_COHERENCY` from authoritative engine
 - remove any ordinary-movement use of `RESOLVE_COHERENCY`
 - add casualty/removal tests
 
-### PR 5 - Extend `SELECT_UNIT` to other phases
+### PR 5 - Extend `SELECT_UNIT` to other phases - DONE
 - Shooting
 - Charge
 - Fight
-- replace or retire `SELECT_FIGHTER` as the main fight-phase activation decision
+- retire `SELECT_FIGHTER` as the main fight-phase activation decision
 
 ## Acceptance Criteria
-- Engine, not UI, authors unit activation requests.
-- Movement phase uses explicit `MOVE_UNITS` and `REINFORCEMENTS` step semantics.
-- Headless play can resolve both Movement substeps with no UI dependency.
-- Ordinary movement cannot end in non-coherent states.
-- Casualty-driven coherency failures emit `RESOLVE_COHERENCY` until the unit becomes coherent or is destroyed.
-- DecisionRecords remain deterministic and replay-safe across local, headless, and remote play.
+- DONE: Engine, not UI, authors unit activation requests.
+- DONE: Movement phase uses explicit `MOVE_UNITS` and `REINFORCEMENTS` step semantics.
+- DONE: Headless play can resolve both Movement substeps with no UI dependency.
+- DONE: Ordinary movement cannot end in non-coherent states.
+- DONE: Casualty-driven coherency failures emit `RESOLVE_COHERENCY` until the unit becomes coherent or is destroyed.
+- DONE: DecisionRecords remain deterministic and replay-safe across local, headless, and remote play.

@@ -3655,7 +3655,8 @@ class GameView:
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
             placement_kind = str(ctx.get("placement_kind", "") or "")
-            if placement_kind not in ("reserves_arrival", "advance_redeploy_9h", "normal_move_redeploy_9h"):
+            movement_type = str(ctx.get("movement_type", "") or "").strip().lower()
+            if placement_kind not in ("reserves_arrival", "advance_redeploy_9h", "normal_move_redeploy_9h") and movement_type != "charge":
                 return
             player = self._resolve_player_by_id(getattr(request, "player_id", None))
             if player is None:
@@ -3669,7 +3670,7 @@ class GameView:
             unit = self._resolve_unit_by_id(unit_id)
             if unit is None:
                 return
-            movement_type = str(ctx.get("movement_type", "") or "deploy")
+            movement_type = movement_type or "deploy"
             try:
                 self.phase_manager._request_move_unit_decision(
                     unit,
@@ -13495,115 +13496,6 @@ class GameView:
         )
         try:
             self.dialog_manager.open(self.battle_focus_dialog, modal=True)
-        except Exception:
-            self._battle_focus_flow_active = False
-            on_done()
-
-    def _maybe_prompt_battle_focus_charge(self, unit, target_unit, on_done: Callable[[], None]) -> None:
-        if on_done is None:
-            return
-        if self._battle_focus_flow_active:
-            on_done()
-            return
-
-        mgr = None
-        player = None
-        try:
-            army = unit.get_parent_army()
-            mgr = getattr(army, "battle_focus", None) if army is not None else None
-            player = getattr(army, "player", None) if army is not None else None
-        except Exception:
-            mgr = None
-            player = None
-        if mgr is None or player is None or self.game is None:
-            on_done()
-            return
-        try:
-            if player is None or not getattr(player, "has_control", lambda: False)():
-                on_done()
-                return
-        except Exception:
-            on_done()
-            return
-
-        try:
-            if not mgr.can_use_flitting_on_charge(unit, self.game):
-                on_done()
-                return
-        except Exception:
-            on_done()
-            return
-
-        tokens = int(getattr(mgr, "tokens", 0) or 0)
-        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_FLITTING", "FLITTING_SHADOWS"), mgr)
-        target_name = getattr(target_unit, "name", "enemy unit")
-        msg = f"Use {label} for {getattr(unit, 'name', 'unit')} while charging {target_name}?\n\nTokens remaining: {tokens}"
-
-        def _done(choice: bool):
-            try:
-                if choice:
-                    mgr.apply_maneuver(unit, mgr.MANEUVER_FLITTING, self.game)
-            finally:
-                self._battle_focus_flow_active = False
-                on_done()
-
-        self._battle_focus_flow_active = True
-        try:
-            self._request_yes_no("Battle Focus", msg, "Use", "Skip", _done, player=player)
-        except Exception:
-            self._battle_focus_flow_active = False
-            on_done()
-
-    def _maybe_prompt_battle_focus_sudden_strike(self, unit, on_done: Callable[[], None]) -> None:
-        if on_done is None:
-            return
-        if self._battle_focus_flow_active:
-            on_done()
-            return
-
-        mgr = None
-        player = None
-        try:
-            army = unit.get_parent_army()
-            mgr = getattr(army, "battle_focus", None) if army is not None else None
-            player = getattr(army, "player", None) if army is not None else None
-        except Exception:
-            mgr = None
-            player = None
-        if mgr is None or player is None or self.game is None:
-            on_done()
-            return
-        try:
-            if player is None or not getattr(player, "has_control", lambda: False)():
-                on_done()
-                return
-        except Exception:
-            on_done()
-            return
-
-        try:
-            if not mgr.can_use_sudden_strike(unit, self.game):
-                on_done()
-                return
-        except Exception:
-            on_done()
-            return
-
-        tokens = int(getattr(mgr, "tokens", 0) or 0)
-        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_SUDDEN_STRIKE", "SUDDEN_STRIKE"), mgr)
-        msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
-
-        def _done(choice: bool):
-            try:
-                if choice:
-                    mgr.apply_maneuver(unit, mgr.MANEUVER_SUDDEN_STRIKE, self.game)
-            finally:
-                self._battle_focus_flow_active = False
-                on_done()
-
-        self._battle_focus_flow_active = True
-        try:
-            self._request_yes_no("Battle Focus", msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._battle_focus_flow_active = False
             on_done()

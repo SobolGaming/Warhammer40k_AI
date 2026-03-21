@@ -846,6 +846,26 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
     return None
 
 
+def _resolve_charge_targets(game: object, ctx: dict | None) -> list[object]:
+    context = dict(ctx or {})
+    resolved: list[object] = []
+    seen: set[str] = set()
+    for raw_value in list(context.get("target_unit_ids", []) or []):
+        target_id = str(raw_value or "").strip()
+        if not target_id or target_id in seen:
+            continue
+        seen.add(target_id)
+        target = get_unit(game, target_id)
+        if target is None:
+            continue
+        get_root = getattr(target, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else target
+        if root is None:
+            continue
+        resolved.append(root)
+    return resolved
+
+
 def _validate_move_unit(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -1022,6 +1042,19 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if predatory_pursuit_errors:
         return predatory_pursuit_errors
+    if movement_type == "charge":
+        target_units = _resolve_charge_targets(game, ctx)
+        if not target_units:
+            return ("Move unit: charge movement requires declared target_unit_ids.",)
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return ("Move unit: charge movement requires an active game map.",)
+        validate_charge_end_state = getattr(unit, "validate_charge_end_state", None)
+        if not callable(validate_charge_end_state):
+            return ("Move unit: charge movement requires validate_charge_end_state().",)
+        ok, reason = validate_charge_end_state(target_units, game_map)
+        if not ok:
+            return (str(reason or "Move unit: charge must end in a legal engagement state."),)
     return ()
 
 
@@ -2479,6 +2512,18 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 mark_used_fn(unit, game=game)
             except Exception:
                 pass
+    if movement_type == "charge":
+        finalize_charge = getattr(game, "_finalize_successful_charge_move", None)
+        if not callable(finalize_charge):
+            raise RuntimeError("Move unit: game missing _finalize_successful_charge_move().")
+        target_units = _resolve_charge_targets(game, ctx)
+        if not target_units:
+            raise RuntimeError("Move unit: charge movement requires declared targets.")
+        finalize_charge(
+            unit,
+            target_units,
+            count_as_charged=bool(ctx.get("count_as_charged", True)),
+        )
     wraithlike_check = _wraithlike_retreat_transport_requirement(
         game,
         unit,

@@ -426,12 +426,13 @@ Notes:
 - DECLARE_SHOTS declarations include wargear_id, profile_name, model_ids, target_unit_id (optional for Plasma Warhead), linked_fire_origin_unit_id (optional for Linked Fire / Infernal Puppeteer), linked_fire_mode ("linked_fire" | "infernal_puppeteer" when origin is provided).
 
 Charge:
+- charge_activation_dialog: SELECT_UNIT {unit_id | action="pass"} (context `phase_name="CHARGE_PHASE"`, `phase_step="DECLARE_CHARGES"`, `selection_purpose="ACTIVATE_CHARGING_UNIT"`)
 - charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_ids[]}
 - charge_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `mortal_wounds_kind="charge_end"`, `unit_id`, `ability_name`, `spec`)
 - charge_phase_bodyguard_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="bodyguard_loss"`, `leader_unit_id`, `bodyguard_unit_id`, `ability_name`)
 
 Fight:
-- fight_unit_selection_dialog: SELECT_FIGHTER {unit_id}
+- fight_unit_selection_dialog: SELECT_UNIT {unit_id} (context `phase_name="FIGHT_PHASE"`, `phase_step`, `selection_purpose="ACTIVATE_FIGHTING_UNIT"`)
 - fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
 - eye_of_spite_dialog: CHOOSE_QUARRY {action="spend_pain_token" | skip} (context `ability="eye_of_spite"`, `ability_name="Eye of Spite"`, `phase="Fight phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `optional=true`)

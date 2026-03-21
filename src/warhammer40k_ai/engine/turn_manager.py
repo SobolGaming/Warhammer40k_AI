@@ -64,6 +64,18 @@ def next_phase(game: "Game") -> None:
             queue_move_units = getattr(game, "_queue_movement_phase_move_units_selection", None)
             if callable(queue_move_units):
                 queue_move_units(player=game.get_current_player())
+        elif getattr(game.phase, "name", None) == "SHOOTING_PHASE":
+            queue_shooting = getattr(game, "_queue_shooting_phase_selection", None)
+            if callable(queue_shooting):
+                queue_shooting(player=game.get_current_player())
+        elif getattr(game.phase, "name", None) == "CHARGE_PHASE":
+            queue_charge = getattr(game, "_queue_charge_phase_selection", None)
+            if callable(queue_charge):
+                queue_charge(player=game.get_current_player())
+        elif getattr(game.phase, "name", None) == "FIGHT_PHASE":
+            ensure_fight = getattr(game, "_ensure_fight_phase_manager_started", None)
+            if callable(ensure_fight):
+                ensure_fight()
     except Exception:
         pass
 

@@ -17,7 +17,9 @@ from .decision_kinds import (
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_RESERVES,
+    DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
     DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
@@ -699,6 +701,260 @@ def queue_resolve_coherency_request(
         unit,
         prompt=prompt,
         player_id=player_id,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _attached_alive_models(unit: object) -> list[object]:
+    if unit is None:
+        return []
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    if callable(get_models):
+        models = list(get_models() or [])
+    else:
+        models = list(getattr(unit, "models", []) or [])
+    alive_models = [
+        model
+        for model in models
+        if model is not None
+        and bool(getattr(model, "is_alive", True))
+        and not bool(getattr(model, "_pending_placement", False))
+    ]
+    alive_models.sort(key=lambda model: str(get_entity_id(model) or "").strip())
+    return alive_models
+
+
+def _unit_has_ranged_weapon(unit: object) -> bool:
+    for model in _attached_alive_models(unit):
+        for wargear in list(getattr(model, "wargear", []) or []):
+            try:
+                if bool(wargear.is_ranged()):
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _declare_shots_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Declare shots for {label}"
+
+
+def build_declare_shots_request(
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    out_of_phase: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return None
+    if not bool(getattr(unit, "deployed", True)):
+        return None
+    if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+        return None
+    reserve_fn = getattr(unit, "is_in_reserves", None)
+    if callable(reserve_fn) and bool(reserve_fn()):
+        return None
+    if not _unit_has_ranged_weapon(unit):
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("out_of_phase", bool(out_of_phase))
+    if not bool(out_of_phase):
+        request_context.setdefault("phase_name", "SHOOTING_PHASE")
+        request_context.setdefault("phase_step", "SHOOT_UNITS")
+        request_context.setdefault("selection_purpose", "ACTIVATE_SHOOTING_UNIT")
+    allowed_model_ids: list[str] = []
+    allowed_wargear_ids: list[str] = []
+    for model in _attached_alive_models(unit):
+        model_id = str(get_entity_id(model) or "").strip()
+        if model_id:
+            allowed_model_ids.append(model_id)
+        for wargear in list(getattr(model, "wargear", []) or []):
+            try:
+                if not bool(wargear.is_ranged()):
+                    continue
+            except Exception:
+                continue
+            wargear_id = str(get_entity_id(wargear) or "").strip()
+            if wargear_id:
+                allowed_wargear_ids.append(wargear_id)
+    request_context.setdefault("allowed_model_ids", sorted(set(allowed_model_ids)))
+    request_context.setdefault("allowed_wargear_ids", sorted(set(allowed_wargear_ids)))
+    options = [
+        DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+        DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+    ]
+    return DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        _declare_shots_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_declare_shots_request(
+    game: object,
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    out_of_phase: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_declare_shots_request(
+        unit,
+        prompt=prompt,
+        player_id=player_id,
+        out_of_phase=out_of_phase,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _declare_charge_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Declare charge for {label}"
+
+
+def build_declare_charge_request(
+    game: object,
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    out_of_turn: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if game is None or unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return None
+    if not bool(getattr(unit, "deployed", True)):
+        return None
+    if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+        return None
+    reserve_fn = getattr(unit, "is_in_reserves", None)
+    if callable(reserve_fn) and bool(reserve_fn()):
+        return None
+    can_charge = getattr(unit, "can_declare_charge", None)
+    if not callable(can_charge) or not bool(can_charge(game, out_of_turn=out_of_turn)):
+        return None
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return None
+    enemy_units = list(getattr(game_map, "get_enemy_units", lambda _unit: [])(unit) or [])
+    valid_targets: list[object] = []
+    seen_target_ids: set[str] = set()
+    can_target = getattr(unit, "can_declare_charge_against", None)
+    for target in list(enemy_units or []):
+        if target is None:
+            continue
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        if target_root is None or not bool(getattr(target_root, "is_alive", lambda: True)()):
+            continue
+        target_id = str(get_entity_id(target_root) or "").strip()
+        if not target_id or target_id in seen_target_ids:
+            continue
+        if not callable(can_target):
+            continue
+        try:
+            if not bool(can_target(target_root, game, out_of_turn=out_of_turn)):
+                continue
+        except Exception:
+            continue
+        seen_target_ids.add(target_id)
+        valid_targets.append(target_root)
+    if not valid_targets:
+        return None
+    try:
+        valid_targets.sort(key=lambda target: float(game_map.get_distance_between_units(unit, target)))
+    except Exception:
+        valid_targets.sort(key=lambda target: str(get_entity_id(target) or "").strip())
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    options: list[DecisionOption] = []
+    allowed_target_unit_ids: list[str] = []
+    for target in valid_targets:
+        target_id = str(get_entity_id(target) or "").strip()
+        if not target_id:
+            continue
+        allowed_target_unit_ids.append(target_id)
+        options.append(
+            DecisionOption.create(
+                str(getattr(target, "name", "") or "Target").strip() or "Target",
+                payload={
+                    "unit_id": unit_id,
+                    "target_unit_id": target_id,
+                    "action_id": f"{DECISION_DECLARE_CHARGE}:{unit_id}:{target_id}",
+                    "out_of_turn": bool(out_of_turn),
+                },
+            )
+        )
+    if not options:
+        return None
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("out_of_turn", bool(out_of_turn))
+    request_context.setdefault("phase_name", "CHARGE_PHASE")
+    request_context.setdefault("phase_step", "DECLARE_CHARGES")
+    request_context.setdefault("selection_purpose", "ACTIVATE_CHARGING_UNIT")
+    request_context["allowed_target_unit_ids"] = list(allowed_target_unit_ids)
+    return DecisionRequest.create(
+        DECISION_DECLARE_CHARGE,
+        _declare_charge_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_declare_charge_request(
+    game: object,
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    out_of_turn: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_declare_charge_request(
+        game,
+        unit,
+        prompt=prompt,
+        player_id=player_id,
+        out_of_turn=out_of_turn,
         context=context,
     )
     if request is None:

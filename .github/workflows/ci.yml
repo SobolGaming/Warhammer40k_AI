@@ -44,7 +44,7 @@ jobs:
               "MOVE_UNIT",
               "DECLARE_SHOTS",
               "DECLARE_CHARGE",
-              "SELECT_FIGHTER",
+              "SELECT_UNIT",
               "SELECT_FIGHT_TARGETS",
           ]
           games = 20

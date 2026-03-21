@@ -15,6 +15,7 @@ from ..units.model import Model
 from ..roster.player import Player
 from ..utility.calcs import clear_enemy_model_cache
 from ..utility.entity_ids import get_entity_id
+from .decision_kinds import DECISION_CONFIRM_YES_NO
 from .game import Game
 import logging
 logger = logging.getLogger(__name__)
@@ -39,6 +40,11 @@ class FightPhaseManager:
         # Cache fight phase players for refresh requests.
         self._current_player = None
         self._opponent_player = None
+        self._pending_target_selection_unit = None
+        # Callbacks for human player interaction
+        self.on_unit_selection_required = None
+        self.on_target_selection_required = None
+        self.on_stage_complete = None
 
     def _canonical_unit_for_fight(self, unit: Unit) -> Unit:
         """
@@ -80,12 +86,6 @@ class FightPhaseManager:
         except Exception:
             pass
         return root
-
-        
-        # Callbacks for human player interaction
-        self.on_unit_selection_required = None  # Callback when human needs to select unit
-        self.on_target_selection_required = None  # Callback when human needs to select targets
-        self.on_stage_complete = None  # Callback when stage is complete
         
     def start_fight_phase(self, current_player: Player, opponent_player: Player) -> None:
         """Start the fight phase with proper initialization."""
@@ -99,6 +99,7 @@ class FightPhaseManager:
         self._forced_next_player = None
         self._current_player = current_player
         self._opponent_player = opponent_player
+        self._pending_target_selection_unit = None
         self._reset_fight_phase_eligibility_flags(current_player, opponent_player)
         
         # In fight phase, the non-current player goes first
@@ -247,8 +248,14 @@ class FightPhaseManager:
         
         logger.info(f"{self.active_player.name} must select a unit to fight ({self.current_stage.value} stage)")
         logger.info(f"Eligible units: {[unit.name for unit in eligible_units]}")
-        
-        # Call callback for unit selection
+
+        try:
+            queue_select = getattr(self.game, "_queue_fight_phase_selection", None)
+            if callable(queue_select):
+                queue_select(player=self.active_player, eligible_units=eligible_units, stage=self.current_stage)
+        except Exception:
+            pass
+
         if self.on_unit_selection_required:
             self.on_unit_selection_required(self.active_player, eligible_units, self.current_stage)
     
@@ -397,11 +404,65 @@ class FightPhaseManager:
             except Exception:
                 pass
             return
+
+        if self._has_pending_battle_focus_confirmation(selected_unit):
+            self._pending_target_selection_unit = selected_unit
+            return
         
         # Always show target selection dialog, even for single targets
         # This gives the user a chance to see what's happening and confirm the attack
+        self._dispatch_target_selection(selected_unit, eligible_targets)
+
+    def _dispatch_target_selection(self, selected_unit: Unit, eligible_targets: List[Unit]) -> None:
         logger.info(f"{selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
-        self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
+        if self.on_target_selection_required:
+            self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
+
+    def _has_pending_battle_focus_confirmation(self, unit: Unit) -> bool:
+        if unit is None:
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        try:
+            unit_id = str(get_entity_id(unit) or "")
+        except Exception:
+            unit_id = ""
+        player_id = str(getattr(self.active_player, "id", "") or "")
+        for request in list(queue.list() or []):
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(getattr(request, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                continue
+            if str(ctx.get("ability", "") or "").strip().lower() != "battle_focus_sudden_strike":
+                continue
+            if unit_id and str(ctx.get("unit_id", "") or "") != unit_id:
+                continue
+            if player_id and str(getattr(request, "player_id", "") or "") != player_id:
+                continue
+            return True
+        return False
+
+    def resume_pending_target_selection(self, *, unit_id: str | None = None) -> None:
+        unit = self._pending_target_selection_unit
+        if unit is None:
+            return
+        try:
+            pending_unit_id = str(get_entity_id(unit) or "")
+        except Exception:
+            pending_unit_id = ""
+        if unit_id and pending_unit_id and str(unit_id) != pending_unit_id:
+            return
+        self._pending_target_selection_unit = None
+        eligible_targets = self._get_eligible_targets(unit)
+        if not eligible_targets:
+            logger.info(f"{getattr(unit, 'name', 'Unit')} has no eligible targets")
+            try:
+                if hasattr(unit, "clear_selected_to_action_reroll_choice"):
+                    unit.clear_selected_to_action_reroll_choice(action="fight")
+            except Exception:
+                pass
+            return
+        self._dispatch_target_selection(unit, eligible_targets)
     
     def targets_selected(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
         """Handle target selection and execute the fight sequence."""

@@ -51,7 +51,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 ## Fight & Damage Allocation
 
-- `SELECT_FIGHTER` — Choose unit to fight.
+- `SELECT_UNIT` — Select the next fighting unit during Fight phase activation steps.
 - `SELECT_FIGHT_TARGETS` — Choose fight targets.
 - `DECLARE_MELEE_WEAPONS` — Select melee weapons/profiles.
 - `ALLOCATE_MELEE_TARGETS` — Allocate melee attacks to targets.

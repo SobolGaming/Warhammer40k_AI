@@ -54,7 +54,7 @@ def _baseline_profile_records(*, games: int, records_per_game: int) -> list[dict
         "MOVE_UNIT",
         "DECLARE_SHOTS",
         "DECLARE_CHARGE",
-        "SELECT_FIGHTER",
+        "SELECT_UNIT",
         "SELECT_FIGHT_TARGETS",
     ]
     output: list[dict] = []

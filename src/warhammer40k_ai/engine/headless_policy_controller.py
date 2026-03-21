@@ -645,7 +645,14 @@ class HeadlessPolicyDecisionController(DecisionController):
             score -= 1.0
         if str(getattr(request, "decision_type", "") or "") == "SELECT_UNIT":
             phase_step = str(request_context.get("phase_step", "") or "").strip().upper()
-            if action == "pass" and phase_step in {"MOVE_UNITS", "REINFORCEMENTS"}:
+            if action == "pass" and phase_step in {
+                "MOVE_UNITS",
+                "REINFORCEMENTS",
+                "SHOOT_UNITS",
+                "DECLARE_CHARGES",
+                "FIGHT_FIRST",
+                "REMAINING_COMBATANTS",
+            }:
                 score -= 5.0
             unit_id = str(params.get("unit_id", "") or "").strip()
             must_arrive_ids = {
