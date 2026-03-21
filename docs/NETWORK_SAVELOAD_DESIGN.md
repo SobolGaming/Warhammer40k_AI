@@ -141,7 +141,7 @@ DecisionRequest:
 - request_id
 - actor_player_id
 - decision_type (enum)
-- context (phase, unit_id, target_id, weapon_id, rules_bundle, rules_bundle_id, descriptor_ids, etc)
+- context (phase, phase_step, unit_id, target_id, weapon_id, rules_bundle, rules_bundle_id, descriptor_ids, etc)
 - options (list of valid options with IDs and parameters)
 - candidates (list of CandidateAction: action_id, params, metadata)
 - mask (bool list aligned to candidates; false = illegal)
@@ -289,6 +289,7 @@ Command phase:
 - psychic_veil_dialog: CHOOSE_QUARRY {action="use" | skip} (context `ability="imperial_agents_psychic_veil"`, `ability_name="Psychic Veil (Psychic)"`, `ability_key`, `phase="Command phase"`, `unit_id`, `source_unit_id`, `model_id`, `targeting_range=18`, `optional=true`, `turn`)
 
 Movement:
+- unit_activation_dialog: SELECT_UNIT {unit_id | action="pass"} (context `phase_name`, `phase_step`, `selection_purpose`, `allowed_unit_ids[]`, `allow_pass`)
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
 - pre_normal_move_bonus_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="movement_phase_move_weapon_bonus"`, `unit_id`, `model_id`, `move_bonus_dice`, `move_bonus_flat`, `attacks_bonus`, `weapon_name`, `buff_key`)
 - pre_normal_move_flickerjump_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickerjump"`, `unit_id`, `move_value`)

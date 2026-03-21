@@ -3,6 +3,7 @@ from . import charge  # noqa: F401
 from . import deployment  # noqa: F401
 from . import fight  # noqa: F401
 from . import movement  # noqa: F401
+from . import select_unit  # noqa: F401
 from . import shooting  # noqa: F401
 from . import setup  # noqa: F401
 from . import abilities  # noqa: F401

@@ -611,7 +611,7 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
 
     def test_eternity_gate_queues_target_and_constrains_arrival(self):
         from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT, DECISION_SELECT_UNIT
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -687,6 +687,35 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
             player_id=player_one.id,
         )
         self.assertTrue(bool(getattr(selected, "ok", False)))
+
+        select_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_SELECT_UNIT:
+                continue
+            ctx = dict(req.context or {})
+            if str(ctx.get("phase_step", "") or "") != "REINFORCEMENTS":
+                continue
+            if infantry_id not in list(ctx.get("allowed_unit_ids", []) or []):
+                continue
+            select_req = req
+            break
+        self.assertIsNotNone(select_req)
+
+        select_option = None
+        for option in list(select_req.options or []):
+            if str((option.payload or {}).get("unit_id", "") or "") != infantry_id:
+                continue
+            select_option = option
+            break
+        self.assertIsNotNone(select_option)
+        selected_reinforcement = resolve_decision_command(
+            game,
+            select_req,
+            select_option.option_id,
+            player_id=player_one.id,
+            result_payload={"unit_id": infantry_id},
+        )
+        self.assertTrue(bool(getattr(selected_reinforcement, "ok", False)))
 
         move_req = None
         for req in list(game.decision_queue.list() or []):

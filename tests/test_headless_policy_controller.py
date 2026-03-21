@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT, DECISION_REQUEST_DICE_ROLL
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CONFIRM_YES_NO,
+    DECISION_MOVE_UNIT,
+    DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_UNIT,
+)
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 
@@ -182,6 +187,50 @@ def test_headless_policy_controller_marks_skip_payload_when_falling_back_to_skip
             found_skip = True
             break
     assert found_skip
+
+
+def test_headless_policy_controller_deprioritizes_move_units_pass_option() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select a unit to act in Movement Phase / Move Units.",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Unit A", payload={"unit_id": "unit-a", "action_id": "select:unit-a"}),
+            DecisionOption.create("Pass", payload={"action": "pass", "action_id": "select:pass"}),
+        ],
+        context={"phase_name": "MOVEMENT_PHASE", "phase_step": "MOVE_UNITS", "allow_pass": True},
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(request.options[0].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"unit_id": "unit-a"}
+
+
+def test_headless_policy_controller_deprioritizes_reinforcements_pass_option() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select a unit to act in Movement Phase / Reinforcements.",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Unit A", payload={"unit_id": "unit-a", "action_id": "select:unit-a"}),
+            DecisionOption.create("Pass", payload={"action": "pass", "action_id": "select:pass"}),
+        ],
+        context={"phase_name": "MOVEMENT_PHASE", "phase_step": "REINFORCEMENTS", "allow_pass": True},
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(request.options[0].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"unit_id": "unit-a"}
 
 
 def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_candidate_is_invalid() -> None:

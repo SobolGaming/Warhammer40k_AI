@@ -17,12 +17,24 @@ def next_phase(game: "Game") -> None:
     # NOTE: Reinforcements (arriving from reserves) occur at the end of the Movement phase.
     try:
         if getattr(game.phase, "name", None) == "MOVEMENT_PHASE":
-            game.handle_reserves_arrival_phase()
+            queue = getattr(game, "decision_queue", None)
+            pending_requests = list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+            if bool(getattr(game, "reinforcements_step_active", False)):
+                if pending_requests:
+                    return
+                game.end_reinforcements_step()
+            else:
+                game.handle_reserves_arrival_phase()
+                pending_after = list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+                if pending_after:
+                    return
+                if bool(getattr(game, "reinforcements_step_active", False)):
+                    game.end_reinforcements_step()
     except Exception:
         pass
     try:
         end_reinforcements_step = getattr(game, "end_reinforcements_step", None)
-        if callable(end_reinforcements_step):
+        if callable(end_reinforcements_step) and bool(getattr(game, "reinforcements_step_active", False)):
             end_reinforcements_step()
     except Exception:
         pass
@@ -45,6 +57,13 @@ def next_phase(game: "Game") -> None:
     # Publish phase start for stratagem triggers
     try:
         game.event_system.publish("phase_start", player=game.get_current_player(), phase=game.phase)
+    except Exception:
+        pass
+    try:
+        if getattr(game.phase, "name", None) == "MOVEMENT_PHASE":
+            queue_move_units = getattr(game, "_queue_movement_phase_move_units_selection", None)
+            if callable(queue_move_units):
+                queue_move_units(player=game.get_current_player())
     except Exception:
         pass
 

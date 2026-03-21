@@ -4,6 +4,301 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GamePhaseHandlersMixin:
+    def _movement_phase_move_units_eligible_units(self, player=None) -> list[object]:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return []
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return []
+        army = self._get_player_army(active_player)
+        if army is None:
+            return []
+        from ..decision_requests import _eligible_units_for_move_units_step, build_select_movement_action_request
+
+        candidates = _eligible_units_for_move_units_step(getattr(army, "units", []) or [])
+        eligible: list[object] = []
+        for unit in list(candidates or []):
+            if unit is None:
+                continue
+            if not bool(getattr(unit, "deployed", True)):
+                continue
+            if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+                continue
+            if build_select_movement_action_request(
+                unit,
+                phase_name="MOVEMENT_PHASE",
+                phase_step="MOVE_UNITS",
+                selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                game_map=getattr(self, "map", None),
+            ) is None:
+                continue
+            eligible.append(unit)
+        return eligible
+
+    def _pending_movement_move_units_select_unit_request(self):
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        from ..decision_kinds import DECISION_SELECT_UNIT
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+                continue
+            if str(ctx.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
+                continue
+            return request
+        return None
+
+    def _movement_flow_blocking_yes_no_request(self, unit_id: str):
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        movement_ability_keys = {
+            "movement_phase_move_weapon_bonus",
+            "flickerjump",
+            "advance_redeploy",
+            "normal_move_redeploy",
+        }
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != str(DECISION_CONFIRM_YES_NO):
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("unit_id", "") or "") != str(unit_id or ""):
+                continue
+            if str(ctx.get("ability", "") or "").strip().lower() not in movement_ability_keys:
+                continue
+            return request
+        return None
+
+    def _resolve_request_unit_id(self, request: DecisionRequest | None) -> str:
+        if request is None:
+            return ""
+        context = dict(getattr(request, "context", {}) or {})
+        unit_id = str(context.get("unit_id", "") or "").strip()
+        if unit_id:
+            return unit_id
+        roll_spec = dict(context.get("roll_spec", {}) or {})
+        return str(roll_spec.get("unit_id", "") or "").strip()
+
+    def _movement_phase_has_pending_move_unit_request(self, unit_id: str) -> bool:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                continue
+            if self._resolve_request_unit_id(request) != str(unit_id or ""):
+                continue
+            return True
+        return False
+
+    def _movement_phase_has_pending_request(self, decision_type: str, unit_id: str) -> bool:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != str(decision_type or ""):
+                continue
+            if self._resolve_request_unit_id(request) != str(unit_id or ""):
+                continue
+            return True
+        return False
+
+    def _queue_movement_phase_move_units_selection(self, player=None):
+        if self._pending_movement_move_units_select_unit_request() is not None:
+            return self._pending_movement_move_units_select_unit_request()
+        active_player = player if player is not None else self.get_current_player()
+        eligible = self._movement_phase_move_units_eligible_units(active_player)
+        if not eligible:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        return queue_select_unit_request(
+            self,
+            eligible,
+            player_id=getattr(active_player, "id", None),
+            phase_name="MOVEMENT_PHASE",
+            phase_step="MOVE_UNITS",
+            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+            allow_pass=True,
+            context={"battle_round": int(getattr(self, "turn", 0) or 0)},
+        )
+
+    def _queue_move_units_movement_action_request(self, unit: object):
+        if unit is None:
+            return None
+        from ..decision_requests import queue_select_movement_action_request
+
+        return queue_select_movement_action_request(
+            self,
+            unit,
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            phase_name="MOVEMENT_PHASE",
+            phase_step="MOVE_UNITS",
+            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+            game_map=getattr(self, "map", None),
+            context={"unit_id": str(get_entity_id(unit) or "")},
+        )
+
+    def _queue_move_units_move_request(self, unit: object, movement_type: str):
+        if unit is None:
+            return None
+        move_kind = str(movement_type or "").strip().lower()
+        if move_kind not in {"move", "advance", "fall_back"}:
+            return None
+        max_distance = float(getattr(unit, "movement", 0) or 0)
+        if move_kind == "move":
+            try:
+                max_distance += float(unit.get_phase_movement_distance_bonus("move", game=self) or 0)
+            except Exception:
+                pass
+        elif move_kind == "advance":
+            try:
+                advance_roll = float(getattr(getattr(unit, "round_state", None), "advance_roll", 0) or 0)
+            except Exception:
+                advance_roll = 0.0
+            if advance_roll <= 0:
+                return None
+            max_distance += advance_roll
+        from ..decision_requests import queue_move_unit_request
+
+        return queue_move_unit_request(
+            self,
+            unit,
+            movement_type=move_kind,
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            max_distance=max_distance,
+            allow_skip=True,
+            context={
+                "phase_name": "MOVEMENT_PHASE",
+                "phase_step": "MOVE_UNITS",
+                "selection_purpose": "ACTIVATE_MOVEMENT_UNIT",
+            },
+        )
+
+    def on_select_unit_resolved(
+        self,
+        *,
+        request: DecisionRequest,
+        selected_unit_id: str | None,
+        selected_unit=None,
+        payload: dict | None = None,
+        pass_selected: bool = False,
+    ):
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return None
+        if str(ctx.get("phase_step", "") or "").strip().upper() != "MOVE_UNITS":
+            return None
+        if bool(pass_selected) or selected_unit is None or not selected_unit_id:
+            return {
+                "selected_unit_id": selected_unit_id,
+                "pass_selected": bool(pass_selected),
+                "payload": dict(payload or {}),
+            }
+        self._queue_move_units_movement_action_request(selected_unit)
+        return {
+            "selected_unit_id": selected_unit_id,
+            "pass_selected": False,
+            "payload": dict(payload or {}),
+        }
+
+    def _maybe_queue_movement_phase_move_units_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        from ..decision_kinds import (
+            DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+            DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+            DECISION_REQUEST_DICE_ROLL,
+            DECISION_SELECT_MOVEMENT_ACTION,
+        )
+
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        movement_type = ""
+        unit_id = ""
+
+        if decision_type == DECISION_SELECT_MOVEMENT_ACTION:
+            option = next(
+                (
+                    opt
+                    for opt in list(getattr(request, "options", []) or [])
+                    if str(getattr(opt, "option_id", "") or "") == str(getattr(result, "option_id", "") or "")
+                ),
+                None,
+            )
+            payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
+            movement_type = str(payload.get("action_type", "") or "").strip().lower()
+            unit_id = str(payload.get("unit_id", "") or "").strip()
+            if movement_type == "stationary":
+                self._queue_movement_phase_move_units_selection()
+                return
+        elif decision_type == DECISION_MOVE_UNIT:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() == "MOVEMENT_PHASE" and str(
+                ctx.get("phase_step", "") or ""
+            ).strip().upper() == "MOVE_UNITS":
+                self._queue_movement_phase_move_units_selection()
+            return
+        elif decision_type == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            movement_type = str(ctx.get("action_type", "") or "").strip().lower()
+        elif decision_type == DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES:
+            unit_id = self._resolve_request_unit_id(request)
+            movement_type = "advance"
+        elif decision_type == DECISION_REQUEST_DICE_ROLL:
+            ctx = dict(getattr(request, "context", {}) or {})
+            roll_spec = dict(ctx.get("roll_spec", {}) or {})
+            if str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "")).strip().lower() != "advance":
+                return
+            unit_id = str(roll_spec.get("unit_id", "") or "").strip()
+            movement_type = "advance"
+        elif decision_type == DECISION_CONFIRM_YES_NO:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            ability_key = str(ctx.get("ability", "") or "").strip().lower()
+            ability_to_move_kind = {
+                "advance_redeploy": "advance",
+                "flickerjump": "move",
+                "movement_phase_move_weapon_bonus": "move",
+                "normal_move_redeploy": "move",
+            }
+            movement_type = ability_to_move_kind.get(ability_key, "")
+        else:
+            return
+
+        if not unit_id or movement_type not in {"move", "advance", "fall_back"}:
+            return
+        if self._movement_phase_has_pending_move_unit_request(unit_id):
+            return
+        if self._movement_phase_has_pending_request(DECISION_SELECT_MOVEMENT_ACTION, unit_id):
+            return
+        if self._movement_phase_has_pending_request(DECISION_CHOOSE_MOVE_MODIFIER_IGNORES, unit_id):
+            return
+        if movement_type == "advance" and self._movement_phase_has_pending_request(DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES, unit_id):
+            return
+        if movement_type == "advance" and self._movement_phase_has_pending_request(DECISION_REQUEST_DICE_ROLL, unit_id):
+            return
+        if self._movement_flow_blocking_yes_no_request(unit_id) is not None:
+            return
+        resolver = getattr(self, "_resolve_unit_by_id", None)
+        unit = resolver(unit_id) if callable(resolver) else None
+        if unit is None:
+            registry = getattr(self, "entity_registry", None)
+            if registry is not None:
+                unit = registry.get(unit_id, kind="unit")
+        if unit is None or not getattr(unit, "is_alive", lambda: False)():
+            return
+        self._queue_move_units_move_request(unit, movement_type)
+
     def _on_phase_start_command_phase_cp_rolls(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: resolve CP gain dice-roll abilities (e.g., Sevenfold Chant)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

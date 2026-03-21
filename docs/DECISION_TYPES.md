@@ -28,6 +28,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 ## Movement & Positioning
 
+- `SELECT_UNIT` — Choose the next eligible unit to act in the current phase step.
 - `SELECT_MOVEMENT_ACTION` — Choose move/advance/fall back/remain.
 - `MOVE_UNIT` — Choose movement target/path.
 - `RESOLVE_COHERENCY` — Resolve unit coherency placement.

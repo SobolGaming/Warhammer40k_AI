@@ -606,7 +606,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         ranked = sorted(
             legal,
             key=lambda candidate: (
-                -self._semantic_score(candidate),
+                -self._semantic_score(request, candidate),
                 self._stable_tie_break(request, candidate),
             ),
         )
@@ -620,8 +620,10 @@ class HeadlessPolicyDecisionController(DecisionController):
         selected = ranked[index]
         return [selected] + [candidate for candidate in ranked if candidate is not selected]
 
-    def _semantic_score(self, candidate: CandidateAction) -> float:
+    def _semantic_score(self, request: DecisionRequest, candidate: CandidateAction) -> float:
         metadata = dict(getattr(candidate, "metadata", {}) or {})
+        params = dict(getattr(candidate, "params", {}) or {})
+        request_context = dict(getattr(request, "context", {}) or {})
         weights = self._weights
         score = 0.0
         score += weights.score_next_window * self._num(metadata.get("projected_score_delta_next_window"))
@@ -638,6 +640,21 @@ class HeadlessPolicyDecisionController(DecisionController):
             score -= 0.1
         if str(metadata.get("candidate_kind", "") or "").strip().lower() == "noop":
             score -= 0.05
+        action = str(params.get("action", "") or "").strip().lower()
+        if action in {"pass", "skip"} or bool(params.get("skipped", False)):
+            score -= 1.0
+        if str(getattr(request, "decision_type", "") or "") == "SELECT_UNIT":
+            phase_step = str(request_context.get("phase_step", "") or "").strip().upper()
+            if action == "pass" and phase_step in {"MOVE_UNITS", "REINFORCEMENTS"}:
+                score -= 5.0
+            unit_id = str(params.get("unit_id", "") or "").strip()
+            must_arrive_ids = {
+                str(value or "").strip()
+                for value in list(request_context.get("pending_must_arrival_unit_ids", []) or [])
+                if str(value or "").strip()
+            }
+            if phase_step == "REINFORCEMENTS" and unit_id and unit_id in must_arrive_ids:
+                score += 2.0
         return float(score)
 
     def _stable_tie_break(self, request: DecisionRequest, candidate: CandidateAction) -> str:

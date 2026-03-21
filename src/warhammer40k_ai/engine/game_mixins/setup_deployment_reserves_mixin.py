@@ -6,6 +6,210 @@ logger = logging.getLogger(__name__)
 
 
 class GameSetupDeploymentReservesMixin:
+    def _pending_reinforcements_select_unit_request(self):
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        from ..decision_kinds import DECISION_SELECT_UNIT
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+                continue
+            if str(ctx.get("phase_step", "") or "").strip().upper() != "REINFORCEMENTS":
+                continue
+            return request
+        return None
+
+    def _reinforcements_step_skipped_unit_ids_set(self) -> set[str]:
+        values = getattr(self, "_reinforcements_step_skipped_ids", set())
+        return {str(value or "").strip() for value in list(values or []) if str(value or "").strip()}
+
+    def _mark_reinforcements_step_unit_skipped(self, unit_id: str) -> None:
+        text = str(unit_id or "").strip()
+        if not text:
+            return
+        values = set(self._reinforcements_step_skipped_unit_ids_set())
+        values.add(text)
+        self._reinforcements_step_skipped_ids = values
+
+    def _standard_reserves_arrival_excluded_unit_ids(self, player: Player) -> set[str]:
+        excluded: set[str] = set()
+        if player is None:
+            return excluded
+        army = player.get_army() if player is not None else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        excludes_standard_arrival = (
+            getattr(csm_mgr, "deceptors_falsehood_excludes_standard_reserves_arrival", None)
+            if csm_mgr is not None
+            else None
+        )
+        if not callable(excludes_standard_arrival):
+            return excluded
+        for unit in list(self.get_units_in_reserves(player) or []):
+            try:
+                if not bool(excludes_standard_arrival(unit, game=self, player=player)):
+                    continue
+            except Exception:
+                continue
+            try:
+                unit_id = str(get_entity_id(unit) or "").strip()
+            except Exception:
+                unit_id = ""
+            if unit_id:
+                excluded.add(unit_id)
+        return excluded
+
+    def _reserve_entry_kind_for_unit(self, unit: Unit) -> str:
+        if unit is None:
+            return "other"
+        try:
+            if bool(getattr(unit, "has_deep_strike", lambda: False)()):
+                return "deep_strike"
+        except Exception:
+            pass
+        try:
+            if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
+                return "strategic_reserve"
+        except Exception:
+            pass
+        return "other"
+
+    def _reinforcements_step_selection_state(self, player: Player) -> tuple[list[Unit], bool, set[str]]:
+        if player is None:
+            return ([], True, set())
+        excluded_ids = self._standard_reserves_arrival_excluded_unit_ids(player)
+        skipped_ids = self._reinforcements_step_skipped_unit_ids_set()
+        units_that_can_arrive = []
+        for unit in list(self.get_units_that_can_arrive_from_reserves(player) or []):
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if not unit_id or unit_id in excluded_ids or unit_id in skipped_ids:
+                continue
+            units_that_can_arrive.append(unit)
+        units_that_must_arrive = []
+        for unit in list(self.get_units_that_must_arrive_from_reserves(player) or []):
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if not unit_id or unit_id in excluded_ids or unit_id in skipped_ids:
+                continue
+            units_that_must_arrive.append(unit)
+        selectable = units_that_must_arrive or units_that_can_arrive
+        selectable.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        must_ids = {
+            str(get_entity_id(unit) or "").strip()
+            for unit in list(units_that_must_arrive or [])
+            if str(get_entity_id(unit) or "").strip()
+        }
+        allow_pass = not bool(must_ids)
+        return (selectable, allow_pass, must_ids)
+
+    def _queue_movement_phase_reinforcements_selection(self, player=None):
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return None
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return None
+        pending_request = self._pending_reinforcements_select_unit_request()
+        if pending_request is not None:
+            return pending_request
+        selectable, allow_pass, must_ids = self._reinforcements_step_selection_state(active_player)
+        if not selectable:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        reserve_entry_kinds_by_unit_id = {
+            str(get_entity_id(unit) or ""): self._reserve_entry_kind_for_unit(unit)
+            for unit in list(selectable or [])
+            if str(get_entity_id(unit) or "")
+        }
+        return queue_select_unit_request(
+            self,
+            selectable,
+            player_id=getattr(active_player, "id", None),
+            phase_name="MOVEMENT_PHASE",
+            phase_step="REINFORCEMENTS",
+            selection_purpose="ACTIVATE_REINFORCEMENT_UNIT",
+            allow_pass=allow_pass,
+            context={
+                "battle_round": int(getattr(self, "turn", 0) or 0),
+                "pending_must_arrival_unit_ids": sorted(must_ids),
+                "reserve_entry_kinds_by_unit_id": reserve_entry_kinds_by_unit_id,
+            },
+        )
+
+    def _reinforcements_step_has_pending_decisions(self) -> bool:
+        if not bool(getattr(self, "reinforcements_step_active", False)):
+            return False
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        return bool(list(queue.list() or []))
+
+    def _maybe_queue_movement_phase_reinforcements_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        if not bool(getattr(self, "reinforcements_step_active", False)):
+            return
+        if str(getattr(request, "decision_type", "") or "").strip() != DECISION_MOVE_UNIT:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("placement_kind", "") or "").strip() != "reserves_arrival":
+            return
+        unit_id = str(ctx.get("unit_id", "") or "").strip()
+        if bool(getattr(result, "payload", {}).get("skipped", False)):
+            self._mark_reinforcements_step_unit_skipped(unit_id)
+        self._queue_movement_phase_reinforcements_selection(player=self.get_current_player())
+
+    def on_select_unit_resolved(
+        self,
+        *,
+        request: DecisionRequest,
+        selected_unit_id: str | None,
+        selected_unit=None,
+        payload: dict | None = None,
+        pass_selected: bool = False,
+    ):
+        ctx = dict(getattr(request, "context", {}) or {})
+        if (
+            str(ctx.get("phase_name", "") or "").strip().upper() == "MOVEMENT_PHASE"
+            and str(ctx.get("phase_step", "") or "").strip().upper() == "REINFORCEMENTS"
+        ):
+            if bool(pass_selected) or selected_unit is None or not selected_unit_id:
+                return {
+                    "selected_unit_id": selected_unit_id,
+                    "pass_selected": bool(pass_selected),
+                    "payload": dict(payload or {}),
+                }
+            must_ids = {
+                str(value or "").strip()
+                for value in list(ctx.get("pending_must_arrival_unit_ids", []) or [])
+                if str(value or "").strip()
+            }
+            allow_skip = str(selected_unit_id or "") not in must_ids
+            request_obj = self._build_reserves_arrival_request(selected_unit, allow_skip=allow_skip)
+            if request_obj is not None:
+                self.request_decision(request_obj)
+            return {
+                "selected_unit_id": selected_unit_id,
+                "pass_selected": False,
+                "payload": dict(payload or {}),
+            }
+        handler = getattr(super(), "on_select_unit_resolved", None)
+        if callable(handler):
+            return handler(
+                request=request,
+                selected_unit_id=selected_unit_id,
+                selected_unit=selected_unit,
+                payload=dict(payload or {}),
+                pass_selected=pass_selected,
+            )
+        return None
+
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
         self.players.append(player)
@@ -1669,6 +1873,7 @@ class GameSetupDeploymentReservesMixin:
         active_player = player if player is not None else self.get_current_player()
         self.reinforcements_step_active = active_player is not None
         self.reinforcements_step_player_id = str(getattr(active_player, "id", "") or "") if active_player is not None else ""
+        self._reinforcements_step_skipped_ids = set()
         try:
             self.reinforcements_step_turn = int(getattr(self, "turn", 0) or 0)
         except (TypeError, ValueError):
@@ -1678,6 +1883,7 @@ class GameSetupDeploymentReservesMixin:
         self.reinforcements_step_active = False
         self.reinforcements_step_player_id = ""
         self.reinforcements_step_turn = 0
+        self._reinforcements_step_skipped_ids = set()
 
     def _handle_cult_ambush_reinforcements(self, current_player) -> None:
         players = list(getattr(self, "players", []) or [])
@@ -1753,51 +1959,11 @@ class GameSetupDeploymentReservesMixin:
                     player_id or "<unknown>",
                 )
 
-        # Queue explicit placement decisions for each eligible unit.
-        try:
-            from ...utility.entity_ids import get_entity_id
-        except Exception:
-            get_entity_id = None
-        pending = set()
-        try:
-            queue = getattr(self, "decision_queue", None)
-            if queue is not None and hasattr(queue, "list"):
-                for req in list(queue.list() or []):
-                    try:
-                        if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
-                            continue
-                        ctx = dict(getattr(req, "context", {}) or {})
-                        if str(ctx.get("placement_kind", "")) != "reserves_arrival":
-                            continue
-                        uid = str(ctx.get("unit_id", "") or "")
-                        if uid:
-                            pending.add(uid)
-                    except Exception:
-                        continue
-        except Exception:
-            pending = set()
-        must_ids = set()
-        for unit in list(units_that_must_arrive or []):
-            try:
-                must_ids.add(str(get_entity_id(unit)))
-            except Exception:
-                continue
-        # Deterministic ordering by entity id
-        def _unit_sort_key(u):
-            try:
-                return str(get_entity_id(u))
-            except Exception:
-                return str(getattr(u, "name", "") or "")
-        for unit in sorted(list(units_that_can_arrive or []), key=_unit_sort_key):
+        for unit in list(units_that_can_arrive or []):
             try:
                 unit_id = str(get_entity_id(unit))
             except Exception:
                 unit_id = ""
-            if unit_id and unit_id in pending:
-                continue
-            allow_skip = True
-            if unit_id and unit_id in must_ids:
-                allow_skip = False
             source = ""
             deep_strike_min_distance = 6.0
             try:
@@ -1855,12 +2021,7 @@ class GameSetupDeploymentReservesMixin:
                         payload={"unit_id": unit_id},
                         instance_key=f"{unit_id}:{getattr(self, 'turn', 0)}:cloudstrider",
                     )
-            request = self._build_reserves_arrival_request(unit, allow_skip=allow_skip)
-            if request is not None:
-                try:
-                    self.request_decision(request)
-                except Exception:
-                    pass
+        self._queue_movement_phase_reinforcements_selection(player)
 
         return units_arrived
 
@@ -2118,8 +2279,11 @@ class GameSetupDeploymentReservesMixin:
             "placement_kind": "reserves_arrival",
             "allowed_model_ids": allowed_model_ids,
             "allow_skip": bool(allow_skip),
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "REINFORCEMENTS",
             "battle_round": int(getattr(self, "turn", 0) or 0),
             "reserve_status": str(getattr(unit, "reserve_status", "") or ""),
+            "reserve_entry_kind": self._reserve_entry_kind_for_unit(unit),
         }
         return DecisionRequest.create(
             DECISION_MOVE_UNIT,

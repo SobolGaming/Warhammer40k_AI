@@ -18,7 +18,10 @@ from .decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_MOVEMENT_ACTION,
+    DECISION_SELECT_UNIT,
     DECISION_SHADOW_ASSIGNMENT,
     DECISION_SCOUT_MOVE,
 )
@@ -28,6 +31,7 @@ from ..rules.imperial_agents_shadow_assignment import (
     unit_has_shadow_assignment,
 )
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
+from ..utility.movement_utils import compute_embark_candidates
 
 PLAYER_COLOR_HUE_STEP_DEGREES = 15
 PLAYER_COLOR_SATURATION = 0.85
@@ -212,6 +216,391 @@ def _unique_army_root_units(units: Iterable[object]) -> list[object]:
             continue
         roots[root_id] = root
     return [roots[k] for k in sorted(roots.keys())]
+
+
+def _unit_is_alive(unit: object) -> bool:
+    alive_attr = getattr(unit, "is_alive", None)
+    if callable(alive_attr):
+        return bool(alive_attr())
+    return bool(alive_attr) if alive_attr is not None else True
+
+
+def _unit_is_in_reserves(unit: object) -> bool:
+    reserve_fn = getattr(unit, "is_in_reserves", None)
+    if callable(reserve_fn):
+        return bool(reserve_fn())
+    reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+    return reserve_status in {"reserves", "strategic_reserves"}
+
+
+def _unit_is_embarked(unit: object) -> bool:
+    embarked_attr = getattr(unit, "is_embarked", None)
+    if callable(embarked_attr):
+        if bool(embarked_attr()):
+            return True
+    elif embarked_attr is not None and bool(embarked_attr):
+        return True
+    return getattr(unit, "embarked_in", None) is not None
+
+
+def _unit_has_resolved_round_movement(unit: object) -> bool:
+    round_state = getattr(unit, "round_state", None)
+    if round_state is None:
+        return False
+    return bool(
+        getattr(round_state, "moved_this_round", False)
+        or getattr(round_state, "advanced_this_round", False)
+        or getattr(round_state, "fell_back_this_round", False)
+    )
+
+
+def _eligible_units_for_phase_step(
+    units: Iterable[object] | None,
+    *,
+    require_in_reserves: bool | None = None,
+) -> list[object]:
+    eligible: list[object] = []
+    for unit in _unique_army_root_units(units or []):
+        if unit is None or not _unit_is_alive(unit):
+            continue
+        in_reserves = _unit_is_in_reserves(unit)
+        if require_in_reserves is True and not in_reserves:
+            continue
+        if require_in_reserves is False and in_reserves:
+            continue
+        eligible.append(unit)
+    return eligible
+
+
+def _eligible_units_for_move_units_step(units: Iterable[object] | None) -> list[object]:
+    return _eligible_units_for_phase_step(units, require_in_reserves=False)
+
+
+def _eligible_units_for_reinforcements_step(units: Iterable[object] | None) -> list[object]:
+    return _eligible_units_for_phase_step(units, require_in_reserves=True)
+
+
+def _select_unit_prompt(*, prompt: str, phase_name: str, phase_step: str) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    phase_label = str(phase_name or "").strip().replace("_", " ").title() or "Phase"
+    step_label = str(phase_step or "").strip().replace("_", " ").title()
+    if step_label:
+        return f"Select a unit to act in {phase_label} / {step_label}."
+    return f"Select a unit to act in {phase_label}."
+
+
+def build_select_unit_request(
+    units: Iterable[object] | None,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    phase_name: str = "",
+    phase_step: str = "",
+    selection_purpose: str = "",
+    allow_pass: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    eligible_units = _unique_army_root_units(units or [])
+    if not eligible_units and not bool(allow_pass):
+        return None
+
+    options: list[DecisionOption] = []
+    allowed_unit_ids: list[str] = []
+    for unit in eligible_units:
+        unit_id = str(get_entity_id(unit) or "").strip()
+        if not unit_id:
+            continue
+        allowed_unit_ids.append(unit_id)
+        label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+        action_id = (
+            f"{DECISION_SELECT_UNIT}:"
+            f"{str(phase_name or '').strip().upper()}:"
+            f"{str(phase_step or '').strip().upper()}:"
+            f"{str(selection_purpose or '').strip().upper()}:"
+            f"{unit_id}"
+        )
+        options.append(
+            DecisionOption.create(
+                label,
+                payload={
+                    "unit_id": unit_id,
+                    "action_id": action_id,
+                },
+            )
+        )
+
+    if not options and not bool(allow_pass):
+        return None
+
+    if bool(allow_pass):
+        pass_action_id = (
+            f"{DECISION_SELECT_UNIT}:"
+            f"{str(phase_name or '').strip().upper()}:"
+            f"{str(phase_step or '').strip().upper()}:"
+            f"{str(selection_purpose or '').strip().upper()}:PASS"
+        )
+        options.append(
+            DecisionOption.create(
+                "Pass",
+                payload={
+                    "action": "pass",
+                    "action_id": pass_action_id,
+                },
+            )
+        )
+
+    if player_id is None and eligible_units:
+        player_id = _player_id_for_unit(eligible_units[0])
+
+    request_context = dict(context or {})
+    request_context.setdefault("phase_name", str(phase_name or "").strip().upper())
+    request_context.setdefault("phase_step", str(phase_step or "").strip().upper())
+    request_context.setdefault("selection_purpose", str(selection_purpose or "").strip().upper())
+    request_context["allow_pass"] = bool(allow_pass)
+    request_context["allowed_unit_ids"] = list(allowed_unit_ids)
+
+    return DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        _select_unit_prompt(prompt=prompt, phase_name=phase_name, phase_step=phase_step),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_select_unit_request(
+    game: object,
+    units: Iterable[object] | None,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    phase_name: str = "",
+    phase_step: str = "",
+    selection_purpose: str = "",
+    allow_pass: bool = False,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_select_unit_request(
+        units,
+        prompt=prompt,
+        player_id=player_id,
+        phase_name=phase_name,
+        phase_step=phase_step,
+        selection_purpose=selection_purpose,
+        allow_pass=allow_pass,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _select_movement_action_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Select movement action for {label}"
+
+
+def _available_move_action_names(unit: object, *, game_map: object | None = None) -> list[str]:
+    if unit is None or _unit_has_resolved_round_movement(unit) or _unit_is_in_reserves(unit) or _unit_is_embarked(unit):
+        return []
+    try:
+        engagement_state = unit.get_engagement_state(game_map)
+        available = list(unit.get_available_move_actions(getattr(engagement_state, "value", engagement_state)) or [])
+    except Exception:
+        available = []
+    try:
+        from warhammer40k_ai.units.unit import MovementAction
+    except Exception:
+        return []
+    action_map = {
+        "move": MovementAction.MOVE.value,
+        "advance": MovementAction.ADVANCE.value,
+        "fall_back": MovementAction.FALL_BACK.value,
+        "stationary": MovementAction.REMAIN_STATIONARY.value,
+    }
+    actions = [name for name, action_value in action_map.items() if action_value in available]
+    if bool(getattr(unit, "is_transport", False)):
+        if game_map is not None and compute_embark_candidates(unit, game_map):
+            actions.append("embark")
+        if list(getattr(unit, "transport_passengers", []) or []):
+            actions.append("disembark")
+    deduped: list[str] = []
+    for action in actions:
+        text = str(action or "").strip().lower()
+        if text and text not in deduped:
+            deduped.append(text)
+    return deduped
+
+
+def build_select_movement_action_request(
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    phase_name: str = "",
+    phase_step: str = "",
+    selection_purpose: str = "",
+    game_map: object | None = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return None
+    action_names = _available_move_action_names(unit, game_map=game_map)
+    if not action_names:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    options: list[DecisionOption] = []
+    for action_name in action_names:
+        action_id = (
+            f"{DECISION_SELECT_MOVEMENT_ACTION}:"
+            f"{str(phase_name or '').strip().upper()}:"
+            f"{str(phase_step or '').strip().upper()}:"
+            f"{unit_id}:"
+            f"{str(action_name or '').strip().upper()}"
+        )
+        options.append(
+            DecisionOption.create(
+                str(action_name or "").replace("_", " ").title(),
+                payload={
+                    "unit_id": unit_id,
+                    "action_type": action_name,
+                    "action_id": action_id,
+                },
+            )
+        )
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("phase_name", str(phase_name or "").strip().upper())
+    request_context.setdefault("phase_step", str(phase_step or "").strip().upper())
+    request_context.setdefault("selection_purpose", str(selection_purpose or "").strip().upper())
+    request_context["allowed_action_types"] = list(action_names)
+    return DecisionRequest.create(
+        DECISION_SELECT_MOVEMENT_ACTION,
+        _select_movement_action_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_select_movement_action_request(
+    game: object,
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    phase_name: str = "",
+    phase_step: str = "",
+    selection_purpose: str = "",
+    game_map: object | None = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_select_movement_action_request(
+        unit,
+        prompt=prompt,
+        player_id=player_id,
+        phase_name=phase_name,
+        phase_step=phase_step,
+        selection_purpose=selection_purpose,
+        game_map=game_map,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def build_move_unit_request(
+    unit: object,
+    *,
+    movement_type: str,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    max_distance: float | None = None,
+    allow_skip: bool = True,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    move_kind = str(movement_type or "").strip().lower()
+    if not unit_id or not move_kind:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    options = [
+        DecisionOption.create(
+            "Confirm",
+            payload={"unit_id": unit_id, "movement_type": move_kind, "action": "confirm"},
+        )
+    ]
+    if bool(allow_skip):
+        options.append(
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": unit_id, "movement_type": move_kind, "action": "skip"},
+            )
+        )
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("movement_type", move_kind)
+    request_context["allow_skip"] = bool(allow_skip)
+    if max_distance is not None:
+        request_context["max_distance"] = float(max_distance)
+    request_prompt = str(prompt or "").strip() or f"Move {getattr(unit, 'name', 'Unit')} ({move_kind})"
+    return DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        request_prompt,
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_move_unit_request(
+    game: object,
+    unit: object,
+    *,
+    movement_type: str,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    max_distance: float | None = None,
+    allow_skip: bool = True,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_move_unit_request(
+        unit,
+        movement_type=movement_type,
+        prompt=prompt,
+        player_id=player_id,
+        max_distance=max_distance,
+        allow_skip=allow_skip,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
 
 
 def _norm_ability_name(value: str) -> str:

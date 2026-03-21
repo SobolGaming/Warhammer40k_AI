@@ -2475,10 +2475,87 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Movement validation is handled by the game logic
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
-        from ...engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
-        from ...engine.decisions import DecisionOption, DecisionRequest
-        from ...utility.movement_utils import compute_embark_candidates
-        from ...utility.entity_ids import get_entity_id
+        from ...engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_SELECT_UNIT
+        from ...utility.entity_ids import maybe_entity_id
+
+        unit_id = str(maybe_entity_id(unit) or "")
+
+        def _pending_select_unit_request(phase_step: str):
+            for req in list(self.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_SELECT_UNIT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("phase_name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+                    continue
+                if str(ctx.get("phase_step", "") or "").strip().upper() != str(phase_step or "").strip().upper():
+                    continue
+                allowed_unit_ids = {
+                    str(value or "").strip()
+                    for value in list(ctx.get("allowed_unit_ids", []) or [])
+                    if str(value or "").strip()
+                }
+                if unit_id and allowed_unit_ids and unit_id not in allowed_unit_ids:
+                    continue
+                return req
+            return None
+
+        def _resolve_select_unit_request(request) -> bool:
+            if request is None:
+                return False
+            matching_option = next(
+                (
+                    opt
+                    for opt in list(getattr(request, "options", []) or [])
+                    if str((getattr(opt, "payload", {}) or {}).get("unit_id", "") or "").strip() == unit_id
+                ),
+                None,
+            )
+            if matching_option is None:
+                logger.error(
+                    "ERROR: %s is not an allowed Movement activation target",
+                    getattr(unit, "name", "Unit"),
+                )
+                return False
+            payload = {
+                "decision_id": request.decision_id,
+                "option_id": matching_option.option_id,
+                "result_payload": {"unit_id": unit_id},
+            }
+            cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=request.player_id, payload=payload)
+            cmd_result = self.game.apply_command(cmd)
+            if cmd_result is None or not bool(getattr(cmd_result, "ok", False)):
+                logger.error(
+                    "ERROR: Unit activation decision rejected for %s",
+                    getattr(unit, "name", "Unit"),
+                )
+                return False
+            return True
+
+        def _pending_reinforcements_move_request():
+            for req in list(self.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("placement_kind", "") or "").strip() != "reserves_arrival":
+                    continue
+                if str(ctx.get("unit_id", "") or "").strip() != unit_id:
+                    continue
+                return req
+            return None
+
+        reinforcement_select_req = _pending_select_unit_request("REINFORCEMENTS")
+        if reinforcement_select_req is not None:
+            if not _resolve_select_unit_request(reinforcement_select_req):
+                return
+        reinforcement_move_req = _pending_reinforcements_move_request()
+        if reinforcement_move_req is not None:
+            self._request_move_unit_decision(
+                unit,
+                "deploy",
+                lambda _completed: None,
+                decision_request=reinforcement_move_req,
+            )
+            return
 
         round_state = getattr(unit, "round_state", None)
         already_resolved_movement = bool(
@@ -2500,48 +2577,35 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
             return
 
-        def _pending_request():
+        def _pending_movement_request():
             for req in list(self.game.decision_queue.list() or []):
                 if getattr(req, "decision_type", None) != DECISION_SELECT_MOVEMENT_ACTION:
                     continue
-                if str(getattr(req, "context", {}).get("unit_id", "")) == get_entity_id(unit):
+                if str(getattr(req, "context", {}).get("unit_id", "")) == unit_id:
                     return req
             return None
 
-        req = _pending_request()
+        select_unit_req = _pending_select_unit_request("MOVE_UNITS")
+        if select_unit_req is not None:
+            if not _resolve_select_unit_request(select_unit_req):
+                return
+
+        req = _pending_movement_request()
         if req is None:
-            from warhammer40k_ai.units.unit import MovementAction
-
-            engagement_state = unit.get_engagement_state(self.game.map)
-            available = unit.get_available_move_actions(engagement_state.value)
-            action_map = {
-                "move": MovementAction.MOVE.value,
-                "advance": MovementAction.ADVANCE.value,
-                "fall_back": MovementAction.FALL_BACK.value,
-                "stationary": MovementAction.REMAIN_STATIONARY.value,
-            }
-            actions = [name for name, val in action_map.items() if val in available]
-            if getattr(unit, "is_transport", False):
-                if compute_embark_candidates(unit, self.game.map):
-                    actions.append("embark")
-                if list(getattr(unit, "transport_passengers", []) or []):
-                    actions.append("disembark")
-
-            options = [
-                DecisionOption.create(
-                    action,
-                    payload={"unit_id": get_entity_id(unit), "action_type": action},
+            try:
+                req = _require_pending_decision_request(
+                    self.game,
+                    DECISION_SELECT_MOVEMENT_ACTION,
+                    f"Select movement action for {getattr(unit, 'name', 'Unit')}",
+                    player_id=getattr(self.game.get_current_player(), "id", None),
+                    context={"unit_id": unit_id},
                 )
-                for action in actions
-            ]
-            req = _require_pending_decision_request(self.game,
-                DECISION_SELECT_MOVEMENT_ACTION,
-                f"Select movement action for {getattr(unit, 'name', 'Unit')}",
-                player_id=getattr(self.game.get_current_player(), "id", None),
-                options=options,
-                context={"unit_id": get_entity_id(unit)},
-
-            )
+            except RuntimeError:
+                logger.error(
+                    "ERROR: No pending movement action request found for %s",
+                    getattr(unit, "name", "Unit"),
+                )
+                return
 
         def _option_for_action(action: str) -> str:
             for opt in list(getattr(req, "options", []) or []):

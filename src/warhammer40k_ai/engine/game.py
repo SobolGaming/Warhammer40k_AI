@@ -11974,6 +11974,8 @@ class Game(
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)
             self._maybe_apply_optional_ability_confirmation(request, result)
+            self._maybe_queue_movement_phase_move_units_followup(request, result)
+            self._maybe_queue_movement_phase_reinforcements_followup(request, result)
             self._maybe_queue_bodyguard_return_followup(request, result)
             self._maybe_apply_choice_samples_followup(request, result)
             self._maybe_apply_spirit_snare_followup(request, result)

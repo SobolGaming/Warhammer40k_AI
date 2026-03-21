@@ -1,7 +1,6 @@
 import pygame
 from typing import Callable, List, Tuple, TYPE_CHECKING
 
-from .panels.reserves_arrival_panel import ReservesArrivalPanel
 from .ui_constants import TILE_SIZE, TEXT_ACCENT, TEXT_PRIMARY, TEXT_SECONDARY
 import logging
 logger = logging.getLogger(__name__)
@@ -22,12 +21,8 @@ class HumanUIInterface:
         self.scout_choice_dialog = ScoutChoiceDialog(screen_width, screen_height)
         from .dialogs import FightUnitSelectionDialog
         self.fight_unit_selection_dialog = FightUnitSelectionDialog(screen_width, screen_height)
-        # Note: melee weapon declaration dialog is now handled directly through game_view instance
-        self.reserves_arrival_panel = ReservesArrivalPanel()
 
         # State for handling UI interactions
-        self.pending_reserves_callback = None
-        self.pending_position_callback = None
         self.current_unit_for_placement = None
         self.current_deployment_zone = None
         self.placement_mode = False
@@ -169,9 +164,6 @@ class HumanUIInterface:
 
     def update(self, screen):
         """Update and draw UI components."""
-        if self.reserves_arrival_panel.visible:
-            self.reserves_arrival_panel.draw(screen)
-
         # Draw placement indicator if in placement mode
         if self.placement_mode and self.current_unit_for_placement:
             self.draw_placement_indicator(screen)
@@ -222,8 +214,6 @@ class HumanUIInterface:
 
         Dialogs are exclusively handled by DialogManager.
         """
-        if self.reserves_arrival_panel.visible:
-            return bool(self.reserves_arrival_panel.handle_event(event))
         return False
 
     def show_scout_dialog(self, unit, callback, game_map=None, decision_request=None):
