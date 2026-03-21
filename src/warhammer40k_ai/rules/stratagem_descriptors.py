@@ -2389,6 +2389,91 @@ _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FELLHAMMER_SIEGE_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010689002": StratagemToolDescriptor(
+        stratagem_id="000010689002",
+        name="Hardened Killers",
+        timing="your_command_phase",
+        target="damned_unit",
+        duration="until_start_of_your_next_command_phase",
+        effect="choose_hardened_killers_benefit",
+        cp_cost=1,
+        effect_params={
+            "choices": ["BALLISTIC_SKILL", "RAPID_FIRE", "SAVE"],
+        },
+    ),
+    "000010689003": StratagemToolDescriptor(
+        stratagem_id="000010689003",
+        name="At the Tyrant's Command",
+        timing="your_movement_phase",
+        target="heretic_astartes_unit_excluding_monster_vehicle",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "allow_after_advance": True,
+            "allow_after_fall_back": False,
+            "attack_type": "ranged_and_charge",
+        },
+    ),
+    "000010689004": StratagemToolDescriptor(
+        stratagem_id="000010689004",
+        name="Seize the Prize",
+        timing="movement_phase_after_selected_to_advance",
+        target="same_heretic_astartes_unit_excluding_monster_vehicle",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_fixed_distance",
+        cp_cost=1,
+        effect_params={
+            "fixed_advance_distance": 6,
+        },
+    ),
+    "000010689005": StratagemToolDescriptor(
+        stratagem_id="000010689005",
+        name="Reavers' Flurry",
+        timing="fight_phase_on_select_to_fight",
+        target="heretic_astartes_unit_that_charged_and_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_attacks_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "melee_attacks_bonus": 1,
+        },
+    ),
+    "000010689006": StratagemToolDescriptor(
+        stratagem_id="000010689006",
+        name="To the Favoured the Spoils",
+        timing="opponent_shooting_phase_after_shooting_resolved_and_lost_wounds",
+        target="heretic_astartes_unit_that_lost_wounds",
+        duration="immediate",
+        effect="reactive_surge_move_towards_closest_non_aircraft_enemy",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "allow_engagement_range": True,
+        },
+    ),
+    "000010689007": StratagemToolDescriptor(
+        stratagem_id="000010689007",
+        name="Encircling Surge",
+        timing="end_of_opponent_fight_phase",
+        target="heretic_astartes_unit_excluding_monster_vehicle_within_6_of_edge_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "requires_not_engaged": True,
+            "distance_to_battlefield_edge": 6.0,
+        },
+    ),
+}
+
+_HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7663,6 +7748,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FELLHAMMER_SIEGE_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7912,6 +8000,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DECEPTORS_STRATAGEM_BY_NAME.get(key)
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
+        or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

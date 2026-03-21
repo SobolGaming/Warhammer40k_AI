@@ -116,6 +116,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _FELLHAMMER_SIEGECRAFT_SOURCE = "Siegecraft"
     _FELLHAMMER_STEADFAST_DETERMINATION_PREFIX = "fellhammer_steadfast_determination"
     _FELLHAMMER_STEADFAST_DETERMINATION_SOURCE = "Steadfast Determination"
+    _HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX = "hurons_marauders_at_the_tyrants_command"
+    _HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_SOURCE = "At the Tyrant's Command"
+    _HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX = "hurons_marauders_hardened_killers"
+    _HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE = "Hardened Killers"
+    _HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX = "hurons_marauders_reavers_flurry"
+    _HURONS_MARAUDERS_REAVERS_FLURRY_SOURCE = "Reavers' Flurry"
+    _HARDENED_KILLERS_ABILITY = "hurons_marauders_hardened_killers_choice"
+    _HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL = "BALLISTIC_SKILL"
+    _HARDENED_KILLERS_CHOICE_RAPID_FIRE = "RAPID_FIRE"
+    _HARDENED_KILLERS_CHOICE_SAVE = "SAVE"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
@@ -656,6 +666,17 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return "Huron's Elite"
         if key == cls._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS:
             return "Mobile Marauders"
+        return key
+
+    @classmethod
+    def _hardened_killers_choice_label(cls, choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        if key == cls._HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL:
+            return "Ballistic Skill"
+        if key == cls._HARDENED_KILLERS_CHOICE_RAPID_FIRE:
+            return "Rapid Fire"
+        if key == cls._HARDENED_KILLERS_CHOICE_SAVE:
+            return "Save"
         return key
 
     @classmethod
@@ -4864,6 +4885,133 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    @classmethod
+    def _hurons_marauders_effect_source(cls, sr: dict, *, prefix: str, default: str) -> str:
+        if not isinstance(sr, dict):
+            return default
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _hurons_marauders_until_next_turn_effect_is_expired(
+        self,
+        sr: dict,
+        *,
+        prefix: str,
+        game=None,
+    ) -> bool:
+        if not isinstance(sr, dict):
+            return True
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        try:
+            activation_round = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            activation_round = 0
+        if activation_round <= 0:
+            return False
+        try:
+            current_round = int(getattr(resolved_game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        if current_round <= activation_round:
+            return False
+        if current_round > activation_round + 1:
+            return True
+
+        owner_id = str(sr.get(f"{prefix}_activating_player_id", "") or "").strip()
+        if not owner_id:
+            return True
+        owner_index = self._player_index_for_id(resolved_game, owner_id)
+        if owner_index is None:
+            current_owner = self._current_turn_owner_id(game=resolved_game)
+            return bool(current_owner and current_owner == owner_id and self._current_phase_name(game=resolved_game))
+        try:
+            raw_current_index = getattr(resolved_game, "current_player_index", None)
+            current_index = -1 if raw_current_index is None else int(raw_current_index)
+        except (TypeError, ValueError):
+            current_index = -1
+        if current_index < 0:
+            return False
+        if current_index < owner_index:
+            return False
+        if current_index > owner_index:
+            return True
+        return bool(self._current_phase_name(game=resolved_game))
+
+    def _hurons_marauders_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+        until_next_turn: bool = False,
+    ):
+        if not self.is_hurons_marauders():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        if until_next_turn:
+            if self._hurons_marauders_until_next_turn_effect_is_expired(sr, prefix=prefix, game=game):
+                self._remove_special_rule_prefix(root, prefix)
+                return None, None
+            return root, sr
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_hurons_marauders_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -5285,6 +5433,239 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             sr,
             prefix=self._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX,
             default=self._FELLHAMMER_STEADFAST_DETERMINATION_SOURCE,
+        )
+
+    def can_activate_hurons_marauders_hardened_killers(self, unit, *, game=None, player=None) -> bool:
+        if not self.is_hurons_marauders() or self.army is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_on_battlefield(root):
+            return False
+        if not self._unit_is_damned(root):
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None and str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+            return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def activate_hurons_marauders_hardened_killers(
+        self,
+        unit,
+        *,
+        choice_key: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict:
+        root = self._unit_root(unit)
+        if root is None:
+            return {"ok": False, "reason": "Unit not found."}
+        if not self.can_activate_hurons_marauders_hardened_killers(root, game=game, player=player):
+            return {"ok": False, "reason": "Hardened Killers cannot be activated for this unit right now."}
+        choice = str(choice_key or "").strip().upper()
+        if choice not in {
+            self._HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL,
+            self._HARDENED_KILLERS_CHOICE_RAPID_FIRE,
+            self._HARDENED_KILLERS_CHOICE_SAVE,
+        }:
+            return {"ok": False, "reason": "Invalid Hardened Killers choice."}
+        owner_id = self._current_turn_owner_id(game=game, player=player)
+        self._set_hurons_marauders_effect_state(
+            root,
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            source=str(source or self._HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE).strip()
+            or self._HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE,
+            player=player,
+            game=game,
+            track_phase=False,
+            extra_state={
+                f"{self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX}_choice_key": choice,
+                f"{self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX}_activating_player_id": str(owner_id or "").strip(),
+            },
+        )
+        return {
+            "ok": True,
+            "unit_id": self._unit_entity_key(root),
+            "choice_key": choice,
+            "choice_name": self._hardened_killers_choice_label(choice),
+        }
+
+    def hurons_marauders_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._hurons_marauders_effect_state(
+            unit,
+            prefix=self._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root))
+
+    def hurons_marauders_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._hurons_marauders_effect_state(
+            unit,
+            prefix=self._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root))
+
+    def hurons_marauders_hardened_killers_attack_skill_override(
+        self,
+        model,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> Optional[dict]:
+        if model is None or not self._model_in_army(model):
+            return None
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return None
+        root, sr = self._hurons_marauders_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            game=game,
+            require_phase_match=False,
+            until_next_turn=True,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return None
+        choice_key = str(
+            sr.get(f"{self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX}_choice_key", "") or ""
+        ).strip().upper()
+        if choice_key != self._HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL:
+            return None
+        try:
+            base_value = int(getattr(weapon_profile, "skill", 0) or 0)
+        except (TypeError, ValueError):
+            base_value = 0
+        if base_value <= 0:
+            return None
+        improved_value = max(2, int(base_value) - 1)
+        if improved_value >= int(base_value):
+            return None
+        source = self._hurons_marauders_effect_source(
+            sr,
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            default=self._HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE,
+        )
+        return {
+            "value": int(improved_value),
+            "source": source,
+            "attack_type": "ranged",
+            "source_model_id": str(get_entity_id(model) or ""),
+        }
+
+    def hurons_marauders_hardened_killers_save_override(self, unit, model=None, *, game=None) -> tuple[Optional[int], Optional[str]]:
+        if model is None:
+            return None, None
+        if not self._model_in_army(model):
+            return None, None
+        root, sr = self._hurons_marauders_effect_state(
+            unit,
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            game=game,
+            require_phase_match=False,
+            until_next_turn=True,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return None, None
+        choice_key = str(
+            sr.get(f"{self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX}_choice_key", "") or ""
+        ).strip().upper()
+        if choice_key != self._HARDENED_KILLERS_CHOICE_SAVE:
+            return None, None
+        try:
+            base_save = int(getattr(model, "save", 0) or 0)
+        except (TypeError, ValueError):
+            base_save = 0
+        if base_save <= 0:
+            return None, None
+        improved_save = max(2, int(base_save) - 1)
+        if improved_save >= int(base_save):
+            return None, None
+        source = self._hurons_marauders_effect_source(
+            sr,
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            default=self._HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE,
+        )
+        return int(improved_save), source
+
+    def hurons_marauders_hardened_killers_rapid_fire_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        root, sr = self._hurons_marauders_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            game=game,
+            require_phase_match=False,
+            until_next_turn=True,
+        )
+        if root is None or not self._unit_is_damned(root):
+            return 0, ""
+        choice_key = str(
+            sr.get(f"{self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX}_choice_key", "") or ""
+        ).strip().upper()
+        if choice_key != self._HARDENED_KILLERS_CHOICE_RAPID_FIRE:
+            return 0, ""
+        rapid_fire_check = getattr(weapon_profile, "is_rapid_fire", None) if weapon_profile is not None else None
+        if not callable(rapid_fire_check) or not bool(rapid_fire_check()):
+            return 0, ""
+        return 1, self._hurons_marauders_effect_source(
+            sr,
+            prefix=self._HURONS_MARAUDERS_HARDENED_KILLERS_PREFIX,
+            default=self._HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE,
+        )
+
+    def hurons_marauders_reavers_flurry_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        root, sr = self._hurons_marauders_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX}_attacks_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._hurons_marauders_effect_source(
+            sr,
+            prefix=self._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX,
+            default=self._HURONS_MARAUDERS_REAVERS_FLURRY_SOURCE,
         )
 
     def chaos_cult_chosen_for_glory_reroll_hit_applies(

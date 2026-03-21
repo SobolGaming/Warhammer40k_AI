@@ -4587,6 +4587,72 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in {"HURONS_ELITE", "MOBILE_MARAUDERS"}:
             return ("Tyrannical Motivation choice must be HURONS_ELITE or MOBILE_MARAUDERS.",)
         return ()
+    if ability == "hurons_marauders_hardened_killers_choice":
+        if is_skip_choice(request, result):
+            return ("Hardened Killers selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Hardened Killers army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_hurons_marauders", lambda: False)()):
+            return ("Hardened Killers requires Huron's Marauders.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "").strip()
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_player_id and current_player_id != turn_owner_id:
+                return ("Hardened Killers selection is no longer valid.")
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return ("Hardened Killers can only be selected in your Command phase.")
+        try:
+            request_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            request_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if request_turn and current_turn and request_turn != current_turn:
+            return ("Hardened Killers selection is no longer valid.")
+        unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if unit is None:
+            return ("Hardened Killers target unit was not found.",)
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return ("Hardened Killers target unit was not found.",)
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return ("Hardened Killers target unit is no longer alive.",)
+        if not bool(getattr(root, "deployed", True)):
+            return ("Hardened Killers target unit is no longer on the battlefield.",)
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return ("Hardened Killers target unit is no longer on the battlefield.",)
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return ("Hardened Killers target unit is no longer on the battlefield.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_activate = getattr(mgr, "can_activate_hurons_marauders_hardened_killers", None)
+        if not callable(can_activate) or not bool(can_activate(root, game=game, player=player)):
+            return ("Hardened Killers target unit is no longer eligible.")
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return ("Hardened Killers selection requires choice_key.",)
+        available = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("available_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if available and choice_key not in available:
+            return ("Hardened Killers choice is not in this request's candidate list.",)
+        if choice_key not in {"BALLISTIC_SKILL", "RAPID_FIRE", "SAVE"}:
+            return ("Hardened Killers choice must be BALLISTIC_SKILL, RAPID_FIRE or SAVE.",)
+        return ()
     if ability == "renegade_warband_vendetta_target":
         if is_skip_choice(request, result):
             return ("Vendetta target selection cannot be skipped.",)
@@ -11828,6 +11894,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         label = str((outcome or {}).get("label", "") or choice_key).strip() or choice_key
         _log_action_for_players(game, player, f"{ability_name}: selected {label}.")
         return dict(outcome)
+    if ability == "hurons_marauders_hardened_killers_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if unit is None:
+            return None
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return None
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return None
+        activate_fn = getattr(mgr, "activate_hurons_marauders_hardened_killers", None)
+        if not callable(activate_fn):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Hardened Killers").strip() or "Hardened Killers"
+        outcome = activate_fn(
+            root,
+            choice_key=choice_key,
+            game=game,
+            player=player,
+            source=ability_name,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        choice_name = str(outcome.get("choice_name", choice_key) or choice_key).strip() or choice_key
+        unit_name = str(getattr(root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} gained {choice_name} until the start of your next Command phase.",
+        )
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+            "choice_key": choice_key,
+            "choice_name": choice_name,
+        }
     if ability == "renegade_warband_vendetta_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

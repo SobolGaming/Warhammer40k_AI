@@ -6504,6 +6504,26 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"{source_name} +{int(bonus)}A (melee)"
                     )
+            hurons_bonus_fn = (
+                getattr(mgr, "hurons_marauders_reavers_flurry_melee_attacks_bonus", None)
+                if mgr is not None
+                else None
+            )
+            if callable(hurons_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = hurons_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Reavers' Flurry").strip() or "Reavers' Flurry"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="stratagem:reavers_flurry_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (melee)"
+                    )
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
                 set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
@@ -6652,6 +6672,33 @@ class WargearProfile:
                     applied_pain_rapid_fire = True
         except Exception:
             applied_pain_rapid_fire = False
+
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = (
+                getattr(mgr, "hurons_marauders_hardened_killers_rapid_fire_attacks_bonus", None)
+                if mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Hardened Killers").strip() or "Hardened Killers"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="stratagem:hardened_killers_rapid_fire_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (Rapid Fire weapon)"
+                    )
+        except Exception:
+            pass
 
         if (not applied_pain_rapid_fire) and within_half_range and self.is_rapid_fire():
             try:

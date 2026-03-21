@@ -15411,8 +15411,17 @@ class KeywordsDetachmentsMixin:
                 weapon_key = str(get_entity_id(weapon_profile) or "")
             except Exception:
                 weapon_key = ""
+        attack_skill_override_dynamic = False
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            is_hurons = getattr(mgr, "is_hurons_marauders", None) if mgr is not None else None
+            if callable(is_hurons) and bool(is_hurons()):
+                attack_skill_override_dynamic = True
+        except Exception:
+            pass
         cache_key = f"model_attack_skill_override:{str(get_entity_id(model) or '')}:{attack_key}:{weapon_key}"
-        if cache_key in getattr(self, "_ability_cache", {}):
+        if (not attack_skill_override_dynamic) and cache_key in getattr(self, "_ability_cache", {}):
             cached = self._ability_cache.get(cache_key)
             return dict(cached) if isinstance(cached, dict) else None
 
@@ -15465,9 +15474,37 @@ class KeywordsDetachmentsMixin:
                     "source_model_id": str(get_entity_id(model) or ""),
                 }
 
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            override_fn = (
+                getattr(mgr, "hurons_marauders_hardened_killers_attack_skill_override", None)
+                if mgr is not None
+                else None
+            )
+            if callable(override_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                override = override_fn(
+                    model,
+                    attack_type=attack_key,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if isinstance(override, dict):
+                    try:
+                        value = int(override.get("value", 0) or 0)
+                    except Exception:
+                        value = 0
+                    if value > 0 and (best_rule is None or value < best_value):
+                        best_value = int(value)
+                        best_rule = dict(override)
+        except Exception:
+            pass
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
-        root._ability_cache[cache_key] = dict(best_rule) if isinstance(best_rule, dict) else None
+        if not attack_skill_override_dynamic:
+            root._ability_cache[cache_key] = dict(best_rule) if isinstance(best_rule, dict) else None
         return dict(best_rule) if isinstance(best_rule, dict) else None
 
     def _get_model_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None, roll: str = "hit") -> dict:

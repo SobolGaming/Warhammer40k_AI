@@ -70,8 +70,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL FUSILLADE",
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
+    "HARDENED KILLERS",
     "MASTERS ARE WATCHING",
     "MORTAL THRALLS",
+    "AT THE TYRANT'S COMMAND",
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
@@ -90,12 +92,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "RECKLESS HASTE",
+    "REAVERS' FLURRY",
     "SIEGECRAFT",
+    "SEIZE THE PRIZE",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "SELFLESS DEMISE",
     "STEADFAST DETERMINATION",
     "SPECIMENS FOR THE SPIDER",
+    "TO THE FAVOURED THE SPOILS",
+    "ENCIRCLING SURGE",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
     "ALPHA STRIKE",
@@ -1771,6 +1777,7 @@ class StratagemManager(
             "KHAINE'S VENGEANCE",
             "KHAINE’S VENGEANCE",
             "CARRY FORTH THE FAITHFUL",
+            "SEIZE THE PRIZE",
         }:
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
@@ -1975,6 +1982,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
         if "SUPPRESS AND OVERWHELM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
+        if "TO THE FAVOURED THE SPOILS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -2053,6 +2062,7 @@ class StratagemManager(
             "IMPETUOSITY",
             "MORTAL THRALLS",
             "STEADFAST DETERMINATION",
+            "TO THE FAVOURED THE SPOILS",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2192,6 +2202,7 @@ class StratagemManager(
             "FROM ALL SIDES",
             "MERCILESS PURSUIT",
             "PICK THEM OFF",
+            "ENCIRCLING SURGE",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2356,7 +2367,11 @@ class StratagemManager(
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
             "FATE INESCAPABLE",
+            "AT THE TYRANT'S COMMAND",
             "PSYCHIC SHIELD",
+            "REAVERS' FLURRY",
+            "SEIZE THE PRIZE",
+            "TO THE FAVOURED THE SPOILS",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
@@ -6437,6 +6452,7 @@ class StratagemManager(
             self._queue_deceptors_phase_start_reactions(player=player, phase=phase)
             self._queue_dread_talons_phase_start_reactions(player=player, phase=phase)
             self._queue_fellhammer_phase_start_reactions(player=player, phase=phase)
+            self._queue_hurons_marauders_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7458,6 +7474,7 @@ class StratagemManager(
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
+            self._queue_hurons_marauders_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8448,6 +8465,7 @@ class StratagemManager(
             self._cleanup_deceptors_phase_end_effects(phase=phase)
             self._cleanup_dread_talons_phase_end_effects(phase=phase)
             self._cleanup_fellhammer_phase_end_effects(phase=phase)
+            self._cleanup_hurons_marauders_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -9352,6 +9370,7 @@ class StratagemManager(
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
         self._queue_orks_move_started_reactions(unit=unit, action=action)
+        self._queue_hurons_marauders_move_started_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -10293,6 +10312,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_hurons_marauders(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_hurons_marauders_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -10612,6 +10640,13 @@ class StratagemManager(
             raise
         try:
             self._queue_fellhammer_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._capture_hurons_marauders_shooting_targets_selected(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

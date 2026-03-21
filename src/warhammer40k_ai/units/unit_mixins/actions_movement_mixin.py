@@ -2503,6 +2503,14 @@ class ActionsMovementMixin:
                 or bool(special_rules.get("enhancement_iron_surplice_of_saint_istalela", False))
             )
         )
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            is_hurons = getattr(mgr, "is_hurons_marauders", None) if mgr is not None else None
+            if callable(is_hurons) and bool(is_hurons()):
+                save_override_dynamic = True
+        except Exception:
+            pass
         cache_key = f"model_save_characteristic:{get_entity_id(model)}"
         if (not save_override_dynamic) and cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
@@ -2622,6 +2630,25 @@ class ActionsMovementMixin:
                 if save_value > 0 and (best_value is None or save_value < best_value):
                     best_value = int(save_value)
                     best_source = str(save_source or "Artisan of War").strip() or "Artisan of War"
+        except Exception:
+            pass
+
+        # Chaos Space Marines (Huron's Marauders): Hardened Killers.
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            save_override_fn = (
+                getattr(mgr, "hurons_marauders_hardened_killers_save_override", None)
+                if mgr is not None
+                else None
+            )
+            if callable(save_override_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                save_value, save_source = save_override_fn(self, model=model, game=game)
+                save_value = int(save_value or 0)
+                if save_value > 0 and (best_value is None or save_value < best_value):
+                    best_value = int(save_value)
+                    best_source = str(save_source or "Hardened Killers").strip() or "Hardened Killers"
         except Exception:
             pass
 
@@ -17643,6 +17670,17 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "hurons_marauders_can_shoot_after_advance", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_assault_ranged"):
                 if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
@@ -18490,6 +18528,11 @@ class ActionsMovementMixin:
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(twisted_apply_fn(self, game=game)):
+                    return True
+            hurons_apply_fn = getattr(mgr, "hurons_marauders_can_charge_after_advance", None) if mgr is not None else None
+            if callable(hurons_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(hurons_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

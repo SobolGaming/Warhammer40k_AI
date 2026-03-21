@@ -115,6 +115,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_fellhammer_siege_host", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_hurons_marauders_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_hurons_marauders", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -723,6 +728,209 @@ class ChaosSpaceMarinesStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
 
+    def _hurons_marauders_targetable_units(
+        self,
+        *,
+        require_damned: bool = False,
+        require_non_monster_non_vehicle: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_charged: bool = False,
+        require_not_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_hurons_marauders_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_damned and not self._is_damned_unit(root):
+                continue
+            if require_non_monster_non_vehicle and (
+                self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE")
+            ):
+                continue
+            if require_not_engaged and self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_charged and not bool(getattr(round_state, "charged_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _hurons_marauders_targeted_units(
+        self,
+        *,
+        target_units: list[Any],
+        require_non_monster_non_vehicle: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_non_monster_non_vehicle and (
+                self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE")
+            ):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    @staticmethod
+    def _hurons_marauders_total_current_wounds(unit: Any) -> int:
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+        if root is None:
+            return 0
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        total = 0
+        for model in list(models or []):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            total += int(getattr(model, "wounds", 0) or 0)
+        return int(total)
+
+    def _hurons_marauders_shooting_wounds_before(self) -> dict[str, dict[str, dict[str, Any]]]:
+        snapshots = getattr(self, "_hurons_marauders_favoured_spoils_snapshots", None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            self._hurons_marauders_favoured_spoils_snapshots = snapshots
+        return snapshots
+
+    def _record_hurons_marauders_favoured_spoils_snapshot(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        attacker_key = str(self._attacker_unit_key(attacker_root) or "").strip()
+        if not attacker_key:
+            return
+        self._hurons_marauders_shooting_wounds_before()[attacker_key] = {
+            self._csm_sort_key(root): {
+                "unit_id": str(get_entity_id(root) or ""),
+                "wounds_before": int(self._hurons_marauders_total_current_wounds(root) or 0),
+            }
+            for root in self._hurons_marauders_targeted_units(target_units=list(target_units or []))
+            if str(get_entity_id(root) or "").strip()
+        }
+
+    def _hurons_marauders_resolve_unit_by_id(self, unit_id: str) -> Any:
+        unit_key = str(unit_id or "").strip()
+        if not unit_key:
+            return None
+        registry = getattr(getattr(self, "game", None), "entity_registry", None)
+        if registry is not None and hasattr(registry, "get"):
+            unit = registry.get(unit_key, kind="unit")
+            root = self._csm_root(unit)
+            if root is not None:
+                return root
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return None
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            if str(get_entity_id(root) or "").strip() == unit_key:
+                return root
+        return None
+
+    def _hurons_marauders_closest_non_aircraft_enemy(self, unit: Any) -> Any:
+        root = self._csm_root(unit)
+        if root is None or self.game is None:
+            return None
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return None
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        get_distance = getattr(game_map, "get_distance_between_units", None)
+        if not callable(get_enemy_units) or not callable(get_distance):
+            return None
+
+        closest = None
+        closest_distance = None
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._csm_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+                continue
+            if self._csm_has_keyword(enemy_root, "AIRCRAFT"):
+                continue
+            try:
+                distance = float(get_distance(root, enemy_root))
+            except (TypeError, ValueError):
+                continue
+            if closest_distance is None or distance < closest_distance:
+                closest_distance = distance
+                closest = enemy_root
+        return closest
+
+    @staticmethod
+    def _hurons_marauders_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "")
+        for candidate in list(candidates or []):
+            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
+            if candidate_root is None:
+                continue
+            cid = str(get_entity_id(candidate_root) or "")
+            if rid and cid and rid == cid:
+                return True
+            if candidate_root is root:
+                return True
+        return False
+
     def _dread_talons_enemy_units_in_range_visible(
         self,
         source_unit: Any,
@@ -809,10 +1017,10 @@ class ChaosSpaceMarinesStratagemMixin:
         return sorted(candidates, key=self._csm_sort_key), enemy_candidates_by_unit
 
     def _csm_find_pending_reaction(self, stratagem_name: str, *, unit: Any = None):
-        name_u = str(stratagem_name or "").strip().upper()
+        name_u = self._normalize_stratagem_name(stratagem_name)
         expected_root = self._csm_root(unit)
         for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
-            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != name_u:
                 continue
             if expected_root is None:
                 return reaction
@@ -969,10 +1177,11 @@ class ChaosSpaceMarinesStratagemMixin:
         phase_name: str,
         target_unit: Any = None,
     ) -> bool:
+        expected_name = self._normalize_stratagem_name(stratagem_name)
         for reaction in list(getattr(self, "_pending_reactions", []) or []):
             if str(reaction.get("event", "") or "") != str(event_name):
                 continue
-            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != expected_name:
                 continue
             if str(reaction.get("phase_name", "") or "").strip().lower() != str(phase_name or "").strip().lower():
                 continue
@@ -1895,6 +2104,106 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_hurons_marauders_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_hurons_marauders_detachment():
+            return
+        if player is not self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        if phase_key == "COMMAND_PHASE":
+            stratagem = self.get_by_name("HARDENED KILLERS")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._hurons_marauders_targetable_units(require_damned=True)
+            if not candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Command phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Command phase",
+                "phase_name": "Command phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key == "MOVEMENT_PHASE":
+            stratagem = self.get_by_name("AT THE TYRANT'S COMMAND")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._hurons_marauders_targetable_units(require_non_monster_non_vehicle=True)
+            if not candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Movement phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Movement phase",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("REAVERS' FLURRY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._hurons_marauders_targetable_units(require_not_fought=True, require_charged=True)
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_fellhammer_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
         if not self._is_fellhammer_siege_host_detachment():
             return
@@ -2014,6 +2323,197 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_hurons_marauders_move_started_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_hurons_marauders_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"advance", "advancing", "advance_move"}:
+            return
+        root = self._csm_root(unit)
+        if root is None or not self._csm_owned_by_player(root, self.player):
+            return
+
+        stratagem = self.get_by_name("SEIZE THE PRIZE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._hurons_marauders_targetable_units(require_non_monster_non_vehicle=True)
+        if not self._hurons_marauders_unit_in_candidates(root, candidates):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_started":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "SEIZE THE PRIZE":
+                continue
+            if self._csm_root(reaction.get("unit") or reaction.get("target_unit")) is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_started",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": action,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
+    def _capture_hurons_marauders_shooting_targets_selected(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_hurons_marauders_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        stratagem = self.get_by_name("TO THE FAVOURED THE SPOILS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        self._record_hurons_marauders_favoured_spoils_snapshot(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+
+    def _queue_hurons_marauders_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Optional[dict[Any, Any]] = None,
+    ) -> None:
+        _ = hits_by_target
+        if not self._is_hurons_marauders_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._csm_root(attacker_unit)
+        attacker_key = str(self._attacker_unit_key(attacker_root) or "").strip()
+        if attacker_root is None or not attacker_key or self._csm_owned_by_player(attacker_root, self.player):
+            return
+
+        before_by_unit = dict(self._hurons_marauders_shooting_wounds_before().pop(attacker_key, {}) or {})
+        if not before_by_unit:
+            return
+
+        stratagem = self.get_by_name("TO THE FAVOURED THE SPOILS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for snapshot in list(before_by_unit.values()):
+            unit_id = str((snapshot or {}).get("unit_id", "") or "").strip()
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            root = self._hurons_marauders_resolve_unit_by_id(unit_id)
+            if root is None:
+                continue
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            try:
+                wounds_before = int((snapshot or {}).get("wounds_before", 0) or 0)
+            except (TypeError, ValueError):
+                wounds_before = 0
+            wounds_after = int(self._hurons_marauders_total_current_wounds(root) or 0)
+            if wounds_after >= wounds_before:
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._csm_sort_key)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "TO THE FAVOURED THE SPOILS":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_hurons_marauders_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_hurons_marauders_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("ENCIRCLING SURGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = [
+            root
+            for root in self._hurons_marauders_targetable_units(
+                require_non_monster_non_vehicle=True,
+                require_not_engaged=True,
+            )
+            if self._unit_wholly_within_battlefield_edge_distance(root, 6.0)
+        ]
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": sorted(candidates, key=self._csm_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_dread_talons_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -2095,6 +2595,66 @@ class ChaosSpaceMarinesStratagemMixin:
                     if str(effect_key or "").startswith("fellhammer_point_blank_destruction:")
                 ]:
                     effects.pop(key, None)
+
+    def _cleanup_hurons_marauders_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        if phase_name == "SHOOTING_PHASE":
+            self._hurons_marauders_favoured_spoils_snapshots = {}
+
+        current_turn_owner = str(mgr._current_turn_owner_id(game=self.game) or "")
+        current_turn = int(mgr._current_turn(game=self.game) or 0)
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            root_id = self._csm_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+
+            if phase_name == "MOVEMENT_PHASE":
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                effects = list(sr.get("advance_no_roll_effects", []) or [])
+                kept = [
+                    entry
+                    for entry in effects
+                    if not (
+                        isinstance(entry, dict)
+                        and str(entry.get("tag", "") or "") == "stratagem:hurons_marauders_seize_the_prize"
+                    )
+                ]
+                if kept:
+                    sr["advance_no_roll_effects"] = kept
+                else:
+                    sr.pop("advance_no_roll_effects", None)
+                root.special_rules = sr
+                continue
+
+            if phase_name != "FIGHT_PHASE":
+                continue
+            mgr._remove_special_rule_prefix(root, mgr._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            effect_owner = str(sr.get(f"{mgr._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX}_turn_owner", "") or "")
+            try:
+                effect_turn = int(sr.get(f"{mgr._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if effect_owner and current_turn_owner and effect_owner == current_turn_owner and effect_turn == current_turn:
+                mgr._remove_special_rule_prefix(root, mgr._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX)
 
     def _use_deceptors_coils_of_deception(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -3447,6 +4007,500 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_hurons_marauders_hardened_killers(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("HARDENED KILLERS", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._hurons_marauders_targetable_units(require_damned=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HARDENED KILLERS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: HARDENED KILLERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: HARDENED KILLERS: not your Command phase")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: HARDENED KILLERS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: HARDENED KILLERS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: HARDENED KILLERS: target cannot be selected")
+            return False
+        if not self._is_damned_unit(root):
+            logger.error("ERROR: HARDENED KILLERS: target must be a DAMNED unit")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        choice_key = str(kwargs.get("choice_key") or kwargs.get("key") or "").strip().upper()
+        if choice_key:
+            activate = getattr(mgr, "activate_hurons_marauders_hardened_killers", None) if mgr is not None else None
+            outcome = (
+                activate(
+                    root,
+                    choice_key=choice_key,
+                    game=self.game,
+                    player=self.player,
+                    source=stratagem.name or "HARDENED KILLERS",
+                )
+                if callable(activate)
+                else {"ok": False}
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: HARDENED KILLERS: invalid choice")
+                return False
+            self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: HARDENED KILLERS: %s gains %s until the start of your next turn.",
+                getattr(root, "name", "Unit"),
+                str(outcome.get("choice_name", choice_key) or choice_key),
+            )
+            return True
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "hurons_marauders_hardened_killers_choice":
+                    continue
+                if str(ctx.get("unit_id", "") or "") == str(get_entity_id(root) or ""):
+                    return True
+
+        choice_keys = [
+            str(getattr(mgr, "_HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL", "BALLISTIC_SKILL") or "BALLISTIC_SKILL"),
+            str(getattr(mgr, "_HARDENED_KILLERS_CHOICE_RAPID_FIRE", "RAPID_FIRE") or "RAPID_FIRE"),
+            str(getattr(mgr, "_HARDENED_KILLERS_CHOICE_SAVE", "SAVE") or "SAVE"),
+        ]
+        label_fn = getattr(mgr, "_hardened_killers_choice_label", None) if mgr is not None else None
+        options = [
+            DecisionOption.create(
+                str(label_fn(choice) if callable(label_fn) else choice).strip() or choice,
+                payload={"choice_key": choice},
+            )
+            for choice in choice_keys
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Hardened Killers: select an effect.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "hurons_marauders_hardened_killers_choice",
+                "ability_name": str(stratagem.name or "Hardened Killers"),
+                "unit_id": get_entity_id(root),
+                "army_id": get_entity_id(getattr(self.player, "army", None)),
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn_owner_id": str(getattr(self.player, "id", "") or ""),
+                "available_choice_keys": list(choice_keys),
+                "optional": False,
+            },
+        )
+        self.game.request_decision(request)
+        logger.info(
+            "INFO: HARDENED KILLERS: %s must select its temporary benefit.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hurons_marauders_at_the_tyrants_command(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("AT THE TYRANT'S COMMAND", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._hurons_marauders_targetable_units(require_non_monster_non_vehicle=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: not your Movement phase")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: target must be HERETIC ASTARTES")
+            return False
+        if self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: target cannot be a MONSTER or VEHICLE")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_hurons_marauders_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: AT THE TYRANT'S COMMAND: detachment effect helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._HURONS_MARAUDERS_AT_THE_TYRANTS_COMMAND_PREFIX,
+            source=stratagem.name or "AT THE TYRANT'S COMMAND",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AT THE TYRANT'S COMMAND: %s can shoot and charge after Advancing this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hurons_marauders_seize_the_prize(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("SEIZE THE PRIZE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SEIZE THE PRIZE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SEIZE THE PRIZE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SEIZE THE PRIZE: not your Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"advance", "advancing", "advance_move"}:
+            logger.error("ERROR: SEIZE THE PRIZE: target was not just selected to Advance")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SEIZE THE PRIZE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SEIZE THE PRIZE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SEIZE THE PRIZE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: SEIZE THE PRIZE: target must be HERETIC ASTARTES")
+            return False
+        if self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: SEIZE THE PRIZE: target cannot be a MONSTER or VEHICLE")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effect_tag = "stratagem:hurons_marauders_seize_the_prize"
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": 6,
+                "source": str(stratagem.name or "SEIZE THE PRIZE"),
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        root.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SEIZE THE PRIZE: %s uses a fixed 6\" Advance this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hurons_marauders_reavers_flurry(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("REAVERS' FLURRY", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._hurons_marauders_targetable_units(require_not_fought=True, require_charged=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REAVERS' FLURRY: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: REAVERS' FLURRY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: REAVERS' FLURRY: not your Fight phase")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REAVERS' FLURRY: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: REAVERS' FLURRY: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: REAVERS' FLURRY: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: REAVERS' FLURRY: target must be HERETIC ASTARTES")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "charged_this_round", False)):
+            logger.error("ERROR: REAVERS' FLURRY: target must have charged this turn")
+            return False
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: REAVERS' FLURRY: target has already fought this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_hurons_marauders_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: REAVERS' FLURRY: detachment effect helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX,
+            source=stratagem.name or "REAVERS' FLURRY",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX}_attacks_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REAVERS' FLURRY: %s gains +1 melee Attack this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hurons_marauders_to_the_favoured_the_spoils(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        pending = self._csm_find_pending_reaction("TO THE FAVOURED THE SPOILS", unit=unit)
+        from_pending = pending is not None
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: not opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: attacking unit must be an enemy unit")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: target must be HERETIC ASTARTES")
+            return False
+        if (not from_pending) and candidates:
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: target must have lost wounds from the triggering attacks")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        max_distance = kwargs.get("max_distance")
+        if max_distance is None:
+            max_distance = int(dice_module.get_roll("D6") or 0)
+        try:
+            max_distance = int(max_distance or 0)
+        except (TypeError, ValueError):
+            max_distance = 0
+        if max_distance <= 0:
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: movement distance roll failed")
+            return False
+
+        closest_enemy = self._hurons_marauders_closest_non_aircraft_enemy(root)
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: reactive move queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="to_the_favoured_the_spoils",
+            movement_type="reactive",
+            source=stratagem.name,
+            attacker_unit=closest_enemy or attacker_root,
+            allow_engagement_range=True,
+        )
+        if request is None:
+            logger.error("ERROR: TO THE FAVOURED THE SPOILS: failed to queue reactive move")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TO THE FAVOURED THE SPOILS: %s can make a Surge move up to %d\" toward the closest non-AIRCRAFT enemy.",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_hurons_marauders_encircling_surge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("ENCIRCLING SURGE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = [
+                root
+                for root in self._hurons_marauders_targetable_units(
+                    require_non_monster_non_vehicle=True,
+                    require_not_engaged=True,
+                )
+                if self._unit_wholly_within_battlefield_edge_distance(root, 6.0)
+            ]
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENCIRCLING SURGE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_hurons_marauders_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ENCIRCLING SURGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ENCIRCLING SURGE: not opponent's Fight phase")
+            return False
+        if candidates and not self._hurons_marauders_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ENCIRCLING SURGE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: ENCIRCLING SURGE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ENCIRCLING SURGE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: ENCIRCLING SURGE: target must be HERETIC ASTARTES")
+            return False
+        if self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: ENCIRCLING SURGE: target cannot be a MONSTER or VEHICLE")
+            return False
+        if self._csm_unit_is_engaged(root):
+            logger.error("ERROR: ENCIRCLING SURGE: target must not be within Engagement Range")
+            return False
+        if not self._unit_wholly_within_battlefield_edge_distance(root, 6.0):
+            logger.error("ERROR: ENCIRCLING SURGE: target must be wholly within 6\" of a battlefield edge")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if not callable(place_fn) or not bool(
+            place_fn(
+                game=self.game,
+                game_map=getattr(self.game, "map", None),
+                reason=str(stratagem.name or "ENCIRCLING SURGE"),
+            )
+        ):
+            logger.error("ERROR: ENCIRCLING SURGE: failed to place target into Strategic Reserves")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ENCIRCLING SURGE: %s enters Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_cabal_baleful_blessing(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -4776,7 +5830,7 @@ class ChaosSpaceMarinesStratagemMixin:
     def _use_chaos_space_marines_cabal_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
-        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if name_u == "CHOSEN FOR GLORY":
             return self._use_chaos_cult_chosen_for_glory(stratagem, **kwargs)
         if name_u == "CRAZED FOCUS":
@@ -4819,8 +5873,14 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
         if name_u == "FROM ALL SIDES":
             return self._use_deceptors_from_all_sides(stratagem, **kwargs)
+        if name_u == "HARDENED KILLERS":
+            return self._use_hurons_marauders_hardened_killers(stratagem, **kwargs)
         if name_u == "MASTERS ARE WATCHING":
             return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
+        if name_u == "AT THE TYRANT'S COMMAND":
+            return self._use_hurons_marauders_at_the_tyrants_command(stratagem, **kwargs)
+        if name_u == "ENCIRCLING SURGE":
+            return self._use_hurons_marauders_encircling_surge(stratagem, **kwargs)
         if name_u == "PERSISTENT ASSAILANTS":
             return self._use_fellhammer_persistent_assailants(stratagem, **kwargs)
         if name_u == "PICK THEM OFF":
@@ -4831,6 +5891,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_dread_talons_pitiless_hunters(stratagem, **kwargs)
         if name_u == "POINT-BLANK DESTRUCTION":
             return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
+        if name_u == "REAVERS' FLURRY":
+            return self._use_hurons_marauders_reavers_flurry(stratagem, **kwargs)
         if name_u == "RELENTLESS TERROR":
             return self._use_dread_talons_relentless_terror(stratagem, **kwargs)
         if name_u == "MERCILESS PURSUIT":
@@ -4841,10 +5903,14 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_deceptors_scrambled_coordinates(stratagem, **kwargs)
         if name_u == "SCREAMING DESCENT":
             return self._use_dread_talons_screaming_descent(stratagem, **kwargs)
+        if name_u == "SEIZE THE PRIZE":
+            return self._use_hurons_marauders_seize_the_prize(stratagem, **kwargs)
         if name_u == "SIEGECRAFT":
             return self._use_fellhammer_siegecraft(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         if name_u == "STEADFAST DETERMINATION":
             return self._use_fellhammer_steadfast_determination(stratagem, **kwargs)
+        if name_u == "TO THE FAVOURED THE SPOILS":
+            return self._use_hurons_marauders_to_the_favoured_the_spoils(stratagem, **kwargs)
         return None
