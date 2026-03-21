@@ -2324,6 +2324,71 @@ _DREAD_TALONS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DREAD_TALONS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FELLHAMMER_SIEGE_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008977002": StratagemToolDescriptor(
+        stratagem_id="000008977002",
+        name="Persistent Assailants",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_hit_reroll_with_conditional_wound_reroll_when_below_half",
+        cp_cost=1,
+    ),
+    "000008977003": StratagemToolDescriptor(
+        stratagem_id="000008977003",
+        name="Brutal Attrition",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_infantry_unit_targeted_by_enemy_melee_attacks_excluding_damned",
+        duration="until_end_of_phase",
+        effect="post_attack_allocated_melee_mortal_retaliation",
+        cp_cost=1,
+        effect_params={"threshold": 4, "mortal_wounds": 1, "max_rolls_per_attacker_unit": 6},
+    ),
+    "000008977004": StratagemToolDescriptor(
+        stratagem_id="000008977004",
+        name="Pitiless Cannonade",
+        timing="shooting_phase_on_select_to_shoot",
+        target="heretic_astartes_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_critical_hits_on_5plus_vs_below_half",
+        cp_cost=1,
+        effect_params={"critical_hit_threshold": 5},
+    ),
+    "000008977005": StratagemToolDescriptor(
+        stratagem_id="000008977005",
+        name="Point-Blank Destruction",
+        timing="shooting_phase_on_select_to_shoot",
+        target="heretic_astartes_unit_engaged_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_non_blast_ranged_weapons_pistol",
+        cp_cost=1,
+    ),
+    "000008977006": StratagemToolDescriptor(
+        stratagem_id="000008977006",
+        name="Steadfast Determination",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_excluding_damned",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={"value": 5},
+    ),
+    "000008977007": StratagemToolDescriptor(
+        stratagem_id="000008977007",
+        name="Siegecraft",
+        timing="opponent_charge_phase_start",
+        target="heretic_astartes_unit",
+        duration="until_end_of_phase",
+        effect="charge_roll_penalty",
+        cp_cost=1,
+        effect_params={"charge_roll_modifier": -2, "non_cumulative_negative": True},
+    ),
+}
+
+_FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FELLHAMMER_SIEGE_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7595,6 +7660,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DREAD_TALONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FELLHAMMER_SIEGE_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7843,6 +7911,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)
         or _DECEPTORS_STRATAGEM_BY_NAME.get(key)
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
+        or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

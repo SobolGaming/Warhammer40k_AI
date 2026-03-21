@@ -110,6 +110,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_dread_talons", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_fellhammer_siege_host_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_fellhammer_siege_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -629,6 +634,91 @@ class ChaosSpaceMarinesStratagemMixin:
             if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
                 continue
             if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _fellhammer_targetable_units(
+        self,
+        *,
+        require_infantry: bool = False,
+        exclude_damned: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_fellhammer_siege_host_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_infantry and not self._is_heretic_astartes_infantry(root):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if require_engaged and not self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _fellhammer_targeted_units(
+        self,
+        *,
+        target_units: list[Any],
+        require_infantry: bool = False,
+        exclude_damned: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_infantry and not self._is_heretic_astartes_infantry(root):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
@@ -1712,6 +1802,218 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_fellhammer_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_fellhammer_siege_host_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+
+            stratagem = self.get_by_name("PITILESS CANNONADE")
+            if stratagem is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= self._cabal_effective_cp_cost(stratagem):
+                    if str(stratagem.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                        candidates = self._fellhammer_targetable_units(require_not_shot=True)
+                        if candidates and not self._cabal_reaction_already_queued(
+                            event_name="phase_start",
+                            stratagem_name=stratagem.name,
+                            phase_name="Shooting phase",
+                        ):
+                            payload = {
+                                "event": "phase_start",
+                                "phase": "Shooting phase",
+                                "phase_name": "Shooting phase",
+                                "stratagem": stratagem.name,
+                                "cp_cost": stratagem.cp_cost,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+            stratagem = self.get_by_name("POINT-BLANK DESTRUCTION")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._fellhammer_targetable_units(require_not_shot=True, require_engaged=True)
+            if not candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "CHARGE_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("SIEGECRAFT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._fellhammer_targetable_units()
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_fellhammer_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_fellhammer_siege_host_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("STEADFAST DETERMINATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._fellhammer_targeted_units(
+            target_units=list(target_units or []),
+            exclude_damned=True,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "STEADFAST DETERMINATION":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_fellhammer_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_fellhammer_siege_host_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+
+        stratagem = self.get_by_name("BRUTAL ATTRITION")
+        if stratagem is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= self._cabal_effective_cp_cost(stratagem):
+                if str(stratagem.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    candidates = self._fellhammer_targeted_units(
+                        target_units=list(target_units or []),
+                        require_infantry=True,
+                        exclude_damned=True,
+                    )
+                    if candidates:
+                        queued = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                                continue
+                            if str(reaction.get("stratagem", "") or "").strip().upper() != "BRUTAL ATTRITION":
+                                continue
+                            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                                queued = True
+                                break
+                        if not queued:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": stratagem.name,
+                                "cp_cost": stratagem.cp_cost,
+                                "attacking_unit": attacker_root,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+        stratagem = self.get_by_name("PERSISTENT ASSAILANTS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._fellhammer_targeted_units(
+            target_units=list(target_units or []),
+            require_not_fought=True,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "PERSISTENT ASSAILANTS":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_dread_talons_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -1749,6 +2051,50 @@ class ChaosSpaceMarinesStratagemMixin:
             ):
                 sr.pop(key, None)
             root.special_rules = sr
+
+    def _cleanup_fellhammer_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "SHOOTING_PHASE": (
+                mgr._FELLHAMMER_PITILESS_CANNONADE_PREFIX,
+                mgr._FELLHAMMER_POINT_BLANK_DESTRUCTION_PREFIX,
+                mgr._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX,
+            ),
+            "CHARGE_PHASE": (mgr._FELLHAMMER_SIEGECRAFT_PREFIX,),
+            "FIGHT_PHASE": (
+                mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX,
+                mgr._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            ),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+            if phase_name != "SHOOTING_PHASE":
+                continue
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                effects = getattr(model, "_temporary_effects", None)
+                if not isinstance(effects, dict) or not effects:
+                    continue
+                for key in [
+                    effect_key
+                    for effect_key in list(effects.keys())
+                    if str(effect_key or "").startswith("fellhammer_point_blank_destruction:")
+                ]:
+                    effects.pop(key, None)
 
     def _use_deceptors_coils_of_deception(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -2639,6 +2985,464 @@ class ChaosSpaceMarinesStratagemMixin:
         self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: SCREAMING DESCENT: %s can arrive more than 6\" from enemies this phase and cannot charge this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_fellhammer_persistent_assailants(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("PERSISTENT ASSAILANTS", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PERSISTENT ASSAILANTS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PERSISTENT ASSAILANTS: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PERSISTENT ASSAILANTS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: target has already fought this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PERSISTENT ASSAILANTS: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            source=stratagem.name or "PERSISTENT ASSAILANTS",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PERSISTENT ASSAILANTS: %s gains melee hit re-rolls, and wound re-rolls while Below Half-strength, this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_fellhammer_brutal_attrition(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("BRUTAL ATTRITION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BRUTAL ATTRITION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BRUTAL ATTRITION: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: BRUTAL ATTRITION: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: BRUTAL ATTRITION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BRUTAL ATTRITION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BRUTAL ATTRITION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root) or self._is_damned_unit(root):
+            logger.error("ERROR: BRUTAL ATTRITION: target must be HERETIC ASTARTES INFANTRY and not DAMNED")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: BRUTAL ATTRITION: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX,
+            source=stratagem.name or "BRUTAL ATTRITION",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_attacker_unit_id": mgr._unit_entity_key(attacker_root),
+                f"{mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_max_rolls_per_attacker_unit": 6,
+                f"{mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_threshold": 4,
+                f"{mgr._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_mortal_wounds": 1,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BRUTAL ATTRITION: %s inflicts post-attack melee mortal retaliation against %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "enemy"),
+        )
+        return True
+
+    def _use_fellhammer_pitiless_cannonade(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PITILESS CANNONADE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._fellhammer_targetable_units(require_not_shot=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PITILESS CANNONADE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PITILESS CANNONADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PITILESS CANNONADE: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PITILESS CANNONADE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PITILESS CANNONADE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PITILESS CANNONADE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: PITILESS CANNONADE: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: PITILESS CANNONADE: target has already shot this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PITILESS CANNONADE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_PITILESS_CANNONADE_PREFIX,
+            source=stratagem.name or "PITILESS CANNONADE",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PITILESS CANNONADE: %s scores ranged critical hits on 5+ against Below Half-strength targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_fellhammer_point_blank_destruction(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("POINT-BLANK DESTRUCTION", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._fellhammer_targetable_units(require_not_shot=True, require_engaged=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target must be HERETIC ASTARTES")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target has already shot this phase")
+            return False
+        if not self._csm_unit_is_engaged(root):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: target must be within Engagement Range of one or more enemy units")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: POINT-BLANK DESTRUCTION: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_POINT_BLANK_DESTRUCTION_PREFIX,
+            source=stratagem.name or "POINT-BLANK DESTRUCTION",
+            player=self.player,
+            game=self.game,
+        )
+
+        source = str(getattr(stratagem, "name", "POINT-BLANK DESTRUCTION") or "POINT-BLANK DESTRUCTION")
+        phase_key = "SHOOTING_PHASE"
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model_index, model in enumerate(list(models or [])):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or model_index)
+            for wargear_index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                has_blast = False
+                profiles = getattr(wargear, "profiles", None)
+                if isinstance(profiles, dict) and profiles:
+                    for profile in list(profiles.values()):
+                        is_blast = getattr(profile, "is_blast", None)
+                        if callable(is_blast) and bool(is_blast()):
+                            has_blast = True
+                            break
+                else:
+                    is_blast = getattr(wargear, "is_blast", None)
+                    if callable(is_blast) and bool(is_blast()):
+                        has_blast = True
+                if has_blast:
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                key_base = f"fellhammer_point_blank_destruction:{model_id}:{wargear_index}:{weapon_name}".lower()
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=key_base,
+                        weapon_name=weapon_name,
+                        keywords=["PISTOL"],
+                        source=source,
+                        expires_phase=phase_key,
+                        attack_type="ranged",
+                    )
+                    continue
+                effects = getattr(model, "_temporary_effects", None)
+                if not isinstance(effects, dict):
+                    effects = {}
+                    model._temporary_effects = effects
+                effects[key_base] = {
+                    "expires_phase": phase_key,
+                    "weapon_keyword_bonuses": {weapon_name: ["PISTOL"]},
+                    "weapon_keyword_bonuses_source": source,
+                    "weapon_keyword_bonuses_attack_type": "ranged",
+                }
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POINT-BLANK DESTRUCTION: %s gains [PISTOL] on non-Blast ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_fellhammer_steadfast_determination(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("STEADFAST DETERMINATION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: STEADFAST DETERMINATION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: STEADFAST DETERMINATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: STEADFAST DETERMINATION: not opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: STEADFAST DETERMINATION: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: STEADFAST DETERMINATION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: STEADFAST DETERMINATION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: STEADFAST DETERMINATION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root) or self._is_damned_unit(root):
+            logger.error("ERROR: STEADFAST DETERMINATION: target must be HERETIC ASTARTES and not DAMNED")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: STEADFAST DETERMINATION: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX,
+            source=stratagem.name or "STEADFAST DETERMINATION",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX}_fnp": 5,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: STEADFAST DETERMINATION: %s gains Feel No Pain 5+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_fellhammer_siegecraft(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SIEGECRAFT", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._fellhammer_targetable_units()
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SIEGECRAFT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_fellhammer_siege_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: SIEGECRAFT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SIEGECRAFT: not opponent's Charge phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SIEGECRAFT: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SIEGECRAFT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SIEGECRAFT: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: SIEGECRAFT: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_fellhammer_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: SIEGECRAFT: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._FELLHAMMER_SIEGECRAFT_PREFIX,
+            source=stratagem.name or "SIEGECRAFT",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._FELLHAMMER_SIEGECRAFT_PREFIX}_charge_penalty": 2,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SIEGECRAFT: enemy units suffer -2 to Charge rolls when charging %s this phase.",
             getattr(root, "name", "Unit"),
         )
         return True
@@ -4001,6 +4805,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
         if name_u == "BLOODY EXAMPLE":
             return self._use_dread_talons_bloody_example(stratagem, **kwargs)
+        if name_u == "BRUTAL ATTRITION":
+            return self._use_fellhammer_brutal_attrition(stratagem, **kwargs)
         if name_u == "COILS OF DECEPTION":
             return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
         if name_u == "DEPTHLESS CRUELTY":
@@ -4015,10 +4821,16 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_deceptors_from_all_sides(stratagem, **kwargs)
         if name_u == "MASTERS ARE WATCHING":
             return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
+        if name_u == "PERSISTENT ASSAILANTS":
+            return self._use_fellhammer_persistent_assailants(stratagem, **kwargs)
         if name_u == "PICK THEM OFF":
             return self._use_deceptors_pick_them_off(stratagem, **kwargs)
+        if name_u == "PITILESS CANNONADE":
+            return self._use_fellhammer_pitiless_cannonade(stratagem, **kwargs)
         if name_u == "PITILESS HUNTERS":
             return self._use_dread_talons_pitiless_hunters(stratagem, **kwargs)
+        if name_u == "POINT-BLANK DESTRUCTION":
+            return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
         if name_u == "RELENTLESS TERROR":
             return self._use_dread_talons_relentless_terror(stratagem, **kwargs)
         if name_u == "MERCILESS PURSUIT":
@@ -4029,6 +4841,10 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_deceptors_scrambled_coordinates(stratagem, **kwargs)
         if name_u == "SCREAMING DESCENT":
             return self._use_dread_talons_screaming_descent(stratagem, **kwargs)
+        if name_u == "SIEGECRAFT":
+            return self._use_fellhammer_siegecraft(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
+        if name_u == "STEADFAST DETERMINATION":
+            return self._use_fellhammer_steadfast_determination(stratagem, **kwargs)
         return None

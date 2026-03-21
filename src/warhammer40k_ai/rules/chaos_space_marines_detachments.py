@@ -104,6 +104,18 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _DREAD_TALONS_RELENTLESS_TERROR_SOURCE = "Relentless Terror"
     _DREAD_TALONS_SCREAMING_DESCENT_PREFIX = "dread_talons_screaming_descent"
     _DREAD_TALONS_SCREAMING_DESCENT_SOURCE = "Screaming Descent"
+    _FELLHAMMER_BRUTAL_ATTRITION_PREFIX = "fellhammer_brutal_attrition"
+    _FELLHAMMER_BRUTAL_ATTRITION_SOURCE = "Brutal Attrition"
+    _FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX = "fellhammer_persistent_assailants"
+    _FELLHAMMER_PERSISTENT_ASSAILANTS_SOURCE = "Persistent Assailants"
+    _FELLHAMMER_PITILESS_CANNONADE_PREFIX = "fellhammer_pitiless_cannonade"
+    _FELLHAMMER_PITILESS_CANNONADE_SOURCE = "Pitiless Cannonade"
+    _FELLHAMMER_POINT_BLANK_DESTRUCTION_PREFIX = "fellhammer_point_blank_destruction"
+    _FELLHAMMER_POINT_BLANK_DESTRUCTION_SOURCE = "Point-Blank Destruction"
+    _FELLHAMMER_SIEGECRAFT_PREFIX = "fellhammer_siegecraft"
+    _FELLHAMMER_SIEGECRAFT_SOURCE = "Siegecraft"
+    _FELLHAMMER_STEADFAST_DETERMINATION_PREFIX = "fellhammer_steadfast_determination"
+    _FELLHAMMER_STEADFAST_DETERMINATION_SOURCE = "Steadfast Determination"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
@@ -4778,6 +4790,80 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    @classmethod
+    def _fellhammer_effect_source(cls, sr: dict, *, prefix: str, default: str) -> str:
+        if not isinstance(sr, dict):
+            return default
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _fellhammer_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_fellhammer_siege_host():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_fellhammer_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -5034,6 +5120,172 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             require_phase_match=False,
         )
         return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
+
+    def fellhammer_persistent_assailants_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return False, ""
+        root, sr = self._fellhammer_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            default=self._FELLHAMMER_PERSISTENT_ASSAILANTS_SOURCE,
+        )
+
+    def fellhammer_persistent_assailants_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return False, ""
+        root, sr = self._fellhammer_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        below_half = getattr(root, "is_below_half_strength", None)
+        if not callable(below_half) or not bool(below_half()):
+            return False, ""
+        return True, self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_PERSISTENT_ASSAILANTS_PREFIX,
+            default=self._FELLHAMMER_PERSISTENT_ASSAILANTS_SOURCE,
+        )
+
+    def fellhammer_pitiless_cannonade_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        below_half = getattr(target_root, "is_below_half_strength", None) if target_root is not None else None
+        if not callable(below_half) or not bool(below_half()):
+            return 0, ""
+        root, sr = self._fellhammer_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._FELLHAMMER_PITILESS_CANNONADE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        return 5, self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_PITILESS_CANNONADE_PREFIX,
+            default=self._FELLHAMMER_PITILESS_CANNONADE_SOURCE,
+        )
+
+    def fellhammer_brutal_attrition_retaliation_spec(self, unit, *, attacker_unit=None, game=None) -> Optional[dict]:
+        root, sr = self._fellhammer_effect_state(
+            unit,
+            prefix=self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root) or not self._unit_has_keyword(root, "INFANTRY"):
+            return None
+        if self._unit_is_damned(root):
+            return None
+        attacker_root = self._unit_root(attacker_unit)
+        attacker_key = self._unit_entity_key(attacker_root) if attacker_root is not None else ""
+        expected_attacker_key = str(
+            sr.get(f"{self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_attacker_unit_id", "") or ""
+        ).strip()
+        if expected_attacker_key and attacker_key and expected_attacker_key != attacker_key:
+            return None
+        if expected_attacker_key and not attacker_key:
+            return None
+        try:
+            max_rolls = int(sr.get(f"{self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_max_rolls_per_attacker_unit", 6) or 6)
+        except (TypeError, ValueError):
+            max_rolls = 6
+        try:
+            threshold = int(sr.get(f"{self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_threshold", 4) or 4)
+        except (TypeError, ValueError):
+            threshold = 4
+        try:
+            mortal_wounds = int(sr.get(f"{self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}_mortal_wounds", 1) or 1)
+        except (TypeError, ValueError):
+            mortal_wounds = 1
+        if max_rolls <= 0 or threshold <= 0 or mortal_wounds <= 0:
+            return None
+        source = self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX,
+            default=self._FELLHAMMER_BRUTAL_ATTRITION_SOURCE,
+        )
+        return {
+            "ability_key": f"allocated_melee_retaliation:{self._FELLHAMMER_BRUTAL_ATTRITION_PREFIX}",
+            "source": source,
+            "max_rolls_per_attacker_unit": int(max_rolls),
+            "threshold": int(threshold),
+            "mortal_wounds": int(mortal_wounds),
+        }
+
+    def fellhammer_siegecraft_charge_roll_penalty(self, unit, *, game=None) -> tuple[int, str]:
+        root, sr = self._fellhammer_effect_state(
+            unit,
+            prefix=self._FELLHAMMER_SIEGECRAFT_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        try:
+            penalty = int(sr.get(f"{self._FELLHAMMER_SIEGECRAFT_PREFIX}_charge_penalty", 2) or 2)
+        except (TypeError, ValueError):
+            penalty = 2
+        if penalty <= 0:
+            return 0, ""
+        return int(penalty), self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_SIEGECRAFT_PREFIX,
+            default=self._FELLHAMMER_SIEGECRAFT_SOURCE,
+        )
+
+    def fellhammer_steadfast_determination_fnp(self, unit, *, target_model=None, game=None) -> tuple[int, str]:
+        root, sr = self._fellhammer_effect_state(
+            unit,
+            prefix=self._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root) or self._unit_is_damned(root):
+            return 0, ""
+        try:
+            fnp = int(sr.get(f"{self._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX}_fnp", 5) or 5)
+        except (TypeError, ValueError):
+            fnp = 5
+        if fnp <= 0:
+            return 0, ""
+        return int(fnp), self._fellhammer_effect_source(
+            sr,
+            prefix=self._FELLHAMMER_STEADFAST_DETERMINATION_PREFIX,
+            default=self._FELLHAMMER_STEADFAST_DETERMINATION_SOURCE,
+        )
 
     def chaos_cult_chosen_for_glory_reroll_hit_applies(
         self,

@@ -12339,6 +12339,21 @@ class ActionsMovementMixin:
                 source = str(sr.get("repelling_sphere_source", "") or "Repelling Sphere").strip()
                 modifiers.append((-int(abs(penalty)), f"{source}: charge roll modifier"))
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            penalty_fn = getattr(csm_mgr, "fellhammer_siegecraft_charge_roll_penalty", None) if csm_mgr is not None else None
+            if callable(penalty_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                penalty, source = penalty_fn(root, game=game)
+                if int(penalty or 0) > 0:
+                    source_name = str(source or "Siegecraft").strip() or "Siegecraft"
+                    modifiers.append((-int(abs(penalty)), f"{source_name}: charge roll modifier"))
+
         # Vindication Task Force: Imperialis of the Eternal Crusade.
         try:
             root = self.get_attached_unit_root()
@@ -19301,7 +19316,7 @@ class ActionsMovementMixin:
             return False
             
         # PISTOLS: can be used while within Engagement Range (target restriction enforced elsewhere)
-        if profile.is_pistol():
+        if self.weapon_profile_counts_as_pistol(profile):
             return True
 
         # BIG GUNS NEVER TIRE (BGNT):
@@ -19322,7 +19337,7 @@ class ActionsMovementMixin:
 
         # If target is the unit we're engaged with, Pistols can shoot; Vehicles/Monsters can shoot in-phase via BGNT.
         if target.is_alive() and game_map.is_within_engagement_range(self, target):
-            if profile.is_pistol():
+            if self.weapon_profile_counts_as_pistol(profile):
                 return True
             return (self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase()
 

@@ -72,12 +72,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GLIMMERSHIFT PORTAL",
     "MASTERS ARE WATCHING",
     "MORTAL THRALLS",
+    "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "OVERRIDE INSTINCTS",
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
     "POINT-BLANK AMBUSH",
+    "POINT-BLANK DESTRUCTION",
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
     "RELENTLESS PURSUIT",
@@ -88,9 +90,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "RECKLESS HASTE",
+    "SIEGECRAFT",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "SELFLESS DEMISE",
+    "STEADFAST DETERMINATION",
     "SPECIMENS FOR THE SPIDER",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
@@ -244,6 +248,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWATCH",
     "GO TO GROUND",
     "DIVINE INTERVENTION",
+    "BRUTAL ATTRITION",
     "GRENADE",
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
@@ -272,6 +277,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MEET FORCE WITH FORCE",
     "OVERSHADOWED BY NONE",
     "PERFERVID INTERVENTION",
+    "PITILESS CANNONADE",
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
@@ -2046,11 +2052,13 @@ class StratagemManager(
             "EVASIVE MANOEUVRES",
             "IMPETUOSITY",
             "MORTAL THRALLS",
+            "STEADFAST DETERMINATION",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
+            "BRUTAL ATTRITION",
             "VICIOUS BLADES",
             "SPEEDIEST FREEKS",
             "COMBAT STIMMS",
@@ -2088,6 +2096,7 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "PARTING THE VEIL",
+            "PERSISTENT ASSAILANTS",
             "FOREWARNED",
             "YRIEL'S EXAMPLE",
             "YRIEL\u2019S EXAMPLE",
@@ -2221,6 +2230,8 @@ class StratagemManager(
             "STRIKE FROM THE SHADOWS",
             "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
+            "PITILESS CANNONADE",
+            "POINT-BLANK DESTRUCTION",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
             "RELENTLESS MOMENTUM",
@@ -2242,6 +2253,10 @@ class StratagemManager(
             "OVERWHELMING EXCESS",
             "PHANTASMAL LONGING",
             "SHADE PATH",
+            "SIEGECRAFT",
+            "STEADFAST DETERMINATION",
+            "BRUTAL ATTRITION",
+            "PERSISTENT ASSAILANTS",
             "THIEVES OF PAIN",
             "BLOOD BEGETS SKULLS",
             "GORE-HUNGRY ONSLAUGHT",
@@ -2830,6 +2845,15 @@ class StratagemManager(
             "000008973007",
         }:
             return bool(self._is_dread_talons_detachment())
+        if stratagem_id in {
+            "000008977002",
+            "000008977003",
+            "000008977004",
+            "000008977005",
+            "000008977006",
+            "000008977007",
+        }:
+            return bool(self._is_fellhammer_siege_host_detachment())
         if stratagem_id in {
             "000008352003",
             "000008352004",
@@ -6412,6 +6436,7 @@ class StratagemManager(
         try:
             self._queue_deceptors_phase_start_reactions(player=player, phase=phase)
             self._queue_dread_talons_phase_start_reactions(player=player, phase=phase)
+            self._queue_fellhammer_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8422,6 +8447,7 @@ class StratagemManager(
         try:
             self._cleanup_deceptors_phase_end_effects(phase=phase)
             self._cleanup_dread_talons_phase_end_effects(phase=phase)
+            self._cleanup_fellhammer_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -10585,6 +10611,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_fellhammer_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             atk_key = self._attacker_unit_key(attacking_unit)
             if atk_key:
                 self._recent_shooting_targets[atk_key] = list(target_units or [])
@@ -11524,6 +11557,13 @@ class StratagemManager(
             raise
         try:
             self._queue_creations_of_bile_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_fellhammer_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

@@ -181,10 +181,10 @@ class ShootingMixin:
                 wp = decl.get("weapon_profile")
                 if wp is None:
                     continue
-                is_pistol = bool(wp.is_pistol())
                 for m in decl.get("models") or []:
                     if not getattr(m, "is_alive", False):
                         continue
+                    is_pistol = bool(self.weapon_profile_counts_as_pistol(wp, model=m))
                     key = get_entity_id(m)
                     entry = by_model.setdefault(key, {"pistol": False, "other": False})
                     if is_pistol:
@@ -199,13 +199,13 @@ class ShootingMixin:
                 if wp is None:
                     filtered_decls.append(decl)
                     continue
-                wp_is_pistol = bool(wp.is_pistol())
                 keep_models = []
                 removed = 0
                 for m in decl.get("models") or []:
                     if not getattr(m, "is_alive", False):
                         removed += 1
                         continue
+                    wp_is_pistol = bool(self.weapon_profile_counts_as_pistol(wp, model=m))
                     flags = by_model.get(get_entity_id(m), {"pistol": False, "other": False})
                     if is_vehicle_or_monster:
                         # VEHICLE/MONSTER are not subject to the pistol-vs-other exclusivity rule.
@@ -1327,7 +1327,7 @@ class ShootingMixin:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
             if ficklefire_active:
                 shooter_in_er_of_target = False
-            if weapon_profile.is_pistol():
+            if self.weapon_profile_counts_as_pistol(weapon_profile, model=model):
                 if not shooter_in_er_of_target:
                     return False
             else:
@@ -1853,7 +1853,7 @@ class ShootingMixin:
         # PISTOL (10e):
         # - A unit can shoot with Pistols while within Engagement Range.
         # - When it does so, it must target an enemy unit it is within Engagement Range of.
-        if weapon_profile.is_pistol():
+        if self.weapon_profile_counts_as_pistol(weapon_profile, model=model):
             return game_map.is_within_engagement_range(self, target_unit)
 
         # VEHICLE / MONSTER (Big Guns Never Tire style behavior):
@@ -1895,7 +1895,7 @@ class ShootingMixin:
             
         # Check if target is the unit we're engaged with
         if game_map.is_within_engagement_range(self, target_unit):
-            return weapon_profile.is_pistol()
+            return bool(self.weapon_profile_counts_as_pistol(weapon_profile, model=model))
             
         # If target is different from engaged unit, only vehicles can shoot
         return False

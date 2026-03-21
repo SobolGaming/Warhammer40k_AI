@@ -4593,6 +4593,132 @@ class WargearProfile:
         except Exception:
             return ""
 
+    def _record_allocated_melee_mortal_retaliation(
+        self,
+        *,
+        target_model: Optional['Model'],
+        attacker: Optional['Model'],
+        attack_instance: Optional[Dict] = None,
+    ) -> None:
+        attack_state = attack_instance if isinstance(attack_instance, dict) else None
+        if attack_state is not None and bool(attack_state.get("_allocated_melee_retaliation_recorded")):
+            return
+        try:
+            is_melee_attack = bool(
+                getattr(self, "parent_wargear", None) is not None
+                and callable(getattr(self.parent_wargear, "is_melee", None))
+                and self.parent_wargear.is_melee()
+            )
+        except Exception:
+            is_melee_attack = False
+        if not is_melee_attack or target_model is None or attacker is None:
+            return
+
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        target_unit = getattr(target_model, "parent_unit", None)
+        if attacker_unit is None or target_unit is None:
+            return
+
+        retaliation_specs_fn = getattr(target_unit, "model_allocated_melee_mortal_retaliation_specs", None)
+        retaliation_specs = (
+            list(retaliation_specs_fn(target_model) or [])
+            if callable(retaliation_specs_fn)
+            else []
+        )
+        try:
+            target_army = target_unit.get_parent_army()
+        except Exception:
+            target_army = None
+        try:
+            csm_mgr = getattr(target_army, "chaos_space_marines_detachments", None) if target_army is not None else None
+            fellhammer_spec_fn = (
+                getattr(csm_mgr, "fellhammer_brutal_attrition_retaliation_spec", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(fellhammer_spec_fn):
+                game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                fellhammer_spec = fellhammer_spec_fn(
+                    target_unit,
+                    attacker_unit=attacker_unit,
+                    game=game,
+                )
+                if isinstance(fellhammer_spec, dict):
+                    retaliation_specs.append(dict(fellhammer_spec))
+        except Exception:
+            pass
+        if not retaliation_specs:
+            return
+
+        try:
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return
+        try:
+            same_army = target_root.get_parent_army() == attacker_unit.get_parent_army()
+        except Exception:
+            same_army = True
+        if same_army:
+            return
+
+        try:
+            attacker_root = (
+                attacker_unit.get_attached_unit_root()
+                if hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+        except Exception:
+            attacker_root = attacker_unit
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        allocations_by_key = sr.get("allocated_melee_retaliation_allocations")
+        if not isinstance(allocations_by_key, dict):
+            allocations_by_key = {}
+        specs_by_key = sr.get("allocated_melee_retaliation_specs")
+        if not isinstance(specs_by_key, dict):
+            specs_by_key = {}
+        for spec in retaliation_specs:
+            ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+            if not ability_key:
+                continue
+            try:
+                cap = int(spec.get("max_rolls_per_attacker_unit", 6) or 6)
+            except Exception:
+                cap = 6
+            if cap <= 0:
+                continue
+            allocations = allocations_by_key.get(ability_key)
+            if not isinstance(allocations, dict):
+                allocations = {}
+            try:
+                current = int(allocations.get(attacker_id, 0) or 0)
+            except Exception:
+                current = 0
+            allocations[attacker_id] = int(min(int(cap), max(0, current + 1)))
+            allocations_by_key[ability_key] = allocations
+            specs_by_key[ability_key] = {
+                "source": str(spec.get("source", "") or "Allocated melee retaliation").strip()
+                or "Allocated melee retaliation",
+                "threshold": int(spec.get("threshold", 4) or 4),
+                "mortal_wounds": int(spec.get("mortal_wounds", 1) or 1),
+            }
+        sr["allocated_melee_retaliation_allocations"] = allocations_by_key
+        sr["allocated_melee_retaliation_specs"] = specs_by_key
+        target_root.special_rules = sr
+        if attack_state is not None:
+            attack_state["_allocated_melee_retaliation_recorded"] = True
+
     def _unit_temp_ranged_effect_active(
         self,
         attacker: Optional['Model'],
@@ -7439,75 +7565,11 @@ class WargearProfile:
                                 sr["lethal_ichor_allocations"] = allocations
                                 sr["lethal_ichor_source"] = str(sr.get("lethal_ichor_source", "") or "Lethal Ichor")
                                 target_root.special_rules = sr
-                target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None
-                retaliation_specs_fn = getattr(target_unit, "model_allocated_melee_mortal_retaliation_specs", None)
-                retaliation_specs = (
-                    list(retaliation_specs_fn(target_model) or [])
-                    if callable(retaliation_specs_fn) and target_model is not None
-                    else []
+                self._record_allocated_melee_mortal_retaliation(
+                    target_model=target_model,
+                    attacker=attacker,
+                    attack_instance=wound_instance,
                 )
-                if retaliation_specs and attacker_unit is not None and target_unit is not None:
-                    try:
-                        target_root = (
-                            target_unit.get_attached_unit_root()
-                            if hasattr(target_unit, "get_attached_unit_root")
-                            else target_unit
-                        )
-                    except Exception:
-                        target_root = target_unit
-                    if target_root is not None:
-                        try:
-                            same_army = target_root.get_parent_army() == attacker_unit.get_parent_army()
-                        except Exception:
-                            same_army = True
-                        if not same_army:
-                            try:
-                                attacker_root = (
-                                    attacker_unit.get_attached_unit_root()
-                                    if hasattr(attacker_unit, "get_attached_unit_root")
-                                    else attacker_unit
-                                )
-                            except Exception:
-                                attacker_root = attacker_unit
-                            attacker_id = str(get_entity_id(attacker_root) or "")
-                            if attacker_id:
-                                sr = getattr(target_root, "special_rules", None)
-                                if not isinstance(sr, dict):
-                                    sr = {}
-                                allocations_by_key = sr.get("allocated_melee_retaliation_allocations")
-                                if not isinstance(allocations_by_key, dict):
-                                    allocations_by_key = {}
-                                specs_by_key = sr.get("allocated_melee_retaliation_specs")
-                                if not isinstance(specs_by_key, dict):
-                                    specs_by_key = {}
-                                for spec in retaliation_specs:
-                                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
-                                    if not ability_key:
-                                        continue
-                                    try:
-                                        cap = int(spec.get("max_rolls_per_attacker_unit", 6) or 6)
-                                    except Exception:
-                                        cap = 6
-                                    if cap <= 0:
-                                        continue
-                                    allocations = allocations_by_key.get(ability_key)
-                                    if not isinstance(allocations, dict):
-                                        allocations = {}
-                                    try:
-                                        current = int(allocations.get(attacker_id, 0) or 0)
-                                    except Exception:
-                                        current = 0
-                                    allocations[attacker_id] = int(min(int(cap), max(0, current + 1)))
-                                    allocations_by_key[ability_key] = allocations
-                                    specs_by_key[ability_key] = {
-                                        "source": str(spec.get("source", "") or "Allocated melee retaliation").strip()
-                                        or "Allocated melee retaliation",
-                                        "threshold": int(spec.get("threshold", 4) or 4),
-                                        "mortal_wounds": int(spec.get("mortal_wounds", 1) or 1),
-                                    }
-                                sr["allocated_melee_retaliation_allocations"] = allocations_by_key
-                                sr["allocated_melee_retaliation_specs"] = specs_by_key
-                                target_root.special_rules = sr
 
             # INDIRECT FIRE: if no target models were visible at selection time, the target gains Benefit of Cover
             # (unless the weapon ignores cover). This stacks with terrain evaluation but is not cumulative (+1 max).
@@ -10205,6 +10267,7 @@ class WargearProfile:
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         bonus_precision = False
+        bonus_pistol = False
         bonus_hazardous = False
         bonus_hazardous_label = ""
         bonus_blast = False
@@ -10416,7 +10479,7 @@ class WargearProfile:
             nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
-            nonlocal bonus_hazardous, bonus_hazardous_label, bonus_blast, bonus_blast_label
+            nonlocal bonus_pistol, bonus_hazardous, bonus_hazardous_label, bonus_blast, bonus_blast_label
             if not isinstance(bonus, dict):
                 return
             def _extract_source(keyword_name: str) -> str:
@@ -10431,6 +10494,8 @@ class WargearProfile:
                 bonus_lethal = True
             if bool(bonus.get("precision")):
                 bonus_precision = True
+            if bool(bonus.get("pistol")):
+                bonus_pistol = True
             if bool(bonus.get("hazardous")):
                 bonus_hazardous = True
                 inferred_hazardous_label = _extract_source("Hazardous")
@@ -10549,6 +10614,8 @@ class WargearProfile:
                 attack_instance["bonus_anti_specs"] = bonus_anti_specs
             if bonus_precision:
                 attack_instance["bonus_precision"] = True
+            if bonus_pistol:
+                attack_instance["bonus_pistol"] = True
             if bonus_hazardous:
                 attack_instance["bonus_hazardous"] = True
                 if bonus_hazardous_label:
@@ -10571,6 +10638,7 @@ class WargearProfile:
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
             bonus_precision = False
+            bonus_pistol = False
             bonus_hazardous = False
             bonus_hazardous_label = ""
             bonus_blast = False
@@ -11342,9 +11410,10 @@ class WargearProfile:
         # BIG GUNS NEVER TIRE (BGNT):
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
         # apply -1 to Hit unless the attack is made with a Pistol.
+        attack_counts_as_pistol = bool(self.is_pistol() or bool(attack_instance.get("bonus_pistol")))
         try:
             pu = attacker.parent_unit
-            if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
+            if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not attack_counts_as_pistol):
                 skip_bgnt = False
                 try:
                     if hasattr(pu, "_is_ficklefire_active"):
@@ -11364,7 +11433,7 @@ class WargearProfile:
         # BGNT target exception: ranged attacks vs an engaged enemy MONSTER/VEHICLE are -1 to hit (unless Pistol).
         try:
             pu = getattr(attacker, "parent_unit", None)
-            if is_ranged and pu is not None and (not self.is_pistol()) and (target.is_vehicle or target.is_monster):
+            if is_ranged and pu is not None and (not attack_counts_as_pistol) and (target.is_vehicle or target.is_monster):
                 game_map = None
                 try:
                     game_map = pu.get_parent_army().player.game.map
@@ -11406,7 +11475,7 @@ class WargearProfile:
         # Fortification: target only engaged with friendly Fortifications can be shot, but at -1 to hit (non-Pistol).
         try:
             pu = getattr(attacker, "parent_unit", None)
-            if is_ranged and pu is not None and (not self.is_pistol()):
+            if is_ranged and pu is not None and (not attack_counts_as_pistol):
                 game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
                 game_map = getattr(game, "map", None) if game is not None else None
                 if game_map is not None and hasattr(target, "is_only_within_enemy_fortifications"):
@@ -12959,6 +13028,20 @@ class WargearProfile:
             )
             if bool(reroll_full):
                 source_name = str(source or "Pitiless Hunters").strip() or "Pitiless Hunters"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        persistent_assailants_hit_fn = (
+            getattr(csm_mgr, "fellhammer_persistent_assailants_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(persistent_assailants_hit_fn):
+            reroll_full, source = persistent_assailants_hit_fn(
+                attacker,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Persistent Assailants").strip() or "Persistent Assailants"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
@@ -15166,6 +15249,19 @@ class WargearProfile:
             if int(threshold or 0):
                 crit_threshold = min(int(crit_threshold), int(threshold))
                 source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
+                crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        threshold_fn = getattr(csm_mgr, "fellhammer_pitiless_cannonade_crit_hit_threshold", None) if csm_mgr is not None else None
+        if callable(threshold_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            threshold, source = threshold_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=game,
+            )
+            if int(threshold or 0):
+                crit_threshold = min(int(crit_threshold), int(threshold))
+                source_name = str(source or "Pitiless Cannonade").strip() or "Pitiless Cannonade"
                 crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         try:
             if is_ranged:
@@ -19198,6 +19294,27 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Pitiless Hunters").strip() or "Pitiless Hunters"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "fellhammer_persistent_assailants_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Persistent Assailants").strip() or "Persistent Assailants"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
@@ -24990,6 +25107,11 @@ class WargearProfile:
         if target_model is not None:
             target_model._last_damage_weapon_profile = self
             target_model._last_damage_source_kind = "attack"
+        self._record_allocated_melee_mortal_retaliation(
+            target_model=target_model,
+            attacker=attacker,
+            attack_instance=attack_instance,
+        )
 
         if is_mortal:
             target_unit = getattr(target_model, "parent_unit", None)

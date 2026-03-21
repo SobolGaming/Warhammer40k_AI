@@ -1025,7 +1025,7 @@ class PositioningMixin:
         """
         if model is None or (not flag_key and not enhancement_id and not enhancement_name):
             return False
-        model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+        model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id:
             return False
 
@@ -4714,7 +4714,10 @@ class PositioningMixin:
         """Collect always-on weapon keyword grants that apply to a specific model."""
         if model is None:
             return []
-        cache_key = f"model_weapon_keyword_bonus_rules:{get_entity_id(model)}"
+        model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        if not model_id:
+            return []
+        cache_key = f"model_weapon_keyword_bonus_rules:{model_id}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -4962,6 +4965,7 @@ class PositioningMixin:
             "ignores_cover": False,
             "lethal_hits": False,
             "assault": False,
+            "pistol": False,
             "hazardous": False,
             "blast": False,
             "rapid_fire_bonus": 0,
@@ -4994,6 +4998,9 @@ class PositioningMixin:
             elif kw == "ASSAULT":
                 bonuses["assault"] = True
                 sources.append(f"Assault ({source})")
+            elif kw == "PISTOL":
+                bonuses["pistol"] = True
+                sources.append(f"Pistol ({source})")
             elif kw == "HAZARDOUS":
                 bonuses["hazardous"] = True
                 sources.append(f"Hazardous ({source})")
@@ -5053,6 +5060,7 @@ class PositioningMixin:
             bonuses["ignores_cover"]
             or bonuses["lethal_hits"]
             or bonuses["assault"]
+            or bonuses["pistol"]
             or bonuses["hazardous"]
             or bonuses["blast"]
             or int(bonuses["rapid_fire_bonus"] or 0) > 0
@@ -6490,6 +6498,69 @@ class PositioningMixin:
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
+
+    def weapon_profile_counts_as_pistol(
+        self,
+        weapon_profile,
+        *,
+        model: Optional['Model'] = None,
+    ) -> bool:
+        if weapon_profile is None:
+            return False
+        is_pistol = getattr(weapon_profile, "is_pistol", None)
+        if callable(is_pistol):
+            try:
+                if bool(is_pistol()):
+                    return True
+            except Exception:
+                pass
+
+        models: list['Model'] = []
+        if model is not None:
+            models = [model]
+        else:
+            get_models = getattr(self, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(self, "models", []) or [])
+        if not models:
+            return False
+
+        weapon_name = ""
+        try:
+            weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+        except Exception:
+            weapon_name = ""
+        if not weapon_name:
+            try:
+                weapon_name = str(getattr(weapon_profile, "name", "") or "")
+            except Exception:
+                weapon_name = ""
+        attack_type = "ranged"
+        try:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and callable(getattr(parent, "is_melee", None)) and bool(parent.is_melee()):
+                attack_type = "melee"
+        except Exception:
+            attack_type = "ranged"
+
+        for candidate in list(models or []):
+            if candidate is None:
+                continue
+            alive_attr = getattr(candidate, "is_alive", True)
+            try:
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                is_alive = False
+            if not is_alive:
+                continue
+            bonus = self.get_model_weapon_keyword_bonuses(
+                attack_type=attack_type,
+                model=candidate,
+                weapon_profile=weapon_profile,
+                weapon_name=weapon_name,
+            )
+            if isinstance(bonus, dict) and bool(bonus.get("pistol")):
+                return True
+        return False
 
     def get_weapon_target_excluding_keywords_keyword_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """

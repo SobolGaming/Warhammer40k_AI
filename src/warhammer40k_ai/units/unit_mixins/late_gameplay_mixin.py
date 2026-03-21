@@ -2896,6 +2896,20 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            csm_fnp_fn = getattr(csm_mgr, "fellhammer_steadfast_determination_fnp", None) if csm_mgr is not None else None
+            if callable(csm_fnp_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                csm_fnp, _csm_source = csm_fnp_fn(self, target_model=target_model, game=game)
+                if int(csm_fnp or 0) > 0:
+                    key = (int(csm_fnp), "")
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    if key not in seen:
+                        result.append((int(csm_fnp), None))
+        except Exception:
+            pass
+        try:
             from ...utility.aura_effects import get_aura_fnp_entries
 
             aura_entries = list(get_aura_fnp_entries(self) or [])
