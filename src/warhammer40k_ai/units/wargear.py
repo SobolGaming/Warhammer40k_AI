@@ -3818,6 +3818,23 @@ class WargearProfile:
                         ap_val -= int(bonus)
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "nightmare_hunt_talons_sunk_deep_ap_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, _source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(bonus or 0) > 0:
+                    ap_val -= int(bonus)
+        except Exception:
+            pass
         necrons_annihilation_is_ranged = bool(
             self.parent_wargear is not None
             and callable(getattr(self.parent_wargear, "is_ranged", None))
@@ -13075,6 +13092,21 @@ class WargearProfile:
             )
             if bool(reroll_full):
                 source_name = str(source or "Pitiless Hunters").strip() or "Pitiless Hunters"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        prey_on_the_weak_hit_fn = (
+            getattr(csm_mgr, "nightmare_hunt_prey_on_the_weak_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(prey_on_the_weak_hit_fn):
+            reroll_full, source = prey_on_the_weak_hit_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Prey on the Weak").strip() or "Prey on the Weak"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         persistent_assailants_hit_fn = (
             getattr(csm_mgr, "fellhammer_persistent_assailants_reroll_hit_applies", None)

@@ -17989,6 +17989,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(deceptors_apply_fn(self, profile=profile, game=game)):
                     return True
+            nightmare_apply_fn = (
+                getattr(mgr, "nightmare_hunt_relentless_terror_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(nightmare_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(nightmare_apply_fn(self, profile=profile, game=game)):
+                    return True
             twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_shoot_after_fall_back", None) if mgr is not None else None
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -18534,6 +18543,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(hurons_apply_fn(self, game=game)):
                     return True
+            nightmare_apply_fn = (
+                getattr(mgr, "nightmare_hunt_malicious_surge_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(nightmare_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(nightmare_apply_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -18595,6 +18613,15 @@ class ActionsMovementMixin:
             if callable(dread_talons_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(dread_talons_apply_fn(self, game=game)):
+                    return True
+            nightmare_apply_fn = (
+                getattr(mgr, "nightmare_hunt_relentless_terror_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(nightmare_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(nightmare_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

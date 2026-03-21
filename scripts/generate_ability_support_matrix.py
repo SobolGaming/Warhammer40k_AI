@@ -20997,6 +20997,42 @@ def _stratagem_support(
             "End of opponent Movement phase: selected HERETIC ASTARTES INFANTRY unit not within Engagement Range can declare an out-of-turn charge against one enemy unit within 6\" that Fell Back this turn, and does not gain the Charge bonus.",
             name_u,
         )
+    if stratagem_id == "000010642002":
+        return (
+            "Implemented",
+            "Shooting or Fight phase: selected HERETIC ASTARTES INFANTRY unit that has not yet been selected to shoot or fight improves AP by 1 on attacks against Battle-shocked or Below Half-strength enemy units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010642003":
+        return (
+            "Implemented",
+            "Shooting or Fight phase: selected HERETIC ASTARTES INFANTRY unit that has not yet been selected to shoot or fight re-rolls Hit rolls against Battle-shocked or Below Half-strength enemy units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010642004":
+        return (
+            "Implemented",
+            "Fight phase reaction after a friendly HERETIC ASTARTES unit destroys an enemy unit: each visible enemy non-MONSTER, non-VEHICLE unit within 6\" of that unit takes a Battle-shock test.",
+            name_u,
+        )
+    if stratagem_id == "000010642005":
+        return (
+            "Implemented",
+            "Your Charge phase: selected HERETIC ASTARTES INFANTRY unit can declare a charge after Advancing until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010642006":
+        return (
+            "Implemented",
+            "Your Movement phase after a friendly HERETIC ASTARTES INFANTRY unit Falls Back: that unit can shoot and declare a charge this turn despite Falling Back.",
+            name_u,
+        )
+    if stratagem_id == "000010642007":
+        return (
+            "Implemented",
+            "Your Movement phase after a friendly HERETIC ASTARTES unit arrives from Reserves: select one visible enemy non-MONSTER, non-VEHICLE unit within 12\" to take a Battle-shock test at -1.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)

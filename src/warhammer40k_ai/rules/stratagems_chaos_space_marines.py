@@ -120,6 +120,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_hurons_marauders", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_nightmare_hunt_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_nightmare_hunt", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -728,6 +733,55 @@ class ChaosSpaceMarinesStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
 
+    def _nightmare_hunt_targetable_units(
+        self,
+        *,
+        require_infantry: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_fell_back: bool = False,
+        require_arrived_from_reserves: bool = False,
+    ) -> list[Any]:
+        if not self._is_nightmare_hunt_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_infantry and not self._is_heretic_astartes_infantry(root):
+                continue
+            if require_arrived_from_reserves and not bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
     def _hurons_marauders_targetable_units(
         self,
         *,
@@ -972,6 +1026,24 @@ class ChaosSpaceMarinesStratagemMixin:
                 continue
             candidates.append(enemy_root)
         return sorted(candidates, key=self._csm_sort_key)
+
+    def _nightmare_hunt_enemy_units_in_range_visible(
+        self,
+        source_unit: Any,
+        *,
+        radius: float,
+        exclude_monster_vehicle: bool = False,
+    ) -> list[Any]:
+        if not self._is_nightmare_hunt_detachment():
+            return []
+        candidates = self._dread_talons_enemy_units_in_range_visible(source_unit, radius=float(radius))
+        if not exclude_monster_vehicle:
+            return candidates
+        return [
+            enemy
+            for enemy in list(candidates or [])
+            if not self._csm_has_keyword(enemy, "MONSTER") and not self._csm_has_keyword(enemy, "VEHICLE")
+        ]
 
     def _dread_talons_merciless_pursuit_enemy_candidates_for_unit(self, unit: Any) -> list[Any]:
         root = self._csm_root(unit)
@@ -2011,6 +2083,268 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_nightmare_hunt_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_nightmare_hunt_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def queue_phase_start_stratagem(stratagem_name: str, *, phase_name: str, candidates: list[Any]) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_shot=True)
+            queue_phase_start_stratagem(
+                "PREY ON THE WEAK",
+                phase_name="Shooting phase",
+                candidates=candidates,
+            )
+            queue_phase_start_stratagem(
+                "TALONS SUNK DEEP",
+                phase_name="Shooting phase",
+                candidates=candidates,
+            )
+            return
+
+        if phase_key == "FIGHT_PHASE":
+            candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_fought=True)
+            queue_phase_start_stratagem(
+                "PREY ON THE WEAK",
+                phase_name="Fight phase",
+                candidates=candidates,
+            )
+            queue_phase_start_stratagem(
+                "TALONS SUNK DEEP",
+                phase_name="Fight phase",
+                candidates=candidates,
+            )
+            return
+
+        if phase_key != "CHARGE_PHASE" or player is not self.player:
+            return
+        stratagem = self.get_by_name("MALICIOUS SURGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._nightmare_hunt_targetable_units(require_infantry=True)
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Charge phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_nightmare_hunt_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_nightmare_hunt_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if phase_name != "movement phase" or action_key not in {"fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        moving_root = self._csm_root(unit)
+        if moving_root is None or not self._csm_owned_by_player(moving_root, self.player):
+            return
+        stratagem = self.get_by_name("RELENTLESS TERROR")
+        if stratagem is None:
+            return
+        if str(getattr(stratagem, "id", "") or "") != "000010642006":
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=moving_root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_fell_back=True)
+        if moving_root not in candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=moving_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": moving_root,
+                "target_unit": moving_root,
+                "action": str(action or ""),
+                "candidates": [moving_root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_nightmare_hunt_unit_set_up_reactions(
+        self,
+        *,
+        unit: Any,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs: Any,
+    ) -> None:
+        if not self._is_nightmare_hunt_detachment():
+            return
+        if unit is None or not bool(set_up_as_reinforcements):
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        root = self._csm_root(unit)
+        if root is None:
+            return
+        if not self._csm_owned_by_player(root, self.player):
+            return
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        if not self._is_heretic_astartes_unit(root):
+            return
+        if not bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+            return
+        enemy_candidates = self._nightmare_hunt_enemy_units_in_range_visible(
+            root,
+            radius=12.0,
+            exclude_monster_vehicle=True,
+        )
+        if not enemy_candidates:
+            return
+        stratagem = self.get_by_name("HORRIFIC INCURSION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_set_up",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=root,
+        ):
+            return
+        payload = {
+            "event": "unit_set_up",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "set_up_as_reinforcements": True,
+            "candidates": [root],
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_nightmare_hunt_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        if not self._is_nightmare_hunt_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_root = self._csm_root(destroyed_by_unit)
+        destroyed_root = self._csm_root(destroyed_unit)
+        if source_root is None or destroyed_root is None:
+            return
+        if not self._csm_owned_by_player(source_root, self.player):
+            return
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._csm_is_alive(source_root) or not self._csm_is_on_battlefield(source_root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(source_root):
+            return
+        if not self._is_heretic_astartes_unit(source_root):
+            return
+        visible_enemies = self._nightmare_hunt_enemy_units_in_range_visible(
+            source_root,
+            radius=6.0,
+            exclude_monster_vehicle=True,
+        )
+        if not visible_enemies:
+            return
+        stratagem = self.get_by_name("SADISTIC DISPLAY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=source_root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=source_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": source_root,
+                "target_unit": source_root,
+                "destroyed_unit": destroyed_root,
+                "enemy_units": visible_enemies,
+                "candidates": [source_root],
+            },
+            use_timer=False,
+        )
+
     def _queue_fellhammer_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_fellhammer_siege_host_detachment():
             return
@@ -2551,6 +2885,38 @@ class ChaosSpaceMarinesStratagemMixin:
             ):
                 sr.pop(key, None)
             root.special_rules = sr
+
+    def _cleanup_nightmare_hunt_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "SHOOTING_PHASE": (
+                mgr._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
+                mgr._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
+            ),
+            "CHARGE_PHASE": (mgr._NIGHTMARE_HUNT_MALICIOUS_SURGE_PREFIX,),
+            "FIGHT_PHASE": (
+                mgr._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
+                mgr._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
+                mgr._NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX,
+            ),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+        if not prefixes:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
 
     def _cleanup_fellhammer_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3304,6 +3670,442 @@ class ChaosSpaceMarinesStratagemMixin:
         self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: RELENTLESS TERROR: %s can charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_nightmare_hunt_prey_on_the_weak(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PREY ON THE WEAK", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if unit is None and not candidates:
+            if phase_name == "shooting phase":
+                candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_shot=True)
+            elif phase_name == "fight phase":
+                candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_fought=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PREY ON THE WEAK: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PREY ON THE WEAK: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: PREY ON THE WEAK: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PREY ON THE WEAK: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PREY ON THE WEAK: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PREY ON THE WEAK: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: PREY ON THE WEAK: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: PREY ON THE WEAK: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: PREY ON THE WEAK: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_nightmare_hunt_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PREY ON THE WEAK: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
+            source=stratagem.name or "PREY ON THE WEAK",
+            player=active_player if active_player is not None else self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PREY ON THE WEAK: %s gains Hit re-rolls against Battle-shocked or Below Half-strength targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_nightmare_hunt_talons_sunk_deep(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("TALONS SUNK DEEP", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if unit is None and not candidates:
+            if phase_name == "shooting phase":
+                candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_shot=True)
+            elif phase_name == "fight phase":
+                candidates = self._nightmare_hunt_targetable_units(require_infantry=True, require_not_fought=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TALONS SUNK DEEP: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: TALONS SUNK DEEP: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: TALONS SUNK DEEP: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: TALONS SUNK DEEP: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: TALONS SUNK DEEP: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TALONS SUNK DEEP: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: TALONS SUNK DEEP: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: TALONS SUNK DEEP: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: TALONS SUNK DEEP: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_nightmare_hunt_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: TALONS SUNK DEEP: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
+            source=stratagem.name or "TALONS SUNK DEEP",
+            player=active_player if active_player is not None else self.player,
+            game=self.game,
+            extra_state={f"{mgr._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX}_ap_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TALONS SUNK DEEP: %s improves AP against Battle-shocked or Below Half-strength targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_nightmare_hunt_relentless_terror(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("RELENTLESS TERROR", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RELENTLESS TERROR: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RELENTLESS TERROR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RELENTLESS TERROR: not your Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: RELENTLESS TERROR: target did not Fall Back")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: RELENTLESS TERROR: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELENTLESS TERROR: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: RELENTLESS TERROR: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: RELENTLESS TERROR: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: RELENTLESS TERROR: target has not Fallen Back this round")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_nightmare_hunt_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: RELENTLESS TERROR: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX,
+            source=stratagem.name or "RELENTLESS TERROR",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RELENTLESS TERROR: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_nightmare_hunt_malicious_surge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("MALICIOUS SURGE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and not candidates:
+            candidates = self._nightmare_hunt_targetable_units(require_infantry=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MALICIOUS SURGE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: MALICIOUS SURGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MALICIOUS SURGE: not your Charge phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: MALICIOUS SURGE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: MALICIOUS SURGE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MALICIOUS SURGE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: MALICIOUS SURGE: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_nightmare_hunt_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: MALICIOUS SURGE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._NIGHTMARE_HUNT_MALICIOUS_SURGE_PREFIX,
+            source=stratagem.name or "MALICIOUS SURGE",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MALICIOUS SURGE: %s can charge after Advancing this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_nightmare_hunt_horrific_incursion(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        pending = self._csm_find_pending_reaction("HORRIFIC INCURSION", unit=unit)
+        if pending is not None:
+            if unit is None:
+                unit = pending.get("unit") or pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(pending.get("enemy_candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HORRIFIC INCURSION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: HORRIFIC INCURSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: HORRIFIC INCURSION: not your Movement phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: HORRIFIC INCURSION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: HORRIFIC INCURSION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: HORRIFIC INCURSION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: HORRIFIC INCURSION: target must be HERETIC ASTARTES")
+            return False
+        if not bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+            logger.error("ERROR: HORRIFIC INCURSION: target must have arrived from Reserves this turn")
+            return False
+        if not enemy_candidates:
+            enemy_candidates = self._nightmare_hunt_enemy_units_in_range_visible(
+                root,
+                radius=12.0,
+                exclude_monster_vehicle=True,
+            )
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if enemy_unit is None:
+            logger.error("ERROR: HORRIFIC INCURSION: no enemy unit provided")
+            return False
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: HORRIFIC INCURSION: invalid enemy unit")
+            return False
+        if enemy_candidates and enemy_root not in enemy_candidates:
+            logger.error("ERROR: HORRIFIC INCURSION: enemy target is not currently eligible")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: HORRIFIC INCURSION: enemy target must be controlled by your opponent")
+            return False
+        if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+            logger.error("ERROR: HORRIFIC INCURSION: enemy target must be on the battlefield")
+            return False
+        if self._csm_has_keyword(enemy_root, "MONSTER") or self._csm_has_keyword(enemy_root, "VEHICLE"):
+            logger.error("ERROR: HORRIFIC INCURSION: enemy target cannot be a MONSTER or VEHICLE")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        force_test = getattr(enemy_root, "force_battle_shock_test", None)
+        if not callable(force_test):
+            logger.error("ERROR: HORRIFIC INCURSION: target unit cannot take a forced Battle-shock test")
+            return False
+        force_test(
+            int(getattr(self.game, "turn", 0) or 1) if self.game is not None else 1,
+            modifier=-1,
+            source=str(stratagem.name or "HORRIFIC INCURSION"),
+        )
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HORRIFIC INCURSION: %s forces %s to take a Battle-shock test at -1.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_nightmare_hunt_sadistic_display(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_units = list(kwargs.get("enemy_units") or [])
+        pending = self._csm_find_pending_reaction("SADISTIC DISPLAY", unit=unit)
+        if pending is not None:
+            if unit is None:
+                unit = pending.get("unit") or pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not enemy_units:
+                enemy_units = list(pending.get("enemy_units") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SADISTIC DISPLAY: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_nightmare_hunt_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SADISTIC DISPLAY: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SADISTIC DISPLAY: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SADISTIC DISPLAY: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SADISTIC DISPLAY: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: SADISTIC DISPLAY: target must be HERETIC ASTARTES")
+            return False
+        if not enemy_units:
+            enemy_units = self._nightmare_hunt_enemy_units_in_range_visible(
+                root,
+                radius=6.0,
+                exclude_monster_vehicle=True,
+            )
+        if not enemy_units:
+            logger.error("ERROR: SADISTIC DISPLAY: no eligible enemy units are in range and visible")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        current_turn = int(getattr(self.game, "turn", 0) or 1) if self.game is not None else 1
+        for enemy_root in list(enemy_units or []):
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn)
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SADISTIC DISPLAY: %s forces Battle-shock tests on nearby visible enemies.",
             getattr(root, "name", "Unit"),
         )
         return True
@@ -5881,6 +6683,10 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_hurons_marauders_at_the_tyrants_command(stratagem, **kwargs)
         if name_u == "ENCIRCLING SURGE":
             return self._use_hurons_marauders_encircling_surge(stratagem, **kwargs)
+        if name_u == "HORRIFIC INCURSION":
+            return self._use_nightmare_hunt_horrific_incursion(stratagem, **kwargs)
+        if name_u == "MALICIOUS SURGE":
+            return self._use_nightmare_hunt_malicious_surge(stratagem, **kwargs)
         if name_u == "PERSISTENT ASSAILANTS":
             return self._use_fellhammer_persistent_assailants(stratagem, **kwargs)
         if name_u == "PICK THEM OFF":
@@ -5891,14 +6697,20 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_dread_talons_pitiless_hunters(stratagem, **kwargs)
         if name_u == "POINT-BLANK DESTRUCTION":
             return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
+        if name_u == "PREY ON THE WEAK":
+            return self._use_nightmare_hunt_prey_on_the_weak(stratagem, **kwargs)
         if name_u == "REAVERS' FLURRY":
             return self._use_hurons_marauders_reavers_flurry(stratagem, **kwargs)
         if name_u == "RELENTLESS TERROR":
+            if str(getattr(stratagem, "id", "") or "") == "000010642006":
+                return self._use_nightmare_hunt_relentless_terror(stratagem, **kwargs)
             return self._use_dread_talons_relentless_terror(stratagem, **kwargs)
         if name_u == "MERCILESS PURSUIT":
             return self._use_dread_talons_merciless_pursuit(stratagem, **kwargs)
         if name_u == "RELENTLESS PURSUIT":
             return self._use_deceptors_relentless_pursuit(stratagem, **kwargs)
+        if name_u == "SADISTIC DISPLAY":
+            return self._use_nightmare_hunt_sadistic_display(stratagem, **kwargs)
         if name_u == "SCRAMBLED COORDINATES":
             return self._use_deceptors_scrambled_coordinates(stratagem, **kwargs)
         if name_u == "SCREAMING DESCENT":
@@ -5911,6 +6723,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         if name_u == "STEADFAST DETERMINATION":
             return self._use_fellhammer_steadfast_determination(stratagem, **kwargs)
+        if name_u == "TALONS SUNK DEEP":
+            return self._use_nightmare_hunt_talons_sunk_deep(stratagem, **kwargs)
         if name_u == "TO THE FAVOURED THE SPOILS":
             return self._use_hurons_marauders_to_the_favoured_the_spoils(stratagem, **kwargs)
         return None

@@ -122,6 +122,14 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _HURONS_MARAUDERS_HARDENED_KILLERS_SOURCE = "Hardened Killers"
     _HURONS_MARAUDERS_REAVERS_FLURRY_PREFIX = "hurons_marauders_reavers_flurry"
     _HURONS_MARAUDERS_REAVERS_FLURRY_SOURCE = "Reavers' Flurry"
+    _NIGHTMARE_HUNT_MALICIOUS_SURGE_PREFIX = "nightmare_hunt_malicious_surge"
+    _NIGHTMARE_HUNT_MALICIOUS_SURGE_SOURCE = "Malicious Surge"
+    _NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX = "nightmare_hunt_prey_on_the_weak"
+    _NIGHTMARE_HUNT_PREY_ON_THE_WEAK_SOURCE = "Prey on the Weak"
+    _NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX = "nightmare_hunt_relentless_terror"
+    _NIGHTMARE_HUNT_RELENTLESS_TERROR_SOURCE = "Relentless Terror"
+    _NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX = "nightmare_hunt_talons_sunk_deep"
+    _NIGHTMARE_HUNT_TALONS_SUNK_DEEP_SOURCE = "Talons Sunk Deep"
     _HARDENED_KILLERS_ABILITY = "hurons_marauders_hardened_killers_choice"
     _HARDENED_KILLERS_CHOICE_BALLISTIC_SKILL = "BALLISTIC_SKILL"
     _HARDENED_KILLERS_CHOICE_RAPID_FIRE = "RAPID_FIRE"
@@ -4812,6 +4820,80 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._clear_unit_ability_cache(root)
 
     @classmethod
+    def _nightmare_hunt_effect_source(cls, sr: dict, *, prefix: str, default: str) -> str:
+        if not isinstance(sr, dict):
+            return default
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _nightmare_hunt_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_nightmare_hunt():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_nightmare_hunt_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    @classmethod
     def _fellhammer_effect_source(cls, sr: dict, *, prefix: str, default: str) -> str:
         if not isinstance(sr, dict):
             return default
@@ -5266,6 +5348,92 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             prefix=self._DREAD_TALONS_RELENTLESS_TERROR_PREFIX,
             game=game,
             require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
+
+    def nightmare_hunt_prey_on_the_weak_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = weapon_profile
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._dread_talons_target_is_battle_shocked_or_below_half_strength(target_unit):
+            return False, ""
+        root, sr = self._nightmare_hunt_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._nightmare_hunt_effect_source(
+            sr,
+            prefix=self._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
+            default=self._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_SOURCE,
+        )
+
+    def nightmare_hunt_talons_sunk_deep_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._dread_talons_target_is_battle_shocked_or_below_half_strength(target_unit):
+            return 0, ""
+        root, sr = self._nightmare_hunt_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX}_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._nightmare_hunt_effect_source(
+            sr,
+            prefix=self._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
+            default=self._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_SOURCE,
+        )
+
+    def nightmare_hunt_relentless_terror_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._nightmare_hunt_effect_state(
+            unit,
+            prefix=self._NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
+
+    def nightmare_hunt_relentless_terror_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._nightmare_hunt_effect_state(
+            unit,
+            prefix=self._NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
+
+    def nightmare_hunt_malicious_surge_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._nightmare_hunt_effect_state(
+            unit,
+            prefix=self._NIGHTMARE_HUNT_MALICIOUS_SURGE_PREFIX,
+            game=game,
         )
         return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
 

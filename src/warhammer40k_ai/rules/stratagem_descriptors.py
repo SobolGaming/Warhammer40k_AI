@@ -2474,6 +2474,78 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_NIGHTMARE_HUNT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010642002": StratagemToolDescriptor(
+        stratagem_id="000010642002",
+        name="Talons Sunk Deep",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="heretic_astartes_infantry_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_ap_bonus_vs_battleshocked_or_below_half",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1},
+    ),
+    "000010642003": StratagemToolDescriptor(
+        stratagem_id="000010642003",
+        name="Prey on the Weak",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="heretic_astartes_infantry_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="hit_reroll_vs_battleshocked_or_below_half",
+        cp_cost=1,
+        effect_params={"reroll_hit_full": True},
+    ),
+    "000010642004": StratagemToolDescriptor(
+        stratagem_id="000010642004",
+        name="Sadistic Display",
+        timing="fight_phase_after_destroying_enemy_unit",
+        target="heretic_astartes_unit_that_destroyed_enemy_unit",
+        duration="immediate",
+        effect="battle_shock_all_visible_non_monster_non_vehicle_enemies_within_range_after_destroying_enemy_unit",
+        cp_cost=1,
+        range_in=6.0,
+    ),
+    "000010642005": StratagemToolDescriptor(
+        stratagem_id="000010642005",
+        name="Malicious Surge",
+        timing="your_charge_phase",
+        target="heretic_astartes_infantry_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["HERETIC ASTARTES", "INFANTRY"]},
+    ),
+    "000010642006": StratagemToolDescriptor(
+        stratagem_id="000010642006",
+        name="Relentless Terror",
+        timing="movement_phase_after_fall_back",
+        target="heretic_astartes_infantry_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={"shoot_after_fall_back": True, "charge_after_fall_back": True},
+    ),
+    "000010642007": StratagemToolDescriptor(
+        stratagem_id="000010642007",
+        name="Horrific Incursion",
+        timing="movement_phase_after_arriving_from_reserves",
+        target="heretic_astartes_unit_set_up_from_reserves_this_turn",
+        duration="immediate",
+        effect="visible_enemy_battleshock_test_minus_one_after_arriving_from_reserves",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "battle_shock_test_modifier": -1,
+            "requires_arrived_from_reserves_this_turn": True,
+            "excluded_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+}
+
+_NIGHTMARE_HUNT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NIGHTMARE_HUNT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7751,6 +7823,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _NIGHTMARE_HUNT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8001,6 +8076,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _NIGHTMARE_HUNT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

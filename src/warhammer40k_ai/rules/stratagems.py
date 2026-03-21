@@ -71,7 +71,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
     "HARDENED KILLERS",
+    "HORRIFIC INCURSION",
     "MASTERS ARE WATCHING",
+    "MALICIOUS SURGE",
     "MORTAL THRALLS",
     "AT THE TYRANT'S COMMAND",
     "PERSISTENT ASSAILANTS",
@@ -83,11 +85,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "POINT-BLANK AMBUSH",
     "POINT-BLANK DESTRUCTION",
     "POUNCE ON THE PREY",
+    "PREY ON THE WEAK",
     "PULSE ONSLAUGHT",
     "RELENTLESS PURSUIT",
     "SCRAMBLED COORDINATES",
+    "SADISTIC DISPLAY",
     "SKYBORNE ANNIHILATION",
     "SWOOPING MOCKERY",
+    "TALONS SUNK DEEP",
     "VICIOUS BLADES",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
@@ -1856,7 +1861,14 @@ class StratagemManager(
             "SHADE PATH",
         }:
             add("charge_declared", self._on_charge_declared)
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "FIRES OF COVENANT", "A CHALLENGE MET", "MIRAGE OF ECHOES"}:
+        if names & {
+            "OVERWATCH",
+            "FIRE OVERWATCH",
+            "FIRES OF COVENANT",
+            "A CHALLENGE MET",
+            "MIRAGE OF ECHOES",
+            "HORRIFIC INCURSION",
+        }:
             add("unit_set_up", self._on_unit_set_up)
 
         if names & {
@@ -1884,6 +1896,7 @@ class StratagemManager(
             "TERRIFYING PROFICIENCY",
             "INESCAPABLE JUSTICE",
             "BLOODY EXAMPLE",
+            "SADISTIC DISPLAY",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -2368,9 +2381,12 @@ class StratagemManager(
             "UNSHROUDED TRUTH",
             "FATE INESCAPABLE",
             "AT THE TYRANT'S COMMAND",
+            "MALICIOUS SURGE",
+            "PREY ON THE WEAK",
             "PSYCHIC SHIELD",
             "REAVERS' FLURRY",
             "SEIZE THE PRIZE",
+            "TALONS SUNK DEEP",
             "TO THE FAVOURED THE SPOILS",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
@@ -6453,6 +6469,7 @@ class StratagemManager(
             self._queue_dread_talons_phase_start_reactions(player=player, phase=phase)
             self._queue_fellhammer_phase_start_reactions(player=player, phase=phase)
             self._queue_hurons_marauders_phase_start_reactions(player=player, phase=phase)
+            self._queue_nightmare_hunt_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8466,6 +8483,7 @@ class StratagemManager(
             self._cleanup_dread_talons_phase_end_effects(phase=phase)
             self._cleanup_fellhammer_phase_end_effects(phase=phase)
             self._cleanup_hurons_marauders_phase_end_effects(phase=phase)
+            self._cleanup_nightmare_hunt_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -9424,6 +9442,7 @@ class StratagemManager(
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
         self._queue_deceptors_move_end_reactions(unit=unit, action=action)
         self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
+        self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -9471,6 +9490,7 @@ class StratagemManager(
         )
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
         self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
+        self._queue_nightmare_hunt_unit_set_up_reactions(unit=unit, **kwargs)
         self._maybe_queue_overwatch(unit, action="set_up", when="end")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
@@ -14097,6 +14117,13 @@ class StratagemManager(
             raise
         try:
             self._queue_dread_talons_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_nightmare_hunt_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
