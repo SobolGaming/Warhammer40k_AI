@@ -3800,6 +3800,24 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "dread_talons_depthless_cruelty_melee_ap_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, _source = bonus_fn(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(bonus or 0) > 0:
+                        ap_val -= int(bonus)
+        except Exception:
+            pass
         necrons_annihilation_is_ranged = bool(
             self.parent_wargear is not None
             and callable(getattr(self.parent_wargear, "is_ranged", None))
@@ -12927,6 +12945,21 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Pick Them Off").strip() or "Pick Them Off"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        pitiless_hunters_hit_fn = (
+            getattr(csm_mgr, "dread_talons_pitiless_hunters_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(pitiless_hunters_hit_fn):
+            reroll_full, source = pitiless_hunters_hit_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Pitiless Hunters").strip() or "Pitiless Hunters"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):
@@ -19143,6 +19176,28 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Pick Them Off").strip() or "Pick Them Off"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "dread_talons_pitiless_hunters_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Pitiless Hunters").strip() or "Pitiless Hunters"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass

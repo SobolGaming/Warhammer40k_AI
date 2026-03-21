@@ -1643,6 +1643,15 @@ class GameSetupDeploymentReservesMixin:
             if callable(queue_reaction):
                 queue_reaction(current_player=current_player)
 
+        current_stratagems = getattr(current_player, "stratagems", None)
+        queue_dread_talons = (
+            getattr(current_stratagems, "_queue_dread_talons_reinforcements_step_reactions", None)
+            if current_stratagems is not None
+            else None
+        )
+        if callable(queue_dread_talons):
+            queue_dread_talons(current_player=current_player)
+
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)
         arrival_results[current_player.id] = units_arrived

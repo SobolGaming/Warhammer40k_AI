@@ -18529,6 +18529,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(eager_apply_fn(self, game=game)):
                     return True
+            dread_talons_apply_fn = (
+                getattr(mgr, "dread_talons_relentless_terror_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(dread_talons_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(dread_talons_apply_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:

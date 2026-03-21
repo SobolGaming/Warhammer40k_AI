@@ -1829,6 +1829,7 @@ class StratagemManager(
             "RAPTORIAL VIGILANCE",
             "THUNDEROUS PURSUIT",
             "COILS OF DECEPTION",
+            "RELENTLESS TERROR",
             "RELENTLESS PURSUIT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
@@ -1869,6 +1870,7 @@ class StratagemManager(
             "ECSTATIC SLAUGHTER",
             "TERRIFYING PROFICIENCY",
             "INESCAPABLE JUSTICE",
+            "BLOODY EXAMPLE",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -2179,6 +2181,7 @@ class StratagemManager(
             "COUNTERCHARGE",
             "LEONINE AGGRESSION",
             "FROM ALL SIDES",
+            "MERCILESS PURSUIT",
             "PICK THEM OFF",
         }
         phase_end_cleanup_names = {
@@ -2283,6 +2286,7 @@ class StratagemManager(
             "LAYERED WARDS",
             "LYING IN WAIT",
             "EMISSARIES OF YNNEAD",
+            "DEPTHLESS CRUELTY",
             "FOCUSED HATRED",
             "GAUNTLET OF THE GOD-EMPEROR",
             "MACABRE RESILIENCE",
@@ -2306,6 +2310,7 @@ class StratagemManager(
             "COILS OF DECEPTION",
             "FROM ALL SIDES",
             "PICK THEM OFF",
+            "PITILESS HUNTERS",
             "LETHAL RUSE",
             "NO PREY TOO BIG",
             "OUTCAST AMBUSH",
@@ -2358,8 +2363,10 @@ class StratagemManager(
             "BLAZING EARTH",
             "RIDE HARD, RIDE FAST",
             "SHOCK ASSAULT",
+            "SCREAMING DESCENT",
             "SCRAMBLED COORDINATES",
             "ONLY IN DEATH DOES DUTY END",
+            "RELENTLESS TERROR",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2814,6 +2821,15 @@ class StratagemManager(
 
     def _is_custom_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         stratagem_id = str(getattr(stratagem, "id", "") or "").strip()
+        if stratagem_id in {
+            "000008973002",
+            "000008973003",
+            "000008973004",
+            "000008973005",
+            "000008973006",
+            "000008973007",
+        }:
+            return bool(self._is_dread_talons_detachment())
         if stratagem_id in {
             "000008352003",
             "000008352004",
@@ -6395,6 +6411,7 @@ class StratagemManager(
             raise
         try:
             self._queue_deceptors_phase_start_reactions(player=player, phase=phase)
+            self._queue_dread_talons_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7415,6 +7432,7 @@ class StratagemManager(
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
             self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
+            self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8403,6 +8421,7 @@ class StratagemManager(
             raise
         try:
             self._cleanup_deceptors_phase_end_effects(phase=phase)
+            self._cleanup_dread_talons_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -9359,6 +9378,7 @@ class StratagemManager(
         self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
         self._queue_deceptors_move_end_reactions(unit=unit, action=action)
+        self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -13995,6 +14015,13 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_wrath_of_the_rock_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_dread_talons_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

@@ -2259,6 +2259,71 @@ _DECEPTORS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DREAD_TALONS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008973002": StratagemToolDescriptor(
+        stratagem_id="000008973002",
+        name="Depthless Cruelty",
+        timing="fight_phase_on_select_to_fight",
+        target="heretic_astartes_infantry_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="conditional_melee_ap_bonus_vs_battleshocked_or_below_half",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1},
+    ),
+    "000008973003": StratagemToolDescriptor(
+        stratagem_id="000008973003",
+        name="Bloody Example",
+        timing="fight_phase_after_destroying_character",
+        target="heretic_astartes_unit_that_destroyed_enemy_character",
+        duration="immediate",
+        effect="battle_shock_all_visible_enemies_within_range_after_destroying_character",
+        cp_cost=1,
+        range_in=12.0,
+    ),
+    "000008973004": StratagemToolDescriptor(
+        stratagem_id="000008973004",
+        name="Pitiless Hunters",
+        timing="shooting_phase_on_select_to_shoot",
+        target="heretic_astartes_infantry_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_and_wound_reroll_vs_battleshocked_or_below_half",
+        cp_cost=1,
+    ),
+    "000008973005": StratagemToolDescriptor(
+        stratagem_id="000008973005",
+        name="Relentless Terror",
+        timing="movement_phase_after_fall_back",
+        target="heretic_astartes_infantry_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000008973006": StratagemToolDescriptor(
+        stratagem_id="000008973006",
+        name="Screaming Descent",
+        timing="movement_phase_reinforcements_step_start",
+        target="heretic_astartes_jump_pack_unit_in_reserves",
+        duration="until_end_of_phase",
+        effect="deep_strike_min_distance_override_with_no_charge_and_post_arrival_battleshock",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal", "no_charge": True, "battle_round_min": 2},
+    ),
+    "000008973007": StratagemToolDescriptor(
+        stratagem_id="000008973007",
+        name="Merciless Pursuit",
+        timing="opponent_movement_phase_end",
+        target="heretic_astartes_infantry_unit_not_engaged_with_enemy_fell_back_within_6",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=1,
+        range_in=6.0,
+    ),
+}
+
+_DREAD_TALONS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DREAD_TALONS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010019002": StratagemToolDescriptor(
         stratagem_id="000010019002",
@@ -7527,6 +7592,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DECEPTORS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DREAD_TALONS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -7774,6 +7842,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CHAOS_CULT_STRATAGEM_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_STRATAGEM_BY_NAME.get(key)
         or _DECEPTORS_STRATAGEM_BY_NAME.get(key)
+        or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)

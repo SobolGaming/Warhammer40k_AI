@@ -20949,6 +20949,42 @@ def _stratagem_support(
             "Your Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected to fight gains wound re-rolls after disembarking this turn, re-rolling 1s normally or the full Wound roll if it disembarked from a LAND RAIDER.",
             name_u,
         )
+    if stratagem_id == "000008973002":
+        return (
+            "Implemented",
+            "Fight phase: selected HERETIC ASTARTES INFANTRY unit that has not yet fought improves AP by 1 on melee attacks against Battle-shocked or Below Half-strength enemy units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008973003":
+        return (
+            "Implemented",
+            "Fight phase reaction after a friendly HERETIC ASTARTES unit destroys an enemy CHARACTER: selected unit forces each visible enemy unit within 12\" to take a Battle-shock test.",
+            name_u,
+        )
+    if stratagem_id == "000008973004":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected HERETIC ASTARTES INFANTRY unit that has not yet shot re-rolls Hit rolls and Wound rolls against Battle-shocked or Below Half-strength enemy units until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008973005":
+        return (
+            "Implemented",
+            "Your Movement phase after a friendly HERETIC ASTARTES INFANTRY unit Falls Back: that unit can declare a charge this turn despite Falling Back.",
+            name_u,
+        )
+    if stratagem_id == "000008973006":
+        return (
+            "Implemented",
+            "Movement phase Reinforcements step from battle round 2 onwards: selected HERETIC ASTARTES JUMP PACK unit in Reserves can be set up more than 6\" horizontally from enemy units, cannot charge this turn, and then forces one visible enemy INFANTRY or MOUNTED unit within 9\" to take a Battle-shock test.",
+            name_u,
+        )
+    if stratagem_id == "000008973007":
+        return (
+            "Implemented",
+            "End of opponent Movement phase: selected HERETIC ASTARTES INFANTRY unit not within Engagement Range can declare an out-of-turn charge against one enemy unit within 6\" that Fell Back this turn, and does not gain the Charge bonus.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)

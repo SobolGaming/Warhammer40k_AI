@@ -96,6 +96,14 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _DECEPTORS_PICK_THEM_OFF_SOURCE = "Pick Them Off"
     _DECEPTORS_SCRAMBLED_COORDINATES_PREFIX = "deceptors_scrambled_coordinates"
     _DECEPTORS_SCRAMBLED_COORDINATES_SOURCE = "Scrambled Coordinates"
+    _DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX = "dread_talons_depthless_cruelty"
+    _DREAD_TALONS_DEPTHLESS_CRUELTY_SOURCE = "Depthless Cruelty"
+    _DREAD_TALONS_PITILESS_HUNTERS_PREFIX = "dread_talons_pitiless_hunters"
+    _DREAD_TALONS_PITILESS_HUNTERS_SOURCE = "Pitiless Hunters"
+    _DREAD_TALONS_RELENTLESS_TERROR_PREFIX = "dread_talons_relentless_terror"
+    _DREAD_TALONS_RELENTLESS_TERROR_SOURCE = "Relentless Terror"
+    _DREAD_TALONS_SCREAMING_DESCENT_PREFIX = "dread_talons_screaming_descent"
+    _DREAD_TALONS_SCREAMING_DESCENT_SOURCE = "Screaming Descent"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
@@ -1069,51 +1077,151 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         set_up_from_disembark: bool = False,
     ) -> None:
         _ = set_up_from_disembark
-        if not self.is_hurons_marauders():
-            return
         if game is None or not bool(getattr(game, "is_authoritative", True)):
             return
-        root, _source_member, source_sr, _bearer = self._hurons_marauders_enhancement_source_member(
-            unit,
-            flag_key="enhancement_dread_reputation",
-            require_bearer_alive=True,
-            require_bearer_on_battlefield=False,
-        )
-        if source_sr is None or root is None:
+        root = self._unit_root(unit)
+        if root is None:
             return
-        if not self._unit_in_army(root):
+
+        if self.is_hurons_marauders():
+            root, _source_member, source_sr, _bearer = self._hurons_marauders_enhancement_source_member(
+                unit,
+                flag_key="enhancement_dread_reputation",
+                require_bearer_alive=True,
+                require_bearer_on_battlefield=False,
+            )
+            if source_sr is not None and root is not None and self._unit_in_army(root) and self._unit_on_battlefield(root):
+                try:
+                    base_range = float(source_sr.get("enhancement_dread_reputation_range_in", 6.0) or 6.0)
+                except (TypeError, ValueError):
+                    base_range = 6.0
+                try:
+                    deep_strike_range = float(
+                        source_sr.get("enhancement_dread_reputation_deep_strike_range_in", 12.0) or 12.0
+                    )
+                except (TypeError, ValueError):
+                    deep_strike_range = 12.0
+                if base_range < 0.0:
+                    base_range = 0.0
+                if deep_strike_range < 0.0:
+                    deep_strike_range = 0.0
+                used_deep_strike_setup = bool(used_deep_strike)
+                if not used_deep_strike_setup and bool(set_up_as_reinforcements):
+                    has_deep_strike = getattr(root, "has_deep_strike", None)
+                    if callable(has_deep_strike):
+                        used_deep_strike_setup = bool(has_deep_strike())
+                effective_range = float(deep_strike_range if used_deep_strike_setup else base_range)
+                if effective_range > 0.0:
+                    current_turn = int(self._current_turn(game=game) or 1)
+                    for enemy in self._dread_reputation_enemy_units_in_range(
+                        source_unit=root,
+                        game=game,
+                        range_in=effective_range,
+                    ):
+                        take_test = getattr(enemy, "take_battle_shock_test", None)
+                        if callable(take_test):
+                            take_test(current_turn)
+
+        if not self.is_dread_talons():
             return
-        if not self._unit_on_battlefield(root):
+        if not bool(set_up_as_reinforcements):
             return
-        try:
-            base_range = float(source_sr.get("enhancement_dread_reputation_range_in", 6.0) or 6.0)
-        except (TypeError, ValueError):
-            base_range = 6.0
-        try:
-            deep_strike_range = float(source_sr.get("enhancement_dread_reputation_deep_strike_range_in", 12.0) or 12.0)
-        except (TypeError, ValueError):
-            deep_strike_range = 12.0
-        if base_range < 0.0:
-            base_range = 0.0
-        if deep_strike_range < 0.0:
-            deep_strike_range = 0.0
-        used_deep_strike_setup = bool(used_deep_strike)
-        if not used_deep_strike_setup and bool(set_up_as_reinforcements):
-            has_deep_strike = getattr(root, "has_deep_strike", None)
-            if callable(has_deep_strike):
-                used_deep_strike_setup = bool(has_deep_strike())
-        effective_range = float(deep_strike_range if used_deep_strike_setup else base_range)
-        if effective_range <= 0.0:
+        if not self._unit_in_army(root) or not self._unit_on_battlefield(root):
             return
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending_key = f"{self._DREAD_TALONS_SCREAMING_DESCENT_PREFIX}_post_setup_battleshock_pending"
+        if not bool(sr.get(pending_key, False)):
+            return
+        sr.pop(pending_key, None)
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if owner is None or not callable(get_enemy_units):
+            return
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        los_checker = getattr(root, "_attacking_unit_has_any_los_to_target_unit", None)
         current_turn = int(self._current_turn(game=game) or 1)
-        for enemy in self._dread_reputation_enemy_units_in_range(
-            source_unit=root,
-            game=game,
-            range_in=effective_range,
-        ):
-            take_test = getattr(enemy, "take_battle_shock_test", None)
+        ability_name = (
+            str(sr.get(f"{self._DREAD_TALONS_SCREAMING_DESCENT_PREFIX}_source", "") or self._DREAD_TALONS_SCREAMING_DESCENT_SOURCE).strip()
+            or self._DREAD_TALONS_SCREAMING_DESCENT_SOURCE
+        )
+
+        candidates: list[object] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(owner) or []):
+            enemy_root = self._unit_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or self._unit_root_key(enemy_root))
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._unit_on_battlefield(enemy_root):
+                continue
+            if not (self._unit_has_keyword(enemy_root, "INFANTRY") or self._unit_has_keyword(enemy_root, "MOUNTED")):
+                continue
+            if not bool(unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True)):
+                continue
+            if not callable(los_checker) or not bool(los_checker(enemy_root, getattr(game, "map", None))):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or self._unit_root_key(unit_obj)))
+        if not candidates:
+            return
+        if len(candidates) == 1:
+            take_test = getattr(candidates[0], "take_battle_shock_test", None)
             if callable(take_test):
                 take_test(current_turn)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        root_id = str(get_entity_id(root) or "")
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("attacker_unit_id", "") or "") != root_id:
+                    continue
+                if str(ctx.get("ability_name", "") or "").strip() != ability_name:
+                    continue
+                return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            f"{ability_name}: select an enemy unit to take a Battle-shock test.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create(
+                    str(getattr(target_root, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(target_root)},
+                )
+                for target_root in list(candidates)
+            ],
+            context={
+                "attacker_unit_id": root_id,
+                "ability_name": ability_name,
+            },
+        )
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return
+
+        take_test = getattr(candidates[0], "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(current_turn)
 
     def clear_renegade_warband_vendetta_target(self) -> None:
         self.renegade_warband_vendetta_target_unit_id = ""
@@ -4531,6 +4639,9 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def _deceptors_effect_source(self, sr: dict, *, prefix: str, default: str) -> str:
         return str(sr.get(f"{prefix}_source", "") or default).strip() or default
 
+    def _dread_talons_effect_source(self, sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
     def _deceptors_effect_state(
         self,
         unit,
@@ -4599,6 +4710,74 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    def _dread_talons_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_dread_talons():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_dread_talons_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -4611,6 +4790,15 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         else:
             checker = getattr(parent, "is_ranged", None)
         return not callable(checker) or bool(checker())
+
+    def _dread_talons_target_is_battle_shocked_or_below_half_strength(self, target_unit) -> bool:
+        root = self._unit_root(target_unit)
+        if root is None:
+            return False
+        if self._unit_is_battle_shocked(root):
+            return True
+        below_half = getattr(root, "is_below_half_strength", None)
+        return bool(callable(below_half) and below_half())
 
     def deceptors_coils_of_deception_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
         if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
@@ -4750,6 +4938,102 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             ),
             "source_model_id": source_model_id,
         }
+
+    def dread_talons_depthless_cruelty_melee_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        if not self._dread_talons_target_is_battle_shocked_or_below_half_strength(target_unit):
+            return 0, ""
+        root, sr = self._dread_talons_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX}_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._dread_talons_effect_source(
+            sr,
+            prefix=self._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX,
+            default=self._DREAD_TALONS_DEPTHLESS_CRUELTY_SOURCE,
+        )
+
+    def dread_talons_pitiless_hunters_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        if not self._dread_talons_target_is_battle_shocked_or_below_half_strength(target_unit):
+            return False, ""
+        root, sr = self._dread_talons_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._dread_talons_effect_source(
+            sr,
+            prefix=self._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,
+            default=self._DREAD_TALONS_PITILESS_HUNTERS_SOURCE,
+        )
+
+    def dread_talons_pitiless_hunters_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        if not self._dread_talons_target_is_battle_shocked_or_below_half_strength(target_unit):
+            return False, ""
+        root, sr = self._dread_talons_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        return True, self._dread_talons_effect_source(
+            sr,
+            prefix=self._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,
+            default=self._DREAD_TALONS_PITILESS_HUNTERS_SOURCE,
+        )
+
+    def dread_talons_relentless_terror_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._dread_talons_effect_state(
+            unit,
+            prefix=self._DREAD_TALONS_RELENTLESS_TERROR_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and self._unit_has_keyword(root, "INFANTRY"))
 
     def chaos_cult_chosen_for_glory_reroll_hit_applies(
         self,

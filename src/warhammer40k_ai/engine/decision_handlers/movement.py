@@ -1807,7 +1807,10 @@ def _evaluate_reserves_arrival_positions(
             deep_strike_ok = False
         if not deep_strike_ok:
             sr = getattr(unit, "special_rules", None)
-            if isinstance(sr, dict) and bool(sr.get("cosmic_precision_temp_deep_strike", False)):
+            if isinstance(sr, dict) and (
+                bool(sr.get("cosmic_precision_temp_deep_strike", False))
+                or bool(sr.get("dread_talons_screaming_descent_temp_deep_strike", False))
+            ):
                 deep_strike_ok = True
         if not strategic_ok and not deep_strike_ok and tunnel_marker is None:
             has_tunnel_rule = bool(tyr_mgr is not None and getattr(tyr_mgr, "is_subterranean_assault", lambda: False)())
@@ -2082,6 +2085,17 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 "cosmic_precision_no_charge_turn_owner",
                 "cosmic_precision_no_charge_turn",
                 "cosmic_precision_source",
+                "dread_talons_screaming_descent_active",
+                "dread_talons_screaming_descent_phase",
+                "dread_talons_screaming_descent_turn_owner",
+                "dread_talons_screaming_descent_turn",
+                "dread_talons_screaming_descent_source",
+                "dread_talons_screaming_descent_deep_strike_min_distance",
+                "dread_talons_screaming_descent_temp_deep_strike",
+                "dread_talons_screaming_descent_post_setup_battleshock_pending",
+                "dread_talons_screaming_descent_no_charge_turn_owner",
+                "dread_talons_screaming_descent_no_charge_turn",
+                "dread_talons_screaming_descent_no_charge_source",
                 "eternity_gate_no_charge_turn_owner",
                 "eternity_gate_no_charge_turn",
                 "eternity_gate_no_charge_source",

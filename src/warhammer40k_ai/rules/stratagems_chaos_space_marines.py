@@ -48,6 +48,16 @@ class ChaosSpaceMarinesStratagemMixin:
         return True
 
     @staticmethod
+    def _csm_is_in_reserves(unit: Any) -> bool:
+        if unit is None:
+            return False
+        in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(in_reserves):
+            return bool(in_reserves())
+        reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+        return reserve_status in {"reserves", "strategic_reserves"}
+
+    @staticmethod
     def _csm_owned_by_player(unit: Any, player: Any) -> bool:
         if unit is None or player is None:
             return False
@@ -93,6 +103,11 @@ class ChaosSpaceMarinesStratagemMixin:
     def _is_deceptors_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_deceptors", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_dread_talons_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_dread_talons", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
@@ -551,6 +566,158 @@ class ChaosSpaceMarinesStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
 
+    def _csm_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._csm_root(source_unit)
+        target_root = self._csm_root(target_unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if source_root is None or target_root is None or game_map is None:
+            return False
+        los_checker = getattr(source_root, "_attacking_unit_has_any_los_to_target_unit", None)
+        return bool(callable(los_checker) and los_checker(target_root, game_map))
+
+    def _dread_talons_targetable_units(
+        self,
+        *,
+        require_infantry: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_engaged: bool = False,
+        require_fell_back: bool = False,
+        require_jump_pack_reserves: bool = False,
+    ) -> list[Any]:
+        if not self._is_dread_talons_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root):
+                continue
+            if require_jump_pack_reserves:
+                if not self._csm_is_in_reserves(root):
+                    continue
+            else:
+                if not self._csm_is_on_battlefield(root):
+                    continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_infantry and not self._is_heretic_astartes_infantry(root):
+                continue
+            if require_jump_pack_reserves and not self._csm_has_keyword(root, "JUMP PACK"):
+                continue
+            if require_not_engaged and self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _dread_talons_enemy_units_in_range_visible(
+        self,
+        source_unit: Any,
+        *,
+        radius: float,
+        require_infantry_or_mounted: bool = False,
+    ) -> list[Any]:
+        source_root = self._csm_root(source_unit)
+        if source_root is None or self.game is None:
+            return []
+        get_enemy_units = getattr(self.game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(self.player) or []):
+            enemy_root = self._csm_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._csm_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+                continue
+            if require_infantry_or_mounted and not (
+                self._csm_has_keyword(enemy_root, "INFANTRY") or self._csm_has_keyword(enemy_root, "MOUNTED")
+            ):
+                continue
+            if not unit_within_range_of_unit(source_root, enemy_root, float(radius), use_attached_aggregate=True):
+                continue
+            if not self._csm_unit_visible_to_unit(source_root, enemy_root):
+                continue
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _dread_talons_merciless_pursuit_enemy_candidates_for_unit(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        if root is None or self.game is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(getattr(self.game, "get_enemy_units", lambda _player: [])(self.player) or []):
+            enemy_root = self._csm_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._csm_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+                continue
+            if not bool(getattr(getattr(enemy_root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 6.0, use_attached_aggregate=True):
+                continue
+            can_charge = getattr(root, "can_declare_charge_against", None)
+            if not callable(can_charge) or not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+                continue
+            candidates.append(enemy_root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _dread_talons_merciless_pursuit_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        candidates: list[Any] = []
+        enemy_candidates_by_unit: dict[str, list[Any]] = {}
+        for root in self._dread_talons_targetable_units(require_infantry=True, require_not_engaged=True):
+            enemy_candidates = self._dread_talons_merciless_pursuit_enemy_candidates_for_unit(root)
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            enemy_candidates_by_unit[self._csm_sort_key(root)] = list(enemy_candidates)
+        return sorted(candidates, key=self._csm_sort_key), enemy_candidates_by_unit
+
     def _csm_find_pending_reaction(self, stratagem_name: str, *, unit: Any = None):
         name_u = str(stratagem_name or "").strip().upper()
         expected_root = self._csm_root(unit)
@@ -565,13 +732,7 @@ class ChaosSpaceMarinesStratagemMixin:
         return None
 
     def _chaos_cult_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
-        source_root = self._csm_root(source_unit)
-        target_root = self._csm_root(target_unit)
-        game_map = getattr(self.game, "map", None) if self.game is not None else None
-        if source_root is None or target_root is None or game_map is None:
-            return False
-        los_checker = getattr(source_root, "_attacking_unit_has_any_los_to_target_unit", None)
-        return bool(callable(los_checker) and los_checker(target_root, game_map))
+        return self._csm_unit_visible_to_unit(source_unit, target_unit)
 
     def _chaos_cult_mortal_thralls_support_candidates(
         self,
@@ -1302,6 +1463,293 @@ class ChaosSpaceMarinesStratagemMixin:
             for prefix in prefixes:
                 mgr._remove_special_rule_prefix(root, prefix)
 
+    def _queue_dread_talons_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_dread_talons_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            stratagem = self.get_by_name("PITILESS HUNTERS")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            candidates = self._dread_talons_targetable_units(require_infantry=True, require_not_shot=True)
+            if not candidates:
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("DEPTHLESS CRUELTY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._dread_talons_targetable_units(require_infantry=True, require_not_fought=True)
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_dread_talons_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_dread_talons_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if phase_name != "movement phase" or action_key not in {"fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        moving_root = self._csm_root(unit)
+        if moving_root is None or not self._csm_owned_by_player(moving_root, self.player):
+            return
+        stratagem = self.get_by_name("RELENTLESS TERROR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=moving_root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._dread_talons_targetable_units(require_infantry=True, require_fell_back=True)
+        if moving_root not in candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            target_unit=moving_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": moving_root,
+                "target_unit": moving_root,
+                "action": str(action or ""),
+                "candidates": [moving_root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_dread_talons_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_dread_talons_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE" or player is self.player:
+            return
+        stratagem = self.get_by_name("MERCILESS PURSUIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates, enemy_map = self._dread_talons_merciless_pursuit_candidates()
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            enemy_candidates = list(enemy_map.get(self._csm_sort_key(candidates[0])) or [])
+            if enemy_candidates:
+                payload["enemy_candidates"] = enemy_candidates
+                if len(enemy_candidates) == 1:
+                    payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_dread_talons_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        if not self._is_dread_talons_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_root = self._csm_root(destroyed_by_unit)
+        destroyed_root = self._csm_root(destroyed_unit)
+        if source_root is None or destroyed_root is None:
+            return
+        if not self._csm_owned_by_player(source_root, self.player):
+            return
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._csm_is_alive(source_root) or not self._csm_is_on_battlefield(source_root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(source_root):
+            return
+        if not self._is_heretic_astartes_unit(source_root):
+            return
+        if not self._csm_has_keyword(destroyed_root, "CHARACTER"):
+            return
+        visible_enemies = self._dread_talons_enemy_units_in_range_visible(source_root, radius=12.0)
+        if not visible_enemies:
+            return
+        stratagem = self.get_by_name("BLOODY EXAMPLE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=source_root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=source_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": source_root,
+                "target_unit": source_root,
+                "destroyed_unit": destroyed_root,
+                "enemy_units": visible_enemies,
+                "candidates": [source_root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_dread_talons_reinforcements_step_reactions(self, *, current_player: Any) -> None:
+        if not self._is_dread_talons_detachment():
+            return
+        if current_player is not self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round < 2:
+            return
+        stratagem = self.get_by_name("SCREAMING DESCENT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._dread_talons_targetable_units(require_jump_pack_reserves=True)
+        if not candidates:
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="reinforcements_step_start",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+        ):
+            return
+        payload = {
+            "event": "reinforcements_step_start",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player_id": str(getattr(current_player, "id", "") or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_dread_talons_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "MOVEMENT_PHASE": (mgr._DREAD_TALONS_SCREAMING_DESCENT_PREFIX,),
+            "SHOOTING_PHASE": (mgr._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,),
+            "FIGHT_PHASE": (
+                mgr._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX,
+                mgr._DREAD_TALONS_RELENTLESS_TERROR_PREFIX,
+            ),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+            if phase_name != "FIGHT_PHASE":
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for key in (
+                "dread_talons_screaming_descent_no_charge_turn_owner",
+                "dread_talons_screaming_descent_no_charge_turn",
+                "dread_talons_screaming_descent_no_charge_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
     def _use_deceptors_coils_of_deception(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -1756,6 +2204,441 @@ class ChaosSpaceMarinesStratagemMixin:
         self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: SCRAMBLED COORDINATES: enemy Reinforcements must remain outside 12\" of %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_dread_talons_depthless_cruelty(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("DEPTHLESS CRUELTY", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DEPTHLESS CRUELTY: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DEPTHLESS CRUELTY: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: DEPTHLESS CRUELTY: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DEPTHLESS CRUELTY: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DEPTHLESS CRUELTY: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: DEPTHLESS CRUELTY: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: DEPTHLESS CRUELTY: target has already fought this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_dread_talons_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: DEPTHLESS CRUELTY: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX,
+            source=stratagem.name or "DEPTHLESS CRUELTY",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._DREAD_TALONS_DEPTHLESS_CRUELTY_PREFIX}_ap_bonus": 1,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEPTHLESS CRUELTY: %s gains melee AP against Battle-shocked or weakened targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_dread_talons_pitiless_hunters(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PITILESS HUNTERS", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PITILESS HUNTERS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PITILESS HUNTERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PITILESS HUNTERS: not your Shooting phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PITILESS HUNTERS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PITILESS HUNTERS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PITILESS HUNTERS: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: PITILESS HUNTERS: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: PITILESS HUNTERS: target has already shot this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_dread_talons_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PITILESS HUNTERS: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DREAD_TALONS_PITILESS_HUNTERS_PREFIX,
+            source=stratagem.name or "PITILESS HUNTERS",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PITILESS HUNTERS: %s gains ranged hit and wound re-rolls against broken or weakened targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_dread_talons_relentless_terror(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("RELENTLESS TERROR", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RELENTLESS TERROR: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RELENTLESS TERROR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RELENTLESS TERROR: not your Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: RELENTLESS TERROR: target did not Fall Back")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: RELENTLESS TERROR: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: RELENTLESS TERROR: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: RELENTLESS TERROR: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: RELENTLESS TERROR: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: RELENTLESS TERROR: target has not Fallen Back this round")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_dread_talons_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: RELENTLESS TERROR: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DREAD_TALONS_RELENTLESS_TERROR_PREFIX,
+            source=stratagem.name or "RELENTLESS TERROR",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RELENTLESS TERROR: %s can charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_dread_talons_merciless_pursuit(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        enemy_candidates_by_unit = kwargs.get("enemy_candidates_by_unit")
+        pending = None
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MERCILESS PURSUIT":
+                continue
+            pending = reaction
+            break
+        if pending is not None:
+            if unit is None:
+                unit = pending.get("unit") or pending.get("target_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(pending.get("enemy_candidates") or [])
+            if enemy_candidates_by_unit is None:
+                enemy_candidates_by_unit = pending.get("enemy_candidates_by_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MERCILESS PURSUIT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MERCILESS PURSUIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: MERCILESS PURSUIT: not opponent's Movement phase")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: MERCILESS PURSUIT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MERCILESS PURSUIT: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_infantry(root):
+            logger.error("ERROR: MERCILESS PURSUIT: target must be HERETIC ASTARTES INFANTRY")
+            return False
+        if self._csm_unit_is_engaged(root):
+            logger.error("ERROR: MERCILESS PURSUIT: target must not be within Engagement Range")
+            return False
+
+        valid_candidates, enemy_map = self._dread_talons_merciless_pursuit_candidates()
+        if candidates:
+            valid_candidates = list(candidates)
+        if valid_candidates and root not in valid_candidates:
+            logger.error("ERROR: MERCILESS PURSUIT: target is not currently eligible")
+            return False
+
+        valid_enemy_candidates = list(enemy_candidates or [])
+        if not valid_enemy_candidates and hasattr(enemy_candidates_by_unit, "get"):
+            valid_enemy_candidates = list(enemy_candidates_by_unit.get(self._csm_sort_key(root)) or [])
+        if not valid_enemy_candidates:
+            valid_enemy_candidates = list(enemy_map.get(self._csm_sort_key(root)) or [])
+        if enemy_unit is None and len(valid_enemy_candidates) == 1:
+            enemy_unit = valid_enemy_candidates[0]
+        elif enemy_unit is None and valid_enemy_candidates:
+            enemy_unit = valid_enemy_candidates[0]
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: MERCILESS PURSUIT: no eligible enemy unit selected")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MERCILESS PURSUIT: selected enemy unit is not enemy")
+            return False
+        if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+            logger.error("ERROR: MERCILESS PURSUIT: selected enemy unit must be on the battlefield")
+            return False
+        if valid_enemy_candidates and enemy_root not in valid_enemy_candidates:
+            logger.error("ERROR: MERCILESS PURSUIT: selected enemy unit is not currently eligible")
+            return False
+        if not bool(getattr(getattr(enemy_root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: MERCILESS PURSUIT: selected enemy unit did not Fall Back this turn")
+            return False
+        can_charge = getattr(root, "can_declare_charge_against", None)
+        if not callable(can_charge) or not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+            logger.error("ERROR: MERCILESS PURSUIT: target cannot declare a charge against the selected enemy")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        ok = bool(self.game.attempt_charge(root, enemy_root, out_of_turn=True, count_as_charged=False)) if self.game is not None else False
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if not ok:
+            logger.error("ERROR: MERCILESS PURSUIT: charge failed")
+        else:
+            logger.info(
+                "INFO: MERCILESS PURSUIT: %s declares an out-of-turn charge against %s (no charge bonus).",
+                getattr(root, "name", "Unit"),
+                getattr(enemy_root, "name", "Enemy"),
+            )
+        return True
+
+    def _use_dread_talons_bloody_example(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_units = list(kwargs.get("enemy_units") or [])
+        pending = self._csm_find_pending_reaction("BLOODY EXAMPLE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not enemy_units:
+                enemy_units = list(pending.get("enemy_units") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BLOODY EXAMPLE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BLOODY EXAMPLE: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: BLOODY EXAMPLE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BLOODY EXAMPLE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BLOODY EXAMPLE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: BLOODY EXAMPLE: target must be HERETIC ASTARTES")
+            return False
+
+        valid_enemies = list(enemy_units or self._dread_talons_enemy_units_in_range_visible(root, radius=12.0))
+        if not valid_enemies:
+            logger.error("ERROR: BLOODY EXAMPLE: no visible enemy units within 12\"")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        for enemy_root in list(valid_enemies):
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn)
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLOODY EXAMPLE: %s forces Battle-shock tests on nearby visible enemies.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_dread_talons_screaming_descent(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SCREAMING DESCENT", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SCREAMING DESCENT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_dread_talons_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SCREAMING DESCENT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SCREAMING DESCENT: not your Movement phase")
+            return False
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round < 2:
+            logger.error("ERROR: SCREAMING DESCENT: can only be used from the second battle round onwards")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SCREAMING DESCENT: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SCREAMING DESCENT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root):
+            return False
+        if not self._csm_is_in_reserves(root):
+            logger.error("ERROR: SCREAMING DESCENT: target must be in Reserves")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SCREAMING DESCENT: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root) or not self._csm_has_keyword(root, "JUMP PACK"):
+            logger.error("ERROR: SCREAMING DESCENT: target must be a HERETIC ASTARTES JUMP PACK unit")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_dread_talons_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: SCREAMING DESCENT: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._DREAD_TALONS_SCREAMING_DESCENT_PREFIX,
+            source=stratagem.name or "SCREAMING DESCENT",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._DREAD_TALONS_SCREAMING_DESCENT_PREFIX}_deep_strike_min_distance": 6.0,
+                f"{mgr._DREAD_TALONS_SCREAMING_DESCENT_PREFIX}_temp_deep_strike": True,
+                f"{mgr._DREAD_TALONS_SCREAMING_DESCENT_PREFIX}_post_setup_battleshock_pending": True,
+                "dread_talons_screaming_descent_no_charge_turn_owner": str(getattr(self.player, "id", "") or ""),
+                "dread_talons_screaming_descent_no_charge_turn": int(battle_round),
+                "dread_talons_screaming_descent_no_charge_source": str(stratagem.name or "SCREAMING DESCENT"),
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCREAMING DESCENT: %s can arrive more than 6\" from enemies this phase and cannot charge this turn.",
             getattr(root, "name", "Unit"),
         )
         return True
@@ -3116,8 +3999,12 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_cabal_unholy_haste(stratagem, **kwargs)
         if name_u == "AUTOSTIMULANTS":
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
+        if name_u == "BLOODY EXAMPLE":
+            return self._use_dread_talons_bloody_example(stratagem, **kwargs)
         if name_u == "COILS OF DECEPTION":
             return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
+        if name_u == "DEPTHLESS CRUELTY":
+            return self._use_dread_talons_depthless_cruelty(stratagem, **kwargs)
         if name_u == "DETONATOR":
             return self._use_deceptors_detonator(stratagem, **kwargs)
         if name_u == "DELAYED MUTATIONS":
@@ -3130,10 +4017,18 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
         if name_u == "PICK THEM OFF":
             return self._use_deceptors_pick_them_off(stratagem, **kwargs)
+        if name_u == "PITILESS HUNTERS":
+            return self._use_dread_talons_pitiless_hunters(stratagem, **kwargs)
+        if name_u == "RELENTLESS TERROR":
+            return self._use_dread_talons_relentless_terror(stratagem, **kwargs)
+        if name_u == "MERCILESS PURSUIT":
+            return self._use_dread_talons_merciless_pursuit(stratagem, **kwargs)
         if name_u == "RELENTLESS PURSUIT":
             return self._use_deceptors_relentless_pursuit(stratagem, **kwargs)
         if name_u == "SCRAMBLED COORDINATES":
             return self._use_deceptors_scrambled_coordinates(stratagem, **kwargs)
+        if name_u == "SCREAMING DESCENT":
+            return self._use_dread_talons_screaming_descent(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         return None
