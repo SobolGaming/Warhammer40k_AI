@@ -2641,6 +2641,74 @@ _RENEGADE_WARBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RENEGADE_WARBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SOULFORGED_WARPACK_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008986002": StratagemToolDescriptor(
+        stratagem_id="000008986002",
+        name="Desperate Pledge",
+        timing="shooting_or_fight_phase",
+        target="heretic_astartes_daemon_vehicle_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="contract_invocation_ap_bonus",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1},
+    ),
+    "000008986003": StratagemToolDescriptor(
+        stratagem_id="000008986003",
+        name="Glut of Souls",
+        timing="fight_phase",
+        target="heretic_astartes_daemon_vehicle_unit_not_yet_selected_to_fight_excluding_titanic",
+        duration="until_end_of_phase",
+        effect="contract_invocation_heal_on_destroyed_models",
+        cp_cost=1,
+        effect_params={"heal_roll": "D6", "success_on": 5, "heal_cap": 6},
+    ),
+    "000008986004": StratagemToolDescriptor(
+        stratagem_id="000008986004",
+        name="Daemonic Posession",
+        timing="command_phase",
+        target="heretic_astartes_vehicle_unit_excluding_daemon",
+        duration="until_end_of_battle",
+        effect="grant_daemon_keyword_until_battle_end",
+        cp_cost=1,
+        effect_params={"granted_keyword": "DAEMON"},
+    ),
+    "000008986005": StratagemToolDescriptor(
+        stratagem_id="000008986005",
+        name="Unstoppable Rampage",
+        timing="movement_or_charge_phase_before_selected_to_move_or_charge",
+        target="heretic_astartes_vehicle_or_vashtorr_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_terrain_horizontally",
+        cp_cost=1,
+        effect_params={"movement_phases": ["move", "advance", "charge"]},
+    ),
+    "000008986006": StratagemToolDescriptor(
+        stratagem_id="000008986006",
+        name="Predatory Pursuit",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="heretic_astartes_vehicle_or_vashtorr_unit_within_9_not_in_engagement_range",
+        duration="immediate",
+        effect="reactive_normal_move_toward_trigger_unit",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"max_distance": 6, "must_end_closer_to_trigger_unit": True},
+    ),
+    "000008986007": StratagemToolDescriptor(
+        stratagem_id="000008986007",
+        name="Feeding Frenzy",
+        timing="opponent_movement_phase_on_enemy_fall_back_start",
+        target="heretic_astartes_daemon_vehicle_or_vashtorr_unit_in_engagement_range_of_falling_back_enemy",
+        duration="until_end_of_phase",
+        effect="enemy_fall_back_desperate_escape_battleshock_penalty",
+        cp_cost=1,
+        effect_params={"exclude_monster_vehicle": True, "battleshock_penalty": 1},
+    ),
+}
+
+_SOULFORGED_WARPACK_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SOULFORGED_WARPACK_STRATAGEM_DESCRIPTORS.values()
+}
+
 _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008358002": StratagemToolDescriptor(
         stratagem_id="000008358002",
@@ -8096,6 +8164,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RENEGADE_WARBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SOULFORGED_WARPACK_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8354,6 +8425,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_WARBAND_STRATAGEM_BY_NAME.get(key)
+        or _SOULFORGED_WARPACK_STRATAGEM_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_STRATAGEM_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)

@@ -134,6 +134,127 @@ def _validate_heresy_begets_retribution_positions(
     return ()
 
 
+def _validate_predatory_pursuit_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    if reactive_kind != "predatory_pursuit":
+        return ()
+    if unit is None:
+        return ("Move unit: Predatory Pursuit requires a valid unit.",)
+
+    target_unit_id = str(context.get("predatory_pursuit_target_unit_id", "") or "").strip()
+    if not target_unit_id:
+        return ("Move unit: Predatory Pursuit target unit is missing.",)
+    target_unit = get_unit(game, target_unit_id)
+    if target_unit is None:
+        return ("Move unit: Predatory Pursuit target unit could not be resolved.",)
+
+    try:
+        from ...utility.aura_utils import distance_between_bases_3d
+        from ...utility.model_base import clone_base
+    except Exception:
+        return ("Move unit: Predatory Pursuit distance helpers are unavailable.",)
+
+    moving_models = []
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    for model in list(models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive or getattr(model, "model_base", None) is None:
+            continue
+        moving_models.append(model)
+    if not moving_models:
+        return ()
+
+    target_models = []
+    get_target_models = getattr(target_unit, "get_attached_unit_models", None)
+    raw_target_models = (
+        list(get_target_models() or [])
+        if callable(get_target_models)
+        else list(getattr(target_unit, "models", []) or [])
+    )
+    for target_model in list(raw_target_models or []):
+        if target_model is None:
+            continue
+        alive_value = getattr(target_model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive or getattr(target_model, "model_base", None) is None:
+            continue
+        target_models.append(target_model)
+    if not target_models:
+        return ()
+
+    try:
+        max_distance = float(context.get("max_distance", 0) or 0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    if max_distance <= 0:
+        max_distance = 6.0
+    tolerance = 0.05
+
+    positions_by_id: dict[str, tuple[float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "").strip()
+        position = entry.get("position") or []
+        if not model_id or not isinstance(position, (list, tuple)) or len(position) < 2:
+            continue
+        try:
+            positions_by_id[model_id] = (
+                float(position[0]),
+                float(position[1]),
+                float(position[2]) if len(position) > 2 else 0.0,
+            )
+        except (TypeError, ValueError):
+            continue
+
+    current_distance: float | None = None
+    final_distance: float | None = None
+    for model in moving_models:
+        current_base = getattr(model, "model_base", None)
+        if current_base is None:
+            continue
+        try:
+            current_min = min(float(distance_between_bases_3d(current_base, enemy_model.model_base)) for enemy_model in target_models)
+        except Exception:
+            continue
+        if current_distance is None or current_min < current_distance:
+            current_distance = current_min
+
+        model_id = str(get_entity_id(model) or "").strip()
+        end_position = positions_by_id.get(model_id)
+        if end_position is None:
+            continue
+        try:
+            new_base = clone_base(current_base)
+            new_base.set_position(end_position[0], end_position[1], end_position[2])
+            final_min = min(float(distance_between_bases_3d(new_base, enemy_model.model_base)) for enemy_model in target_models)
+        except Exception:
+            continue
+        if final_distance is None or final_min < final_distance:
+            final_distance = final_min
+
+    if current_distance is None or final_distance is None:
+        return ()
+
+    min_possible = max(0.0, float(current_distance) - float(max_distance))
+    if final_distance > (min_possible + tolerance):
+        target_name = str(getattr(target_unit, "name", "") or "target unit")
+        return (
+            f'Move unit: Predatory Pursuit must end as close as possible to {target_name}: '
+            f'{final_distance:.2f}" > {min_possible:.2f}".',
+        )
+    return ()
+
+
 def _masters_of_the_void_enemy_dz_override_active(unit: object, game: object) -> bool:
     if unit is None or game is None:
         return False
@@ -791,6 +912,14 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if heresy_errors:
         return heresy_errors
+    predatory_pursuit_errors = _validate_predatory_pursuit_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if predatory_pursuit_errors:
+        return predatory_pursuit_errors
     return ()
 
 

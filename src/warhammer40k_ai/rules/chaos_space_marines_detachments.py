@@ -174,6 +174,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE = "Tempting Addendum"
     _SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE = "Soul Harvester"
     _SOULFORGED_WARPACK_CONTRACT_SOURCE = "Debt to the Soul Forge"
+    _SOULFORGED_WARPACK_DAEMONIC_POSSESION_SOURCE = "Daemonic Posession"
+    _SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX = "soulforged_warpack_desperate_pledge"
+    _SOULFORGED_WARPACK_DESPERATE_PLEDGE_SOURCE = "Desperate Pledge"
+    _SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX = "soulforged_warpack_glut_of_souls"
+    _SOULFORGED_WARPACK_GLUT_OF_SOULS_SOURCE = "Glut of Souls"
     _SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY = "soulforged_warpack_contract_active"
     _SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY = "soulforged_warpack_contract_expires_phase"
     _SOULFORGED_WARPACK_CONTRACT_TURN_KEY = "soulforged_warpack_contract_turn"
@@ -4597,6 +4602,207 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not active:
             return 0, ""
         return 2, source
+
+    def _soulforged_warpack_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_soulforged_warpack():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_soulforged_warpack_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    def soulforged_warpack_desperate_pledge_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._soulforged_warpack_effect_state(
+            unit,
+            prefix=self._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_daemon_vehicle(root):
+            return 0, ""
+        contract_active, _contract_source = self._soulforged_warpack_contract_state(root, game=game)
+        if not contract_active:
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX}_ap_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get(f"{self._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX}_source", "")
+            or self._SOULFORGED_WARPACK_DESPERATE_PLEDGE_SOURCE
+        ).strip() or self._SOULFORGED_WARPACK_DESPERATE_PLEDGE_SOURCE
+        return int(bonus), source
+
+    def resolve_soulforged_warpack_glut_of_souls(
+        self,
+        unit,
+        *,
+        killing_models_by_target=None,
+        game=None,
+    ) -> dict:
+        root, sr = self._soulforged_warpack_effect_state(
+            unit,
+            prefix=self._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX,
+            game=game,
+        )
+        if root is None or sr is None:
+            return {"triggered": False}
+        if not self._unit_is_daemon_vehicle(root):
+            return {"triggered": False}
+        contract_active, _contract_source = self._soulforged_warpack_contract_state(root, game=game)
+        if not contract_active:
+            return {"triggered": False}
+        if not isinstance(killing_models_by_target, dict):
+            return {"triggered": False}
+
+        destroyed_count = 0
+        for _target_unit, models in list(killing_models_by_target.items()):
+            destroyed_count += len(list(models or []))
+        if destroyed_count <= 0:
+            return {"triggered": False}
+
+        try:
+            threshold = int(sr.get(f"{self._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        threshold = max(2, min(6, threshold))
+        try:
+            heal_cap = int(sr.get(f"{self._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_heal_cap", 6) or 6)
+        except (TypeError, ValueError):
+            heal_cap = 6
+        heal_cap = max(0, heal_cap)
+        try:
+            already_healed = int(sr.get(f"{self._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_healed_wounds", 0) or 0)
+        except (TypeError, ValueError):
+            already_healed = 0
+        if already_healed >= heal_cap:
+            return {
+                "triggered": True,
+                "destroyed_models": int(destroyed_count),
+                "successful_rolls": 0,
+                "healed": 0,
+            }
+
+        successful_rolls = 0
+        rolls: list[int] = []
+        for _index in range(int(destroyed_count)):
+            try:
+                roll = int(get_roll("D6") or 0)
+            except (TypeError, ValueError):
+                roll = 0
+            rolls.append(int(roll))
+            if int(roll) >= int(threshold):
+                successful_rolls += 1
+
+        remaining_cap = max(0, int(heal_cap - already_healed))
+        heal_amount = min(int(successful_rolls), int(remaining_cap))
+        if heal_amount > 0:
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for _index in range(int(heal_amount)):
+                healed = False
+                for model in list(models or []):
+                    if model is None or not self._model_alive(model):
+                        continue
+                    try:
+                        base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                        current_wounds = int(getattr(model, "wounds", 0) or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if current_wounds >= base_wounds:
+                        continue
+                    heal_fn = getattr(model, "heal", None)
+                    if callable(heal_fn):
+                        heal_fn(1)
+                    else:
+                        model.wounds = min(base_wounds, current_wounds + 1)
+                    healed = True
+                    break
+                if not healed:
+                    heal_amount = _index
+                    break
+
+        updated = dict(sr)
+        updated[f"{self._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_healed_wounds"] = int(already_healed + heal_amount)
+        root.special_rules = updated
+        return {
+            "triggered": True,
+            "destroyed_models": int(destroyed_count),
+            "successful_rolls": int(successful_rolls),
+            "healed": int(heal_amount),
+            "rolls": list(rolls),
+        }
 
     def desperate_devotion_can_trigger(self, unit, *, action: str, game=None) -> bool:
         if not self.is_chaos_cult():

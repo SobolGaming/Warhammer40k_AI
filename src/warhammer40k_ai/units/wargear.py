@@ -4051,6 +4051,26 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            ap_bonus_fn = (
+                getattr(csm_mgr, "soulforged_warpack_desperate_pledge_ap_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(ap_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _source = ap_bonus_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(ap_bonus or 0) > 0:
+                    ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
             _profile_s_bonus, profile_ap_bonus, _profile_d_bonus, _profile_source = (
                 self._model_target_keywords_profile_bonus(attacker, target)
             )

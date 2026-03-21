@@ -1795,6 +1795,7 @@ class StratagemManager(
             "KHAINE’S VENGEANCE",
             "CARRY FORTH THE FAITHFUL",
             "SEIZE THE PRIZE",
+            "FEEDING FRENZY",
         }:
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
@@ -1861,6 +1862,7 @@ class StratagemManager(
             "COILS OF DECEPTION",
             "RELENTLESS TERROR",
             "RELENTLESS PURSUIT",
+            "PREDATORY PURSUIT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2179,7 +2181,7 @@ class StratagemManager(
         if needs_attacker_cleanup_shooting:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
 
-        if names & {"A WORTHY SKULL", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT", "TERRITORIAL ADVANTAGE"}:
+        if names & {"A WORTHY SKULL", "GLUT OF SOULS", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT", "TERRITORIAL ADVANTAGE"}:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
         if has_consolidate_spec:
@@ -6499,6 +6501,7 @@ class StratagemManager(
             self._queue_pactbound_phase_start_reactions(player=player, phase=phase)
             self._queue_renegade_warband_phase_start_reactions(player=player, phase=phase)
             self._queue_renegade_raiders_phase_start_reactions(player=player, phase=phase)
+            self._queue_soulforged_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8516,6 +8519,7 @@ class StratagemManager(
             self._cleanup_nightmare_hunt_phase_end_effects(phase=phase)
             self._cleanup_pactbound_phase_end_effects(phase=phase)
             self._cleanup_renegade_raiders_phase_end_effects(phase=phase)
+            self._cleanup_soulforged_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -9421,6 +9425,7 @@ class StratagemManager(
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
         self._queue_orks_move_started_reactions(unit=unit, action=action)
         self._queue_hurons_marauders_move_started_reactions(unit=unit, action=action)
+        self._queue_soulforged_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -9475,6 +9480,7 @@ class StratagemManager(
         self._queue_deceptors_move_end_reactions(unit=unit, action=action)
         self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
+        self._queue_soulforged_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12737,6 +12743,10 @@ class StratagemManager(
             self._queue_space_marines_saga_of_the_hunter_fight_attacks_resolved_reactions(
                 attacker_unit=unit,
                 target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._resolve_soulforged_glut_of_souls_fight_attacks_resolved(
+                unit=unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             s = self.get_by_name("A WORTHY SKULL")

@@ -135,6 +135,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_renegade_warband", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_soulforged_warpack_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_soulforged_warpack", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_renegade_raiders_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_renegade_raiders", None) if mgr is not None else None
@@ -1158,6 +1163,137 @@ class ChaosSpaceMarinesStratagemMixin:
             if not self._is_heretic_astartes_unit(root):
                 continue
             if exclude_damned and self._is_damned_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    @staticmethod
+    def _is_soulforged_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "")
+        for candidate in list(candidates or []):
+            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
+            if candidate_root is None:
+                continue
+            cid = str(get_entity_id(candidate_root) or "")
+            if rid and cid and rid == cid:
+                return True
+            if candidate_root is root:
+                return True
+        return False
+
+    @classmethod
+    def _is_vashtorr_unit(cls, unit: Any) -> bool:
+        root = cls._csm_root(unit)
+        if root is None:
+            return False
+        normalized_name = " ".join(str(getattr(root, "name", "") or "").strip().lower().split())
+        return normalized_name == "vashtorr the arkifane" or normalized_name == "vashtorr"
+
+    def _soulforged_targetable_units(
+        self,
+        *,
+        require_vehicle: bool = False,
+        require_daemon_vehicle: bool = False,
+        allow_vashtorr: bool = False,
+        exclude_daemon: bool = False,
+        exclude_titanic: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_moved: bool = False,
+        require_not_attempted_charge: bool = False,
+        require_not_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_soulforged_warpack_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+
+            is_vashtorr = self._is_vashtorr_unit(root)
+            if not self._is_heretic_astartes_unit(root) and not is_vashtorr:
+                continue
+            if require_vehicle and not (self._csm_has_keyword(root, "VEHICLE") or (allow_vashtorr and is_vashtorr)):
+                continue
+            if require_daemon_vehicle and not (
+                self._csm_has_keyword(root, "VEHICLE") and self._csm_has_keyword(root, "DAEMON")
+            ):
+                continue
+            if exclude_daemon and self._csm_has_keyword(root, "DAEMON"):
+                continue
+            if exclude_titanic and self._csm_has_keyword(root, "TITANIC"):
+                continue
+            if require_not_engaged and self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_not_moved and bool(getattr(round_state, "moved_this_round", False)):
+                continue
+            if require_not_attempted_charge and bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _soulforged_feeding_frenzy_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._csm_root(enemy_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if enemy_root is None or not callable(within_engagement):
+            return []
+        if self._csm_has_keyword(enemy_root, "MONSTER") or self._csm_has_keyword(enemy_root, "VEHICLE"):
+            return []
+
+        candidates: list[Any] = []
+        for root in self._soulforged_targetable_units(allow_vashtorr=True):
+            if not (
+                (self._csm_has_keyword(root, "VEHICLE") and self._csm_has_keyword(root, "DAEMON"))
+                or self._is_vashtorr_unit(root)
+            ):
+                continue
+            if not bool(within_engagement(root, enemy_root)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _soulforged_predatory_pursuit_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        for root in self._soulforged_targetable_units(
+            require_vehicle=True,
+            allow_vashtorr=True,
+            require_not_engaged=True,
+        ):
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
@@ -2331,6 +2467,97 @@ class ChaosSpaceMarinesStratagemMixin:
             for prefix in prefixes:
                 mgr._remove_special_rule_prefix(root, prefix)
 
+    def _cleanup_soulforged_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "SHOOTING_PHASE": (mgr._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX,),
+            "FIGHT_PHASE": (
+                mgr._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX,
+                mgr._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX,
+            ),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+
+            if str(sr.get(mgr._SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY, "") or "").strip().upper() == phase_name:
+                for key in (
+                    mgr._SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY,
+                    mgr._SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY,
+                    mgr._SOULFORGED_WARPACK_CONTRACT_TURN_KEY,
+                    mgr._SOULFORGED_WARPACK_CONTRACT_OWNER_KEY,
+                    mgr._SOULFORGED_WARPACK_CONTRACT_SOURCE_KEY,
+                    mgr._SOULFORGED_WARPACK_CONTRACT_CHOICE_KEY,
+                ):
+                    sr.pop(key, None)
+            if str(sr.get(mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY, "") or "").strip().upper() == phase_name:
+                for key in (
+                    mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_ACTIVE_KEY,
+                    mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY,
+                    mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY,
+                    mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY,
+                    mgr._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY,
+                ):
+                    sr.pop(key, None)
+
+            if phase_name == "MOVEMENT_PHASE" and bool(sr.get("enemy_fallback_desperate_escape")):
+                source_name = self._normalize_stratagem_name(str(sr.get("enemy_fallback_desperate_escape_source", "") or ""))
+                expires_phase = str(sr.get("enemy_fallback_desperate_escape_expires_phase", "") or "").strip().upper()
+                if source_name == self._normalize_stratagem_name("FEEDING FRENZY") and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "enemy_fallback_desperate_escape",
+                        "enemy_fallback_desperate_escape_exclude_monster_vehicle",
+                        "enemy_fallback_desperate_escape_bs_penalty",
+                        "enemy_fallback_desperate_escape_penalty",
+                        "enemy_fallback_desperate_escape_target_enemy_id",
+                        "enemy_fallback_desperate_escape_expires_phase",
+                        "enemy_fallback_desperate_escape_turn_owner",
+                        "enemy_fallback_desperate_escape_turn",
+                        "enemy_fallback_desperate_escape_source",
+                    ):
+                        sr.pop(key, None)
+
+            if bool(sr.get("soulforged_warpack_unstoppable_rampage_active")):
+                expires_phase = str(sr.get("soulforged_warpack_unstoppable_rampage_expires_phase", "") or "").strip().upper()
+                if not expires_phase or expires_phase == phase_name:
+                    added = set(sr.get("soulforged_warpack_unstoppable_rampage_added_phase_move_terrain_only_types") or [])
+                    if added:
+                        current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                        else:
+                            sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                    for key in (
+                        "soulforged_warpack_unstoppable_rampage_active",
+                        "soulforged_warpack_unstoppable_rampage_expires_phase",
+                        "soulforged_warpack_unstoppable_rampage_turn_owner",
+                        "soulforged_warpack_unstoppable_rampage_turn",
+                        "soulforged_warpack_unstoppable_rampage_source",
+                        "soulforged_warpack_unstoppable_rampage_added_phase_move_terrain_only_types",
+                    ):
+                        sr.pop(key, None)
+
+            root.special_rules = sr
+            mgr._clear_unit_ability_cache(root)
+
     def _queue_dread_talons_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_dread_talons_detachment():
             return
@@ -2840,6 +3067,242 @@ class ChaosSpaceMarinesStratagemMixin:
                 "candidates": [source_root],
             },
             use_timer=False,
+        )
+
+    def _queue_soulforged_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_soulforged_warpack_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def queue_phase_start_stratagem(stratagem_name: str, *, phase_name: str, candidates: list[Any]) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "COMMAND_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "DAEMONIC POSSESION",
+                phase_name="Command phase",
+                candidates=self._soulforged_targetable_units(
+                    require_vehicle=True,
+                    exclude_daemon=True,
+                ),
+            )
+            return
+
+        if phase_key == "MOVEMENT_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "UNSTOPPABLE RAMPAGE",
+                phase_name="Movement phase",
+                candidates=self._soulforged_targetable_units(
+                    require_vehicle=True,
+                    allow_vashtorr=True,
+                    require_not_moved=True,
+                ),
+            )
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "DESPERATE PLEDGE",
+                phase_name="Shooting phase",
+                candidates=self._soulforged_targetable_units(
+                    require_daemon_vehicle=True,
+                    require_not_shot=True,
+                ),
+            )
+            return
+
+        if phase_key == "CHARGE_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "UNSTOPPABLE RAMPAGE",
+                phase_name="Charge phase",
+                candidates=self._soulforged_targetable_units(
+                    require_vehicle=True,
+                    allow_vashtorr=True,
+                    require_not_attempted_charge=True,
+                ),
+            )
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        queue_phase_start_stratagem(
+            "DESPERATE PLEDGE",
+            phase_name="Fight phase",
+            candidates=self._soulforged_targetable_units(
+                require_daemon_vehicle=True,
+                require_not_fought=True,
+            ),
+        )
+        queue_phase_start_stratagem(
+            "GLUT OF SOULS",
+            phase_name="Fight phase",
+            candidates=self._soulforged_targetable_units(
+                require_daemon_vehicle=True,
+                exclude_titanic=True,
+                require_not_fought=True,
+            ),
+        )
+
+    def _queue_soulforged_move_start_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_soulforged_warpack_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if phase_name != "movement phase" or action_key not in {"fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        moving_root = self._csm_root(unit)
+        if moving_root is None or self._csm_owned_by_player(moving_root, self.player):
+            return
+        if not self._csm_is_alive(moving_root) or not self._csm_is_on_battlefield(moving_root):
+            return
+        if self._csm_has_keyword(moving_root, "MONSTER") or self._csm_has_keyword(moving_root, "VEHICLE"):
+            return
+
+        stratagem = self.get_by_name("FEEDING FRENZY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._soulforged_feeding_frenzy_candidates(enemy_unit=moving_root)
+        if not candidates:
+            return
+        moving_id = str(get_entity_id(moving_root) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_started":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("FEEDING FRENZY"):
+                continue
+            if str(get_entity_id(self._csm_root(reaction.get("moving_unit") or reaction.get("enemy_unit"))) or "") == moving_id:
+                return
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": moving_root,
+            "enemy_unit": moving_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_soulforged_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_soulforged_warpack_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if phase_name != "movement phase" or action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        moving_root = self._csm_root(unit)
+        if moving_root is None or self._csm_owned_by_player(moving_root, self.player):
+            return
+        if not self._csm_is_alive(moving_root) or not self._csm_is_on_battlefield(moving_root):
+            return
+
+        stratagem = self.get_by_name("PREDATORY PURSUIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._soulforged_predatory_pursuit_candidates(enemy_unit=moving_root)
+        if not candidates:
+            return
+        moving_id = str(get_entity_id(moving_root) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("PREDATORY PURSUIT"):
+                continue
+            if str(get_entity_id(self._csm_root(reaction.get("moving_unit") or reaction.get("enemy_unit"))) or "") == moving_id:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": moving_root,
+            "enemy_unit": moving_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _resolve_soulforged_glut_of_souls_fight_attacks_resolved(
+        self,
+        *,
+        unit: Any,
+        killing_models_by_target: Any,
+    ) -> None:
+        if not self._is_soulforged_warpack_detachment():
+            return
+        root = self._csm_root(unit)
+        if root is None or not self._csm_owned_by_player(root, self.player):
+            return
+        mgr = self._get_chaos_space_marines_mgr()
+        resolve_fn = getattr(mgr, "resolve_soulforged_warpack_glut_of_souls", None) if mgr is not None else None
+        if not callable(resolve_fn):
+            return
+        outcome = resolve_fn(root, killing_models_by_target=killing_models_by_target, game=self.game) or {}
+        if not bool(outcome.get("triggered", False)):
+            return
+        healed = int(outcome.get("healed", 0) or 0)
+        if healed <= 0:
+            return
+        logger.info(
+            "INFO: GLUT OF SOULS: %s regains %d lost wound%s after destroying enemy models.",
+            getattr(root, "name", "Unit"),
+            int(healed),
+            "" if int(healed) == 1 else "s",
         )
 
     def _queue_pactbound_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
@@ -7918,6 +8381,460 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_soulforged_daemonic_possesion(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("DAEMONIC POSSESION", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DAEMONIC POSSESION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: DAEMONIC POSSESION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DAEMONIC POSSESION: not your turn")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DAEMONIC POSSESION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DAEMONIC POSSESION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DAEMONIC POSSESION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root) or not self._csm_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: DAEMONIC POSSESION: target must be a HERETIC ASTARTES VEHICLE")
+            return False
+        if self._csm_has_keyword(root, "DAEMON"):
+            logger.error("ERROR: DAEMONIC POSSESION: target cannot already be a DAEMON unit")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        extra_keywords = list(sr.get("ability_added_keywords", []) or [])
+        lowered = {str(keyword or "").strip().lower() for keyword in extra_keywords}
+        if "daemon" not in lowered:
+            extra_keywords.append("DAEMON")
+            sr["ability_added_keywords"] = extra_keywords
+        sr["soulforged_warpack_daemonic_possesion_active"] = True
+        sr["soulforged_warpack_daemonic_possesion_source"] = (
+            str(getattr(stratagem, "name", "") or mgr._SOULFORGED_WARPACK_DAEMONIC_POSSESION_SOURCE).strip()
+            or mgr._SOULFORGED_WARPACK_DAEMONIC_POSSESION_SOURCE
+        )
+        root.special_rules = sr
+        if mgr is not None:
+            mgr._clear_unit_ability_cache(root)
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DAEMONIC POSSESION: %s gains the DAEMON keyword for the rest of the battle.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_soulforged_desperate_pledge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("DESPERATE PLEDGE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DESPERATE PLEDGE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: DESPERATE PLEDGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: DESPERATE PLEDGE: shooting-phase use is only available in your turn")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DESPERATE PLEDGE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: DESPERATE PLEDGE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DESPERATE PLEDGE: target cannot be selected")
+            return False
+        if not (self._is_heretic_astartes_unit(root) and self._csm_has_keyword(root, "DAEMON") and self._csm_has_keyword(root, "VEHICLE")):
+            logger.error("ERROR: DESPERATE PLEDGE: target must be a HERETIC ASTARTES DAEMON VEHICLE")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: DESPERATE PLEDGE: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: DESPERATE PLEDGE: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_soulforged_warpack_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: DESPERATE PLEDGE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX,
+            source=stratagem.name or "DESPERATE PLEDGE",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._SOULFORGED_WARPACK_DESPERATE_PLEDGE_PREFIX}_ap_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DESPERATE PLEDGE: %s gains contract-gated AP improvement until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_soulforged_feeding_frenzy(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("moving_unit") or kwargs.get("enemy_unit")
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("FEEDING FRENZY", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("moving_unit") or pending.get("enemy_unit")
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FEEDING FRENZY: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        enemy_root = self._csm_root(enemy_unit)
+        if root is None or enemy_root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FEEDING FRENZY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: FEEDING FRENZY: not opponent's Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: FEEDING FRENZY: invalid trigger action")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: FEEDING FRENZY: trigger unit must be an enemy unit")
+            return False
+        if self._csm_has_keyword(enemy_root, "MONSTER") or self._csm_has_keyword(enemy_root, "VEHICLE"):
+            logger.error("ERROR: FEEDING FRENZY: trigger unit cannot be a MONSTER or VEHICLE")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FEEDING FRENZY: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: FEEDING FRENZY: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FEEDING FRENZY: target cannot be selected")
+            return False
+        if not (
+            (self._csm_has_keyword(root, "VEHICLE") and self._csm_has_keyword(root, "DAEMON") and self._is_heretic_astartes_unit(root))
+            or self._is_vashtorr_unit(root)
+        ):
+            logger.error("ERROR: FEEDING FRENZY: target must be a HERETIC ASTARTES DAEMON VEHICLE or Vashtorr")
+            return False
+        eligible = candidates or self._soulforged_feeding_frenzy_candidates(enemy_unit=enemy_root)
+        if eligible and not self._is_soulforged_unit_in_candidates(root, eligible):
+            logger.error("ERROR: FEEDING FRENZY: target must be within Engagement Range of the triggering enemy unit")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enemy_fallback_desperate_escape"] = True
+        sr["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = True
+        sr["enemy_fallback_desperate_escape_bs_penalty"] = 1
+        sr["enemy_fallback_desperate_escape_penalty"] = 0
+        sr.pop("enemy_fallback_desperate_escape_target_enemy_id", None)
+        sr["enemy_fallback_desperate_escape_expires_phase"] = "MOVEMENT_PHASE"
+        sr["enemy_fallback_desperate_escape_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        sr["enemy_fallback_desperate_escape_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["enemy_fallback_desperate_escape_source"] = str(getattr(stratagem, "name", "") or "FEEDING FRENZY")
+        root.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FEEDING FRENZY: enemy non-MONSTER/non-VEHICLE units falling back from your lines must take Desperate Escape tests this phase.",
+        )
+        return True
+
+    def _use_soulforged_glut_of_souls(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("GLUT OF SOULS", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: GLUT OF SOULS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: GLUT OF SOULS: wrong phase")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: GLUT OF SOULS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: GLUT OF SOULS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: GLUT OF SOULS: target cannot be selected")
+            return False
+        if not (self._is_heretic_astartes_unit(root) and self._csm_has_keyword(root, "DAEMON") and self._csm_has_keyword(root, "VEHICLE")):
+            logger.error("ERROR: GLUT OF SOULS: target must be a HERETIC ASTARTES DAEMON VEHICLE")
+            return False
+        if self._csm_has_keyword(root, "TITANIC"):
+            logger.error("ERROR: GLUT OF SOULS: target cannot be TITANIC")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: GLUT OF SOULS: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_soulforged_warpack_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: GLUT OF SOULS: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX,
+            source=stratagem.name or "GLUT OF SOULS",
+            player=self.player,
+            game=self.game,
+            extra_state={
+                f"{mgr._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_threshold": 5,
+                f"{mgr._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_heal_cap": 6,
+                f"{mgr._SOULFORGED_WARPACK_GLUT_OF_SOULS_PREFIX}_healed_wounds": 0,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GLUT OF SOULS: %s can regain lost wounds from contract-fuelled kills this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_soulforged_predatory_pursuit(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("moving_unit") or kwargs.get("enemy_unit")
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("PREDATORY PURSUIT", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("moving_unit") or pending.get("enemy_unit")
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PREDATORY PURSUIT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        enemy_root = self._csm_root(enemy_unit)
+        if root is None or enemy_root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: PREDATORY PURSUIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: PREDATORY PURSUIT: not opponent's Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: PREDATORY PURSUIT: invalid trigger action")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: PREDATORY PURSUIT: trigger unit must be an enemy unit")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: PREDATORY PURSUIT: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PREDATORY PURSUIT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PREDATORY PURSUIT: target cannot be selected")
+            return False
+        if not ((self._is_heretic_astartes_unit(root) and self._csm_has_keyword(root, "VEHICLE")) or self._is_vashtorr_unit(root)):
+            logger.error("ERROR: PREDATORY PURSUIT: target must be a HERETIC ASTARTES VEHICLE or Vashtorr")
+            return False
+        if self._csm_unit_is_engaged(root):
+            logger.error("ERROR: PREDATORY PURSUIT: target must not be within Engagement Range")
+            return False
+        eligible = candidates or self._soulforged_predatory_pursuit_candidates(enemy_unit=enemy_root)
+        if eligible and not self._is_soulforged_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PREDATORY PURSUIT: target must be within 9\" of the enemy unit")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: PREDATORY PURSUIT: reactive move queue unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="predatory_pursuit",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "PREDATORY PURSUIT"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+            extra_context={"predatory_pursuit_target_unit_id": str(get_entity_id(enemy_root) or "")},
+        )
+        if request is None:
+            logger.error("ERROR: PREDATORY PURSUIT: failed to queue reactive move")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PREDATORY PURSUIT: %s can make a reactive Normal move up to 6\" toward %s.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_soulforged_unstoppable_rampage(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("UNSTOPPABLE RAMPAGE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_soulforged_warpack_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: not your turn")
+            return False
+        if candidates and not self._is_soulforged_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target cannot be selected")
+            return False
+        if not ((self._is_heretic_astartes_unit(root) and self._csm_has_keyword(root, "VEHICLE")) or self._is_vashtorr_unit(root)):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target must be a HERETIC ASTARTES VEHICLE or Vashtorr")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "movement phase" and bool(getattr(round_state, "moved_this_round", False)):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target has already been selected to move")
+            return False
+        if phase_name == "charge phase" and bool(getattr(round_state, "attempted_charge_this_round", False)):
+            logger.error("ERROR: UNSTOPPABLE RAMPAGE: target has already been selected to charge")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        move_types = {"charge"} if phase_name == "charge phase" else {"move", "advance"}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = set(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+        added = set()
+        for move_type in move_types:
+            if move_type not in current:
+                current.add(move_type)
+                added.add(move_type)
+        if current:
+            sr["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+        if added:
+            sr["soulforged_warpack_unstoppable_rampage_added_phase_move_terrain_only_types"] = sorted(added)
+        sr["soulforged_warpack_unstoppable_rampage_active"] = True
+        sr["soulforged_warpack_unstoppable_rampage_expires_phase"] = (
+            "CHARGE_PHASE" if phase_name == "charge phase" else "MOVEMENT_PHASE"
+        )
+        sr["soulforged_warpack_unstoppable_rampage_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["soulforged_warpack_unstoppable_rampage_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["soulforged_warpack_unstoppable_rampage_source"] = str(getattr(stratagem, "name", "") or "UNSTOPPABLE RAMPAGE")
+        root.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNSTOPPABLE RAMPAGE: %s can move horizontally through terrain this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_pactbound_profane_zeal(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -9342,16 +10259,24 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
         if name_u == "CORRUPTED MUNITIONS":
             return self._use_renegade_warband_corrupted_munitions(stratagem, **kwargs)
+        if name_u == "DAEMONIC POSSESION":
+            return self._use_soulforged_daemonic_possesion(stratagem, **kwargs)
         if name_u == "DEPTHLESS CRUELTY":
             return self._use_dread_talons_depthless_cruelty(stratagem, **kwargs)
+        if name_u == "DESPERATE PLEDGE":
+            return self._use_soulforged_desperate_pledge(stratagem, **kwargs)
         if name_u == "DETONATOR":
             return self._use_deceptors_detonator(stratagem, **kwargs)
         if name_u == "DELAYED MUTATIONS":
             return self._use_creations_of_bile_delayed_mutations(stratagem, **kwargs)
         if name_u == "DIABOLIC REGENERATION":
             return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
+        if name_u == "FEEDING FRENZY":
+            return self._use_soulforged_feeding_frenzy(stratagem, **kwargs)
         if name_u == "FROM ALL SIDES":
             return self._use_deceptors_from_all_sides(stratagem, **kwargs)
+        if name_u == "GLUT OF SOULS":
+            return self._use_soulforged_glut_of_souls(stratagem, **kwargs)
         if name_u == "HARDENED KILLERS":
             return self._use_hurons_marauders_hardened_killers(stratagem, **kwargs)
         if name_u == "MASTERS ARE WATCHING":
@@ -9384,6 +10309,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
         if name_u == "OPPORTUNISTIC RAIDERS":
             return self._use_renegade_raiders_opportunistic_raiders(stratagem, **kwargs)
+        if name_u == "PREDATORY PURSUIT":
+            return self._use_soulforged_predatory_pursuit(stratagem, **kwargs)
         if name_u == "PREY ON THE WEAK":
             return self._use_nightmare_hunt_prey_on_the_weak(stratagem, **kwargs)
         if name_u == "PROFANE ZEAL":
@@ -9434,6 +10361,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_renegade_warband_undying_hatred(stratagem, **kwargs)
         if name_u == "UNFAILINGLY OBDURATE":
             return self._use_renegade_raiders_unfailingly_obdurate(stratagem, **kwargs)
+        if name_u == "UNSTOPPABLE RAMPAGE":
+            return self._use_soulforged_unstoppable_rampage(stratagem, **kwargs)
         if name_u == "VENGEFUL DESTRUCTION":
             return self._use_renegade_warband_vengeful_destruction(stratagem, **kwargs)
         if name_u == "WARPCHARGED ENGINES":

@@ -19813,6 +19813,12 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008965005": "Coils of Deception: a HERETIC ASTARTES unit that Fell Back can still shoot this turn.",
         "000008965006": "Relentless Pursuit: after an enemy unit ends a Normal, Advance, or Fall Back move within 9\", an eligible HERETIC ASTARTES INFANTRY or MOUNTED unit can make a reactive Normal move up to 6\".",
         "000008965007": "Scrambled Coordinates: in your opponent's Reinforcements step, selected HERETIC ASTARTES unit projects a 12\" horizontal reserves-denial zone until end of phase.",
+        "000008986002": "Desperate Pledge: selected HERETIC ASTARTES DAEMON VEHICLE unit that has not yet been selected to shoot or fight gains +1 AP on its attacks until end of phase if it invokes its contract.",
+        "000008986003": "Glut of Souls: selected non-TITANIC HERETIC ASTARTES DAEMON VEHICLE unit that has not yet been selected to fight regains 1 lost wound on each 5+ rolled for enemy models it destroys this phase after invoking its contract, up to 6 wounds.",
+        "000008986004": "Daemonic Posession: in your Command phase, selected HERETIC ASTARTES VEHICLE unit excluding DAEMON units gains the DAEMON keyword for the rest of the battle.",
+        "000008986005": "Unstoppable Rampage: selected HERETIC ASTARTES VEHICLE or Vashtorr the Arkifane unit that has not yet been selected to move or charge can move horizontally through terrain during the chosen phase.",
+        "000008986006": "Predatory Pursuit: after an enemy unit ends a Normal, Advance, or Fall Back move within 9\", an eligible HERETIC ASTARTES VEHICLE or Vashtorr the Arkifane unit not in Engagement Range can make a reactive Normal move up to 6\" and must end as close as possible to that enemy unit.",
+        "000008986007": "Feeding Frenzy: when an enemy non-MONSTER/non-VEHICLE unit within Engagement Range of a friendly HERETIC ASTARTES DAEMON VEHICLE or Vashtorr is selected to Fall Back, enemy non-MONSTER/non-VEHICLE units within Engagement Range of your units must take Desperate Escape tests this phase, with Battle-shocked units suffering an additional -1.",
         "000008968002": "Despot's Claim: at the start of your Command phase, while the bearer is on the battlefield, roll D6 (add 1 if the bearer is wholly within 12\" of the opponent deployment zone) and gain 1CP on 5+.",
         "000008968003": "Dread Reaver: each time the bearer makes a melee attack, if the bearer is wholly within 12\" of the opponent deployment zone, it can re-roll Hit and Wound rolls.",
         "000008968004": "Mark of the Hound: while the bearer is alive, models in the bearer's unit gain Scouts 6\".",
@@ -21067,6 +21073,42 @@ def _stratagem_support(
         return (
             "Implemented",
             "Your Charge phase: selected HERETIC ASTARTES INFANTRY or MOUNTED unit can charge after Advancing this phase and gains +1 to Charge rolls against targets within range of an objective marker.",
+            name_u,
+        )
+    if stratagem_id == "000008986002":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected HERETIC ASTARTES DAEMON VEHICLE unit that has not yet been selected to shoot or fight gains +1 AP on its attacks until end of phase if it invokes its contract.",
+            name_u,
+        )
+    if stratagem_id == "000008986003":
+        return (
+            "Implemented",
+            "Fight phase: selected non-TITANIC HERETIC ASTARTES DAEMON VEHICLE unit that has not yet fought regains 1 lost wound on each 5+ rolled for enemy models it destroys after invoking its contract, up to 6 wounds this phase.",
+            name_u,
+        )
+    if stratagem_id == "000008986004":
+        return (
+            "Implemented",
+            "Your Command phase: selected HERETIC ASTARTES VEHICLE unit excluding DAEMON units gains the DAEMON keyword for the rest of the battle.",
+            name_u,
+        )
+    if stratagem_id == "000008986005":
+        return (
+            "Implemented",
+            "Your Movement or Charge phase: selected HERETIC ASTARTES VEHICLE or Vashtorr the Arkifane unit that has not yet been selected to move or charge can move horizontally through terrain until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008986006":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected HERETIC ASTARTES VEHICLE or Vashtorr the Arkifane unit within 9\" and not within Engagement Range can make a reactive Normal move up to 6\" and must end as close as possible to that enemy unit.",
+            name_u,
+        )
+    if stratagem_id == "000008986007":
+        return (
+            "Implemented",
+            "Opponent Movement phase reaction when an enemy non-MONSTER/non-VEHICLE unit is selected to Fall Back: selected HERETIC ASTARTES DAEMON VEHICLE or Vashtorr the Arkifane unit in Engagement Range forces enemy non-MONSTER/non-VEHICLE units within Engagement Range of your units to take Desperate Escape tests this phase, with Battle-shocked units suffering an additional -1.",
             name_u,
         )
     if stratagem_id == "000010695002":
