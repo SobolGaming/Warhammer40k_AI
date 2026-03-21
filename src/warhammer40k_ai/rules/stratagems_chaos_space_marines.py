@@ -125,6 +125,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_nightmare_hunt", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_pactbound_zealots_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_pactbound_zealots", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_heretic_astartes_unit(self, unit: Any) -> bool:
         root = self._csm_root(unit)
         if root is None:
@@ -781,6 +786,140 @@ class ChaosSpaceMarinesStratagemMixin:
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
+
+    def _pactbound_mark_for_unit(self, unit: Any) -> str:
+        mgr = self._get_chaos_space_marines_mgr()
+        resolve_mark = getattr(mgr, "pactbound_mark_for_unit", None) if mgr is not None else None
+        if not callable(resolve_mark):
+            return ""
+        return str(resolve_mark(unit, assign_default=True) or "").strip().upper()
+
+    def _pactbound_targetable_units(
+        self,
+        *,
+        required_mark: str = "",
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        if not self._is_pactbound_zealots_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        expected_mark = str(required_mark or "").strip().upper()
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if expected_mark and self._pactbound_mark_for_unit(root) != expected_mark:
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _pactbound_targeted_units(self, *, target_units: list[Any]) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _pactbound_attached_models(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        return list(models or [])
+
+    def _pactbound_wounded_models(self, unit: Any) -> list[Any]:
+        wounded: list[Any] = []
+        for model in self._pactbound_attached_models(unit):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            try:
+                base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                current_wounds = int(getattr(model, "wounds", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if base_wounds > current_wounds:
+                wounded.append(model)
+        return sorted(wounded, key=lambda model: str(get_entity_id(model) or ""))
+
+    def _pactbound_destroyed_non_character_models(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        if root is None:
+            return []
+        destroyed_pool = list(getattr(root, "models_lost", []) or [])
+        can_return = getattr(root, "_horrors_can_return_model", None)
+        candidates: list[Any] = []
+        for model in destroyed_pool:
+            if model is None:
+                continue
+            if self._csm_model_is_character(model):
+                continue
+            if callable(can_return) and not bool(can_return(model)):
+                continue
+            candidates.append(model)
+        return sorted(candidates, key=lambda model: str(get_entity_id(model) or ""))
+
+    def _pactbound_skinshift_candidates(self) -> list[Any]:
+        candidates: list[Any] = []
+        for root in self._pactbound_targetable_units():
+            wounded_models = self._pactbound_wounded_models(root)
+            mark = self._pactbound_mark_for_unit(root)
+            below_starting_strength = bool(getattr(root, "is_below_starting_strength", lambda: False)())
+            destroyed_models = self._pactbound_destroyed_non_character_models(root)
+            if wounded_models or (mark == "TZEENTCH" and below_starting_strength and destroyed_models):
+                candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _pactbound_eye_of_the_gods_character_models(self, unit: Any) -> list[Any]:
+        mgr = self._get_chaos_space_marines_mgr()
+        get_candidates = getattr(mgr, "pactbound_eye_of_the_gods_candidate_models", None) if mgr is not None else None
+        if not callable(get_candidates):
+            return []
+        return list(get_candidates(unit) or [])
 
     def _hurons_marauders_targetable_units(
         self,
@@ -2345,6 +2484,214 @@ class ChaosSpaceMarinesStratagemMixin:
             use_timer=False,
         )
 
+    def _queue_pactbound_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_pactbound_zealots_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def queue_phase_start_stratagem(stratagem_name: str, *, phase_name: str, candidates: list[Any]) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "COMMAND_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "SKINSHIFT",
+                phase_name="Command phase",
+                candidates=self._pactbound_skinshift_candidates(),
+            )
+            return
+
+        if phase_key == "MOVEMENT_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "TORPEFYING REFRAIN",
+                phase_name="Movement phase",
+                candidates=self._pactbound_targetable_units(),
+            )
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "PROFANE ZEAL",
+                phase_name="Shooting phase",
+                candidates=self._pactbound_targetable_units(
+                    required_mark="CHAOS UNDIVIDED",
+                    require_not_shot=True,
+                ),
+            )
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        queue_phase_start_stratagem(
+            "PROFANE ZEAL",
+            phase_name="Fight phase",
+            candidates=self._pactbound_targetable_units(
+                required_mark="CHAOS UNDIVIDED",
+                require_not_fought=True,
+            ),
+        )
+
+    def _queue_pactbound_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_pactbound_zealots_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("FESTERING MIASMA")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._pactbound_targeted_units(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "FESTERING MIASMA":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_pactbound_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_pactbound_zealots_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("ETERNAL HATE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._pactbound_targeted_units(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "ETERNAL HATE":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_pactbound_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        if not self._is_pactbound_zealots_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_root = self._csm_root(destroyed_by_unit)
+        destroyed_root = self._csm_root(destroyed_unit)
+        if source_root is None or destroyed_root is None:
+            return
+        if not self._csm_owned_by_player(source_root, self.player):
+            return
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            return
+        if not self._csm_is_alive(source_root) or not self._csm_is_on_battlefield(source_root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(source_root):
+            return
+        if not self._is_heretic_astartes_unit(source_root):
+            return
+        character_models = self._pactbound_eye_of_the_gods_character_models(source_root)
+        if not character_models:
+            return
+        stratagem = self.get_by_name("EYE OF THE GODS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem, target_unit=source_root):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=source_root,
+        ):
+            return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": source_root,
+            "target_unit": source_root,
+            "destroyed_unit": destroyed_root,
+            "character_models": character_models,
+            "candidates": [source_root],
+        }
+        if len(character_models) == 1:
+            payload["model"] = character_models[0]
+            payload["target_model"] = character_models[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_fellhammer_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_fellhammer_siege_host_detachment():
             return
@@ -2906,6 +3253,37 @@ class ChaosSpaceMarinesStratagemMixin:
                 mgr._NIGHTMARE_HUNT_PREY_ON_THE_WEAK_PREFIX,
                 mgr._NIGHTMARE_HUNT_TALONS_SUNK_DEEP_PREFIX,
                 mgr._NIGHTMARE_HUNT_RELENTLESS_TERROR_PREFIX,
+            ),
+        }
+        prefixes = prefix_by_phase.get(phase_name, ())
+        if not prefixes:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+
+    def _cleanup_pactbound_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefix_by_phase = {
+            "SHOOTING_PHASE": (
+                mgr._PACTBOUND_FESTERING_MIASMA_PREFIX,
+                mgr._PACTBOUND_PROFANE_ZEAL_PREFIX,
+            ),
+            "FIGHT_PHASE": (
+                mgr._PACTBOUND_ETERNAL_HATE_PREFIX,
+                mgr._PACTBOUND_PROFANE_ZEAL_PREFIX,
+                mgr._PACTBOUND_TORPEFYING_REFRAIN_PREFIX,
             ),
         }
         prefixes = prefix_by_phase.get(phase_name, ())
@@ -6629,6 +7007,472 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_pactbound_profane_zeal(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("PROFANE ZEAL", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PROFANE ZEAL: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PROFANE ZEAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: PROFANE ZEAL: shooting-phase use is only available in your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: PROFANE ZEAL: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: PROFANE ZEAL: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PROFANE ZEAL: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: PROFANE ZEAL: target must be HERETIC ASTARTES")
+            return False
+        if self._pactbound_mark_for_unit(root) != "CHAOS UNDIVIDED":
+            logger.error("ERROR: PROFANE ZEAL: target must be CHAOS UNDIVIDED")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: PROFANE ZEAL: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: PROFANE ZEAL: target has already been selected to fight")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_pactbound_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: PROFANE ZEAL: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._PACTBOUND_PROFANE_ZEAL_PREFIX,
+            source=stratagem.name or "PROFANE ZEAL",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PROFANE ZEAL: %s re-rolls Wound rolls until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_pactbound_skinshift(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("SKINSHIFT", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SKINSHIFT: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: SKINSHIFT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SKINSHIFT: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: SKINSHIFT: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: SKINSHIFT: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SKINSHIFT: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: SKINSHIFT: target must be HERETIC ASTARTES")
+            return False
+
+        models = self._pactbound_attached_models(root)
+        wounded_models = self._pactbound_wounded_models(root)
+        heal_model = kwargs.get("model") or kwargs.get("target_model")
+        if heal_model is None and wounded_models:
+            heal_model = wounded_models[0]
+        if heal_model is not None and heal_model not in models:
+            logger.error("ERROR: SKINSHIFT: heal model does not belong to target unit")
+            return False
+        if heal_model is not None and heal_model not in wounded_models:
+            logger.error("ERROR: SKINSHIFT: selected heal model has no lost wounds")
+            return False
+
+        mark = self._pactbound_mark_for_unit(root)
+        below_starting_strength = bool(getattr(root, "is_below_starting_strength", lambda: False)())
+        destroyed_candidates = self._pactbound_destroyed_non_character_models(root)
+        can_return = bool(mark == "TZEENTCH" and below_starting_strength and destroyed_candidates)
+        if heal_model is None and not can_return:
+            logger.error("ERROR: SKINSHIFT: target has no eligible model to heal or return")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        healed = 0
+        if heal_model is not None:
+            try:
+                base_wounds = int(getattr(heal_model, "_base_wounds", getattr(heal_model, "base_wounds", 0)) or 0)
+                current_wounds = int(getattr(heal_model, "wounds", 0) or 0)
+            except (TypeError, ValueError):
+                base_wounds = 0
+                current_wounds = 0
+            missing = max(0, int(base_wounds - current_wounds))
+            if missing > 0:
+                healed = min(3, int(missing))
+                heal_fn = getattr(heal_model, "heal", None)
+                if callable(heal_fn):
+                    heal_fn(3)
+                else:
+                    heal_model.wounds = min(base_wounds, current_wounds + 3)
+
+        returned = 0
+        if can_return:
+            chosen_models = kwargs.get("return_models") or kwargs.get("chosen_models")
+            if chosen_models is not None:
+                selected: list[Any] = []
+                seen_ids: set[str] = set()
+                for entry in list(chosen_models or []):
+                    candidate_id = str(get_entity_id(entry) or entry or "")
+                    if not candidate_id or candidate_id in seen_ids:
+                        continue
+                    for model in destroyed_candidates:
+                        if str(get_entity_id(model) or "") == candidate_id:
+                            selected.append(model)
+                            seen_ids.add(candidate_id)
+                            break
+                destroyed_candidates = selected
+            returned = int(
+                root.return_destroyed_bodyguard_models(
+                    1,
+                    game_map=getattr(self.game, "map", None),
+                    chosen_models=destroyed_candidates or None,
+                    wounds=None,
+                    placement_source=stratagem.name,
+                )
+                or 0
+            )
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SKINSHIFT: %s healed=%d returned=%d.",
+            getattr(root, "name", "Unit"),
+            int(healed),
+            int(returned),
+        )
+        return True
+
+    def _use_pactbound_eye_of_the_gods(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        character_models = list(kwargs.get("character_models") or [])
+        pending = self._csm_find_pending_reaction("EYE OF THE GODS", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not character_models:
+                character_models = list(pending.get("character_models") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: EYE OF THE GODS: no source unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: EYE OF THE GODS: wrong phase")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: EYE OF THE GODS: source unit is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: EYE OF THE GODS: source unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: EYE OF THE GODS: source unit cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: EYE OF THE GODS: source unit must be HERETIC ASTARTES")
+            return False
+
+        if not character_models:
+            character_models = self._pactbound_eye_of_the_gods_character_models(root)
+        model = kwargs.get("model") or kwargs.get("target_model")
+        if model is None:
+            if len(character_models) == 1:
+                model = character_models[0]
+            elif character_models:
+                model = sorted(character_models, key=lambda entry: str(get_entity_id(entry) or ""))[0]
+        if model is None:
+            logger.error("ERROR: EYE OF THE GODS: no eligible CHARACTER model provided")
+            return False
+        if character_models and model not in character_models:
+            logger.error("ERROR: EYE OF THE GODS: selected model is not currently eligible")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        apply_bonus = getattr(mgr, "apply_pactbound_eye_of_the_gods_to_model", None) if mgr is not None else None
+        if not callable(apply_bonus):
+            logger.error("ERROR: EYE OF THE GODS: detachment helper is unavailable")
+            return False
+        result = apply_bonus(model, source=stratagem.name or "EYE OF THE GODS")
+        if not bool((result or {}).get("ok", False)):
+            logger.error("ERROR: EYE OF THE GODS: %s", str((result or {}).get("reason", "failed to apply buff")))
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EYE OF THE GODS: %s gains permanent characteristic bonuses.",
+            getattr(model, "name", "Model"),
+        )
+        return True
+
+    def _use_pactbound_festering_miasma(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("FESTERING MIASMA", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FESTERING MIASMA: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FESTERING MIASMA: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: FESTERING MIASMA: can only be used in your opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: FESTERING MIASMA: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: FESTERING MIASMA: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: FESTERING MIASMA: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FESTERING MIASMA: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: FESTERING MIASMA: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(active_player, "id", "") or "")
+        effect_owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        mark = self._pactbound_mark_for_unit(root)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [root]
+        if root not in members:
+            members.append(root)
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["opponent_shooting_phase_stealth_active"] = True
+            sr["opponent_shooting_phase_stealth_owner"] = owner_id
+            sr["opponent_shooting_phase_stealth_turn"] = int(turn or 0)
+            sr["opponent_shooting_phase_stealth_source"] = str(getattr(stratagem, "name", "FESTERING MIASMA") or "FESTERING MIASMA")
+            sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+            sr["pactbound_festering_miasma_active"] = True
+            sr["pactbound_festering_miasma_phase"] = "SHOOTING_PHASE"
+            sr["pactbound_festering_miasma_turn_owner"] = effect_owner_id
+            sr["pactbound_festering_miasma_turn"] = int(turn or 0)
+            sr["pactbound_festering_miasma_source"] = str(getattr(stratagem, "name", "FESTERING MIASMA") or "FESTERING MIASMA")
+            if mark == "NURGLE":
+                sr["pactbound_festering_miasma_targeting_range"] = 18
+            else:
+                sr.pop("pactbound_festering_miasma_targeting_range", None)
+            member.special_rules = sr
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FESTERING MIASMA: %s gains Stealth%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and an 18\" ranged targeting cap" if mark == "NURGLE" else "",
+        )
+        return True
+
+    def _use_pactbound_torpefying_refrain(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("TORPEFYING REFRAIN", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TORPEFYING REFRAIN: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: TORPEFYING REFRAIN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TORPEFYING REFRAIN: not your turn")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: TORPEFYING REFRAIN: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: TORPEFYING REFRAIN: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: TORPEFYING REFRAIN: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: TORPEFYING REFRAIN: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_pactbound_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: TORPEFYING REFRAIN: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._PACTBOUND_TORPEFYING_REFRAIN_PREFIX,
+            source=stratagem.name or "TORPEFYING REFRAIN",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TORPEFYING REFRAIN: %s can charge after Falling Back this turn%s.",
+            getattr(root, "name", "Unit"),
+            " and can shoot/charge after Advancing or Falling Back" if self._pactbound_mark_for_unit(root) == "SLAANESH" else "",
+        )
+        return True
+
+    def _use_pactbound_eternal_hate(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("ETERNAL HATE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ETERNAL HATE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_pactbound_zealots_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ETERNAL HATE: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: ETERNAL HATE: attacking unit must be an enemy unit")
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: ETERNAL HATE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: ETERNAL HATE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ETERNAL HATE: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: ETERNAL HATE: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_pactbound_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: ETERNAL HATE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._PACTBOUND_ETERNAL_HATE_PREFIX,
+            source=stratagem.name or "ETERNAL HATE",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ETERNAL HATE: %s gains melee fight-on-death until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_chaos_space_marines_cabal_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -6683,6 +7527,12 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_hurons_marauders_at_the_tyrants_command(stratagem, **kwargs)
         if name_u == "ENCIRCLING SURGE":
             return self._use_hurons_marauders_encircling_surge(stratagem, **kwargs)
+        if name_u == "ETERNAL HATE":
+            return self._use_pactbound_eternal_hate(stratagem, **kwargs)
+        if name_u == "EYE OF THE GODS":
+            return self._use_pactbound_eye_of_the_gods(stratagem, **kwargs)
+        if name_u == "FESTERING MIASMA":
+            return self._use_pactbound_festering_miasma(stratagem, **kwargs)
         if name_u == "HORRIFIC INCURSION":
             return self._use_nightmare_hunt_horrific_incursion(stratagem, **kwargs)
         if name_u == "MALICIOUS SURGE":
@@ -6699,6 +7549,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_fellhammer_point_blank_destruction(stratagem, **kwargs)
         if name_u == "PREY ON THE WEAK":
             return self._use_nightmare_hunt_prey_on_the_weak(stratagem, **kwargs)
+        if name_u == "PROFANE ZEAL":
+            return self._use_pactbound_profane_zeal(stratagem, **kwargs)
         if name_u == "REAVERS' FLURRY":
             return self._use_hurons_marauders_reavers_flurry(stratagem, **kwargs)
         if name_u == "RELENTLESS TERROR":
@@ -6719,6 +7571,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_hurons_marauders_seize_the_prize(stratagem, **kwargs)
         if name_u == "SIEGECRAFT":
             return self._use_fellhammer_siegecraft(stratagem, **kwargs)
+        if name_u == "SKINSHIFT":
+            return self._use_pactbound_skinshift(stratagem, **kwargs)
         if name_u == "SPECIMENS FOR THE SPIDER":
             return self._use_creations_of_bile_specimens_for_the_spider(stratagem, **kwargs)
         if name_u == "STEADFAST DETERMINATION":
@@ -6727,4 +7581,6 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_nightmare_hunt_talons_sunk_deep(stratagem, **kwargs)
         if name_u == "TO THE FAVOURED THE SPOILS":
             return self._use_hurons_marauders_to_the_favoured_the_spoils(stratagem, **kwargs)
+        if name_u == "TORPEFYING REFRAIN":
+            return self._use_pactbound_torpefying_refrain(stratagem, **kwargs)
         return None

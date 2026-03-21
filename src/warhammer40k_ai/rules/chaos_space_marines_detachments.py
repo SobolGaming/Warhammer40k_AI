@@ -178,11 +178,21 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _PACTBOUND_EYE_OF_TZEENTCH_SOURCE = "Eye of Tzeentch"
+    _PACTBOUND_ETERNAL_HATE_PREFIX = "pactbound_eternal_hate"
+    _PACTBOUND_ETERNAL_HATE_SOURCE = "Eternal Hate"
+    _PACTBOUND_EYE_OF_THE_GODS_SOURCE = "Eye of the Gods"
+    _PACTBOUND_EYE_OF_THE_GODS_MODEL_BONUS_KEY = "pactbound_eye_of_the_gods_model_bonuses"
+    _PACTBOUND_FESTERING_MIASMA_PREFIX = "pactbound_festering_miasma"
+    _PACTBOUND_FESTERING_MIASMA_SOURCE = "Festering Miasma"
+    _PACTBOUND_PROFANE_ZEAL_PREFIX = "pactbound_profane_zeal"
+    _PACTBOUND_PROFANE_ZEAL_SOURCE = "Profane Zeal"
     _PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE = "Talisman of Burning Blood"
     _PACTBOUND_TALISMAN_DARK_PACT_BONUS_KEY = "enhancement_talisman_of_burning_blood_dark_pact_bonus"
     _PACTBOUND_TALISMAN_DARK_PACT_EXPIRES_PHASE_KEY = "enhancement_talisman_of_burning_blood_dark_pact_expires_phase"
     _PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY = "enhancement_talisman_of_burning_blood_dark_pact_turn"
     _PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY = "enhancement_talisman_of_burning_blood_dark_pact_owner"
+    _PACTBOUND_TORPEFYING_REFRAIN_PREFIX = "pactbound_torpefying_refrain"
+    _PACTBOUND_TORPEFYING_REFRAIN_SOURCE = "Torpefying Refrain"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _CHAOS_CULT_CHOSEN_FOR_GLORY_PREFIX = "chaos_cult_chosen_for_glory"
     _CHAOS_CULT_CHOSEN_FOR_GLORY_SOURCE = "Chosen for Glory"
@@ -5094,6 +5104,74 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         root.special_rules = sr
         self._clear_unit_ability_cache(root)
 
+    def _pactbound_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_pactbound_zealots():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_pactbound_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
     @staticmethod
     def _weapon_profile_matches_attack_type(weapon_profile, attack_type: str) -> bool:
         if weapon_profile is None:
@@ -7703,6 +7781,229 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if dark_pact_choice == "BOTH" or dark_pact_choice == "LETHAL HITS" or dark_pact_choice.startswith("SUSTAINED"):
             return True, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
         return False, ""
+
+    @staticmethod
+    def _pactbound_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def pactbound_profane_zeal_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = target_unit
+        _ = attack_type
+        _ = weapon_profile
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        root, sr = self._pactbound_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._PACTBOUND_PROFANE_ZEAL_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        if self.pactbound_mark_for_unit(root, assign_default=True) != "CHAOS UNDIVIDED":
+            return False, ""
+        return True, self._pactbound_effect_source(
+            sr,
+            prefix=self._PACTBOUND_PROFANE_ZEAL_PREFIX,
+            default=self._PACTBOUND_PROFANE_ZEAL_SOURCE,
+        )
+
+    def pactbound_torpefying_refrain_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._pactbound_effect_state(
+            unit,
+            prefix=self._PACTBOUND_TORPEFYING_REFRAIN_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(self.pactbound_mark_for_unit(root, assign_default=True) == "SLAANESH")
+
+    def pactbound_torpefying_refrain_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        root, _sr = self._pactbound_effect_state(
+            unit,
+            prefix=self._PACTBOUND_TORPEFYING_REFRAIN_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root))
+
+    def pactbound_torpefying_refrain_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        root, _sr = self._pactbound_effect_state(
+            unit,
+            prefix=self._PACTBOUND_TORPEFYING_REFRAIN_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False
+        return bool(self.pactbound_mark_for_unit(root, assign_default=True) == "SLAANESH")
+
+    def pactbound_eternal_hate_fight_on_death_rule(self, unit, *, model=None, game=None) -> Optional[dict]:
+        _ = model
+        root, sr = self._pactbound_effect_state(
+            unit,
+            prefix=self._PACTBOUND_ETERNAL_HATE_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return None
+        threshold = 4
+        if self.pactbound_mark_for_unit(root, assign_default=True) == "KHORNE":
+            threshold = 3
+        return {
+            "threshold": int(max(2, min(6, threshold))),
+            "source": self._pactbound_effect_source(
+                sr,
+                prefix=self._PACTBOUND_ETERNAL_HATE_PREFIX,
+                default=self._PACTBOUND_ETERNAL_HATE_SOURCE,
+            ),
+        }
+
+    def pactbound_eye_of_the_gods_candidate_models(self, unit) -> list:
+        if not self.is_pactbound_zealots() or self.army is None:
+            return []
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return []
+        if not self._unit_is_heretic_astartes(root):
+            return []
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        members = list(members_fn() or []) if callable(members_fn) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            if self._unit_has_keyword(member, "DAMNED"):
+                return []
+            if self._unit_has_keyword(member, "DAEMON"):
+                return []
+            if self._unit_has_keyword(member, "EPIC HERO"):
+                return []
+        models_fn = getattr(root, "get_attached_unit_models", None)
+        models = list(models_fn() or []) if callable(models_fn) else list(getattr(root, "models", []) or [])
+        candidates: list = []
+        for model in list(models or []):
+            if model is None or not self._model_alive(model):
+                continue
+            if not self._model_is_character_for_creations(model):
+                continue
+            candidates.append(model)
+        return sorted(candidates, key=self._character_model_id)
+
+    def _pactbound_eye_of_the_gods_bonus_count(self, model) -> tuple[int, str]:
+        if not self.is_pactbound_zealots() or model is None or not self._model_in_army(model):
+            return 0, ""
+        root = self._unit_root(getattr(model, "parent_unit", None))
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        bonuses = sr.get(self._PACTBOUND_EYE_OF_THE_GODS_MODEL_BONUS_KEY, {})
+        if not isinstance(bonuses, dict):
+            return 0, ""
+        try:
+            bonus = int(bonuses.get(self._character_model_id(model), 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("pactbound_eye_of_the_gods_source", "") or self._PACTBOUND_EYE_OF_THE_GODS_SOURCE).strip()
+        return int(bonus), (source or self._PACTBOUND_EYE_OF_THE_GODS_SOURCE)
+
+    def apply_pactbound_eye_of_the_gods_to_model(self, model, *, source: str = "") -> dict:
+        if not self.is_pactbound_zealots():
+            return {"ok": False, "reason": "Detachment is not Pactbound Zealots."}
+        if model is None or not self._model_in_army(model):
+            return {"ok": False, "reason": "Target model is not in this army."}
+        if not self._model_is_character_for_creations(model):
+            return {"ok": False, "reason": "Target model is not a CHARACTER model."}
+        root = self._unit_root(getattr(model, "parent_unit", None))
+        if root is None:
+            return {"ok": False, "reason": "Target model is not attached to a unit."}
+        if model not in self.pactbound_eye_of_the_gods_candidate_models(root):
+            return {"ok": False, "reason": "Target model is not eligible for Eye of the Gods."}
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        bonuses = dict(updated.get(self._PACTBOUND_EYE_OF_THE_GODS_MODEL_BONUS_KEY, {}) or {})
+        model_id = self._character_model_id(model)
+        current_bonus = 0
+        try:
+            current_bonus = int(bonuses.get(model_id, 0) or 0)
+        except (TypeError, ValueError):
+            current_bonus = 0
+        bonuses[model_id] = int(current_bonus + 1)
+        updated[self._PACTBOUND_EYE_OF_THE_GODS_MODEL_BONUS_KEY] = bonuses
+        updated["pactbound_eye_of_the_gods_source"] = (
+            str(source or self._PACTBOUND_EYE_OF_THE_GODS_SOURCE).strip() or self._PACTBOUND_EYE_OF_THE_GODS_SOURCE
+        )
+
+        try:
+            model._base_movement = int(getattr(model, "_base_movement", 0) or 0) + 1
+            model._movement = int(getattr(model, "_movement", 0) or 0) + 1
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "Failed to update Move characteristic."}
+        try:
+            model._base_toughness = int(getattr(model, "_base_toughness", 0) or 0) + 1
+            model._toughness = int(getattr(model, "_toughness", 0) or 0) + 1
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "Failed to update Toughness characteristic."}
+        try:
+            model._base_wounds = int(getattr(model, "_base_wounds", 0) or 0) + 1
+            model._wounds = int(getattr(model, "_wounds", 0) or 0) + 1
+            base_unmod = getattr(model, "_base_wounds_unmodified", None)
+            if base_unmod is not None:
+                model._base_wounds_unmodified = int(base_unmod or 0) + 1
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "Failed to update Wounds characteristic."}
+
+        root.special_rules = updated
+        try:
+            models_fn = getattr(root, "get_attached_unit_models", None)
+            models = list(models_fn() or []) if callable(models_fn) else list(getattr(root, "models", []) or [])
+            root.starting_total_wounds = sum(int(getattr(entry, "_base_wounds", 0) or 0) for entry in list(models or []))
+        except (TypeError, ValueError):
+            pass
+        self._clear_unit_ability_cache(root)
+        return {
+            "ok": True,
+            "unit_id": self._unit_entity_key(root),
+            "model_id": model_id,
+            "bonus_count": int(bonuses.get(model_id, 0) or 0),
+            "source": str(updated.get("pactbound_eye_of_the_gods_source", "") or self._PACTBOUND_EYE_OF_THE_GODS_SOURCE),
+        }
+
+    def pactbound_eye_of_the_gods_melee_attacks_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = game
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        return self._pactbound_eye_of_the_gods_bonus_count(attacker_model)
+
+    def pactbound_eye_of_the_gods_melee_strength_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = game
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        return self._pactbound_eye_of_the_gods_bonus_count(attacker_model)
+
+    def pactbound_eye_of_the_gods_melee_damage_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = game
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        return self._pactbound_eye_of_the_gods_bonus_count(attacker_model)
 
     def pactbound_zealots_leader_marks_match(self, leader, bodyguard) -> bool:
         if not self.is_pactbound_zealots():

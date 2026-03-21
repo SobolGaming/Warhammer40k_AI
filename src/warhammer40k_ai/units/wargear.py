@@ -6541,6 +6541,26 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"{source_name} +{int(bonus)}A (melee)"
                     )
+            pactbound_bonus_fn = (
+                getattr(mgr, "pactbound_eye_of_the_gods_melee_attacks_bonus", None)
+                if mgr is not None
+                else None
+            )
+            if callable(pactbound_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = pactbound_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Eye of the Gods").strip() or "Eye of the Gods"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="stratagem:eye_of_the_gods_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (bearer melee)"
+                    )
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
                 set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
@@ -17036,6 +17056,20 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"{source_name} +{int(s_bonus)}S (melee)"
                     )
+            pactbound_bonus_fn = (
+                getattr(csm_mgr, "pactbound_eye_of_the_gods_melee_strength_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(pactbound_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                s_bonus, source = pactbound_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(s_bonus or 0):
+                    strength = strength + int(s_bonus)
+                    source_name = str(source or "Eye of the Gods").strip() or "Eye of the Gods"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"{source_name} +{int(s_bonus)}S (bearer melee)"
+                    )
         # Emperor's Children: Sensational Performance (+1 Strength to melee weapons this phase).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -19437,6 +19471,28 @@ class WargearProfile:
                 )
                 if bool(reroll_full):
                     source_name = str(source or "Chosen for Glory").strip() or "Chosen for Glory"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "pactbound_profane_zeal_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Profane Zeal").strip() or "Profane Zeal"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
@@ -24332,6 +24388,36 @@ class WargearProfile:
                         )
                         damage_result['special_effects'].append(
                             f"{source_name} +{int(paragon_bonus)}D (disembarked bearer melee)"
+                        )
+            except Exception:
+                pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                pactbound_bonus_fn = (
+                    getattr(csm_mgr, "pactbound_eye_of_the_gods_melee_damage_bonus", None)
+                    if csm_mgr is not None
+                    else None
+                )
+                if callable(pactbound_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = pactbound_bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(bonus or 0):
+                        source_name = str(source or "Eye of the Gods").strip() or "Eye of the Gods"
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source="stratagem:eye_of_the_gods_damage_add",
+                            )
+                        )
+                        damage_result['special_effects'].append(
+                            f"{source_name} +{int(bonus)}D (bearer melee)"
                         )
             except Exception:
                 pass

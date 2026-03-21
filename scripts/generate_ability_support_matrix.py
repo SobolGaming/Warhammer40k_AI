@@ -20997,6 +20997,42 @@ def _stratagem_support(
             "End of opponent Movement phase: selected HERETIC ASTARTES INFANTRY unit not within Engagement Range can declare an out-of-turn charge against one enemy unit within 6\" that Fell Back this turn, and does not gain the Charge bonus.",
             name_u,
         )
+    if stratagem_id == "000008358002":
+        return (
+            "Implemented",
+            "Fight phase reaction after a friendly HERETIC ASTARTES CHARACTER unit destroys an enemy unit: one eligible CHARACTER model in that unit gains +1 Move, Toughness and Wounds, and its melee weapons gain +1 Attacks, Strength and Damage for the rest of the battle.",
+            name_u,
+        )
+    if stratagem_id == "000008358003":
+        return (
+            "Implemented",
+            "Fight phase reaction after an enemy selects targets: selected HERETIC ASTARTES unit gains melee fight-on-death until end of phase, succeeding on a 4+ or 3+ if it is a KHORNE unit.",
+            name_u,
+        )
+    if stratagem_id == "000008358004":
+        return (
+            "Implemented",
+            "Shooting or Fight phase: selected HERETIC ASTARTES CHAOS UNDIVIDED unit that has not yet been selected to shoot or fight re-rolls Wound rolls until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000008358005":
+        return (
+            "Implemented",
+            "Your Command phase: selected HERETIC ASTARTES unit heals one model for up to 3 wounds and, if it is a TZEENTCH unit below Starting Strength, returns one destroyed non-CHARACTER model with full wounds.",
+            name_u,
+        )
+    if stratagem_id == "000008358006":
+        return (
+            "Implemented",
+            "Your Movement phase: selected HERETIC ASTARTES unit can charge after Falling Back this turn, and if it is a SLAANESH unit it can also shoot and charge after Advancing or Falling Back.",
+            name_u,
+        )
+    if stratagem_id == "000008358007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy selects targets: selected HERETIC ASTARTES unit gains Stealth until end of phase and, if it is a NURGLE unit, can only be targeted by ranged attacks from within 18\".",
+            name_u,
+        )
     if stratagem_id == "000010642002":
         return (
             "Implemented",

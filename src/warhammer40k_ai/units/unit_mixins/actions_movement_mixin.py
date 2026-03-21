@@ -17998,6 +17998,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(nightmare_apply_fn(self, profile=profile, game=game)):
                     return True
+            pactbound_apply_fn = (
+                getattr(mgr, "pactbound_torpefying_refrain_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(pactbound_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(pactbound_apply_fn(self, profile=profile, game=game)):
+                    return True
             twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_shoot_after_fall_back", None) if mgr is not None else None
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -18552,6 +18561,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(nightmare_apply_fn(self, game=game)):
                     return True
+            pactbound_apply_fn = (
+                getattr(mgr, "pactbound_torpefying_refrain_can_charge_after_advance", None)
+                if mgr is not None
+                else None
+            )
+            if callable(pactbound_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(pactbound_apply_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -18622,6 +18640,15 @@ class ActionsMovementMixin:
             if callable(nightmare_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(nightmare_apply_fn(self, game=game)):
+                    return True
+            pactbound_apply_fn = (
+                getattr(mgr, "pactbound_torpefying_refrain_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(pactbound_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(pactbound_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

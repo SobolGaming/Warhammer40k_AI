@@ -1798,6 +1798,21 @@ class KeywordsDetachmentsMixin:
                 if 2 <= threshold <= 6:
                     source = str(csm_rule.get("source", "") or "Masters Are Watching").strip() or "Masters Are Watching"
                     return {"threshold": int(threshold), "source": source}
+        pactbound_rule_fn = (
+            getattr(csm_mgr, "pactbound_eternal_hate_fight_on_death_rule", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(pactbound_rule_fn):
+            pactbound_rule = pactbound_rule_fn(self, model=model, game=game)
+            if isinstance(pactbound_rule, dict):
+                try:
+                    threshold = int(pactbound_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(pactbound_rule.get("source", "") or "Eternal Hate").strip() or "Eternal Hate"
+                    return {"threshold": int(threshold), "source": source}
 
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
@@ -16742,6 +16757,21 @@ class KeywordsDetachmentsMixin:
                     reroll_full = True
                     source_name = str(source or "Specimens for the Spider").strip() or "Specimens for the Spider"
                     reroll_full_reasons.append(f"{source_name}: re-roll Wound roll vs CHARACTER targets")
+            pactbound_reroll_fn = (
+                getattr(csm_mgr, "pactbound_profane_zeal_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(pactbound_reroll_fn):
+                applies, source = pactbound_reroll_fn(
+                    model,
+                    target_unit=target,
+                    attack_type=str(attack_type or "any"),
+                )
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Profane Zeal").strip() or "Profane Zeal"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

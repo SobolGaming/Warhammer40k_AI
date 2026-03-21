@@ -2474,6 +2474,106 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008358002": StratagemToolDescriptor(
+        stratagem_id="000008358002",
+        name="Eye of the Gods",
+        timing="fight_phase_after_destroying_enemy_unit",
+        target="heretic_astartes_character_model_in_character_unit_that_destroyed_enemy_unit",
+        duration="until_end_of_battle",
+        effect="permanent_characteristic_and_melee_weapon_bonus_after_destroying_enemy_unit",
+        cp_cost=1,
+        effect_params={
+            "movement_bonus": 1,
+            "toughness_bonus": 1,
+            "wounds_bonus": 1,
+            "melee_attacks_bonus": 1,
+            "melee_strength_bonus": 1,
+            "melee_damage_bonus": 1,
+            "excluded_keywords_any": ["DAMNED", "DAEMON", "EPIC HERO"],
+        },
+    ),
+    "000008358003": StratagemToolDescriptor(
+        stratagem_id="000008358003",
+        name="Eternal Hate",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={
+            "base_threshold": 4,
+            "khorne_threshold_modifier": -1,
+            "attack_type": "melee",
+        },
+    ),
+    "000008358004": StratagemToolDescriptor(
+        stratagem_id="000008358004",
+        name="Profane Zeal",
+        timing="shooting_or_fight_phase_before_selected_to_shoot_or_fight",
+        target="heretic_astartes_chaos_undivided_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="wound_reroll_full",
+        cp_cost=1,
+        effect_params={
+            "reroll_wound_full": True,
+            "required_keywords_all": ["HERETIC ASTARTES", "CHAOS UNDIVIDED"],
+        },
+    ),
+    "000008358005": StratagemToolDescriptor(
+        stratagem_id="000008358005",
+        name="Skinshift",
+        timing="your_command_phase",
+        target="heretic_astartes_unit",
+        duration="immediate",
+        effect="heal_and_conditional_return_destroyed_model",
+        cp_cost=1,
+        effect_params={
+            "heal_wounds": 3,
+            "return_model_count": 1,
+            "return_model_full_wounds": True,
+            "return_requires_mark": "TZEENTCH",
+            "return_requires_below_starting_strength": True,
+            "return_excluded_keywords_any": ["CHARACTER"],
+        },
+    ),
+    "000008358006": StratagemToolDescriptor(
+        stratagem_id="000008358006",
+        name="Torpefying Refrain",
+        timing="your_movement_phase",
+        target="heretic_astartes_unit",
+        duration="until_end_of_turn",
+        effect="charge_after_fall_back_and_conditional_shoot_charge_after_advance_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "charge_after_fall_back": True,
+            "conditional_mark": "SLAANESH",
+            "conditional_shoot_after_advance": True,
+            "conditional_shoot_after_fall_back": True,
+            "conditional_charge_after_advance": True,
+            "conditional_charge_after_fall_back": True,
+        },
+    ),
+    "000008358007": StratagemToolDescriptor(
+        stratagem_id="000008358007",
+        name="Festering Miasma",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="grant_stealth_and_conditional_ranged_targeting_cap",
+        cp_cost=1,
+        effect_params={
+            "grant_stealth": True,
+            "conditional_mark": "NURGLE",
+            "conditional_targeting_range": 18,
+        },
+    ),
+}
+
+_PACTBOUND_ZEALOTS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NIGHTMARE_HUNT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010642002": StratagemToolDescriptor(
         stratagem_id="000010642002",
@@ -7823,6 +7923,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NIGHTMARE_HUNT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8076,6 +8179,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _PACTBOUND_ZEALOTS_STRATAGEM_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
