@@ -8579,6 +8579,22 @@ class ActionsMovementMixin:
             pass
         get_parent_army = getattr(root, "get_parent_army", None)
         army = get_parent_army() if callable(get_parent_army) else None
+        try:
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(csm_mgr, "renegade_warband_vengeful_destruction_wound_bonus", None) if csm_mgr is not None else None
+            if callable(bonus_fn) and attacker_model is not None and target is not None:
+                bonus, source = bonus_fn(
+                    attacker_model,
+                    target,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if int(bonus or 0):
+                    source_name = str(source or "Vengeful Destruction").strip() or "Vengeful Destruction"
+                    mods["wound"] += int(bonus)
+                    wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+        except Exception:
+            pass
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         bonus_fn = getattr(ac_mgr, "oblivion_knight_wound_bonus", None) if ac_mgr is not None else None
         if callable(bonus_fn):

@@ -146,6 +146,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
+    _RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX = "renegade_warband_corrupted_munitions"
+    _RENEGADE_WARBAND_CORRUPTED_MUNITIONS_SOURCE = "Corrupted Munitions"
+    _RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX = "renegade_warband_vengeful_destruction"
+    _RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_SOURCE = "Vengeful Destruction"
+    _RENEGADE_WARBAND_UNDYING_HATRED_SOURCE = "Undying Hatred"
     _RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE = "Despot's Claim"
     _RENEGADE_RAIDERS_DREAD_REAVER_SOURCE = "Dread Reaver"
     _RENEGADE_RAIDERS_MARK_OF_THE_HOUND_SOURCE = "Mark of the Hound"
@@ -3481,6 +3486,146 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def twisted_doctrine_can_charge_after_advance(self, unit, *, game=None) -> bool:
         _fall_back_mode, advance_mode = self._twisted_doctrine_active_state(unit, game=game)
         return bool(advance_mode)
+
+    @staticmethod
+    def _renegade_warband_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or default
+
+    def _renegade_warband_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_renegade_warband():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_renegade_warband_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    def renegade_warband_corrupted_munitions_ranged_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        root, sr = self._renegade_warband_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX}_ap_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._renegade_warband_effect_source(
+            sr,
+            prefix=self._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX,
+            default=self._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_SOURCE,
+        )
+
+    def renegade_warband_vengeful_destruction_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if attacker_model is None or target_unit is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        root, sr = self._renegade_warband_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX,
+            game=game,
+        )
+        if root is None:
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        if not vendetta_target_id:
+            return 0, ""
+        if str(get_entity_id(target_root) or "").strip() != vendetta_target_id:
+            return 0, ""
+        try:
+            bonus = int(sr.get(f"{self._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX}_wound_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._renegade_warband_effect_source(
+            sr,
+            prefix=self._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX,
+            default=self._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_SOURCE,
+        )
 
     @staticmethod
     def _normalize_name(value: str) -> str:

@@ -2010,6 +2010,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
         if "TO THE FAVOURED THE SPOILS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
+        if "REAVERS' REACTION" in names or "REAVERS’ REACTION" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_renegade_warband)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -2090,6 +2092,9 @@ class StratagemManager(
             "STEADFAST DETERMINATION",
             "TO THE FAVOURED THE SPOILS",
             "FESTERING MIASMA",
+            "CORRUPTED MUNITIONS",
+            "NEVER OUTGUNNED",
+            "VENGEFUL DESTRUCTION",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2143,6 +2148,9 @@ class StratagemManager(
             "SHIELD NODES",
             "STRENGTH IN UNITY",
             "ETERNAL HATE",
+            "NEVER OUTGUNNED",
+            "VENGEFUL DESTRUCTION",
+            "UNDYING HATRED",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -6489,6 +6497,7 @@ class StratagemManager(
             self._queue_hurons_marauders_phase_start_reactions(player=player, phase=phase)
             self._queue_nightmare_hunt_phase_start_reactions(player=player, phase=phase)
             self._queue_pactbound_phase_start_reactions(player=player, phase=phase)
+            self._queue_renegade_warband_phase_start_reactions(player=player, phase=phase)
             self._queue_renegade_raiders_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -10364,6 +10373,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_renegade_warband(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_renegade_warband_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -10562,6 +10580,10 @@ class StratagemManager(
                     target_units=list(target_units or []),
                 )
                 self._queue_space_marines_lions_blade_shooting_targets_selected_reactions(
+                    attacking_unit=attacking_unit,
+                    target_units=list(target_units or []),
+                )
+                self._queue_renegade_warband_shooting_target_reactions(
                     attacking_unit=attacking_unit,
                     target_units=list(target_units or []),
                 )
@@ -11663,6 +11685,13 @@ class StratagemManager(
             raise
         try:
             self._queue_pactbound_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_renegade_warband_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

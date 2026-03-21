@@ -21069,6 +21069,42 @@ def _stratagem_support(
             "Your Charge phase: selected HERETIC ASTARTES INFANTRY or MOUNTED unit can charge after Advancing this phase and gains +1 to Charge rolls against targets within range of an objective marker.",
             name_u,
         )
+    if stratagem_id == "000010695002":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected HERETIC ASTARTES unit that has just been selected to shoot or fight chooses Lethal Hits or Sustained Hits 1 for its matching weapons until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010695003":
+        return (
+            "Implemented",
+            "Your Shooting phase or the Fight phase: selected HERETIC ASTARTES INFANTRY excluding DAMNED, or MOUNTED, unit that has not yet shot or fought gains +1 to wound against the active Vendetta target until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010695004":
+        return (
+            "Implemented",
+            "Fight phase reaction after an enemy selects targets: selected HERETIC ASTARTES unit gains melee fight-on-death on 4+ after the attacker finishes its attacks this phase.",
+            name_u,
+        )
+    if stratagem_id == "000010695005":
+        return (
+            "Implemented",
+            "Your Movement phase: selected HERETIC ASTARTES unit within range of a controlled objective makes that objective sticky until the opponent has greater control at the end of a phase.",
+            name_u,
+        )
+    if stratagem_id == "000010695006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected HERETIC ASTARTES unit that has just been selected to shoot improves AP by 1 on ranged attacks until end of phase.",
+            name_u,
+        )
+    if stratagem_id == "000010695007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected HERETIC ASTARTES non-MONSTER/non-VEHICLE unit that was hit can make a D6 reactive Normal move.",
+            name_u,
+        )
     if stratagem_id == "000010642002":
         return (
             "Implemented",

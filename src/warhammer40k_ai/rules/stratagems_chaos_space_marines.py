@@ -130,6 +130,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_pactbound_zealots", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_renegade_warband_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_renegade_warband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_renegade_raiders_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_renegade_raiders", None) if mgr is not None else None
@@ -865,6 +870,201 @@ class ChaosSpaceMarinesStratagemMixin:
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
+
+    def _renegade_warband_targetable_units(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_infantry_or_mounted: bool = False,
+        exclude_damned: bool = False,
+        exclude_monster_vehicle: bool = False,
+    ) -> list[Any]:
+        if not self._is_renegade_warband_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_infantry_or_mounted and not (
+                self._is_heretic_astartes_infantry(root) or self._is_heretic_astartes_mounted(root)
+            ):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if exclude_monster_vehicle and (
+                self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE")
+            ):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _renegade_warband_controlled_objective_candidates(self, unit: Any) -> list[Any]:
+        root = self._csm_root(unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not bool(is_within(location)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
+
+    def _renegade_warband_selected_targets_include_vendetta(self, *, target_units: list[Any]) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        vendetta_target_id = str(getattr(mgr, "renegade_warband_vendetta_target_unit_id", "") or "").strip()
+        if not vendetta_target_id:
+            return False
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            if str(get_entity_id(root) or "").strip() == vendetta_target_id:
+                return True
+        return False
+
+    @staticmethod
+    def _renegade_warband_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "")
+        for candidate in list(candidates or []):
+            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
+            if candidate_root is None:
+                continue
+            cid = str(get_entity_id(candidate_root) or "")
+            if rid and cid and rid == cid:
+                return True
+            if candidate_root is root:
+                return True
+        return False
+
+    @staticmethod
+    def _renegade_warband_never_outgunned_choice_key(choice_payload: Any) -> str:
+        text = str(choice_payload or "").strip().upper().replace(" ", "_")
+        if text == "LETHAL_HITS":
+            return "LETHAL_HITS"
+        if text in {"SUSTAINED_HITS", "SUSTAINED_HITS_1"}:
+            return "SUSTAINED_HITS_1"
+        return ""
+
+    @classmethod
+    def _renegade_warband_never_outgunned_choice_label(cls, choice_key: str) -> str:
+        choice = cls._renegade_warband_never_outgunned_choice_key(choice_key)
+        if choice == "LETHAL_HITS":
+            return "Lethal Hits"
+        if choice == "SUSTAINED_HITS_1":
+            return "Sustained Hits 1"
+        return ""
+
+    def apply_renegade_warband_never_outgunned(
+        self,
+        unit: Any,
+        *,
+        choice_key: str,
+        phase_name: str,
+        source: str = "Never Outgunned",
+    ) -> dict:
+        root = self._csm_root(unit)
+        choice = self._renegade_warband_never_outgunned_choice_key(choice_key)
+        phase_key = str(phase_name or "").strip().lower()
+        if root is None:
+            return {"ok": False, "reason": "Unit not found."}
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return {"ok": False, "reason": "Choice is invalid."}
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return {"ok": False, "reason": "Phase is invalid."}
+
+        keyword = "LETHAL HITS" if choice == "LETHAL_HITS" else "SUSTAINED HITS 1"
+        attack_type = "ranged" if phase_key == "shooting phase" else "melee"
+        expires_phase = "SHOOTING_PHASE" if attack_type == "ranged" else "FIGHT_PHASE"
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+
+        applied = False
+        for model in list(models or []):
+            if model is None:
+                continue
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                attack_check = getattr(wargear, "is_ranged" if attack_type == "ranged" else "is_melee", None)
+                if not callable(attack_check) or not bool(attack_check()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"renegade_warband_never_outgunned:{choice}:{attack_type}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=[keyword],
+                        source=str(source or "Never Outgunned").strip() or "Never Outgunned",
+                        expires_phase=expires_phase,
+                        attack_type=attack_type,
+                    )
+                    applied = True
+        if not applied:
+            return {"ok": False, "reason": "No eligible weapons found."}
+        return {
+            "ok": True,
+            "choice_key": choice,
+            "choice_name": keyword,
+            "keyword": keyword,
+            "attack_type": attack_type,
+            "phase_name": "Shooting phase" if attack_type == "ranged" else "Fight phase",
+        }
 
     def _renegade_raiders_targetable_units(
         self,
@@ -2848,6 +3048,304 @@ class ChaosSpaceMarinesStratagemMixin:
         if len(character_models) == 1:
             payload["model"] = character_models[0]
             payload["target_model"] = character_models[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_renegade_warband_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_renegade_warband_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE" or player is not self.player:
+            return
+
+        stratagem = self.get_by_name("RENEGADE CLAIM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._cabal_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+        ):
+            return
+
+        candidates: list[Any] = []
+        objective_map: dict[str, list[Any]] = {}
+        for root in list(self._renegade_warband_targetable_units() or []):
+            objectives = self._renegade_warband_controlled_objective_candidates(root)
+            if not objectives:
+                continue
+            candidates.append(root)
+            objective_map[self._csm_sort_key(root)] = list(objectives)
+        if not candidates:
+            return
+
+        payload: dict[str, Any] = {
+            "event": "phase_start",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+            "objective_candidates_by_unit": objective_map,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            objective_candidates = list(objective_map.get(self._csm_sort_key(candidates[0])) or [])
+            if objective_candidates:
+                payload["objective_candidates"] = objective_candidates
+                if len(objective_candidates) == 1:
+                    payload["objective"] = objective_candidates[0]
+                    payload["objective_marker"] = objective_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_renegade_warband_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_renegade_warband_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or not self._csm_owned_by_player(attacker_root, self.player):
+            return
+        if not self._csm_is_alive(attacker_root) or not self._csm_is_on_battlefield(attacker_root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(attacker_root):
+            return
+        if not self._is_heretic_astartes_unit(attacker_root):
+            return
+
+        def queue_selected_stratagem(stratagem_name: str) -> None:
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                    continue
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                    continue
+                if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                    return
+            self._queue_reaction(
+                {
+                    "event": "shooting_targets_selected",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "attacking_unit": attacker_root,
+                    "unit": attacker_root,
+                    "target_unit": attacker_root,
+                    "target_units": list(target_units or []),
+                    "candidates": [attacker_root],
+                },
+                use_timer=False,
+            )
+
+        queue_selected_stratagem("CORRUPTED MUNITIONS")
+        queue_selected_stratagem("NEVER OUTGUNNED")
+        if (
+            (self._is_heretic_astartes_infantry(attacker_root) or self._is_heretic_astartes_mounted(attacker_root))
+            and not self._is_damned_unit(attacker_root)
+            and self._renegade_warband_selected_targets_include_vendetta(target_units=list(target_units or []))
+        ):
+            queue_selected_stratagem("VENGEFUL DESTRUCTION")
+
+    def _queue_renegade_warband_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Optional[dict[Any, Any]] = None,
+    ) -> None:
+        if not self._is_renegade_warband_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._csm_root(attacker_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+
+        stratagem = self.get_by_name("REAVERS' REACTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "REAVERS' REACTION":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        if isinstance(hits_by_target, dict):
+            for raw_target, hits in list(hits_by_target.items()):
+                try:
+                    hit_count = int(hits or 0)
+                except (TypeError, ValueError):
+                    hit_count = 0
+                if hit_count <= 0:
+                    continue
+                root = self._csm_root(raw_target)
+                if root is None:
+                    continue
+                uid = self._csm_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if not self._csm_owned_by_player(root, self.player):
+                    continue
+                if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                    continue
+                if self._unit_cannot_be_target_of_stratagem(root):
+                    continue
+                if not self._is_heretic_astartes_unit(root):
+                    continue
+                if self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE"):
+                    continue
+                candidates.append(root)
+        candidates = sorted(candidates, key=self._csm_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_renegade_warband_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_renegade_warband_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None:
+            return
+
+        if self._csm_owned_by_player(attacker_root, self.player):
+            if not self._csm_is_alive(attacker_root) or not self._csm_is_on_battlefield(attacker_root):
+                return
+            if self._unit_cannot_be_target_of_stratagem(attacker_root):
+                return
+            if not self._is_heretic_astartes_unit(attacker_root):
+                return
+
+            def queue_selected_stratagem(stratagem_name: str) -> None:
+                stratagem = self.get_by_name(stratagem_name)
+                if stratagem is None:
+                    return
+                if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                    return
+                if str(stratagem.name or "").strip().upper() in set(
+                    getattr(self, "_used_stratagems_this_phase", set()) or set()
+                ):
+                    return
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                        continue
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                        continue
+                    if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                        return
+                self._queue_reaction(
+                    {
+                        "event": "fight_targets_selected",
+                        "phase_name": "Fight phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "attacking_unit": attacker_root,
+                        "unit": attacker_root,
+                        "target_unit": attacker_root,
+                        "target_units": list(target_units or []),
+                        "candidates": [attacker_root],
+                    },
+                    use_timer=False,
+                )
+
+            queue_selected_stratagem("NEVER OUTGUNNED")
+            if (
+                (self._is_heretic_astartes_infantry(attacker_root) or self._is_heretic_astartes_mounted(attacker_root))
+                and not self._is_damned_unit(attacker_root)
+                and self._renegade_warband_selected_targets_include_vendetta(target_units=list(target_units or []))
+            ):
+                queue_selected_stratagem("VENGEFUL DESTRUCTION")
+            return
+
+        stratagem = self.get_by_name("UNDYING HATRED")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._csm_sort_key)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "UNDYING HATRED":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_renegade_raiders_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
@@ -7886,6 +8384,516 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_renegade_warband_corrupted_munitions(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("CORRUPTED MUNITIONS", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CORRUPTED MUNITIONS: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CORRUPTED MUNITIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CORRUPTED MUNITIONS: not your Shooting phase")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CORRUPTED MUNITIONS: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: CORRUPTED MUNITIONS: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CORRUPTED MUNITIONS: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: CORRUPTED MUNITIONS: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_renegade_warband_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: CORRUPTED MUNITIONS: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX,
+            source=stratagem.name or "CORRUPTED MUNITIONS",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._RENEGADE_WARBAND_CORRUPTED_MUNITIONS_PREFIX}_ap_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CORRUPTED MUNITIONS: %s improves the AP of ranged attacks by 1 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_renegade_warband_never_outgunned(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("NEVER OUTGUNNED", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: NEVER OUTGUNNED: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: NEVER OUTGUNNED: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: NEVER OUTGUNNED: not your Shooting phase")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: NEVER OUTGUNNED: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: NEVER OUTGUNNED: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: NEVER OUTGUNNED: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: NEVER OUTGUNNED: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        choice_key = self._renegade_warband_never_outgunned_choice_key(
+            kwargs.get("choice_key") or kwargs.get("key") or kwargs.get("choice") or kwargs.get("selection")
+        )
+        if choice_key:
+            outcome = self.apply_renegade_warband_never_outgunned(
+                root,
+                choice_key=choice_key,
+                phase_name=phase_name,
+                source=stratagem.name or "NEVER OUTGUNNED",
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: NEVER OUTGUNNED: invalid choice")
+                return False
+            self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: NEVER OUTGUNNED: %s gains [%s] on %s weapons this phase.",
+                getattr(root, "name", "Unit"),
+                str(outcome.get("keyword", choice_key) or choice_key),
+                str(outcome.get("attack_type", "") or "selected"),
+            )
+            return True
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "renegade_warband_never_outgunned_choice":
+                    continue
+                if str(ctx.get("unit_id", "") or "") == str(get_entity_id(root) or ""):
+                    return True
+
+        choice_keys = ["LETHAL_HITS", "SUSTAINED_HITS_1"]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Never Outgunned: select a weapon keyword.",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    self._renegade_warband_never_outgunned_choice_label(choice) or choice,
+                    payload={
+                        "choice_key": choice,
+                        "unit_id": get_entity_id(root),
+                    },
+                )
+                for choice in choice_keys
+            ],
+            context={
+                "ability": "renegade_warband_never_outgunned_choice",
+                "ability_name": str(stratagem.name or "Never Outgunned"),
+                "unit_id": get_entity_id(root),
+                "army_id": get_entity_id(getattr(self.player, "army", None)),
+                "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn_owner_id": str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""),
+                "allowed_choice_keys": list(choice_keys),
+                "optional": False,
+            },
+        )
+        self.game.request_decision(request)
+        logger.info(
+            "INFO: NEVER OUTGUNNED: %s must select Lethal Hits or Sustained Hits 1.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_renegade_warband_vengeful_destruction(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("VENGEFUL DESTRUCTION", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: VENGEFUL DESTRUCTION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: VENGEFUL DESTRUCTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: VENGEFUL DESTRUCTION: not your Shooting phase")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: target cannot be selected")
+            return False
+        if not (self._is_heretic_astartes_infantry(root) or self._is_heretic_astartes_mounted(root)):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: target must be HERETIC ASTARTES INFANTRY or MOUNTED")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: DAMNED units cannot be targeted")
+            return False
+        mgr = self._get_chaos_space_marines_mgr()
+        if not str(getattr(mgr, "renegade_warband_vendetta_target_unit_id", "") or "").strip():
+            logger.error("ERROR: VENGEFUL DESTRUCTION: there is no active Vendetta target")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        set_state = getattr(mgr, "_set_renegade_warband_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: VENGEFUL DESTRUCTION: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX,
+            source=stratagem.name or "VENGEFUL DESTRUCTION",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._RENEGADE_WARBAND_VENGEFUL_DESTRUCTION_PREFIX}_wound_bonus": 1},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VENGEFUL DESTRUCTION: %s gains +1 to wound against the Vendetta target this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_renegade_warband_reavers_reaction(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        pending = self._csm_find_pending_reaction("REAVERS' REACTION", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REAVERS' REACTION: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: REAVERS' REACTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: REAVERS' REACTION: not opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: REAVERS' REACTION: attacking unit must be enemy")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REAVERS' REACTION: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: REAVERS' REACTION: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: REAVERS' REACTION: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: REAVERS' REACTION: target must be HERETIC ASTARTES")
+            return False
+        if self._csm_has_keyword(root, "MONSTER") or self._csm_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: REAVERS' REACTION: target cannot be a MONSTER or VEHICLE")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        try:
+            move_max = int(dice_module.get_roll("D6") or 0)
+        except Exception:
+            move_max = 0
+        if move_max <= 0:
+            logger.error("ERROR: REAVERS' REACTION: invalid movement distance")
+            return False
+        req = None
+        if self.game is not None:
+            req = self.game._queue_reactive_move_movement_decision(
+                player=self.player,
+                unit=root,
+                max_distance=int(move_max),
+                kind="renegade_warband_reavers_reaction",
+                movement_type="reactive",
+                source=stratagem.name,
+                attacker_unit=attacker_root,
+            )
+        if req is None:
+            logger.error("ERROR: REAVERS' REACTION: failed to queue movement decision")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REAVERS' REACTION: %s can make a Normal move of up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(move_max),
+        )
+        return True
+
+    def _use_renegade_warband_renegade_claim(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        objective_candidates_by_unit = dict(kwargs.get("objective_candidates_by_unit") or {})
+        pending = self._csm_find_pending_reaction("RENEGADE CLAIM", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not objective_candidates_by_unit:
+                objective_candidates_by_unit = dict(pending.get("objective_candidates_by_unit") or {})
+            if not objective_candidates:
+                objective_candidates = list(pending.get("objective_candidates") or [])
+            if objective is None:
+                objective = pending.get("objective") or pending.get("objective_marker")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RENEGADE CLAIM: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RENEGADE CLAIM: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RENEGADE CLAIM: not your Movement phase")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: RENEGADE CLAIM: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: RENEGADE CLAIM: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: RENEGADE CLAIM: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: RENEGADE CLAIM: target must be HERETIC ASTARTES")
+            return False
+
+        if len(candidates) == 1 and not objective_candidates and objective_candidates_by_unit:
+            objective_candidates = list(objective_candidates_by_unit.get(self._csm_sort_key(root)) or [])
+        if not objective_candidates:
+            objective_candidates = self._renegade_warband_controlled_objective_candidates(root)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: RENEGADE CLAIM: no objective marker selected")
+            return False
+
+        selected_objective = None
+        selected_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+        selected_location = getattr(objective, "location", None)
+        selected_location_id = str(get_entity_id(selected_location) or "") if selected_location is not None else ""
+        for candidate in list(objective_candidates or []):
+            candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+            candidate_location = getattr(candidate, "location", None)
+            candidate_location_id = str(get_entity_id(candidate_location) or "") if candidate_location is not None else ""
+            if objective is candidate:
+                selected_objective = candidate
+                break
+            if selected_id and candidate_id and selected_id == candidate_id:
+                selected_objective = candidate
+                break
+            if selected_location_id and candidate_location_id and selected_location_id == candidate_location_id:
+                selected_objective = candidate
+                break
+        if selected_objective is None:
+            logger.error("ERROR: RENEGADE CLAIM: selected objective marker is not eligible")
+            return False
+        objective_location = getattr(selected_objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: RENEGADE CLAIM: objective marker location unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        if hasattr(objective_location, "set_sticky_control"):
+            objective_location.set_sticky_control(self.player, source="renegade_warband_renegade_claim")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "renegade_warband_renegade_claim"
+            objective_location.controlling_player = self.player
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: RENEGADE CLAIM: selected objective remains under your control until broken.")
+        return True
+
+    def _use_renegade_warband_undying_hatred(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        pending = self._csm_find_pending_reaction("UNDYING HATRED", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNDYING HATRED: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_renegade_warband_detachment():
+            return False
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: UNDYING HATRED: wrong phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: UNDYING HATRED: attacking unit must be enemy")
+            return False
+        if candidates and not self._renegade_warband_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNDYING HATRED: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: UNDYING HATRED: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNDYING HATRED: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: UNDYING HATRED: target must be HERETIC ASTARTES")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["renegade_warband_undying_hatred_active"] = True
+        sr["renegade_warband_undying_hatred_threshold"] = 4
+        sr["renegade_warband_undying_hatred_expires_phase"] = "FIGHT_PHASE"
+        sr["renegade_warband_undying_hatred_source"] = str(stratagem.name or "UNDYING HATRED")
+        sr["renegade_warband_undying_hatred_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr["renegade_warband_undying_hatred_turn_owner"] = str(
+            getattr(current_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        root.special_rules = sr
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNDYING HATRED: %s gains melee fight-on-death on 4+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_renegade_raiders_warpcharged_engines(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -8332,6 +9340,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_fellhammer_brutal_attrition(stratagem, **kwargs)
         if name_u == "COILS OF DECEPTION":
             return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
+        if name_u == "CORRUPTED MUNITIONS":
+            return self._use_renegade_warband_corrupted_munitions(stratagem, **kwargs)
         if name_u == "DEPTHLESS CRUELTY":
             return self._use_dread_talons_depthless_cruelty(stratagem, **kwargs)
         if name_u == "DETONATOR":
@@ -8360,6 +9370,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_nightmare_hunt_horrific_incursion(stratagem, **kwargs)
         if name_u == "MALICIOUS SURGE":
             return self._use_nightmare_hunt_malicious_surge(stratagem, **kwargs)
+        if name_u == "NEVER OUTGUNNED":
+            return self._use_renegade_warband_never_outgunned(stratagem, **kwargs)
         if name_u == "PERSISTENT ASSAILANTS":
             return self._use_fellhammer_persistent_assailants(stratagem, **kwargs)
         if name_u == "PICK THEM OFF":
@@ -8376,6 +9388,10 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_nightmare_hunt_prey_on_the_weak(stratagem, **kwargs)
         if name_u == "PROFANE ZEAL":
             return self._use_pactbound_profane_zeal(stratagem, **kwargs)
+        if name_u == "REAVERS' REACTION":
+            return self._use_renegade_warband_reavers_reaction(stratagem, **kwargs)
+        if name_u == "RENEGADE CLAIM":
+            return self._use_renegade_warband_renegade_claim(stratagem, **kwargs)
         if name_u == "REAVERS' HASTE":
             return self._use_renegade_raiders_reavers_haste(stratagem, **kwargs)
         if name_u == "REAVERS' FLURRY":
@@ -8414,8 +9430,12 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_hurons_marauders_to_the_favoured_the_spoils(stratagem, **kwargs)
         if name_u == "TORPEFYING REFRAIN":
             return self._use_pactbound_torpefying_refrain(stratagem, **kwargs)
+        if name_u == "UNDYING HATRED":
+            return self._use_renegade_warband_undying_hatred(stratagem, **kwargs)
         if name_u == "UNFAILINGLY OBDURATE":
             return self._use_renegade_raiders_unfailingly_obdurate(stratagem, **kwargs)
+        if name_u == "VENGEFUL DESTRUCTION":
+            return self._use_renegade_warband_vengeful_destruction(stratagem, **kwargs)
         if name_u == "WARPCHARGED ENGINES":
             return self._use_renegade_raiders_warpcharged_engines(stratagem, **kwargs)
         return None

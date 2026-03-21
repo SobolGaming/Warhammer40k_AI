@@ -2565,6 +2565,82 @@ _RENEGADE_RAIDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RENEGADE_WARBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010695002": StratagemToolDescriptor(
+        stratagem_id="000010695002",
+        name="Never Outgunned",
+        timing="shooting_or_fight_phase_after_selected_to_shoot_or_fight",
+        target="heretic_astartes_unit_just_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="choose_temporary_weapon_keyword_bonus",
+        cp_cost=1,
+        effect_params={
+            "choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            "shooting_attack_type": "ranged",
+            "fight_attack_type": "melee",
+        },
+    ),
+    "000010695003": StratagemToolDescriptor(
+        stratagem_id="000010695003",
+        name="Vengeful Destruction",
+        timing="shooting_or_fight_phase_after_selected_to_shoot_or_fight",
+        target="heretic_astartes_infantry_excluding_damned_or_mounted_unit_just_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="wound_bonus_vs_vendetta_target",
+        cp_cost=1,
+        effect_params={
+            "wound_bonus": 1,
+            "requires_vendetta_target": True,
+        },
+    ),
+    "000010695004": StratagemToolDescriptor(
+        stratagem_id="000010695004",
+        name="Undying Hatred",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "base_threshold": 4,
+        },
+    ),
+    "000010695005": StratagemToolDescriptor(
+        stratagem_id="000010695005",
+        name="Renegade Claim",
+        timing="your_movement_phase",
+        target="heretic_astartes_unit_within_range_of_controlled_objective",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+    ),
+    "000010695006": StratagemToolDescriptor(
+        stratagem_id="000010695006",
+        name="Corrupted Munitions",
+        timing="shooting_phase_after_selected_to_shoot",
+        target="heretic_astartes_unit_just_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_ap_bonus",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1},
+    ),
+    "000010695007": StratagemToolDescriptor(
+        stratagem_id="000010695007",
+        name="Reavers' Reaction",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved_and_hit",
+        target="heretic_astartes_unit_hit_by_enemy_shooting_excluding_monster_vehicle",
+        duration="immediate",
+        effect="reactive_normal_move_d6",
+        cp_cost=1,
+        effect_params={"distance_roll": "D6"},
+    ),
+}
+
+_RENEGADE_WARBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RENEGADE_WARBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008358002": StratagemToolDescriptor(
         stratagem_id="000008358002",
@@ -8017,6 +8093,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RENEGADE_WARBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _PACTBOUND_ZEALOTS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8274,6 +8353,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
+        or _RENEGADE_WARBAND_STRATAGEM_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_STRATAGEM_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
