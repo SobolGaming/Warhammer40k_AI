@@ -599,6 +599,18 @@ class KeywordsDetachmentsMixin:
                 return True
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+            army = root.get_parent_army() if root is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "veterans_bringers_of_despair_fight_first_active", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, _source = apply_fn(root, game=game)
+                if bool(applies):
+                    return True
+        except Exception:
+            pass
         # Instinctive Defence (Assimilation Swarm): while bearer is within range of a friendly HARVESTER.
         try:
             root = self.get_attached_unit_root()

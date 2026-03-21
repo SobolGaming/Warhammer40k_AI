@@ -17704,6 +17704,12 @@ class ActionsMovementMixin:
                 if bool(apply_fn(self, profile=profile, game=game)):
                     if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                         return True
+            veterans_apply_fn = getattr(mgr, "veterans_black_crusade_can_shoot_after_advance", None) if mgr is not None else None
+            if callable(veterans_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(veterans_apply_fn(self, profile=profile, game=game)):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
         except Exception:
             pass
         try:
@@ -18046,6 +18052,11 @@ class ActionsMovementMixin:
             if callable(eager_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(eager_apply_fn(self, profile=profile, game=game)):
+                    return True
+            veterans_apply_fn = getattr(mgr, "veterans_black_crusade_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(veterans_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(veterans_apply_fn(self, profile=profile, game=game)):
                     return True
             tyrants_lash_apply_fn = (
                 getattr(mgr, "renegade_raiders_tyrants_lash_can_shoot_after_fall_back", None)

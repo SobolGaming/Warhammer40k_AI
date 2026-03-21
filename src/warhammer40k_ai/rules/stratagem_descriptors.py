@@ -2474,6 +2474,86 @@ _HURONS_MARAUDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VETERANS_OF_THE_LONG_WAR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008961002": StratagemToolDescriptor(
+        stratagem_id="000008961002",
+        name="Endless Ire",
+        timing="any_phase_after_focus_of_hatred_destroyed",
+        target="heretic_astartes_character_unit_excluding_damned",
+        duration="until_start_of_your_next_command_phase",
+        effect="replace_focus_of_hatred_target",
+        cp_cost=2,
+        range_in=12.0,
+        effect_params={
+            "requires_visibility": True,
+            "target_selection": "enemy_unit_within_12",
+        },
+    ),
+    "000008961003": StratagemToolDescriptor(
+        stratagem_id="000008961003",
+        name="Contemptuous Disregard",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="heretic_astartes_unit_targeted_by_enemy_attacks_excluding_damned",
+        duration="until_attacking_unit_finishes_attacks",
+        effect="defensive_ap_worsen",
+        cp_cost=1,
+        effect_params={"ap_worsen": 1},
+    ),
+    "000008961004": StratagemToolDescriptor(
+        stratagem_id="000008961004",
+        name="Bringers of Despair",
+        timing="fight_phase_start",
+        target="heretic_astartes_unit_within_engagement_range_of_focus_of_hatred_excluding_damned",
+        duration="until_end_of_phase",
+        effect="grant_fights_first",
+        cp_cost=2,
+    ),
+    "000008961005": StratagemToolDescriptor(
+        stratagem_id="000008961005",
+        name="Black Crusade",
+        timing="your_movement_phase",
+        target="heretic_astartes_infantry_or_mounted_unit_excluding_damned",
+        duration="until_end_of_turn",
+        effect="shoot_after_advance_or_fall_back_and_conditional_bolt_devastating_wounds",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_advance": True,
+            "shoot_after_fall_back": True,
+            "weapon_names": ["bolt pistol", "boltgun", "combi-bolter"],
+            "devastating_wounds_cap": 6,
+        },
+    ),
+    "000008961006": StratagemToolDescriptor(
+        stratagem_id="000008961006",
+        name="Let the Galaxy Burn",
+        timing="your_shooting_phase",
+        target="heretic_astartes_unit_not_yet_shot_excluding_tzeentch",
+        duration="until_end_of_phase",
+        effect="ranged_ignores_cover_and_torrent_attacks_set_6",
+        cp_cost=1,
+        effect_params={"ignores_cover": True, "torrent_attacks": 6},
+    ),
+    "000008961007": StratagemToolDescriptor(
+        stratagem_id="000008961007",
+        name="Millennia of Experience",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="heretic_astartes_infantry_or_mounted_unit_within_9_not_engaged_excluding_damned",
+        duration="immediate",
+        effect="reactive_normal_move_up_to_6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "distance": 6,
+            "trigger_enemy_actions": ["normal_move", "advance", "fall_back"],
+            "requires_not_in_engagement_range": True,
+        },
+    ),
+}
+
+_VETERANS_OF_THE_LONG_WAR_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VETERANS_OF_THE_LONG_WAR_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008969002": StratagemToolDescriptor(
         stratagem_id="000008969002",
@@ -8158,6 +8238,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HURONS_MARAUDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VETERANS_OF_THE_LONG_WAR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _RENEGADE_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8423,6 +8506,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DREAD_TALONS_STRATAGEM_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_STRATAGEM_BY_NAME.get(key)
         or _HURONS_MARAUDERS_STRATAGEM_BY_NAME.get(key)
+        or _VETERANS_OF_THE_LONG_WAR_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _RENEGADE_WARBAND_STRATAGEM_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_STRATAGEM_BY_NAME.get(key)

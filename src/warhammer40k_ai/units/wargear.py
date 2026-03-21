@@ -5105,6 +5105,25 @@ class WargearProfile:
                 pass
         if attacks_override is None:
             try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                override_fn = getattr(csm_mgr, "veterans_let_the_galaxy_burn_torrent_attacks_override", None)
+                if callable(override_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    override_val, override_source = override_fn(attacker, weapon_profile=self, game=game)
+                    if int(override_val or 0) > 0:
+                        attacks_override = int(override_val)
+                        if not attacks_override_note:
+                            label = str(override_source or "").strip()
+                            if label:
+                                attacks_override_note = f"{label} (Attacks set to {int(override_val)})"
+                            else:
+                                attacks_override_note = f"Attacks set to {int(override_val)}"
+            except Exception:
+                pass
+        if attacks_override is None:
+            try:
                 is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
                 unit = getattr(attacker, "parent_unit", None)
                 if is_ranged and unit is not None:
@@ -10321,6 +10340,18 @@ class WargearProfile:
             try:
                 if self._veteran_sharpshooters_ignores_cover_active(attacker):
                     attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                ignores_cover_fn = getattr(csm_mgr, "veterans_let_the_galaxy_burn_ignores_cover_active", None)
+                if callable(ignores_cover_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    applies, _source = ignores_cover_fn(attacker, weapon_profile=self, game=game)
+                    if bool(applies):
+                        attack_instance["ignores_cover"] = True
             except Exception:
                 pass
             try:
@@ -21591,13 +21622,27 @@ class WargearProfile:
                     )
                 except Exception:
                     bonuses = {}
-                if not isinstance(bonuses, dict) or not bonuses:
-                    return
+                if not isinstance(bonuses, dict):
+                    bonuses = {}
                 if bool(bonuses.get("precision", False)):
                     attack_instance["bonus_precision"] = True
                     wound_result.setdefault("special_effects", []).append("Precision")
                 if bool(bonuses.get("devastating_wounds", False)):
                     attack_instance["bonus_devastating_wounds"] = True
+                try:
+                    army = unit.get_parent_army() if unit is not None else None
+                    csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                    devastating_fn = getattr(csm_mgr, "veterans_black_crusade_devastating_wounds_applies", None)
+                    if callable(devastating_fn):
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        applies, source = devastating_fn(attacker, weapon_profile=self, game=game)
+                        if bool(applies):
+                            attack_instance["bonus_devastating_wounds"] = True
+                            attack_instance["veterans_black_crusade_devastating_wounds_active"] = True
+                            label = str(source or "Black Crusade").strip() or "Black Crusade"
+                            wound_result.setdefault("special_effects", []).append(label)
+                except Exception:
+                    pass
 
             # Natural 1 always fails
             if roll == 1:
@@ -25343,6 +25388,19 @@ class WargearProfile:
             )
         )
         damage_result['model_killed'] = was_alive and not target_model.is_alive
+        try:
+            if bool(attack_instance.get("veterans_black_crusade_devastating_wounds_active", False)):
+                damage_applied = int(damage_result.get("damage_applied", 0) or 0)
+                if damage_applied > 0:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                    csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                    record_fn = getattr(csm_mgr, "veterans_record_black_crusade_damage", None)
+                    if callable(record_fn):
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        record_fn(attacker, damage_applied, game=game)
+        except Exception:
+            pass
         
         if bool(attack_instance.get('mortal_wound', False)):
             damage_result['special_effects'].append("Mortal Wounds")

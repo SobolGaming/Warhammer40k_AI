@@ -19854,6 +19854,10 @@ def _stratagem_support(
 ) -> Tuple[str, str, str]:
     name_u = _canon_stratagem_name(name)
     det_u = _norm(detachment_name).upper()
+    notes_by_id = {
+        "000010655002": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected EMPEROR'S CHILDREN unit imposes -1 to wound against attacks from that attacker while its Strength is greater than the target's Toughness until end of phase.",
+        "000008961003": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
+    }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
         "COUNTER-OFFENSIVE": "Fight phase: select a unit to fight next after enemy unit fights.",
@@ -20096,7 +20100,12 @@ def _stratagem_support(
         "CATALYTIC STIMULUS": "Opponent Shooting phase reaction after enemy shooting resolves and a unit lost wounds: that unit can make a reactive Stimulus move of up to D6\" toward the closest enemy non-AIRCRAFT unit (can move within Engagement Range).",
         "CHOSEN FOR GLORY": "Your Shooting or the Fight phase: selected DAMNED unit that has not yet shot or fought makes a Desperate Pact and gains Hit re-rolls until end of phase, plus Wound re-rolls if the Leadership test was passed.",
         "CLOSE-QUARTERS EXCRUCIATION": "Shooting phase: selected EMPEROR'S CHILDREN unit not yet selected to shoot gains +1 Strength and +1 AP on ranged attacks that target units within 12\" until end of phase.",
-        "CONTEMPTUOUS DISREGARD": "Shooting/Fight phase defensive reaction after enemy targets selected: targeted EMPEROR'S CHILDREN unit imposes -1 to wound this phase when attacker Strength is greater than target Toughness.",
+        "BLACK CRUSADE": "Movement phase: selected HERETIC ASTARTES INFANTRY or MOUNTED unit excluding DAMNED can shoot after Advancing or Falling Back this turn, and its bolt pistols, boltguns, and combi-bolters gain conditional [DEVASTATING WOUNDS] until that unit has inflicted 6 wounds with that granted ability.",
+        "BRINGERS OF DESPAIR": "Start of the Fight phase: selected HERETIC ASTARTES unit excluding DAMNED within Engagement Range of your Focus of Hatred gains Fights First until end of phase.",
+        "CONTEMPTUOUS DISREGARD": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
+        "ENDLESS IRE": "Any phase reaction when your current Focus of Hatred is destroyed: selected HERETIC ASTARTES CHARACTER unit excluding DAMNED chooses a visible enemy unit within 12\" to become your new Focus of Hatred until your next Command phase.",
+        "LET THE GALAXY BURN": "Shooting phase: selected HERETIC ASTARTES unit excluding TZEENTCH and not yet selected to shoot gains [IGNORES COVER] on ranged weapons and sets Torrent weapon Attacks to 6 until end of phase.",
+        "MILLENNIA OF EXPERIENCE": "Opponent Movement phase reaction after an enemy Normal/Advance/Fall Back move ends: selected HERETIC ASTARTES INFANTRY or MOUNTED unit excluding DAMNED within 9\" and not engaged can make a reactive Normal move up to 6\".",
         "CRAZED FOCUS": "Your Shooting phase: selected DAMNED unit that has not yet shot makes a Desperate Pact and gains +1 AP on ranged attacks until end of phase, plus +1 Strength if the Leadership test was passed.",
         "BRUTAL ATTRITION": "Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES INFANTRY unit excluding DAMNED records up to six allocated melee attacks from that attacker and, after the attacker finishes its attacks, rolls one D6 per allocation to deal 1 mortal wound on each 4+.",
         "CRUEL RAIDERS": "End of opponent Fight phase: selected EMPEROR'S CHILDREN unit wholly within 9\" of a battlefield edge and not within 3\" horizontally of enemy units is placed into Strategic Reserves.",
@@ -20349,6 +20358,11 @@ def _stratagem_support(
         "INVISIBLE HUNTER": "End of opponent Fight phase: select up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves.",
     }
 
+    def _note(default: str) -> str:
+        if stratagem_id in notes_by_id:
+            return notes_by_id[stratagem_id]
+        return notes.get(name_u, default)
+
     # Some stratagem names are reused across detachments and require detachment-specific notes.
     if name_u == "SPITEFUL DEMISE":
         if det_u == "SHADOW LEGION":
@@ -20368,11 +20382,11 @@ def _stratagem_support(
 
     if name_u == "DROPSHIP EXTRACTION":
         if det_u in {"EMPEROR S SHIELD", "HAMMER OF AVERNII"}:
-            return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+            return ("Implemented", _note("Implemented in engine."), name_u)
         return ("Not implemented", "Not implemented in engine.", name_u)
 
     if stratagem_id in {"000010624003", "000010624004", "000010624005", "000010624006"}:
-        return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+        return ("Implemented", _note("Implemented in engine."), name_u)
 
     if stratagem_id == "000009791002":
         return (
@@ -21185,25 +21199,22 @@ def _stratagem_support(
         )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
-        return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+        return ("Implemented", _note("Implemented in engine."), name_u)
     spec = parse_defensive_reaction_stratagem(name, description or "")
     if spec:
         return ("Implemented", defensive_reaction_note(spec), name_u)
     spec = parse_charge_melee_ap_stratagem(name, description or "")
     if spec:
         bonus = int(spec.get("ap_bonus", 1) or 1)
-        note = notes.get(name_u, f"Fight phase: charged unit gains +{bonus} AP on melee weapons.")
+        note = _note(f"Fight phase: charged unit gains +{bonus} AP on melee weapons.")
         return ("Implemented", note, name_u)
     spec = parse_consolidate_move_stratagem(name, description or "")
     if spec:
         max_dist = int(spec.get("max_distance", 0) or 0)
         if spec.get("requires_engagement"):
-            note = notes.get(
-                name_u,
-                f"Fight phase: consolidate up to {max_dist}\" if the unit can end in Engagement Range.",
-            )
+            note = _note(f"Fight phase: consolidate up to {max_dist}\" if the unit can end in Engagement Range.")
         else:
-            note = notes.get(name_u, f"Fight phase: consolidate up to {max_dist}\".")
+            note = _note(f"Fight phase: consolidate up to {max_dist}\".")
         return ("Implemented", note, name_u)
     return ("Not implemented", "Not implemented in engine.", name_u)
 

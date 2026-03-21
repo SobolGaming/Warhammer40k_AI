@@ -169,6 +169,18 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE = "Empyric Symbiote"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY = "veterans_of_the_long_war_focus_of_hatred_target"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE = "Focus of Hatred"
+    _VETERANS_OF_THE_LONG_WAR_ENDLESS_IRE_ABILITY = "veterans_endless_ire_focus_target"
+    _VETERANS_BLACK_CRUSADE_PREFIX = "veterans_black_crusade"
+    _VETERANS_BLACK_CRUSADE_SOURCE = "Black Crusade"
+    _VETERANS_BLACK_CRUSADE_DAMAGE_KEY = "veterans_black_crusade_wounds_inflicted"
+    _VETERANS_BLACK_CRUSADE_DAMAGE_CAP_KEY = "veterans_black_crusade_wounds_cap"
+    _VETERANS_BRINGERS_OF_DESPAIR_PREFIX = "veterans_bringers_of_despair"
+    _VETERANS_BRINGERS_OF_DESPAIR_SOURCE = "Bringers of Despair"
+    _VETERANS_CONTEMPTUOUS_DISREGARD_SOURCE = "Contemptuous Disregard"
+    _VETERANS_ENDLESS_IRE_SOURCE = "Endless Ire"
+    _VETERANS_LET_THE_GALAXY_BURN_PREFIX = "veterans_let_the_galaxy_burn"
+    _VETERANS_LET_THE_GALAXY_BURN_SOURCE = "Let the Galaxy Burn"
+    _VETERANS_MILLENNIA_OF_EXPERIENCE_SOURCE = "Millennia of Experience"
     _SOULFORGED_WARPACK_FORGES_BLESSING_ABILITY = "soulforged_warpack_forges_blessing_target"
     _SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE = "Forge's Blessing"
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE = "Tempting Addendum"
@@ -2043,6 +2055,107 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "source": self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE,
         }
 
+    def _veterans_unit_by_id(self, unit_id: str):
+        target_id = str(unit_id or "").strip()
+        if not target_id or self.army is None:
+            return None
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None:
+                continue
+            if str(get_entity_id(root) or "").strip() == target_id:
+                return root
+        return None
+
+    def veterans_endless_ire_candidate_enemy_units(self, source_unit_id: str, *, game=None, player=None) -> list:
+        if not self.is_veterans_of_the_long_war() or self.army is None:
+            return []
+        source_root = self._veterans_unit_by_id(source_unit_id)
+        if source_root is None or not self._unit_on_battlefield(source_root):
+            return []
+        source_alive = getattr(source_root, "is_alive", None)
+        if callable(source_alive) and not bool(source_alive()):
+            return []
+        if not self._unit_is_heretic_astartes(source_root):
+            return []
+        if self._unit_is_damned(source_root):
+            return []
+        if not self._unit_has_keyword(source_root, "CHARACTER"):
+            return []
+
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return []
+        game_map = getattr(resolved_game, "map", None)
+        los_checker = getattr(source_root, "_attacking_unit_has_any_los_to_target_unit", None)
+        if game_map is None or not callable(los_checker):
+            return []
+
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        candidates: list = []
+        for enemy_root in list(self._iter_enemy_units_for_player(game=resolved_game, player=owner) or []):
+            if enemy_root is None or not self._unit_on_battlefield(enemy_root):
+                continue
+            enemy_alive = getattr(enemy_root, "is_alive", None)
+            if callable(enemy_alive) and not bool(enemy_alive()):
+                continue
+            if not unit_within_range_of_unit(source_root, enemy_root, 12.0, use_attached_aggregate=True):
+                continue
+            if not bool(los_checker(enemy_root, game_map)):
+                continue
+            candidates.append(enemy_root)
+        return sorted(self._iter_unique_roots(candidates), key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+
+    def veterans_endless_ire_target_is_valid(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> bool:
+        target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            return False
+        candidates = list(
+            self.veterans_endless_ire_candidate_enemy_units(source_unit_id, game=game, player=player) or []
+        )
+        candidate_ids = {str(get_entity_id(unit) or "").strip() for unit in candidates if unit is not None}
+        return target_id in candidate_ids
+
+    def select_veterans_endless_ire_target(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        source_root = self._veterans_unit_by_id(source_unit_id)
+        if source_root is None:
+            return {"ok": False, "reason": "Endless Ire source unit was not found."}
+        if not self.veterans_endless_ire_target_is_valid(source_unit_id, target_unit_id, game=game, player=player):
+            return {"ok": False, "reason": "Endless Ire target is invalid."}
+
+        target_id = str(target_unit_id or "").strip()
+        self.veterans_focus_of_hatred_target_unit_id = target_id
+        target_name = ""
+        for unit in list(self.veterans_endless_ire_candidate_enemy_units(source_unit_id, game=game, player=player) or []):
+            if str(get_entity_id(unit) or "").strip() == target_id:
+                target_name = str(getattr(unit, "name", "") or "").strip()
+                break
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(source_root) or "").strip(),
+            "target_unit_id": target_id,
+            "target_name": target_name or "Enemy Unit",
+            "source": self._VETERANS_ENDLESS_IRE_SOURCE,
+        }
+
     def veterans_focus_of_hatred_reroll_hit_applies(self, attacker_model, target_unit, *, game=None) -> tuple[bool, str]:
         if not self.is_veterans_of_the_long_war():
             return False, ""
@@ -2558,6 +2671,257 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
             }
         return {}
+
+    def _veterans_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        game=None,
+        require_phase_match: bool = True,
+    ):
+        if not self.is_veterans_of_the_long_war():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None, None
+        if not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+
+        expected_phase = str(sr.get(f"{prefix}_phase", "") or "").strip().upper()
+        expected_owner = str(sr.get(f"{prefix}_turn_owner", "") or "").strip()
+        try:
+            expected_turn = int(sr.get(f"{prefix}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+
+        current_phase = self._current_phase_name(game=game)
+        current_owner = self._current_turn_owner_id(game=game)
+        current_turn = self._current_turn(game=game)
+
+        if require_phase_match and expected_phase and current_phase and expected_phase != current_phase:
+            return None, None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return None, None
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def _set_veterans_effect_state(
+        self,
+        unit,
+        *,
+        prefix: str,
+        source: str,
+        player=None,
+        game=None,
+        extra_state: Optional[dict] = None,
+        track_phase: bool = True,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{prefix}_active"] = True
+        if track_phase:
+            sr[f"{prefix}_phase"] = self._current_phase_name(game=game)
+        else:
+            sr.pop(f"{prefix}_phase", None)
+        sr[f"{prefix}_turn"] = self._current_turn(game=game)
+        sr[f"{prefix}_turn_owner"] = self._current_turn_owner_id(game=game, player=player)
+        sr[f"{prefix}_source"] = str(source or "").strip() or str(prefix).replace("_", " ").title()
+        for key, value in dict(extra_state or {}).items():
+            sr[str(key)] = value
+        root.special_rules = sr
+        self._clear_unit_ability_cache(root)
+
+    @staticmethod
+    def _veterans_effect_source(sr: dict, *, prefix: str, default: str) -> str:
+        if not isinstance(sr, dict):
+            return str(default or "").strip()
+        return str(sr.get(f"{prefix}_source", "") or default).strip() or str(default or "").strip()
+
+    @staticmethod
+    def _veterans_weapon_name(weapon_profile) -> str:
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        return str(getattr(parent, "name", "") or getattr(weapon_profile, "name", "") or "").strip()
+
+    @staticmethod
+    def _veterans_normalize_weapon_name(name: str) -> str:
+        return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
+    @classmethod
+    def _veterans_black_crusade_weapon_is_eligible(cls, weapon_profile) -> bool:
+        if weapon_profile is None:
+            return False
+        weapon_name = cls._veterans_normalize_weapon_name(cls._veterans_weapon_name(weapon_profile))
+        return weapon_name in {"boltpistol", "boltgun", "combibolter"}
+
+    def veterans_black_crusade_can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._veterans_effect_state(
+            unit,
+            prefix=self._VETERANS_BLACK_CRUSADE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and not self._unit_is_damned(root))
+
+    def veterans_black_crusade_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if profile is not None and not self._weapon_profile_matches_attack_type(profile, "ranged"):
+            return False
+        root, _sr = self._veterans_effect_state(
+            unit,
+            prefix=self._VETERANS_BLACK_CRUSADE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        return bool(root is not None and self._unit_is_heretic_astartes(root) and not self._unit_is_damned(root))
+
+    def veterans_black_crusade_devastating_wounds_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        if not self._veterans_black_crusade_weapon_is_eligible(weapon_profile):
+            return False, ""
+        attacker_root, sr = self._veterans_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._VETERANS_BLACK_CRUSADE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if attacker_root is None or not self._unit_is_heretic_astartes(attacker_root):
+            return False, ""
+        if self._unit_is_damned(attacker_root):
+            return False, ""
+        try:
+            damage_cap = int(sr.get(self._VETERANS_BLACK_CRUSADE_DAMAGE_CAP_KEY, 6) or 6)
+        except (TypeError, ValueError):
+            damage_cap = 6
+        try:
+            current_damage = int(sr.get(self._VETERANS_BLACK_CRUSADE_DAMAGE_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            current_damage = 0
+        if current_damage >= max(1, damage_cap):
+            return False, ""
+        return True, self._veterans_effect_source(
+            sr,
+            prefix=self._VETERANS_BLACK_CRUSADE_PREFIX,
+            default=self._VETERANS_BLACK_CRUSADE_SOURCE,
+        )
+
+    def veterans_record_black_crusade_damage(self, attacker_model, damage_applied: int, *, game=None) -> int:
+        if attacker_model is None:
+            return 0
+        try:
+            damage_value = int(damage_applied or 0)
+        except (TypeError, ValueError):
+            damage_value = 0
+        if damage_value <= 0:
+            return 0
+        attacker_root, sr = self._veterans_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._VETERANS_BLACK_CRUSADE_PREFIX,
+            game=game,
+            require_phase_match=False,
+        )
+        if attacker_root is None or not isinstance(sr, dict):
+            return 0
+        try:
+            current_damage = int(sr.get(self._VETERANS_BLACK_CRUSADE_DAMAGE_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            current_damage = 0
+        sr[self._VETERANS_BLACK_CRUSADE_DAMAGE_KEY] = int(max(0, current_damage + damage_value))
+        attacker_root.special_rules = sr
+        self._clear_unit_ability_cache(attacker_root)
+        return int(damage_value)
+
+    def veterans_let_the_galaxy_burn_ignores_cover_active(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return False, ""
+        attacker_root, sr = self._veterans_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._VETERANS_LET_THE_GALAXY_BURN_PREFIX,
+            game=game,
+        )
+        if attacker_root is None or not self._unit_is_heretic_astartes(attacker_root):
+            return False, ""
+        return True, self._veterans_effect_source(
+            sr,
+            prefix=self._VETERANS_LET_THE_GALAXY_BURN_PREFIX,
+            default=self._VETERANS_LET_THE_GALAXY_BURN_SOURCE,
+        )
+
+    def veterans_let_the_galaxy_burn_torrent_attacks_override(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._weapon_profile_matches_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        if not bool(getattr(weapon_profile, "is_torrent", lambda: False)()):
+            return 0, ""
+        attacker_root, sr = self._veterans_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix=self._VETERANS_LET_THE_GALAXY_BURN_PREFIX,
+            game=game,
+        )
+        if attacker_root is None or not self._unit_is_heretic_astartes(attacker_root):
+            return 0, ""
+        try:
+            attacks_value = int(
+                sr.get(f"{self._VETERANS_LET_THE_GALAXY_BURN_PREFIX}_torrent_attacks", 6) or 6
+            )
+        except (TypeError, ValueError):
+            attacks_value = 6
+        if attacks_value <= 0:
+            return 0, ""
+        return int(attacks_value), self._veterans_effect_source(
+            sr,
+            prefix=self._VETERANS_LET_THE_GALAXY_BURN_PREFIX,
+            default=self._VETERANS_LET_THE_GALAXY_BURN_SOURCE,
+        )
+
+    def veterans_bringers_of_despair_fight_first_active(self, unit, *, game=None) -> tuple[bool, str]:
+        root, sr = self._veterans_effect_state(
+            unit,
+            prefix=self._VETERANS_BRINGERS_OF_DESPAIR_PREFIX,
+            game=game,
+        )
+        if root is None or not self._unit_is_heretic_astartes(root):
+            return False, ""
+        if self._unit_is_damned(root):
+            return False, ""
+        return True, self._veterans_effect_source(
+            sr,
+            prefix=self._VETERANS_BRINGERS_OF_DESPAIR_PREFIX,
+            default=self._VETERANS_BRINGERS_OF_DESPAIR_SOURCE,
+        )
 
     def dread_talons_eater_of_dread_on_command_phase_start(self, *, game=None) -> list[dict]:
         if not self.is_dread_talons() or self.army is None:

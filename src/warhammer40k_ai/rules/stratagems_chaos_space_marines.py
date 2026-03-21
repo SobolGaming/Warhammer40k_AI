@@ -140,6 +140,11 @@ class ChaosSpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_soulforged_warpack", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_veterans_of_the_long_war_detachment(self) -> bool:
+        mgr = self._get_chaos_space_marines_mgr()
+        checker = getattr(mgr, "is_veterans_of_the_long_war", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_renegade_raiders_detachment(self) -> bool:
         mgr = self._get_chaos_space_marines_mgr()
         checker = getattr(mgr, "is_renegade_raiders", None) if mgr is not None else None
@@ -1163,6 +1168,155 @@ class ChaosSpaceMarinesStratagemMixin:
             if not self._is_heretic_astartes_unit(root):
                 continue
             if exclude_damned and self._is_damned_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _veterans_targetable_units(
+        self,
+        *,
+        require_character: bool = False,
+        require_infantry_or_mounted: bool = False,
+        exclude_damned: bool = False,
+        exclude_tzeentch: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if require_character and not self._csm_has_keyword(root, "CHARACTER"):
+                continue
+            if require_infantry_or_mounted and not (
+                self._is_heretic_astartes_infantry(root) or self._is_heretic_astartes_mounted(root)
+            ):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            if exclude_tzeentch and self._csm_has_keyword(root, "TZEENTCH"):
+                continue
+            if require_not_engaged and self._csm_unit_is_engaged(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _veterans_targeted_units(
+        self,
+        *,
+        target_units: list[Any],
+        exclude_damned: bool = False,
+    ) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._csm_root(target)
+            if root is None:
+                continue
+            uid = self._csm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._csm_owned_by_player(root, self.player):
+                continue
+            if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_heretic_astartes_unit(root):
+                continue
+            if exclude_damned and self._is_damned_unit(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    def _veterans_bringers_of_despair_candidates(self) -> list[Any]:
+        mgr = self._get_chaos_space_marines_mgr()
+        focus_target_id = str(getattr(mgr, "veterans_focus_of_hatred_target_unit_id", "") or "").strip()
+        if not focus_target_id or self.game is None:
+            return []
+        registry = getattr(self.game, "entity_registry", None)
+        focus_target = registry.get(focus_target_id, kind="unit") if registry is not None and hasattr(registry, "get") else None
+        focus_root = self._csm_root(focus_target)
+        if focus_root is None or not self._csm_is_alive(focus_root) or not self._csm_is_on_battlefield(focus_root):
+            return []
+        game_map = getattr(self.game, "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(within_engagement):
+            return []
+
+        candidates: list[Any] = []
+        for root in self._veterans_targetable_units(exclude_damned=True):
+            if not bool(within_engagement(root, focus_root)):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._csm_sort_key)
+
+    @staticmethod
+    def _veterans_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "")
+        for candidate in list(candidates or []):
+            candidate_root = candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate
+            if candidate_root is None:
+                continue
+            cid = str(get_entity_id(candidate_root) or "")
+            if rid and cid and rid == cid:
+                return True
+            if candidate_root is root:
+                return True
+        return False
+
+    def _veterans_millennia_of_experience_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return []
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is None or self._csm_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._csm_is_alive(enemy_root) or not self._csm_is_on_battlefield(enemy_root):
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except ImportError:
+            return []
+
+        candidates: list[Any] = []
+        for root in self._veterans_targetable_units(
+            require_infantry_or_mounted=True,
+            exclude_damned=True,
+            require_not_engaged=True,
+        ):
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._csm_sort_key)
@@ -4021,6 +4175,274 @@ class ChaosSpaceMarinesStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_veterans_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def queue_phase_start_stratagem(stratagem_name: str, *, phase_name: str, candidates: list[Any]) -> None:
+            if not candidates:
+                return
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+                return
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if self._cabal_reaction_already_queued(
+                event_name="phase_start",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+            ):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "MOVEMENT_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "BLACK CRUSADE",
+                phase_name="Movement phase",
+                candidates=self._veterans_targetable_units(
+                    require_infantry_or_mounted=True,
+                    exclude_damned=True,
+                ),
+            )
+            return
+
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            queue_phase_start_stratagem(
+                "LET THE GALAXY BURN",
+                phase_name="Shooting phase",
+                candidates=self._veterans_targetable_units(
+                    exclude_tzeentch=True,
+                    require_not_shot=True,
+                ),
+            )
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        queue_phase_start_stratagem(
+            "BRINGERS OF DESPAIR",
+            phase_name="Fight phase",
+            candidates=self._veterans_bringers_of_despair_candidates(),
+        )
+
+    def _queue_veterans_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if phase_name != "movement phase" or action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        moving_root = self._csm_root(unit)
+        if moving_root is None or self._csm_owned_by_player(moving_root, self.player):
+            return
+        if not self._csm_is_alive(moving_root) or not self._csm_is_on_battlefield(moving_root):
+            return
+
+        stratagem = self.get_by_name("MILLENNIA OF EXPERIENCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._veterans_millennia_of_experience_candidates(enemy_unit=moving_root)
+        if not candidates:
+            return
+        moving_id = str(get_entity_id(moving_root) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("MILLENNIA OF EXPERIENCE"):
+                continue
+            if str(get_entity_id(self._csm_root(reaction.get("moving_unit") or reaction.get("enemy_unit"))) or "") == moving_id:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "moving_unit": moving_root,
+            "enemy_unit": moving_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_veterans_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return
+        mgr = self._get_chaos_space_marines_mgr()
+        focus_target_id = str(getattr(mgr, "veterans_focus_of_hatred_target_unit_id", "") or "").strip()
+        if not focus_target_id:
+            return
+        destroyed_root = self._csm_root(destroyed_unit)
+        if destroyed_root is None:
+            return
+        if str(get_entity_id(destroyed_root) or "").strip() != focus_target_id:
+            return
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            return
+
+        stratagem = self.get_by_name("ENDLESS IRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates: list[Any] = []
+        enemy_candidates_by_unit: dict[str, list[Any]] = {}
+        for root in self._veterans_targetable_units(require_character=True, exclude_damned=True):
+            root_id = str(get_entity_id(root) or "")
+            if not root_id:
+                continue
+            enemy_candidates = list(
+                getattr(mgr, "veterans_endless_ire_candidate_enemy_units", lambda *_a, **_k: [])(
+                    root_id,
+                    game=self.game,
+                    player=self.player,
+                )
+                or []
+            )
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            enemy_candidates_by_unit[root_id] = list(enemy_candidates)
+        if not candidates:
+            return
+
+        destroyed_id = str(get_entity_id(destroyed_root) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != self._normalize_stratagem_name("ENDLESS IRE"):
+                continue
+            if str(get_entity_id(self._csm_root(reaction.get("destroyed_unit"))) or "") == destroyed_id:
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": destroyed_root,
+            "destroyed_by_unit": self._csm_root(destroyed_by_unit),
+            "candidates": sorted(candidates, key=self._csm_sort_key),
+            "enemy_candidates_by_unit": dict(enemy_candidates_by_unit),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_veterans_shooting_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("CONTEMPTUOUS DISREGARD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._veterans_targeted_units(
+            target_units=list(target_units or []),
+            exclude_damned=True,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "CONTEMPTUOUS DISREGARD":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_veterans_fight_target_reactions(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_veterans_of_the_long_war_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._csm_root(attacking_unit)
+        if attacker_root is None or self._csm_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self.get_by_name("CONTEMPTUOUS DISREGARD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._cabal_effective_cp_cost(stratagem):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._veterans_targeted_units(
+            target_units=list(target_units or []),
+            exclude_damned=True,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "CONTEMPTUOUS DISREGARD":
+                continue
+            if self._csm_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_fellhammer_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_fellhammer_siege_host_detachment():
             return
@@ -4666,6 +5088,38 @@ class ChaosSpaceMarinesStratagemMixin:
                 else:
                     sr.pop("advance_no_roll_effects", None)
                 root.special_rules = sr
+                continue
+            for prefix in prefixes:
+                mgr._remove_special_rule_prefix(root, prefix)
+
+    def _cleanup_veterans_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        mgr = self._get_chaos_space_marines_mgr()
+        if army is None or mgr is None:
+            return
+
+        prefixes: tuple[str, ...] = ()
+        if phase_name == "SHOOTING_PHASE":
+            prefixes = (mgr._VETERANS_LET_THE_GALAXY_BURN_PREFIX,)
+        elif phase_name == "FIGHT_PHASE":
+            current_owner = str(mgr._current_turn_owner_id(game=self.game) or "")
+            player_id = str(getattr(self.player, "id", "") or "")
+            if not current_owner or current_owner == player_id:
+                prefixes = (
+                    mgr._VETERANS_BLACK_CRUSADE_PREFIX,
+                    mgr._VETERANS_BRINGERS_OF_DESPAIR_PREFIX,
+                )
+            else:
+                prefixes = (mgr._VETERANS_BRINGERS_OF_DESPAIR_PREFIX,)
+        if not prefixes:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._csm_root(unit)
+            if root is None:
                 continue
             for prefix in prefixes:
                 mgr._remove_special_rule_prefix(root, prefix)
@@ -10221,6 +10675,518 @@ class ChaosSpaceMarinesStratagemMixin:
         )
         return True
 
+    def _use_veterans_black_crusade(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("BLACK CRUSADE", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BLACK CRUSADE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: BLACK CRUSADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BLACK CRUSADE: not your turn")
+            return False
+        if candidates and not self._veterans_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BLACK CRUSADE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BLACK CRUSADE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BLACK CRUSADE: target cannot be selected")
+            return False
+        if not (
+            self._is_heretic_astartes_infantry(root)
+            or self._is_heretic_astartes_mounted(root)
+        ):
+            logger.error("ERROR: BLACK CRUSADE: target must be HERETIC ASTARTES INFANTRY or MOUNTED")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: BLACK CRUSADE: DAMNED units cannot be targeted")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_veterans_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: BLACK CRUSADE: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._VETERANS_BLACK_CRUSADE_PREFIX,
+            source=stratagem.name or "BLACK CRUSADE",
+            player=self.player,
+            game=self.game,
+            track_phase=False,
+            extra_state={
+                mgr._VETERANS_BLACK_CRUSADE_DAMAGE_KEY: 0,
+                mgr._VETERANS_BLACK_CRUSADE_DAMAGE_CAP_KEY: 6,
+            },
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLACK CRUSADE: %s can shoot after Advancing or Falling Back this turn and gains conditional bolt Devastating Wounds.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_veterans_bringers_of_despair(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("BRINGERS OF DESPAIR", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BRINGERS OF DESPAIR: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BRINGERS OF DESPAIR: wrong phase")
+            return False
+        eligible = candidates or self._veterans_bringers_of_despair_candidates()
+        if eligible and not self._veterans_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BRINGERS OF DESPAIR: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: BRINGERS OF DESPAIR: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BRINGERS OF DESPAIR: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: BRINGERS OF DESPAIR: target must be HERETIC ASTARTES")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: BRINGERS OF DESPAIR: DAMNED units cannot be targeted")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: BRINGERS OF DESPAIR: target has already fought this phase")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_veterans_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: BRINGERS OF DESPAIR: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._VETERANS_BRINGERS_OF_DESPAIR_PREFIX,
+            source=stratagem.name or "BRINGERS OF DESPAIR",
+            player=self.player,
+            game=self.game,
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BRINGERS OF DESPAIR: %s gains Fights First until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_veterans_contemptuous_disregard(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        pending = self._csm_find_pending_reaction("CONTEMPTUOUS DISREGARD", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        attacker_root = self._csm_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: only available in your opponent's Shooting phase")
+            return False
+        if self._csm_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: attacking unit must be an enemy unit")
+            return False
+        if candidates and not self._veterans_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: target must be HERETIC ASTARTES")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: DAMNED units cannot be targeted")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        if not self._apply_armour_of_contempt(root, attacker_root, amount=1):
+            logger.error("ERROR: CONTEMPTUOUS DISREGARD: failed to apply AP reduction")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CONTEMPTUOUS DISREGARD: attacks from %s worsen AP by 1 against %s for the rest of this attack sequence.",
+            getattr(attacker_root, "name", "Enemy Unit"),
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_veterans_endless_ire(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit") or kwargs.get("focus_target")
+        destroyed_unit = kwargs.get("destroyed_unit")
+        pending = self._csm_find_pending_reaction("ENDLESS IRE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("target_enemy_unit") or pending.get("focus_target")
+            if destroyed_unit is None:
+                destroyed_unit = pending.get("destroyed_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENDLESS IRE: no source unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        destroyed_root = self._csm_root(destroyed_unit)
+        if root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        if candidates and not self._veterans_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ENDLESS IRE: source unit is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: ENDLESS IRE: source unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ENDLESS IRE: source unit cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root) or not self._csm_has_keyword(root, "CHARACTER"):
+            logger.error("ERROR: ENDLESS IRE: source unit must be a HERETIC ASTARTES CHARACTER")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: ENDLESS IRE: DAMNED units cannot be targeted")
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        focus_target_id = str(getattr(mgr, "veterans_focus_of_hatred_target_unit_id", "") or "").strip()
+        if destroyed_root is None:
+            logger.error("ERROR: ENDLESS IRE: destroyed focus target was not provided")
+            return False
+        if str(get_entity_id(destroyed_root) or "").strip() != focus_target_id:
+            logger.error("ERROR: ENDLESS IRE: trigger unit is not your current Focus of Hatred")
+            return False
+        if self._csm_owned_by_player(destroyed_root, self.player):
+            logger.error("ERROR: ENDLESS IRE: destroyed unit must be an enemy unit")
+            return False
+
+        source_unit_id = str(get_entity_id(root) or "")
+        candidate_enemy_units = list(
+            getattr(mgr, "veterans_endless_ire_candidate_enemy_units", lambda *_a, **_k: [])(
+                source_unit_id,
+                game=self.game,
+                player=self.player,
+            )
+            or []
+        )
+        if not candidate_enemy_units:
+            logger.error("ERROR: ENDLESS IRE: no visible enemy units within 12\" of the source unit")
+            return False
+        enemy_root = self._csm_root(enemy_unit)
+        if enemy_root is not None:
+            validate_target = getattr(mgr, "veterans_endless_ire_target_is_valid", None) if mgr is not None else None
+            if not callable(validate_target) or not bool(
+                validate_target(
+                    source_unit_id,
+                    str(get_entity_id(enemy_root) or ""),
+                    game=self.game,
+                    player=self.player,
+                )
+            ):
+                logger.error("ERROR: ENDLESS IRE: selected enemy unit is invalid")
+                return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        select_target = getattr(mgr, "select_veterans_endless_ire_target", None) if mgr is not None else None
+        if enemy_root is not None:
+            if not callable(select_target):
+                logger.error("ERROR: ENDLESS IRE: detachment target selection helper is unavailable")
+                return False
+            outcome = select_target(
+                source_unit_id,
+                str(get_entity_id(enemy_root) or ""),
+                game=self.game,
+                player=self.player,
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: ENDLESS IRE: failed to select a new focus target")
+                return False
+            self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: ENDLESS IRE: %s designates %s as the new Focus of Hatred.",
+                getattr(root, "name", "Unit"),
+                str(outcome.get("target_name", "Enemy Unit") or "Enemy Unit"),
+            )
+            return True
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "veterans_endless_ire_focus_target":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") == source_unit_id:
+                    return True
+
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Enemy Unit") or "Enemy Unit"),
+                payload={
+                    "source_unit_id": source_unit_id,
+                    "target_unit_id": str(get_entity_id(candidate) or ""),
+                    "army_id": get_entity_id(getattr(self.player, "army", None)),
+                },
+            )
+            for candidate in list(candidate_enemy_units or [])
+            if str(get_entity_id(candidate) or "")
+        ]
+        if not options:
+            logger.error("ERROR: ENDLESS IRE: no valid enemy choices were generated")
+            return False
+
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip() or "Any phase"
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Endless Ire: select a new focus of hatred.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "veterans_endless_ire_focus_target",
+                "ability_name": str(stratagem.name or "Endless Ire"),
+                "source_unit_id": source_unit_id,
+                "army_id": get_entity_id(getattr(self.player, "army", None)),
+                "candidate_unit_ids": [str(get_entity_id(candidate) or "") for candidate in list(candidate_enemy_units or [])],
+                "phase_name": phase_name.upper().replace(" ", "_"),
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn_owner_id": str(getattr(current_player, "id", "") or getattr(self.player, "id", "") or ""),
+                "optional": False,
+            },
+        )
+        self.game.request_decision(request)
+        logger.info(
+            "INFO: ENDLESS IRE: %s must select a new Focus of Hatred.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_veterans_let_the_galaxy_burn(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._csm_find_pending_reaction("LET THE GALAXY BURN", unit=unit)
+        if pending is not None and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: LET THE GALAXY BURN: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        if root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: LET THE GALAXY BURN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: LET THE GALAXY BURN: not your turn")
+            return False
+        if candidates and not self._veterans_unit_in_candidates(root, candidates):
+            logger.error("ERROR: LET THE GALAXY BURN: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: LET THE GALAXY BURN: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: LET THE GALAXY BURN: target cannot be selected")
+            return False
+        if not self._is_heretic_astartes_unit(root):
+            logger.error("ERROR: LET THE GALAXY BURN: target must be HERETIC ASTARTES")
+            return False
+        if self._csm_has_keyword(root, "TZEENTCH"):
+            logger.error("ERROR: LET THE GALAXY BURN: TZEENTCH units cannot be targeted")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: LET THE GALAXY BURN: target has already been selected to shoot")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._get_chaos_space_marines_mgr()
+        set_state = getattr(mgr, "_set_veterans_effect_state", None) if mgr is not None else None
+        if not callable(set_state):
+            logger.error("ERROR: LET THE GALAXY BURN: detachment effect state helper is unavailable")
+            return False
+        set_state(
+            root,
+            prefix=mgr._VETERANS_LET_THE_GALAXY_BURN_PREFIX,
+            source=stratagem.name or "LET THE GALAXY BURN",
+            player=self.player,
+            game=self.game,
+            extra_state={f"{mgr._VETERANS_LET_THE_GALAXY_BURN_PREFIX}_torrent_attacks": 6},
+        )
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LET THE GALAXY BURN: %s gains Ignores Cover on ranged weapons and Torrent attacks become 6 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_veterans_millennia_of_experience(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("moving_unit") or kwargs.get("enemy_unit")
+        action = kwargs.get("action")
+        pending = self._csm_find_pending_reaction("MILLENNIA OF EXPERIENCE", unit=unit)
+        if pending is not None:
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = pending.get("moving_unit") or pending.get("enemy_unit")
+            if action is None:
+                action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: no target unit provided")
+            return False
+
+        root = self._csm_root(unit)
+        enemy_root = self._csm_root(enemy_unit)
+        if root is None or enemy_root is None or not self._is_veterans_of_the_long_war_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: not opponent's Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: invalid trigger action")
+            return False
+        if self._csm_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: trigger unit must be an enemy unit")
+            return False
+        eligible = candidates or self._veterans_millennia_of_experience_candidates(enemy_unit=enemy_root)
+        if eligible and not self._veterans_unit_in_candidates(root, eligible):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: target is not currently eligible")
+            return False
+        if not self._csm_owned_by_player(root, self.player):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: target unit is not yours")
+            return False
+        if not self._csm_is_alive(root) or not self._csm_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: target cannot be selected")
+            return False
+        if not (
+            self._is_heretic_astartes_infantry(root)
+            or self._is_heretic_astartes_mounted(root)
+        ):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: target must be HERETIC ASTARTES INFANTRY or MOUNTED")
+            return False
+        if self._is_damned_unit(root):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: DAMNED units cannot be targeted")
+            return False
+        if self._csm_unit_is_engaged(root):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: target must not be within Engagement Range")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: reactive move queue unavailable")
+            return False
+        if not self._cabal_spend_cp(stratagem, target_unit=root):
+            return False
+
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="veterans_millennia_of_experience",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "MILLENNIA OF EXPERIENCE"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            allow_skip=True,
+            extra_context={"veterans_millennia_of_experience_trigger_unit_id": str(get_entity_id(enemy_root) or "")},
+        )
+        if request is None:
+            logger.error("ERROR: MILLENNIA OF EXPERIENCE: failed to queue reactive move")
+            return False
+
+        self._cabal_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MILLENNIA OF EXPERIENCE: %s can make a reactive Normal move up to 6\" after %s finishes moving.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy Unit"),
+        )
+        return True
+
     def _use_chaos_space_marines_cabal_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -10251,12 +11217,20 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_cabal_unholy_haste(stratagem, **kwargs)
         if name_u == "AUTOSTIMULANTS":
             return self._use_creations_of_bile_autostimulants(stratagem, **kwargs)
+        if name_u == "BLACK CRUSADE":
+            return self._use_veterans_black_crusade(stratagem, **kwargs)
         if name_u == "BLOODY EXAMPLE":
             return self._use_dread_talons_bloody_example(stratagem, **kwargs)
+        if name_u == "BRINGERS OF DESPAIR":
+            return self._use_veterans_bringers_of_despair(stratagem, **kwargs)
         if name_u == "BRUTAL ATTRITION":
             return self._use_fellhammer_brutal_attrition(stratagem, **kwargs)
         if name_u == "COILS OF DECEPTION":
             return self._use_deceptors_coils_of_deception(stratagem, **kwargs)
+        if name_u == "CONTEMPTUOUS DISREGARD":
+            if self._is_veterans_of_the_long_war_detachment():
+                return self._use_veterans_contemptuous_disregard(stratagem, **kwargs)
+            return None
         if name_u == "CORRUPTED MUNITIONS":
             return self._use_renegade_warband_corrupted_munitions(stratagem, **kwargs)
         if name_u == "DAEMONIC POSSESION":
@@ -10271,6 +11245,8 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_creations_of_bile_delayed_mutations(stratagem, **kwargs)
         if name_u == "DIABOLIC REGENERATION":
             return self._use_creations_of_bile_diabolic_regeneration(stratagem, **kwargs)
+        if name_u == "ENDLESS IRE":
+            return self._use_veterans_endless_ire(stratagem, **kwargs)
         if name_u == "FEEDING FRENZY":
             return self._use_soulforged_feeding_frenzy(stratagem, **kwargs)
         if name_u == "FROM ALL SIDES":
@@ -10279,8 +11255,12 @@ class ChaosSpaceMarinesStratagemMixin:
             return self._use_soulforged_glut_of_souls(stratagem, **kwargs)
         if name_u == "HARDENED KILLERS":
             return self._use_hurons_marauders_hardened_killers(stratagem, **kwargs)
+        if name_u == "LET THE GALAXY BURN":
+            return self._use_veterans_let_the_galaxy_burn(stratagem, **kwargs)
         if name_u == "MASTERS ARE WATCHING":
             return self._use_creations_of_bile_masters_are_watching(stratagem, **kwargs)
+        if name_u == "MILLENNIA OF EXPERIENCE":
+            return self._use_veterans_millennia_of_experience(stratagem, **kwargs)
         if name_u == "AT THE TYRANT'S COMMAND":
             return self._use_hurons_marauders_at_the_tyrants_command(stratagem, **kwargs)
         if name_u == "ENCIRCLING SURGE":

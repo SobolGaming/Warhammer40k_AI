@@ -61,6 +61,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLAR'S WISDOM",
     "EXEMPLAR’S WISDOM",
     "AUTOSTIMULANTS",
+    "BLACK CRUSADE",
     "COILS OF DECEPTION",
     "DELAYED MUTATIONS",
     "DETONATOR",
@@ -72,11 +73,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GLIMMERSHIFT PORTAL",
     "HARDENED KILLERS",
     "HORRIFIC INCURSION",
+    "LET THE GALAXY BURN",
     "MASTERS ARE WATCHING",
     "MALICIOUS SURGE",
+    "MILLENNIA OF EXPERIENCE",
     "MORTAL THRALLS",
     "AT THE TYRANT'S COMMAND",
     "ETERNAL HATE",
+    "ENDLESS IRE",
     "EYE OF THE GODS",
     "FESTERING MIASMA",
     "PERSISTENT ASSAILANTS",
@@ -118,6 +122,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPECIMENS FOR THE SPIDER",
     "TO THE FAVOURED THE SPOILS",
     "ENCIRCLING SURGE",
+    "BRINGERS OF DESPAIR",
     "WARPCHARGED ENGINES",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
@@ -1863,6 +1868,7 @@ class StratagemManager(
             "RELENTLESS TERROR",
             "RELENTLESS PURSUIT",
             "PREDATORY PURSUIT",
+            "MILLENNIA OF EXPERIENCE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1912,6 +1918,7 @@ class StratagemManager(
             "BLOODY EXAMPLE",
             "EYE OF THE GODS",
             "SADISTIC DISPLAY",
+            "ENDLESS IRE",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -5632,7 +5639,7 @@ class StratagemManager(
             "CEASELESS ONSLAUGHT": "Target: EMPEROR'S CHILDREN unit that disembarked this turn from a friendly TRANSPORT that made a Normal move",
             "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
             "COMBAT STIMMS": "Target: EMPEROR'S CHILDREN INFANTRY unit selected as an enemy fight attack target",
-            "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "CONTEMPTUOUS DISREGARD": "Target: your unit selected as an enemy attack target",
             "DARK APPARITIONS": "Target: DAEMONETTES unit not within Engagement Range; enters Strategic Reserves",
             "DYNAMIC BREAKTHROUGH": "Target: EMPEROR'S CHILDREN VEHICLE that has not moved this phase",
             "EMBRACE THE PAIN": "Target: EMPEROR'S CHILDREN INFANTRY unit (Fight phase start)",
@@ -6502,6 +6509,7 @@ class StratagemManager(
             self._queue_renegade_warband_phase_start_reactions(player=player, phase=phase)
             self._queue_renegade_raiders_phase_start_reactions(player=player, phase=phase)
             self._queue_soulforged_phase_start_reactions(player=player, phase=phase)
+            self._queue_veterans_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8520,6 +8528,7 @@ class StratagemManager(
             self._cleanup_pactbound_phase_end_effects(phase=phase)
             self._cleanup_renegade_raiders_phase_end_effects(phase=phase)
             self._cleanup_soulforged_phase_end_effects(phase=phase)
+            self._cleanup_veterans_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Emperor's Children (Court of the Phoenician): phase-end cleanup.
@@ -9481,6 +9490,7 @@ class StratagemManager(
         self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
+        self._queue_veterans_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -10598,6 +10608,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_veterans_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_orbital_assault_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -11670,6 +11687,13 @@ class StratagemManager(
             raise
         try:
             self._queue_chaos_cult_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_veterans_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -14221,6 +14245,13 @@ class StratagemManager(
             raise
         try:
             self._queue_pactbound_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_veterans_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

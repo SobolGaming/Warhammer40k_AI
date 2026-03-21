@@ -4825,6 +4825,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(validate_target) or not bool(validate_target(target_unit_id, game=game, player=player)):
             return ("Focus of Hatred selected target is invalid.",)
         return ()
+    if ability == "veterans_endless_ire_focus_target":
+        if is_skip_choice(request, result):
+            return ("Endless Ire target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Endless Ire army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_veterans_of_the_long_war", lambda: False)()):
+            return ("Endless Ire requires Veterans of the Long War.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Endless Ire selection requires source_unit_id.",)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Endless Ire selection requires target_unit_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Endless Ire selection contains an ineligible target.",)
+        expected_phase = str(ctx.get("phase_name", "") or "").strip().replace("_", " ").upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().replace("_", " ").upper()
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return ("Endless Ire can only be selected in the phase it was used.")
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "").strip()
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_player_id and current_player_id != turn_owner_id:
+                return ("Endless Ire selection is no longer valid.")
+        try:
+            request_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            request_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if request_turn and current_turn and request_turn != current_turn:
+            return ("Endless Ire selection is no longer valid.")
+        validate_target = getattr(mgr, "veterans_endless_ire_target_is_valid", None)
+        if not callable(validate_target) or not bool(
+            validate_target(
+                source_unit_id,
+                target_unit_id,
+                game=game,
+                player=player,
+            )
+        ):
+            return ("Endless Ire selected target is invalid.",)
+        return ()
     if ability == "renegade_warband_twisted_doctrine":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -12153,6 +12215,38 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
             return None
         ability_name = str(ctx.get("ability_name", "") or "Focus of Hatred").strip() or "Focus of Hatred"
+        target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
+        _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your focus of hatred.")
+        return dict(outcome)
+    if ability == "veterans_endless_ire_focus_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return None
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return None
+        select_fn = getattr(mgr, "select_veterans_endless_ire_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(source_unit_id, target_unit_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Endless Ire").strip() or "Endless Ire"
         target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
         _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your focus of hatred.")
         return dict(outcome)
