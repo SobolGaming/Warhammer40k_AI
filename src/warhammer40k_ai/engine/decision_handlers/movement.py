@@ -2804,15 +2804,31 @@ def _validate_resolve_coherency(game: object, request: DecisionRequest, result: 
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Coherency resolution: unit not found.",)
-    to_remove = result.payload.get("model_ids")
-    if not isinstance(to_remove, list) or not to_remove:
+    to_remove = list(result.payload.get("model_ids") or [])
+    if len(to_remove) != 1:
+        return ("Coherency resolution requires exactly one model_id.",)
+    selected_model_id = str(to_remove[0] or "")
+    if not selected_model_id:
         return ("Coherency resolution requires model_ids list.",)
-    for model_id in to_remove:
-        model = get_model(game, str(model_id or ""))
-        if model is None:
-            return (f"Model not found: {model_id}",)
-        if getattr(model, "parent_unit", None) is not unit:
-            return ("Model does not belong to the unit.",)
+    allowed_model_ids = {
+        str(value or "")
+        for value in list(request.context.get("allowed_model_ids", []) or [])
+        if str(value or "")
+    }
+    if allowed_model_ids and selected_model_id not in allowed_model_ids:
+        return ("Selected model is not eligible for coherency removal.",)
+    model = get_model(game, selected_model_id)
+    if model is None:
+        return (f"Model not found: {selected_model_id}",)
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    if callable(get_models):
+        unit_models = list(get_models() or [])
+    else:
+        unit_models = list(getattr(unit, "models", []) or [])
+    if model not in unit_models:
+        return ("Model does not belong to the unit.",)
+    if not bool(getattr(model, "is_alive", True)):
+        return ("Selected model is already destroyed.",)
     return ()
 
 
@@ -2824,15 +2840,13 @@ def _apply_resolve_coherency(game: object, request: DecisionRequest, result: Dec
     if unit is None:
         raise RuntimeError("Coherency resolution: unit not found.")
     to_remove = list(result.payload.get("model_ids") or [])
-    for model_id in to_remove:
-        model = get_model(game, str(model_id or ""))
-        if model is None:
-            continue
-        try:
-            model.wounds = 0
-        except Exception:
-            pass
-        model.die()
+    model_id = str(to_remove[0] or "") if to_remove else ""
+    model = get_model(game, model_id)
+    if model is None:
+        raise RuntimeError("Coherency resolution: model not found.")
+    if hasattr(model, "wounds"):
+        model.wounds = 0
+    model.die(game_map=getattr(game, "map", None))
     return None
 
 

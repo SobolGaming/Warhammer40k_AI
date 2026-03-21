@@ -31,7 +31,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `SELECT_UNIT` — Choose the next eligible unit to act in the current phase step.
 - `SELECT_MOVEMENT_ACTION` — Choose move/advance/fall back/remain.
 - `MOVE_UNIT` — Choose movement target/path.
-- `RESOLVE_COHERENCY` — Resolve unit coherency placement.
+- `RESOLVE_COHERENCY` — Choose one additional casualty to restore unit coherency after model deaths.
 - `EMBARK` — Embark unit into transport.
 - `DISEMBARK` — Disembark unit from transport.
 - `PICK_POINT` — Choose a point on the battlefield.

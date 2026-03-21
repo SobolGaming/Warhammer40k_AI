@@ -17,6 +17,139 @@ class GameReactiveDecisionsMixin:
             return ""
         return f"{turn}:{phase_name}:{owner_id}"
 
+    @staticmethod
+    def _coherency_root_unit(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    @staticmethod
+    def _coherency_models(unit) -> list:
+        if unit is None:
+            return []
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(unit, "models", []) or [])
+        alive_models = [
+            model
+            for model in models
+            if model is not None
+            and bool(getattr(model, "is_alive", True))
+            and not bool(getattr(model, "_pending_placement", False))
+        ]
+        alive_models.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return alive_models
+
+    def _coherency_status_for_unit(self, unit) -> tuple[bool, list[str]]:
+        models = self._coherency_models(unit)
+        if len(models) <= 1:
+            return True, []
+        required_neighbors = 2 if len(models) >= 7 else 1
+        non_coherent_model_ids: list[str] = []
+        for model in models:
+            neighbors = 0
+            for other in models:
+                if other is model:
+                    continue
+                if model.model_base.coherency_distance(other.model_base) <= 0.0:
+                    neighbors += 1
+                    if neighbors >= required_neighbors:
+                        break
+            if neighbors < required_neighbors:
+                model_id = str(get_entity_id(model) or "")
+                if model_id:
+                    non_coherent_model_ids.append(model_id)
+        non_coherent_model_ids.sort()
+        return not non_coherent_model_ids, non_coherent_model_ids
+
+    @staticmethod
+    def _coherency_owner_player_id(unit) -> str:
+        if unit is None:
+            return ""
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        player = getattr(army, "player", None)
+        return str(getattr(player, "id", "") or "")
+
+    def _pending_post_casualty_coherency_requests(self, unit_id: str) -> list[DecisionRequest]:
+        from ..decision_kinds import DECISION_RESOLVE_COHERENCY
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return []
+        pending: list[DecisionRequest] = []
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_RESOLVE_COHERENCY:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("coherency_failure_reason", "") or "") != "post_casualty":
+                continue
+            if str(ctx.get("unit_id", "") or "") != str(unit_id or ""):
+                continue
+            pending.append(request)
+        return pending
+
+    @staticmethod
+    def _coherency_damage_source_label(unit, destroyed_model) -> str:
+        damage_source = str(getattr(destroyed_model, "_last_damage_source_kind", "") or "").strip()
+        if damage_source:
+            return damage_source
+        weapon_profile = getattr(unit, "_last_destroyed_by_weapon_profile", None)
+        weapon_name = str(getattr(weapon_profile, "name", "") or "").strip()
+        if weapon_name:
+            return weapon_name
+        attacker_unit = getattr(unit, "_last_destroyed_by_unit", None)
+        attacker_name = str(getattr(attacker_unit, "name", "") or "").strip()
+        if attacker_name:
+            return attacker_name
+        return ""
+
+    def _maybe_queue_post_casualty_coherency_resolution(self, *, unit=None, destroyed_model=None):
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        root_unit = self._coherency_root_unit(unit)
+        if root_unit is None:
+            return None
+        unit_id = str(get_entity_id(root_unit) or "")
+        if not unit_id:
+            return None
+        is_coherent, non_coherent_model_ids = self._coherency_status_for_unit(root_unit)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "pop"):
+            for pending in self._pending_post_casualty_coherency_requests(unit_id):
+                queue.pop(getattr(pending, "decision_id", None))
+        if is_coherent:
+            return None
+        from ..decision_requests import queue_resolve_coherency_request
+
+        phase_obj = getattr(self, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or getattr(self, "_current_phase_name", "") or "").strip().upper()
+        context = {
+            "unit_id": unit_id,
+            "phase_name": phase_name,
+            "damage_source": self._coherency_damage_source_label(root_unit, destroyed_model),
+            "coherency_failure_reason": "post_casualty",
+            "required_until_coherent": True,
+            "non_coherent_model_ids": list(non_coherent_model_ids),
+        }
+        destroyed_model_id = str(get_entity_id(destroyed_model) or "") if destroyed_model is not None else ""
+        if destroyed_model_id:
+            context["destroyed_model_id"] = destroyed_model_id
+        player_id = self._coherency_owner_player_id(root_unit) or None
+        return queue_resolve_coherency_request(
+            self,
+            root_unit,
+            player_id=player_id,
+            context=context,
+        )
+
     def queue_phoenix_gem_return(
         self,
         *,

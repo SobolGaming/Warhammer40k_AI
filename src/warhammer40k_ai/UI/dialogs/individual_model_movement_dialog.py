@@ -8,9 +8,6 @@ from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
-from ...engine.ui_decision_bridge import (
-    require_pending_decision_request as _require_pending_decision_request,
-)
 import logging
 logger = logging.getLogger(__name__)
 
@@ -231,7 +228,6 @@ class IndividualModelMovementDialog(BaseDialog):
         self._aircraft_pivot_degrees = 0.0
         self._aircraft_move_completed_all = False
         self.placement_validator = None
-        self._coherency_request = None
         self.place_only_model_ids = None
         self._place_only_model_indices = None
         self.allow_skip = True
@@ -651,11 +647,6 @@ class IndividualModelMovementDialog(BaseDialog):
         # else:
         #     print(f" DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
 
-        # Handle coherency dialog events first if it's open
-        if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
-            # print(f" DEBUG: {dialog_name} - Delegating to coherency dialog")
-            return self.coherency_dialog.handle_event(event)
-
         # Handle floor selection dialog if open.
         # IMPORTANT: while this sub-dialog is visible, consume all events here so clicks
         # do not leak through to battlefield placement/movement handlers.
@@ -757,9 +748,6 @@ class IndividualModelMovementDialog(BaseDialog):
                 return False
             if getattr(self, "floor_selection_dialog", None) is not None:
                 if getattr(self.floor_selection_dialog, "visible", False):
-                    return False
-            if getattr(self, "coherency_dialog", None) is not None:
-                if getattr(self.coherency_dialog, "visible", False):
                     return False
             if not self.awaiting_battlefield_click:
                 return False
@@ -1562,76 +1550,6 @@ class IndividualModelMovementDialog(BaseDialog):
         # No coherency violations, complete normally
         self._finalize_movement_completion()
 
-    def _show_coherency_violation_dialog(self, non_coherent_models: list):
-        """Show the coherency violation dialog"""
-        from .coherency_violation_dialog import CoherencyViolationDialog
-        from ...engine.decision_kinds import DECISION_RESOLVE_COHERENCY
-        from ...engine.decisions import DecisionOption, DecisionRequest
-        from ...utility.entity_ids import get_entity_id
-
-        # Create and show the coherency dialog
-        coherency_dialog = CoherencyViolationDialog(self.screen_width, self.screen_height)
-
-        # Collect all visible dialogs to avoid overlap
-        existing_dialogs = []
-        if self.visible:
-            existing_dialogs.append(self)
-
-        unit_id = get_entity_id(self.unit)
-        try:
-            game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
-        except Exception:
-            game = None
-        request = _require_pending_decision_request(game,
-            DECISION_RESOLVE_COHERENCY,
-            f"Resolve coherency for {getattr(self.unit, 'name', 'Unit')}",
-            player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None),
-            options=[DecisionOption.create("Confirm removals", payload={"unit_id": unit_id})],
-            context={"unit_id": unit_id},
-        )
-        self._coherency_request = request
-        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs, decision_request=request)
-
-        # Store reference to the dialog so it can be drawn and handled
-        self.coherency_dialog = coherency_dialog
-
-    def _on_coherency_resolution(self, option_id: str, removed_model_ids: list):
-        """Called when coherency violation dialog is complete"""
-        if removed_model_ids:
-            logger.info(f"INFO: Coherency violations resolved for {self.unit.name}")
-        else:
-            logger.info(f"INFO: Coherency resolution cancelled for {self.unit.name}")
-
-        try:
-            from ...engine.command_kinds import CMD_RESOLVE_DECISION
-            from ...engine.commands import GameCommand
-            req = getattr(self, "_coherency_request", None)
-            if req is not None:
-                chosen_id = option_id or (req.options[0].option_id if req.options else "")
-                payload = {
-                    "decision_id": req.decision_id,
-                    "option_id": chosen_id,
-                    "result_payload": {"model_ids": list(removed_model_ids or [])},
-                }
-                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
-                try:
-                    game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
-                    if game is not None:
-                        game.apply_command(cmd)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Clean up dialog reference
-        if hasattr(self, 'coherency_dialog'):
-            delattr(self, 'coherency_dialog')
-        if hasattr(self, "_coherency_request"):
-            self._coherency_request = None
-
-        # Complete the movement
-        self._finalize_movement_completion()
-
     def _finalize_movement_completion(self):
         """Finalize the movement completion"""
         logger.info(f"INFO: {self.unit.name} {self.movement_type.upper()} movement completed")
@@ -1831,9 +1749,6 @@ class IndividualModelMovementDialog(BaseDialog):
         if self.allow_skip and 'skip' in self.buttons:
             self.draw_button(screen, 'skip', "Skip")
 
-        # Draw coherency dialog if it's open
-        if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
-            self.coherency_dialog.draw(screen)
         # Draw floor selection dialog if it's open
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog and self.floor_selection_dialog.visible:
             self.floor_selection_dialog.draw(screen)

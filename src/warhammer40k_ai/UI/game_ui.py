@@ -3292,10 +3292,84 @@ class GameView:
             return
 
         try:
-            from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET
+            from ..engine.decision_kinds import (
+                DECISION_ALLOCATE_DAMAGE,
+                DECISION_RESOLVE_COHERENCY,
+                DECISION_SELECT_PRECISION_TARGET,
+            )
         except Exception:
             DECISION_ALLOCATE_DAMAGE = ""
+            DECISION_RESOLVE_COHERENCY = ""
             DECISION_SELECT_PRECISION_TARGET = ""
+
+        if decision_type == DECISION_RESOLVE_COHERENCY:
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if not hasattr(self, "coherency_violation_dialog") or self.coherency_violation_dialog is None:
+                try:
+                    from .dialogs.coherency_violation_dialog import CoherencyViolationDialog
+
+                    self.coherency_violation_dialog = CoherencyViolationDialog(
+                        self.screen.get_width(),
+                        self.screen.get_height(),
+                    )
+                except Exception:
+                    self.coherency_violation_dialog = None
+            dlg = self.coherency_violation_dialog
+            default_id = first_option_id(request)
+            if dlg is None or unit is None:
+                if default_id:
+                    first_option = next(
+                        (opt for opt in list(getattr(request, "options", []) or []) if opt.option_id == default_id),
+                        None,
+                    )
+                    payload = dict(getattr(first_option, "payload", {}) or {}) if first_option is not None else {}
+                    model_id = str(payload.get("model_id", "") or "")
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        default_id,
+                        result_payload={"model_ids": [model_id]} if model_id else {},
+                        player_id=getattr(player, "id", None),
+                    )
+                return
+
+            def _on_choice(option_id: str, removed_model_ids: list[str]):
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload={"model_ids": list(removed_model_ids or [])},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                unit,
+                list(ctx.get("non_coherent_model_ids", []) or []),
+                _on_choice,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
 
         if decision_type in (DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET):
             player = self._resolve_player_by_id(getattr(request, "player_id", None))

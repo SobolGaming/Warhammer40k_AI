@@ -5896,39 +5896,6 @@ class PhaseManager:
             decision_request=decision_request,
         )
 
-    def check_unit_coherency_after_movement(self, unit: 'Unit'):
-        """
-        Check unit coherency after movement completion and handle violations.
-
-        This should be called after a unit completes its movement to ensure
-        coherency is maintained according to Warhammer 40k rules.
-        """
-        from warhammer40k_ai.utility.calcs import validate_unit_coherency_after_movement
-
-        # Get final positions of all models
-        final_positions = []
-        for model in unit.models:
-            if model.is_alive:
-                final_positions.append(model.get_location())
-
-        # Validate coherency
-        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(unit, final_positions)
-
-        if not is_coherent:
-            # Movement must END in coherency. Do not remove models for movement-caused incoherency.
-            logger.error(f"ERROR: {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
-                  f"Movement ending out of coherency is not allowed.")
-        else:
-            logger.info(f"OK: {unit.name} maintains coherency after movement")
-
-    def _on_coherency_resolution(self, models_removed: bool):
-        """Called when coherency violation dialog is complete"""
-        if models_removed:
-            logger.info("OK: Coherency violations resolved")
-        else:
-            logger.error("ERROR: Coherency resolution cancelled")
-
-
 class PreBattlePhaseHandler(BasePhaseHandler):
     """Handles events during the RESOLVE_PREBATTLE_RULES phase (e.g., Scout moves)"""
     def __init__(self, game_view: 'GameView'):

@@ -643,6 +643,14 @@ class DamageDeathMixin:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
         self.update_coherency()
+        if not fleed:
+            get_parent_army = getattr(self, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else getattr(self, "parent_army", None)
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None)
+            maybe_queue = getattr(game, "_maybe_queue_post_casualty_coherency_resolution", None)
+            if callable(maybe_queue):
+                maybe_queue(unit=self, destroyed_model=model)
         self._maybe_swap_horrors_datasheet()
         try:
             self._refresh_bearer_unit_common_modifiers()

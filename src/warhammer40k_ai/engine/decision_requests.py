@@ -19,6 +19,7 @@ from .decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
+    DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_MOVEMENT_ACTION,
     DECISION_SELECT_UNIT,
@@ -592,6 +593,112 @@ def queue_move_unit_request(
         player_id=player_id,
         max_distance=max_distance,
         allow_skip=allow_skip,
+        context=context,
+    )
+    if request is None:
+        return None
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        raise RuntimeError("Game does not support request_decision().")
+    request_decision(request)
+    return request
+
+
+def _resolve_coherency_prompt(*, prompt: str, unit: object) -> str:
+    text = str(prompt or "").strip()
+    if text:
+        return text
+    label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+    return f"Select one additional casualty to restore coherency for {label}"
+
+
+def _coherency_resolution_models(unit: object) -> list[object]:
+    if unit is None:
+        return []
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    if callable(get_models):
+        models = list(get_models() or [])
+    else:
+        models = list(getattr(unit, "models", []) or [])
+    alive_models: list[object] = []
+    for model in models:
+        if model is None:
+            continue
+        if not bool(getattr(model, "is_alive", True)):
+            continue
+        if bool(getattr(model, "_pending_placement", False)):
+            continue
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id:
+            continue
+        alive_models.append(model)
+    alive_models.sort(key=lambda model: str(get_entity_id(model) or "").strip())
+    return alive_models
+
+
+def build_resolve_coherency_request(
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    if unit is None:
+        return None
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return None
+    models = _coherency_resolution_models(unit)
+    if not models:
+        return None
+    if player_id is None:
+        player_id = _player_id_for_unit(unit)
+    options: list[DecisionOption] = []
+    allowed_model_ids: list[str] = []
+    for model in models:
+        model_id = str(get_entity_id(model) or "").strip()
+        if not model_id:
+            continue
+        allowed_model_ids.append(model_id)
+        model_label = str(getattr(model, "name", "") or "Model").strip() or "Model"
+        options.append(
+            DecisionOption.create(
+                model_label,
+                payload={
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "action_id": f"{DECISION_RESOLVE_COHERENCY}:{unit_id}:{model_id}",
+                },
+            )
+        )
+    if not options:
+        return None
+    request_context = dict(context or {})
+    request_context.setdefault("unit_id", unit_id)
+    request_context.setdefault("coherency_failure_reason", "post_casualty")
+    request_context.setdefault("required_until_coherent", True)
+    request_context["allowed_model_ids"] = list(allowed_model_ids)
+    return DecisionRequest.create(
+        DECISION_RESOLVE_COHERENCY,
+        _resolve_coherency_prompt(prompt=prompt, unit=unit),
+        player_id=player_id,
+        options=options,
+        context=request_context,
+    )
+
+
+def queue_resolve_coherency_request(
+    game: object,
+    unit: object,
+    *,
+    prompt: str = "",
+    player_id: Optional[str] = None,
+    context: Optional[dict[str, Any]] = None,
+) -> Optional[DecisionRequest]:
+    request = build_resolve_coherency_request(
+        unit,
+        prompt=prompt,
+        player_id=player_id,
         context=context,
     )
     if request is None:
