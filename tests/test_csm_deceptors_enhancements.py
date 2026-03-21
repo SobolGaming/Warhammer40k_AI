@@ -6,6 +6,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -279,7 +280,7 @@ def test_soul_link_applies_keyword_and_replaces_abilities_until_next_command_pha
         faction_keywords=["HERETIC ASTARTES"],
         model_count=1,
     )
-    source.possible_abilities = ["Source Ability"]
+    source.possible_abilities = [Ability("Source Ability", "CSM", "", "Datasheet", "")]
     target = _make_unit(
         "Master of Executions",
         datasheet_id="deceptors_soul_link_target_ds",
@@ -287,7 +288,9 @@ def test_soul_link_applies_keyword_and_replaces_abilities_until_next_command_pha
         faction_keywords=["HERETIC ASTARTES"],
         model_count=1,
     )
-    target.possible_abilities = ["Borrowed Ability"]
+    target.possible_abilities = [
+        Ability("Borrowed Ability", "CSM", "This model has the Stealth ability.", "Datasheet", "")
+    ]
     csm_army.add_unit(source)
     csm_army.add_unit(target)
     _set_unit_location(source, x=0.0, y=0.0)
@@ -321,7 +324,10 @@ def test_soul_link_applies_keyword_and_replaces_abilities_until_next_command_pha
     assert bool(getattr(outcome, "ok", False))
     assert bool(source.special_rules.get("enhancement_soul_link_active", False))
     assert bool(source_model.has_any_keyword("PSYKER"))
-    assert list(source._iter_active_possible_abilities()) == ["Borrowed Ability"]
+    assert bool(source.has_stealth())
+    assert [str(getattr(ability, "name", ability)) for ability in list(source._iter_active_possible_abilities())] == [
+        "Borrowed Ability"
+    ]
 
     game.turn = 2
     game.start_command_phase()
@@ -333,4 +339,148 @@ def test_soul_link_applies_keyword_and_replaces_abilities_until_next_command_pha
     assert bool(getattr(skip_outcome, "ok", False))
     assert not bool(source.special_rules.get("enhancement_soul_link_active", False))
     assert not bool(source_model.has_any_keyword("PSYKER"))
-    assert list(source._iter_active_possible_abilities()) == ["Source Ability"]
+    assert not bool(source.has_stealth())
+    assert [str(getattr(ability, "name", ability)) for ability in list(source._iter_active_possible_abilities())] == [
+        "Source Ability"
+    ]
+
+
+def test_soul_link_allows_reserve_source_and_offboard_target_but_excludes_embarked_and_keeps_attachment_rules():
+    game, csm_army, _enemy_army, csm_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    source = _make_unit(
+        "Chaos Lord",
+        datasheet_id="deceptors_soul_link_reserve_source_ds",
+        keywords=["CHARACTER", "INFANTRY", "HERETIC ASTARTES", "CHAOS LORD"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+        attached_to=["legionaries_ds"],
+    )
+    source.deployed = False
+    source.reserve_status = "strategic_reserves"
+    source.can_be_attached_to = ["Legionaries"]
+    source.possible_abilities = [Ability("Source Ability", "CSM", "", "Datasheet", "")]
+
+    target_reserve = _make_unit(
+        "Master of Executions",
+        datasheet_id="deceptors_soul_link_reserve_target_ds",
+        keywords=["CHARACTER", "INFANTRY", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+    )
+    target_reserve.deployed = False
+    target_reserve.reserve_status = "reserves"
+    target_reserve.possible_abilities = [
+        Ability("Deep Strike", "CSM", "", "Core", ""),
+        Ability("Dark Pacts", "CSM", "", "Faction", ""),
+        Ability("Borrowed Ability", "CSM", "", "Datasheet", ""),
+    ]
+
+    embarked_target = _make_unit(
+        "Embarked Sorcerer",
+        datasheet_id="deceptors_soul_link_embarked_target_ds",
+        keywords=["CHARACTER", "INFANTRY", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+    )
+    transport = _make_unit(
+        "Chaos Rhino",
+        datasheet_id="deceptors_transport_ds",
+        keywords=["TRANSPORT", "VEHICLE", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+    )
+    embarked_target.embarked_in = transport
+
+    csm_army.add_unit(source)
+    csm_army.add_unit(target_reserve)
+    csm_army.add_unit(embarked_target)
+    csm_army.add_unit(transport)
+    game.map.units = [transport]
+    game.rebuild_entity_registry()
+
+    _apply_enhancement(
+        source,
+        enhancement_id="000008964005",
+        name="Soul Link",
+        description=(
+            "HERETIC ASTARTES INFANTRY model only. At the start of your Command phase, you can select one other "
+            "HERETIC ASTARTES INFANTRY CHARACTER model from your army (excluding EPIC HEROES). Until the start of "
+            "your next Command phase, the bearer gains the PSYKER keyword, and replace the bearer’s datasheet "
+            "abilities with the datasheet abilities of the CHARACTER you selected."
+        ),
+    )
+
+    reserve_target_model_id = str(get_entity_id(target_reserve.models[0]) or "")
+    embarked_target_model_id = str(get_entity_id(embarked_target.models[0]) or "")
+
+    game.start_command_phase()
+    request = _find_choose_quarry_request(game, ability="deceptors_soul_link_target")
+    assert request is not None
+    assert _find_option_id(request, payload_key="target_model_id", expected_value=reserve_target_model_id)
+    assert not _find_option_id(request, payload_key="target_model_id", expected_value=embarked_target_model_id)
+
+    option_id = _find_option_id(request, payload_key="target_model_id", expected_value=reserve_target_model_id)
+    outcome = resolve_decision_command(game, request, option_id, player_id=csm_player.id)
+    assert bool(getattr(outcome, "ok", False))
+
+    active_abilities = list(source._iter_active_possible_abilities())
+    assert [str(getattr(ability, "name", ability)) for ability in active_abilities] == [
+        "Deep Strike",
+        "Dark Pacts",
+        "Borrowed Ability",
+    ]
+    assert [str(getattr(ability, "type", "")) for ability in active_abilities] == ["Core", "Faction", "Datasheet"]
+    assert list(source.can_be_attached_to) == ["Legionaries"]
+
+
+def test_soul_link_borrowed_once_per_battle_usage_is_tracked_per_model():
+    game, csm_army, _enemy_army, csm_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    source = _make_unit(
+        "Chaos Lord",
+        datasheet_id="deceptors_soul_link_once_source_ds",
+        keywords=["CHARACTER", "INFANTRY", "HERETIC ASTARTES", "CHAOS LORD"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+    )
+    target = _make_unit(
+        "Master of Executions",
+        datasheet_id="deceptors_soul_link_once_target_ds",
+        keywords=["CHARACTER", "INFANTRY", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+        model_count=1,
+    )
+    target.possible_abilities = [Ability("Borrowed Once", "CSM", "Once per battle.", "Datasheet", "")]
+    csm_army.add_unit(source)
+    csm_army.add_unit(target)
+    game.map.units = [source, target]
+    game.rebuild_entity_registry()
+
+    _apply_enhancement(
+        source,
+        enhancement_id="000008964005",
+        name="Soul Link",
+        description=(
+            "HERETIC ASTARTES INFANTRY model only. At the start of your Command phase, you can select one other "
+            "HERETIC ASTARTES INFANTRY CHARACTER model from your army (excluding EPIC HEROES). Until the start of "
+            "your next Command phase, the bearer gains the PSYKER keyword, and replace the bearer’s datasheet "
+            "abilities with the datasheet abilities of the CHARACTER you selected."
+        ),
+    )
+
+    target_model = target.models[0]
+    source_model = source.models[0]
+    assert target_model.mark_used_once_per_battle("borrowed_once", ability_name="Borrowed Once", source="datasheet")
+
+    game.start_command_phase()
+    request = _find_choose_quarry_request(game, ability="deceptors_soul_link_target")
+    assert request is not None
+    option_id = _find_option_id(request, payload_key="target_model_id", expected_value=str(get_entity_id(target_model) or ""))
+    assert option_id
+    outcome = resolve_decision_command(game, request, option_id, player_id=csm_player.id)
+    assert bool(getattr(outcome, "ok", False))
+    assert not source_model.has_used_once_per_battle("borrowed_once")
+    assert source_model.mark_used_once_per_battle("borrowed_once", ability_name="Borrowed Once", source="datasheet")

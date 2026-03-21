@@ -23072,9 +23072,22 @@ class GamePhaseHandlersMixin:
                     continue
                 if root.is_in_reserves() or root.is_embarked:
                     continue
+                round_state = getattr(root, "round_state", None)
+                if not bool(getattr(round_state, "fought_this_phase", False)):
+                    continue
                 ability = root.get_end_of_fight_phase_destroyed_strategic_reserves_ability()
                 if not ability:
                     continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["fight_phase_destroyed_strategic_reserves_pending"] = True
+                try:
+                    sr["fight_phase_destroyed_strategic_reserves_turn"] = int(getattr(self, "turn", 0) or 0)
+                except Exception:
+                    sr["fight_phase_destroyed_strategic_reserves_turn"] = 0
+                sr["fight_phase_destroyed_strategic_reserves_turn_owner"] = str(getattr(p, "id", "") or "")
+                root.special_rules = sr
                 engaged = False
                 for enemy in list(game_map.get_enemy_units(root) or []):
                     if not enemy.is_alive() or not getattr(enemy, "deployed", True):

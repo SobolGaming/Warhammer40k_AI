@@ -501,5 +501,8 @@ def test_scrambled_coordinates_queues_during_enemy_reinforcements_step_and_block
     assert game.can_place_unit_arriving_from_reserves(arriving, (20.0, 10.0, 0.0)) is False
     assert game.can_place_unit_arriving_from_reserves(arriving, (26.0, 10.0, 0.0)) is True
 
+    game.end_reinforcements_step()
+    assert game.can_place_unit_arriving_from_reserves(arriving, (23.0, 10.0, 0.0)) is True
+
     game.event_system.publish("phase_end", player=enemy_player, phase=game.phase)
     assert game.can_place_unit_arriving_from_reserves(arriving, (23.0, 10.0, 0.0)) is True

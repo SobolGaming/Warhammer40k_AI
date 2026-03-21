@@ -295,6 +295,108 @@ def _masters_of_the_void_enemy_dz_override_active(unit: object, game: object) ->
     return True
 
 
+def _maybe_queue_post_fall_back_destroyed_strategic_reserves(
+    game: object,
+    unit: object,
+    *,
+    context: dict | None = None,
+) -> None:
+    if game is None or unit is None:
+        return
+    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    if phase_name != "FIGHT_PHASE":
+        return
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    root = get_root() if callable(get_root) else unit
+    if root is None:
+        return
+    is_alive_fn = getattr(root, "is_alive", None)
+    if callable(is_alive_fn) and not bool(is_alive_fn()):
+        return
+    if not bool(getattr(root, "deployed", True)):
+        return
+    is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+    if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+        return
+    if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+        return
+    round_state = getattr(root, "round_state", None)
+    if not bool(getattr(round_state, "fought_this_phase", False)):
+        return
+    unit_id = str(get_entity_id(root) or "").strip()
+    if not unit_id:
+        return
+    ctx = dict(context or {})
+    destroyed_enemy_this_phase = bool(ctx.get("fight_phase_destroyed_strategic_reserves_eligible", False))
+    if not destroyed_enemy_this_phase:
+        sr = getattr(root, "special_rules", None)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if isinstance(sr, dict) and bool(sr.get("fight_phase_destroyed_strategic_reserves_pending", False)):
+            marker_owner_id = str(sr.get("fight_phase_destroyed_strategic_reserves_turn_owner", "") or "")
+            try:
+                marker_turn = int(sr.get("fight_phase_destroyed_strategic_reserves_turn", 0) or 0)
+            except Exception:
+                marker_turn = 0
+            destroyed_enemy_this_phase = marker_turn == current_turn and (
+                not marker_owner_id or not current_owner_id or marker_owner_id == current_owner_id
+            )
+    if not destroyed_enemy_this_phase:
+        tracked = {
+            str(value or "").strip()
+            for value in list(getattr(game, "_phase_enemy_unit_destroyers", {}).get("FIGHT_PHASE", set()) or set())
+            if str(value or "").strip()
+        }
+        if unit_id not in tracked:
+            return
+    ability = root.get_end_of_fight_phase_destroyed_strategic_reserves_ability()
+    if not ability:
+        return
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return
+    for enemy in list(game_map.get_enemy_units(root) or []):
+        if enemy is None:
+            continue
+        enemy_alive_fn = getattr(enemy, "is_alive", None)
+        if callable(enemy_alive_fn) and not bool(enemy_alive_fn()):
+            continue
+        if not bool(getattr(enemy, "deployed", True)):
+            continue
+        if game_map.is_within_engagement_range(root, enemy):
+            return
+    queue_confirmation = getattr(game, "_queue_optional_ability_confirmation", None)
+    if not callable(queue_confirmation):
+        return
+    get_army = getattr(root, "get_parent_army", None)
+    army = get_army() if callable(get_army) else None
+    player = getattr(army, "player", None) if army is not None else None
+    if player is None:
+        return
+    ability_name = str(ability.get("name", "") or "Strategic Reserves").strip() or "Strategic Reserves"
+    queue_confirmation(
+        player=player,
+        ability_key="fight_phase_destroyed_strategic_reserves",
+        ability_name=ability_name,
+        message=(
+            f"{getattr(root, 'name', 'Unit')} can enter Strategic Reserves at the end of the Fight phase.\n\n"
+            "Use this ability?"
+        ),
+        context={
+            "ability_name": ability_name,
+            "unit": getattr(root, "name", "") or "",
+            "phase": "End of Fight phase",
+            "unit_id": unit_id,
+        },
+        payload={"unit_id": unit_id},
+        instance_key=str(unit_id or ""),
+    )
+
+
 def _transponder_lock_module_turn_one_spotter_requirement_satisfied(
     unit: object,
     prospective: list[tuple[float, float, float, float]],
@@ -2346,6 +2448,9 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 sr["tactical_acumen_no_charge_turn"] = 0
             unit.special_rules = sr
     reactive_kind = str(ctx.get("reactive_move_kind", "") or "").strip()
+    reactive_movement_type = str(ctx.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_kind == "opportunistic_raiders" and reactive_movement_type == "fall_back":
+        _maybe_queue_post_fall_back_destroyed_strategic_reserves(game, unit, context=ctx)
     if movement_type == "reactive" and reactive_kind == "execute_and_redeploy":
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None

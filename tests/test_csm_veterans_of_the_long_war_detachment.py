@@ -488,6 +488,94 @@ class TestCsmVeteransOfTheLongWarDetachment(unittest.TestCase):
         self.assertFalse(bool(other_attack.get("crit_wound", False)))
         self.assertEqual(int(other_wound.get("crit_threshold", 6) or 6), 6)
 
+    def test_focus_of_hatred_excludes_embarked_enemy_units_from_candidates(self):
+        game, _p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit(
+            "Legionaries",
+            keywords=["HERETIC ASTARTES", "INFANTRY"],
+            faction_keywords=["HERETIC ASTARTES"],
+        )
+        embarked_target = _make_unit(
+            "Embarked Enemy",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        other_target = _make_unit(
+            "Enemy B",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        transport = _make_unit(
+            "Enemy Transport",
+            faction_name="Enemy",
+            keywords=["TRANSPORT", "VEHICLE"],
+            faction_keywords=["ENEMY"],
+        )
+        embarked_target.embarked_in = transport
+
+        army1.add_unit(attacker)
+        army2.add_unit(embarked_target)
+        army2.add_unit(other_target)
+        army2.add_unit(transport)
+        game.map.units = [attacker, other_target, transport]
+        game.rebuild_entity_registry()
+
+        mgr = getattr(army1, "chaos_space_marines_detachments", None)
+        self.assertIsNotNone(mgr)
+        candidates = list(mgr.veterans_focus_of_hatred_candidate_enemy_units(game=game, player=army1.player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in candidates}
+        self.assertIn(str(get_entity_id(other_target) or ""), candidate_ids)
+        self.assertNotIn(str(get_entity_id(embarked_target) or ""), candidate_ids)
+
+    def test_focus_of_hatred_applies_to_each_unit_created_from_a_split_target(self):
+        game, _p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit(
+            "Legionaries",
+            keywords=["HERETIC ASTARTES", "INFANTRY"],
+            faction_keywords=["HERETIC ASTARTES"],
+        )
+        original_target = _make_unit(
+            "Enemy Blob",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        split_a = _make_unit(
+            "Enemy Blob A",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        split_b = _make_unit(
+            "Enemy Blob B",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        original_target_id = str(get_entity_id(original_target) or "")
+        split_a.special_rules["combat_squads_split_origin_unit_id"] = original_target_id
+        split_b.special_rules["combat_squads_split_origin_unit_id"] = original_target_id
+
+        army1.add_unit(attacker)
+        army2.add_unit(original_target)
+        army2.add_unit(split_a)
+        army2.add_unit(split_b)
+        game.map.units = [attacker, split_a, split_b]
+        game.rebuild_entity_registry()
+
+        mgr = getattr(army1, "chaos_space_marines_detachments", None)
+        self.assertIsNotNone(mgr)
+        mgr.veterans_focus_of_hatred_target_unit_id = original_target_id
+
+        self.assertTrue(mgr._veterans_focus_of_hatred_target_matches(split_a))
+        self.assertTrue(mgr._veterans_focus_of_hatred_target_matches(split_b))
+        applies_a, _ = mgr.veterans_focus_of_hatred_reroll_hit_applies(attacker.models[0], split_a)
+        applies_b, _ = mgr.veterans_focus_of_hatred_reroll_hit_applies(attacker.models[0], split_b)
+        self.assertTrue(applies_a)
+        self.assertTrue(applies_b)
+
 
 if __name__ == "__main__":
     unittest.main()

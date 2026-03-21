@@ -1620,7 +1620,9 @@ class GameSetupDeploymentReservesMixin:
         arrival_results = {}
         current_player = self.get_current_player()
         if current_player is None:
+            self.end_reinforcements_step()
             return arrival_results
+        self.begin_reinforcements_step(current_player)
 
         current_army = current_player.get_army()
         current_mgr = getattr(current_army, "chaos_space_marines_detachments", None) if current_army is not None else None
@@ -1662,6 +1664,20 @@ class GameSetupDeploymentReservesMixin:
         # Chapter Approved "destroy after battle round 3" is enforced at end-of-battle-round.
 
         return arrival_results
+
+    def begin_reinforcements_step(self, player=None) -> None:
+        active_player = player if player is not None else self.get_current_player()
+        self.reinforcements_step_active = active_player is not None
+        self.reinforcements_step_player_id = str(getattr(active_player, "id", "") or "") if active_player is not None else ""
+        try:
+            self.reinforcements_step_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            self.reinforcements_step_turn = 0
+
+    def end_reinforcements_step(self) -> None:
+        self.reinforcements_step_active = False
+        self.reinforcements_step_player_id = ""
+        self.reinforcements_step_turn = 0
 
     def _handle_cult_ambush_reinforcements(self, current_player) -> None:
         players = list(getattr(self, "players", []) or [])

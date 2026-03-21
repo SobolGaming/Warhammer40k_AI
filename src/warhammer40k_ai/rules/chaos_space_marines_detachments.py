@@ -472,6 +472,27 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _unit_is_embarked(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None
+
+    def _unit_matches_split_origin(self, unit, original_unit_id: str) -> bool:
+        root = self._unit_root(unit)
+        target_id = str(original_unit_id or "").strip()
+        if root is None or not target_id:
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return False
+        for key, value in special_rules.items():
+            if not str(key or "").endswith("_split_origin_unit_id"):
+                continue
+            if str(value or "").strip() == target_id:
+                return True
+        return False
+
     def _model_is_heretic_astartes(self, model) -> bool:
         if model is None:
             return False
@@ -1914,7 +1935,12 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def veterans_focus_of_hatred_candidate_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_veterans_of_the_long_war() or self.army is None:
             return []
-        return self._iter_enemy_units_for_player(game=game, player=player)
+        candidates: list = []
+        for enemy_root in list(self._iter_enemy_units_for_player(game=game, player=player) or []):
+            if self._unit_is_embarked(enemy_root):
+                continue
+            candidates.append(enemy_root)
+        return candidates
 
     def _pending_veterans_focus_of_hatred_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
         if game is None:
@@ -2171,13 +2197,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         target_root = self._unit_root(target_unit)
         if target_root is None:
             return False, ""
-        stored_target_id = str(self.veterans_focus_of_hatred_target_unit_id or "").strip()
-        if not stored_target_id:
-            return False, ""
-        if str(get_entity_id(target_root) or "") != stored_target_id:
-            return False, ""
-        is_alive = getattr(target_root, "is_alive", None)
-        if callable(is_alive) and not bool(is_alive()):
+        if not self._veterans_focus_of_hatred_target_matches(target_root):
             return False, ""
         return True, self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE
 
@@ -2190,7 +2210,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         stored_target_id = str(self.veterans_focus_of_hatred_target_unit_id or "").strip()
         if not stored_target_id:
             return False
-        if str(get_entity_id(target_root) or "") != stored_target_id:
+        if str(get_entity_id(target_root) or "") != stored_target_id and not self._unit_matches_split_origin(
+            target_root,
+            stored_target_id,
+        ):
             return False
         if not require_alive:
             return True
@@ -6091,10 +6114,28 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         )
 
     def deceptors_scrambled_coordinates_reserves_denial(self, unit, *, game=None) -> Optional[dict]:
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "reinforcements_step_active", False)):
+            return None
+        try:
+            step_turn = int(getattr(resolved_game, "reinforcements_step_turn", 0) or 0)
+        except (TypeError, ValueError):
+            step_turn = 0
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if step_turn and current_turn and step_turn != current_turn:
+            return None
+        step_player_id = str(getattr(resolved_game, "reinforcements_step_player_id", "") or "").strip()
+        current_player = getattr(resolved_game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        if step_player_id and current_player_id and step_player_id != current_player_id:
+            return None
         root, sr = self._deceptors_effect_state(
             unit,
             prefix=self._DECEPTORS_SCRAMBLED_COORDINATES_PREFIX,
-            game=game,
+            game=resolved_game,
         )
         if root is None or not self._unit_is_heretic_astartes(root) or not self._unit_on_battlefield(root):
             return None
@@ -7986,12 +8027,20 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if entry is None:
             return []
         source_root, _source_member, _source_sr, source_bearer = entry
-        if source_root is None or not self._unit_on_battlefield(source_root):
+        if source_root is None or self._unit_is_embarked(source_root):
+            return []
+        source_alive = getattr(source_root, "is_alive", None)
+        if callable(source_alive) and not bool(source_alive()):
             return []
         source_bearer_id = str(get_entity_id(source_bearer) or getattr(source_bearer, "id", getattr(source_bearer, "_id", "")) or "")
         candidates: list[dict] = []
         for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
             if root is None:
+                continue
+            if self._unit_is_embarked(root):
+                continue
+            root_alive = getattr(root, "is_alive", None)
+            if callable(root_alive) and not bool(root_alive()):
                 continue
             get_members = getattr(root, "get_attached_unit_members", None)
             members = list(get_members() or []) if callable(get_members) else [root]
@@ -8043,7 +8092,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
 
         army_id = str(get_entity_id(self.army) or "")
         for root, _member, _sr, bearer in self._deceptors_sources_by_flag(flag_key="enhancement_soul_link"):
-            if not self._unit_on_battlefield(root):
+            if root is None or self._unit_is_embarked(root):
+                continue
+            root_alive = getattr(root, "is_alive", None)
+            if callable(root_alive) and not bool(root_alive()):
                 continue
             source_unit_id = str(get_entity_id(root) or "")
             if not source_unit_id:

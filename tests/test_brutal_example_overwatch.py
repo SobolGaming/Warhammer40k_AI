@@ -6,6 +6,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.rules.stratagems import StratagemManager
 
@@ -168,6 +169,99 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
 
         stratagem_mgr._maybe_queue_overwatch(moving_unit, "charge", "start")
         self.assertEqual(len(stratagem_mgr._pending_reactions), 1)
+
+    def test_brutal_example_bodyguard_loss_resolves_before_overwatch_shooting(self):
+        army = Army("Chaos Space Marines", detachment_type="Other")
+        army.faction_id = "CSM"
+        bodyguard, leader = self._setup_units_with_brutal_example(army)
+        army.units = [bodyguard, leader]
+
+        ranged_weapon = Wargear(
+            {
+                "name": "Lasgun",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "3",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        )
+        surviving_bodyguard = self._make_model("Bodyguard Survivor", bodyguard)
+        bodyguard.models.append(surviving_bodyguard)
+        bodyguard.models[0].wargear = [ranged_weapon]
+        bodyguard.models[1].wargear = [ranged_weapon]
+        leader.models[0].wargear = []
+
+        order = []
+        removed = {}
+
+        def _resolve_bodyguard_loss_immediately(**kwargs):
+            order.append("loss")
+            model = bodyguard.models[0]
+            removed["model"] = model
+            model.die(game_map=None)
+            return model
+
+        def _execute_shooting_declarations(_declarations, _game_map, out_of_phase=False):
+            order.append("shoot")
+            self.assertEqual(order, ["loss", "shoot"])
+            self.assertEqual(len(bodyguard.models), 1)
+            self.assertIsNot(bodyguard.models[0], removed.get("model"))
+            self.assertTrue(out_of_phase)
+            return True
+
+        bodyguard.execute_shooting_declarations = _execute_shooting_declarations
+        bodyguard.mark_traitor_enforcer_overwatch_used = lambda *_a, **_k: order.append("mark")
+        bodyguard.get_traitor_enforcer_overwatch_rule = lambda: {"leader_id": leader._id}
+        bodyguard.is_battle_shocked = lambda: False
+        bodyguard.can_use_traitor_enforcer_overwatch = lambda game=None: True
+
+        defender_player = SimpleNamespace(
+            name="Defender",
+            id="defender-player",
+            command_points=1,
+            get_army=lambda: army,
+            apply_stratagem_cp_cost=lambda *_a, **_k: {
+                "cost": 0,
+                "traitor_enforcer_overwatch_use": True,
+                "traitor_enforcer_overwatch_source": "Brutal Example",
+            },
+            spend_command_points=lambda *_a, **_k: True,
+        )
+
+        enemy_unit = SimpleNamespace(
+            name="Enemy",
+            models=[],
+            is_overwatch_prevented_against=lambda _target, game=None: False,
+        )
+        game = SimpleNamespace(
+            get_current_player=lambda: SimpleNamespace(name="Attacker", id="attacker-player"),
+            map=SimpleNamespace(get_distance_between_units=lambda _a, _b: 10.0),
+            resolve_bodyguard_loss_immediately=_resolve_bodyguard_loss_immediately,
+        )
+
+        stratagem_mgr = StratagemManager.__new__(StratagemManager)
+        stratagem_mgr.player = defender_player
+        stratagem_mgr.game = game
+        stratagem_mgr._used_this_turn = {}
+        stratagem_mgr._used_stratagems_this_phase = set()
+        stratagem_mgr._current_phase_name = "Charge phase"
+        stratagem_mgr._pending_reactions = []
+        stratagem_mgr._queue_reaction = lambda reaction: stratagem_mgr._pending_reactions.append(reaction)
+        stratagem_mgr._dequeue_reaction_by_name = lambda _name: None
+        stratagem_mgr._is_overwatch_shooter_blocked_this_turn = lambda _unit: False
+        stratagem_mgr.get_by_name = lambda _name: SimpleNamespace(
+            name="FIRE OVERWATCH",
+            is_phase_allowed=lambda _phase: True,
+            is_turn_allowed=lambda _is_active: True,
+            cp_cost=1,
+        )
+
+        assert stratagem_mgr.use("FIRE OVERWATCH", shooter_unit=bodyguard, enemy_unit=enemy_unit, phase_name="Charge phase")
+        self.assertEqual(order, ["loss", "shoot", "mark"])
 
 
 if __name__ == "__main__":

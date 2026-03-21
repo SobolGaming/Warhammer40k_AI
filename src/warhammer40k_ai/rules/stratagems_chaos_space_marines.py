@@ -4162,6 +4162,16 @@ class ChaosSpaceMarinesStratagemMixin:
             phase_name="Fight phase",
         ):
             return
+        destroyed_enemy_unit_ids: list[str] = []
+        game = getattr(self, "game", None)
+        if game is not None:
+            tracked = {
+                str(value or "").strip()
+                for value in list(getattr(game, "_phase_enemy_unit_destroyers", {}).get(phase_key, set()) or set())
+                if str(value or "").strip()
+            }
+            if tracked:
+                destroyed_enemy_unit_ids = sorted(tracked)
         payload = {
             "event": "phase_end",
             "phase": "Fight phase",
@@ -4170,6 +4180,8 @@ class ChaosSpaceMarinesStratagemMixin:
             "cp_cost": stratagem.cp_cost,
             "candidates": candidates,
         }
+        if destroyed_enemy_unit_ids:
+            payload["destroyed_enemy_unit_ids"] = destroyed_enemy_unit_ids
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
@@ -10639,6 +10651,18 @@ class ChaosSpaceMarinesStratagemMixin:
             return False
         if not self._cabal_spend_cp(stratagem, target_unit=root):
             return False
+        unit_id = str(get_entity_id(root) or "").strip()
+        destroyed_enemy_unit_ids = {
+            str(value or "").strip()
+            for value in list((pending or {}).get("destroyed_enemy_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if not destroyed_enemy_unit_ids and self.game is not None:
+            destroyed_enemy_unit_ids = {
+                str(value or "").strip()
+                for value in list(getattr(self.game, "_phase_enemy_unit_destroyers", {}).get("FIGHT_PHASE", set()) or set())
+                if str(value or "").strip()
+            }
 
         engaged = self._csm_unit_is_engaged(root)
         movement_type = "fall_back" if engaged else "move"
@@ -10661,6 +10685,11 @@ class ChaosSpaceMarinesStratagemMixin:
             movement_type=movement_type,
             source=stratagem.name,
             allow_skip=True,
+            extra_context={
+                "fight_phase_destroyed_strategic_reserves_eligible": bool(
+                    unit_id and unit_id in destroyed_enemy_unit_ids
+                ),
+            },
         )
         if request is None:
             logger.error("ERROR: OPPORTUNISTIC RAIDERS: failed to queue movement decision")

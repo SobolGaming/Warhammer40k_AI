@@ -20,6 +20,12 @@ def next_phase(game: "Game") -> None:
             game.handle_reserves_arrival_phase()
     except Exception:
         pass
+    try:
+        end_reinforcements_step = getattr(game, "end_reinforcements_step", None)
+        if callable(end_reinforcements_step):
+            end_reinforcements_step()
+    except Exception:
+        pass
 
     # Publish end of current phase before advancing
     try:

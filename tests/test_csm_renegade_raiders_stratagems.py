@@ -4,14 +4,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
-from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_handlers.movement import _maybe_queue_post_fall_back_destroyed_strategic_reserves
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.rules.stratagems import Stratagem
+from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -257,6 +260,16 @@ def _pending_by_name(stratagems, name: str):
 def _first_request(game: Game, decision_type: str):
     for request in list(game.decision_queue.list() or []):
         if str(getattr(request, "decision_type", "") or "") == str(decision_type):
+            return request
+    return None
+
+
+def _find_confirmation_request(game: Game, *, ability_key: str):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != str(DECISION_CONFIRM_YES_NO):
+            continue
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("ability", "") or "") == str(ability_key):
             return request
     return None
 
@@ -625,3 +638,92 @@ def test_opportunistic_raiders_queues_fall_back_for_engaged_unit_that_fought():
     assert str(context.get("reactive_move_kind", "") or "") == "opportunistic_raiders"
     assert str(context.get("movement_type", "") or "") == "fall_back"
     assert int(context.get("max_distance", 0) or 0) == 6
+
+
+def test_warp_strike_requires_unit_to_have_fought_this_phase():
+    game, raiders_player, _enemy_player, raiders_army, _enemy_army = _build_game()
+    warp_talons = _make_unit(
+        "Warp Talons",
+        keywords=["HERETIC ASTARTES", "INFANTRY", "JUMP PACK"],
+        faction_keywords=["HERETIC ASTARTES"],
+        move=12,
+    )
+    warp_talons.possible_abilities = [
+        Ability(
+            "Warp Strike",
+            "CSM",
+            (
+                "At the end of the Fight phase, if this unit destroyed one or more enemy units this phase and is "
+                "not within Engagement Range of one or more enemy units, you can remove this unit from the battlefield "
+                "and place it into Strategic Reserves."
+            ),
+            "Datasheet",
+            "",
+        )
+    ]
+    warp_talons.round_state.eligible_to_fight_this_phase = True
+    warp_talons.round_state.fought_this_phase = False
+    raiders_army.add_unit(warp_talons)
+    _deploy_unit(game, warp_talons, 10.0, 10.0)
+    game.rebuild_entity_registry()
+
+    game._phase_enemy_unit_destroyers["FIGHT_PHASE"] = {str(get_entity_id(warp_talons) or "")}
+    _set_phase(game, raiders_player, "FIGHT_PHASE", 0)
+    game.event_system.publish("phase_end", player=raiders_player, phase=game.phase)
+
+    assert _find_confirmation_request(game, ability_key="fight_phase_destroyed_strategic_reserves") is None
+
+
+def test_opportunistic_raiders_fall_back_can_queue_warp_strike_after_destroying_enemy():
+    game, raiders_player, _enemy_player, raiders_army, enemy_army = _build_game()
+    warp_talons = _make_unit(
+        "Warp Talons",
+        keywords=["HERETIC ASTARTES", "INFANTRY", "JUMP PACK"],
+        faction_keywords=["HERETIC ASTARTES"],
+        move=12,
+    )
+    warp_talons.possible_abilities = [
+        Ability(
+            "Warp Strike",
+            "CSM",
+            (
+                "At the end of the Fight phase, if this unit destroyed one or more enemy units this phase and is "
+                "not within Engagement Range of one or more enemy units, you can remove this unit from the battlefield "
+                "and place it into Strategic Reserves."
+            ),
+            "Datasheet",
+            "",
+        )
+    ]
+    enemy = _make_unit("Enemy Fighters", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    warp_talons.round_state.fought_this_phase = True
+    raiders_army.add_unit(warp_talons)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, warp_talons, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.0, 10.0)
+    game.rebuild_entity_registry()
+
+    game._phase_enemy_unit_destroyers["FIGHT_PHASE"] = {str(get_entity_id(warp_talons) or "")}
+    _set_phase(game, raiders_player, "FIGHT_PHASE", 0)
+    game.event_system.publish("phase_end", player=raiders_player, phase=game.phase)
+
+    assert _pending_by_name(raiders_player.stratagems, "Opportunistic Raiders") is not None
+    assert raiders_player.stratagems.use(
+        "OPPORTUNISTIC RAIDERS",
+        unit=warp_talons,
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    move_request = _first_request(game, DECISION_MOVE_UNIT)
+    assert move_request is not None
+    assert _find_confirmation_request(game, ability_key="fight_phase_destroyed_strategic_reserves") is None
+
+    _deploy_unit(game, warp_talons, 25.0, 10.0)
+    _maybe_queue_post_fall_back_destroyed_strategic_reserves(
+        game,
+        warp_talons,
+        context=dict(getattr(move_request, "context", {}) or {}),
+    )
+
+    confirm_request = _find_confirmation_request(game, ability_key="fight_phase_destroyed_strategic_reserves")
+    assert confirm_request is not None

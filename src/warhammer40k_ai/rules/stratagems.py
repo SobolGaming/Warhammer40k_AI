@@ -15413,6 +15413,22 @@ class StratagemManager(
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                     return False
+            if traitor_overwatch:
+                resolve_bodyguard_loss = getattr(self.game, "resolve_bodyguard_loss_immediately", None)
+                if not callable(resolve_bodyguard_loss):
+                    logger.error("ERROR: Overwatch: Brutal Example bodyguard loss helper unavailable")
+                    return False
+                destroyed_model = resolve_bodyguard_loss(
+                    leader_unit=None,
+                    bodyguard_unit=shooter.get_attached_unit_root(),
+                    ability_name=str(apply_info.get("traitor_enforcer_overwatch_source", "") or "Brutal Example"),
+                    player=self.player,
+                    leader_unit_id=str((shooter.get_traitor_enforcer_overwatch_rule() or {}).get("leader_id", "") or ""),
+                    selection_key="BRUTAL_EXAMPLE_BODYGUARD_LOSS",
+                )
+                if destroyed_model is None:
+                    logger.error("ERROR: Overwatch: Brutal Example could not destroy a Bodyguard model")
+                    return False
             # Build declarations: group best ranged profile per model for target
             declarations = []
             profile_to_models = {}
@@ -15506,17 +15522,6 @@ class StratagemManager(
                         shooter.mark_traitor_enforcer_overwatch_used(
                             self.game,
                             source=str(apply_info.get("traitor_enforcer_overwatch_source", "") or ""),
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        ability_name = str(apply_info.get("traitor_enforcer_overwatch_source", "") or "Brutal Example").strip()
-                        self.game.queue_bodyguard_loss(
-                            leader_unit=None,
-                            bodyguard_unit=shooter.get_attached_unit_root(),
-                            ability_name=ability_name or "Brutal Example",
-                            player=self.player,
-                            leader_unit_id=str((shooter.get_traitor_enforcer_overwatch_rule() or {}).get("leader_id", "") or ""),
                         )
                     except Exception:
                         pass

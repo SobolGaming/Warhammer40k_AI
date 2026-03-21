@@ -171,6 +171,45 @@ def test_csm_infused_afflicted_is_visible_to_nurgles_gift_manager_when_active():
     assert plague.key == PLAGUE_SKULLSQUIRM.key
 
 
+def test_csm_infused_with_blessings_has_no_effect_when_disabled():
+    game, _player_a, _player_b, army_a, army_b = _build_game()
+
+    attacker = _make_unit(
+        "Plague Marines",
+        army_a,
+        ability_name="Infused with the Blessings of Nurgle",
+        ability_text=INFUSED_TEXT,
+        keywords=["INFANTRY", "HERETIC ASTARTES"],
+        faction_keywords=["HERETIC ASTARTES"],
+    )
+    target = _make_unit("Enemy Target", army_b, keywords=["INFANTRY"])
+
+    attacker.models = [_make_model("Attacker", attacker, 0.0, 0.0)]
+    target.models = [_make_model("Target", target, 8.0, 0.0)]
+    attacker.special_rules["infused_blessings_of_nurgle_disabled"] = True
+
+    army_a.units = [attacker]
+    army_b.units = [target]
+    game.map.units = [attacker, target]
+    game.is_shooting_phase = lambda: True
+
+    assert attacker.unit_post_shoot_afflicted_specs() == []
+
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=attacker,
+        hits_by_target={target: 1},
+    )
+
+    afflicted_reqs = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "")) == "post_shoot_afflicted"
+    ]
+    assert afflicted_reqs == []
+
+
 def test_csm_hamadrya_knowledge_parses_once_per_battle_round_reactive_move():
     army = Army("CSM", detachment_type="Other")
     unit = _make_unit(

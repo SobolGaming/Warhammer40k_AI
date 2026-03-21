@@ -2652,6 +2652,12 @@ class AbilitySpecsMixin:
         except Exception:
             root = self
         cache_key = "unit_post_shoot_afflicted_specs"
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("infused_blessings_of_nurgle_disabled", False)):
+            if not hasattr(root, "_ability_cache"):
+                root._ability_cache = {}
+            root._ability_cache[cache_key] = []
+            return []
         if cache_key in getattr(root, "_ability_cache", {}):
             return list(root._ability_cache[cache_key])
 

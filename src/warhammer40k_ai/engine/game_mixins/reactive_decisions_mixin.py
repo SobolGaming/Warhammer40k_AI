@@ -10532,6 +10532,68 @@ class GameReactiveDecisionsMixin:
             if not getattr(mgr, "selected_quality_key", None):
                 mgr.on_read_mission_objectives(game=self, player=player)
 
+    def resolve_bodyguard_loss_immediately(
+        self,
+        *,
+        leader_unit=None,
+        bodyguard_unit=None,
+        ability_name: str = "",
+        player=None,
+        leader_unit_id: str | None = None,
+        selection_key: str = "BODYGUARD_LOSS",
+    ):
+        if bodyguard_unit is None:
+            return None
+        try:
+            bodyguard = bodyguard_unit.get_attached_unit_root()
+        except Exception:
+            bodyguard = bodyguard_unit
+        if bodyguard is None:
+            return None
+        if leader_unit is None and leader_unit_id:
+            leader_unit = self._resolve_unit_by_id(str(leader_unit_id))
+        if leader_unit is None:
+            try:
+                leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            leader_unit = next((leader for leader in leaders if leader is not None), None)
+        if leader_unit is None:
+            leader_unit = bodyguard
+        if player is None:
+            try:
+                player = getattr(leader_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        ability_label = str(ability_name or "Bodyguard Loss").strip() or "Bodyguard Loss"
+        candidates = [model for model in list(getattr(bodyguard, "models", []) or []) if getattr(model, "is_alive", True)]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda model: str(maybe_entity_id(model) or ""))
+        chosen_model = candidates[0]
+        if len(candidates) > 1 and player is not None:
+            choose_value = getattr(player, "_choose_optional_value", None)
+            if callable(choose_value):
+                selected = choose_value(
+                    str(selection_key or "BODYGUARD_LOSS"),
+                    [str(maybe_entity_id(model) or "") for model in candidates],
+                    {
+                        "ability_name": ability_label,
+                        "bodyguard_unit_id": str(maybe_entity_id(bodyguard) or ""),
+                        "leader_unit_id": str(maybe_entity_id(leader_unit) or ""),
+                    },
+                )
+                selected_id = str(selected or "").strip()
+                if selected_id:
+                    selected_model = next(
+                        (model for model in candidates if str(maybe_entity_id(model) or "") == selected_id),
+                        None,
+                    )
+                    if selected_model is not None:
+                        chosen_model = selected_model
+        self._resolve_charge_phase_bodyguard_loss(leader_unit, bodyguard, chosen_model, {"name": ability_label})
+        return chosen_model
+
     def queue_bodyguard_loss(
         self,
         *,
