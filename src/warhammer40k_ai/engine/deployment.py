@@ -389,7 +389,8 @@ class DeploymentManager:
                 deployment_zone=deployment_zone,
                 deployable_units=[],
                 already_deployed=[],
-            ),
+            )
+            | {"decision_owner": "deployment_manager"},
             preferred_decisions=decisions,
             queue_requests=True,
         )
@@ -468,6 +469,8 @@ class DeploymentManager:
             deployable_units=[],
             already_deployed=[],
         )
+        extra_context = dict(extra_context or {})
+        extra_context["decision_owner"] = "deployment_manager"
         request = build_deployment_zone_request(
             self.game,
             player,
@@ -595,7 +598,8 @@ class DeploymentManager:
                 deployment_zone=deployment_zone,
                 deployable_units=deployable_units,
                 already_deployed=already_deployed,
-            ),
+            )
+            | {"decision_owner": "deployment_manager"},
             queue_requests=True,
         )
         selected_option = None
@@ -1078,6 +1082,46 @@ class DeploymentManager:
                 }
             )
         return payload_positions
+
+    def _handle_unplaceable_deployment_unit(
+        self,
+        unit: 'Unit',
+        *,
+        player: Player,
+        reason: str,
+    ) -> None:
+        unit_name = getattr(unit, "name", "Unit")
+        logger.warning(
+            "Skipping battlefield placement for %s (%s): %s.",
+            unit_name,
+            getattr(player, "name", "Player"),
+            str(reason or "unknown reason"),
+        )
+        setattr(unit, "_deployment_skipped_no_position", True)
+
+        player_army = player.get_army()
+        destroy_fn = getattr(player_army, "_destroy_unit_models", None) if player_army is not None else None
+        if callable(destroy_fn):
+            destroy_fn(unit, game_map=getattr(self.game, "map", None))
+        else:
+            for model in list(getattr(unit, "models", []) or []):
+                if hasattr(model, "is_alive"):
+                    model.is_alive = False
+
+        set_reserve_status = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve_status):
+            set_reserve_status("deployed")
+        elif hasattr(unit, "reserve_status"):
+            unit.reserve_status = "deployed"
+        unit.deployed = True
+
+        for leader in list(getattr(unit, "attached_leaders", []) or []):
+            leader_set_reserve_status = getattr(leader, "set_reserve_status", None)
+            if callable(leader_set_reserve_status):
+                leader_set_reserve_status("deployed")
+            elif hasattr(leader, "reserve_status"):
+                leader.reserve_status = "deployed"
+            leader.deployed = True
     
     def setup_mission_objectives(self) -> None:
         """Set up objectives based on the selected mission."""
@@ -1162,9 +1206,12 @@ class DeploymentManager:
                     max_candidates=8,
                 )
                 if not placement_candidates:
-                    raise RuntimeError(
-                        f"No deployment placement candidates were generated for {getattr(unit, 'name', 'Unit')}."
+                    self._handle_unplaceable_deployment_unit(
+                        unit,
+                        player=current_player,
+                        reason="no placement candidates were generated",
                     )
+                    continue
                 first_anchor = list(dict(placement_candidates[0] or {}).get("anchor", []) or [])
                 if len(first_anchor) < 2:
                     raise RuntimeError(
@@ -1187,6 +1234,8 @@ class DeploymentManager:
                     deployable_units=current_units,
                     already_deployed=current_deployed,
                 )
+                extra_context = dict(extra_context or {})
+                extra_context["decision_owner"] = "deployment_manager"
 
                 # Route deployment placement through DecisionRequest/Command API.
                 request = self._build_deployment_move_request(

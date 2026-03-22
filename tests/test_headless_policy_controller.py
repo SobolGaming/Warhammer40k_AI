@@ -4,9 +4,12 @@ from dataclasses import dataclass
 import time
 
 from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -93,6 +96,46 @@ def test_headless_policy_controller_does_not_handle_dice_decisions() -> None:
     )
 
     controller.on_decision_requested(game, request)
+
+    assert game.commands == []
+
+
+def test_headless_policy_controller_skips_deployment_manager_owned_setup_requests() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    requests = [
+        DecisionRequest.create(
+            DECISION_CHOOSE_DEPLOYMENT_ZONE,
+            "Choose zone",
+            player_id="p1",
+            options=[DecisionOption.create("Zone A", payload={"zone_name": "A"})],
+            context={"decision_owner": "deployment_manager"},
+        ),
+        DecisionRequest.create(
+            DECISION_DECLARE_RESERVES,
+            "Declare reserves",
+            player_id="p1",
+            options=[DecisionOption.create("Deploy", payload={"unit_ids_by_bucket": {"deploy": ["unit:1"]}})],
+            context={"decision_owner": "deployment_manager"},
+        ),
+        DecisionRequest.create(
+            DECISION_SELECT_NEXT_DEPLOY_UNIT,
+            "Choose unit",
+            player_id="p1",
+            options=[DecisionOption.create("Unit A", payload={"unit_id": "unit:1"})],
+            context={"decision_owner": "deployment_manager"},
+        ),
+        DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            "Deploy unit",
+            player_id="p1",
+            options=[DecisionOption.create("Candidate A", payload={"action": "confirm"})],
+            context={"decision_owner": "deployment_manager", "placement_kind": "deployment"},
+        ),
+    ]
+
+    for request in requests:
+        controller.on_decision_requested(game, request)
 
     assert game.commands == []
 

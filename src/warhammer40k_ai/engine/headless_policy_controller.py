@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from .decision_controller import DecisionController
-from .decision_kinds import DECISION_MOVE_UNIT, DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
+from .decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
+    DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+)
 from .decisions import CandidateAction, DecisionRequest
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id
@@ -93,6 +100,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             return
         resolution_game = self._game if self._game is not None else observed_game
         if self._require_authoritative and not bool(getattr(observed_game, "is_authoritative", True)):
+            return
+        if self._should_skip_request(request):
             return
         if str(getattr(request, "decision_type", "") or "") in self._skip_decision_types:
             return
@@ -247,6 +256,22 @@ class HeadlessPolicyDecisionController(DecisionController):
             if bool(getattr(apply_result, "ok", False)):
                 return True
         return False
+
+    @staticmethod
+    def _should_skip_request(request: DecisionRequest) -> bool:
+        context = dict(getattr(request, "context", {}) or {})
+        if str(context.get("decision_owner", "") or "").strip().lower() != "deployment_manager":
+            return False
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type in {
+            DECISION_CHOOSE_DEPLOYMENT_ZONE,
+            DECISION_DECLARE_RESERVES,
+            DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        }:
+            return True
+        if decision_type != DECISION_MOVE_UNIT:
+            return False
+        return str(context.get("placement_kind", "") or "").strip().lower() == "deployment"
 
     def _resolve_unit_by_id(self, game: object, unit_id: str) -> object | None:
         if not unit_id:

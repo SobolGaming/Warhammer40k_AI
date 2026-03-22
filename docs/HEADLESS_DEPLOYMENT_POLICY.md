@@ -20,6 +20,9 @@ This document describes deterministic headless placement behavior for deployment
   - When loaded, zone, reserves-allocation, next-unit, scout, and deployment-placement choices can be selected directly from request candidates via ranker scores.
   - If model scoring is unavailable for deployment placement requests and rollout metadata is present, the headless policy can fall back to `lookahead_total_value` candidate selection.
   - If neither model nor rollout scoring is available, deterministic heuristic fallback remains active.
+- Deployment-manager-owned setup requests (`CHOOSE_DEPLOYMENT_ZONE`, `DECLARE_RESERVES`,
+  `SELECT_NEXT_DEPLOY_UNIT`, and deployment `MOVE_UNIT`) are resolved by `DeploymentManager`/
+  `DeploymentDecisionMaker`, not by the generic `HeadlessPolicyDecisionController`.
 - Teacher decision context now includes optional rollout settings under `deployment_lookahead`
   (enabled, depth, branch count, discount, blend, candidate kinds) for bounded pregame lookahead.
 - Standard units:
@@ -28,6 +31,9 @@ This document describes deterministic headless placement behavior for deployment
 - Units with `Infiltrators`:
   - Candidate anchors are searched in-zone first, then expanded to board-wide candidates.
   - Final legality is still enforced by deployment validation (`enemy zone`, `9"` enemy zone buffer, `9"` enemy model buffer, terrain legality).
+- If a unit still produces no legal deployment placements after candidate generation/validation, the
+  engine logs a warning, skips battlefield placement, and removes the unit from play instead of
+  crashing the whole headless run.
 
 ## Ruins Floors (Headless Deployment Payloads)
 

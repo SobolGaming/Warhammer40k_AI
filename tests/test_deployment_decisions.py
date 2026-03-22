@@ -11,6 +11,7 @@ from warhammer40k_ai.engine.decision_requests import (
     build_select_next_deploy_unit_request,
     canonical_deployment_zone_key,
 )
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.deployment import DeploymentDecisionMaker, DeploymentManager
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -85,6 +86,33 @@ class _OptionSelectingDecisionMaker(_ScriptedDecisionMaker):
             if int(payload.get("placement_candidate_index", -1) or -1) == 1:
                 return str(getattr(option, "option_id", "") or "")
         return None
+
+
+class _DeploymentArmy:
+    def __init__(self, units: list[object]) -> None:
+        self.units = list(units)
+
+    def _destroy_unit_models(self, unit, game_map=None) -> None:
+        del game_map
+        for model in list(getattr(unit, "models", []) or []):
+            model.is_alive = False
+
+
+class _DeployingUnit(_StubUnit):
+    def __init__(self, unit_id: str, name: str) -> None:
+        super().__init__(unit_id, name)
+        self.deployed = False
+        self.reserve_status = "deployed"
+        self.is_titanic = False
+        self.is_attached_leader = False
+        self.is_joined_support = False
+        self.attached_leaders = []
+
+    def must_start_in_reserves(self) -> bool:
+        return False
+
+    def set_reserve_status(self, status: str) -> None:
+        self.reserve_status = str(status)
 
 
 def _build_game() -> tuple[Game, Player, Player]:
@@ -241,3 +269,107 @@ def test_deployment_move_request_supports_multi_candidate_payloads_and_option_ho
     )
     selected_payload = dict(getattr(selected, "payload", {}) or {})
     assert int(selected_payload.get("placement_candidate_index", -1) or -1) == 1
+
+
+def test_execute_alternating_deployment_skips_unplaceable_unit_without_crashing(monkeypatch) -> None:
+    game, defender, attacker = _build_game()
+    manager = DeploymentManager(game)
+    manager.defender = defender
+    manager.attacker = attacker
+
+    doomed = _DeployingUnit("unit:doomed", "Bloodletters")
+    survivor = _DeployingUnit("unit:other", "Guardian Defenders")
+    defender.army = _DeploymentArmy([doomed])
+    attacker.army = _DeploymentArmy([survivor])
+
+    class _DecisionMaker(_ScriptedDecisionMaker):
+        def __init__(self) -> None:
+            super().__init__(zone_name="Zone A", next_unit_id="unit:doomed")
+
+        def build_deployment_intent(self, **kwargs):
+            del kwargs
+            return {}
+
+        def build_deployment_decision_context(self, **kwargs):
+            del kwargs
+            return {}
+
+    defender_maker = _DecisionMaker()
+    attacker_maker = _DecisionMaker()
+
+    monkeypatch.setattr(
+        manager,
+        "_resolve_next_deploy_unit_choice",
+        lambda player, decision_maker, deployable_units, deployment_zone, already_deployed: deployable_units[0],
+    )
+
+    def _fake_candidates(unit, *, decision_maker, deployment_zone, already_deployed, max_candidates=8):
+        del decision_maker, deployment_zone, already_deployed, max_candidates
+        if unit is doomed:
+            return []
+        return [
+            {
+                "anchor": [4.0, 8.0],
+                "model_positions": [
+                    {
+                        "model_id": "unit:other:model:0",
+                        "position": [4.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "test",
+            }
+        ]
+
+    monkeypatch.setattr(manager, "_build_deployment_move_candidates", _fake_candidates)
+    monkeypatch.setattr(manager, "_build_deployment_move_request", lambda *args, **kwargs: DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy",
+        player_id=attacker.id,
+        options=[
+            DecisionOption.create(
+                "Place",
+                payload={
+                    "deployment_anchor": [4.0, 8.0],
+                    "model_positions": [
+                        {
+                            "model_id": "unit:other:model:0",
+                            "position": [4.0, 8.0, 0.0],
+                            "facing": 0.0,
+                        }
+                    ],
+                },
+            )
+        ],
+    ))
+    monkeypatch.setattr(manager, "_select_deployment_move_option", lambda **kwargs: kwargs["request"].options[0])
+    monkeypatch.setattr(
+        game,
+        "request_decision",
+        lambda request: game.decision_queue.add(request),
+    )
+    monkeypatch.setattr(
+        game,
+        "apply_command",
+        lambda command: type("Result", (), {"ok": True, "value": type("Apply", (), {"ok": True})()})(),
+    )
+
+    deployment_results = {
+        "deployment_zones": {
+            defender.id: {"name": "Zone A", "zone_type": "defender"},
+            attacker.id: {"name": "Zone B", "zone_type": "attacker"},
+        },
+        "reserves": {
+            defender.id: {doomed.id: "deploy"},
+            attacker.id: {survivor.id: "deploy"},
+        },
+    }
+
+    manager.execute_alternating_deployment(
+        deployment_results,
+        {defender.id: defender_maker, attacker.id: attacker_maker},
+    )
+
+    assert bool(getattr(doomed, "_deployment_skipped_no_position", False)) is True
+    assert bool(doomed.deployed) is True
+    assert bool(doomed.models[0].is_alive) is False

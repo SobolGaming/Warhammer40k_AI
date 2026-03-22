@@ -1,4 +1,4 @@
-﻿from typing import Tuple, Dict, Set, List, Optional
+from typing import Tuple, Dict, Set, List, Optional
 from ..units.unit import Unit
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
@@ -3946,14 +3946,21 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 return int(m.group(1).replace(",", ""))
         raise ValueError(f"Could not find points limit in army list header: {file_path!r}")
 
+    section_headers = {
+        "CHARACTER",
+        "CHARACTERS",
+        "BATTLELINE",
+        "DEDICATED TRANSPORTS",
+        "OTHER DATASHEETS",
+    }
+
     def _is_app_export(raw_lines: list[str]) -> bool:
         # Be tolerant to minor formatting differences.
         return any("exported with app version" in (ln or "").lower() for ln in raw_lines)
 
     def _first_section_index(stripped_lines: list[str]) -> int:
-        headers = {"CHARACTER", "CHARACTERS", "BATTLELINE", "OTHER DATASHEETS"}
         for i, ln in enumerate(stripped_lines):
-            if (ln or "").strip().upper() in headers:
+            if (ln or "").strip().upper() in section_headers:
                 return i
         # Fallback to 0; the unit-parse loop will skip empty lines and unknown headers,
         # but without a recognized section header the file likely isn't in a supported format.
@@ -4038,7 +4045,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         if not line:
             continue
 
-        if line.upper() in ['CHARACTER', 'CHARACTERS', 'BATTLELINE', 'OTHER DATASHEETS']:
+        if line.upper() in section_headers:
             continue
 
         if line.startswith('Exported with'):
