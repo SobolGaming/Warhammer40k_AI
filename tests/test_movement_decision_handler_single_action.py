@@ -3,11 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_handlers.movement import (
+    _apply_select_movement_action,
     _apply_move_unit,
     _validate_select_movement_action,
 )
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_MOVEMENT_ACTION
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.units.unit import MovementAction
 
 
 class _ModelStub:
@@ -51,6 +53,13 @@ class _UnitStub:
 
     def get_attached_unit_members(self):
         return [self]
+
+    def _execute_action(self, action, destination, game_map):
+        del destination, game_map
+        if action != MovementAction.REMAIN_STATIONARY.value:
+            raise ValueError(f"Invalid action: {action}")
+        self.round_state.remained_stationary_this_round = True
+        return True
 
 
 class _ArmyStub:
@@ -151,3 +160,30 @@ def test_validate_select_movement_action_rejects_unit_that_already_advanced() ->
 
     assert errors
     assert "already advanced" in str(errors[0]).lower()
+
+
+def test_apply_select_movement_action_executes_stationary_with_enum_value() -> None:
+    model = _ModelStub("model-4")
+    unit = _UnitStub("unit-4", model)
+    game = _GameStub(unit)
+    option = DecisionOption.create(
+        "Remain Stationary",
+        payload={"unit_id": unit.id, "action_type": "stationary"},
+    )
+    request = DecisionRequest.create(
+        DECISION_SELECT_MOVEMENT_ACTION,
+        "Select movement action",
+        player_id="player-1",
+        options=[option],
+        context={"unit_id": unit.id},
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={},
+    )
+
+    _apply_select_movement_action(game, request, result)
+
+    assert unit.round_state.remained_stationary_this_round is True

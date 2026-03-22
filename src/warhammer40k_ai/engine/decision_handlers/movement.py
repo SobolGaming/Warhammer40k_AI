@@ -774,7 +774,9 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         raise RuntimeError("Movement action unit missing.")
     if action == "stationary":
         try:
-            unit._execute_action("remain_stationary", (0, 0, 0), getattr(game, "map", None))
+            from ...units.unit import MovementAction
+
+            unit._execute_action(MovementAction.REMAIN_STATIONARY.value, (0, 0, 0), getattr(game, "map", None))
         except Exception as exc:
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
     elif action == "advance":
