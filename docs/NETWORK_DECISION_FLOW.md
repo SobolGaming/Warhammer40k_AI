@@ -224,8 +224,8 @@ confirms it, then selects any required follow‑up allocations.
 1. **Server enters CHARGE_PHASE** and queues `SELECT_UNIT`.
 2. **Client chooses a charging unit** by resolving `SELECT_UNIT`.
 3. **Server queues `DECLARE_CHARGE`** for that unit.
-4. **Client chooses charge targets** and resolves `DECLARE_CHARGE`.
-5. **Server validates** charge eligibility and broadcasts the declaration.
+4. **Client chooses charge targets within 12"** and resolves `DECLARE_CHARGE`.
+5. **Server validates** charge eligibility, including the hard 12" declaration gate, and broadcasts the declaration.
 6. **Overwatch window opens (interrupt):**
    - If the defending player has CP and Overwatch available, the server **queues**
      `SELECT_OVERWATCH_SHOOTER` for the defender.

@@ -277,27 +277,24 @@ class ChargeDeclarationDialog(BaseDialog):
                for enemy in enemy_units if enemy.is_alive()):
             return {"valid": False, "reason": "Unit is already in engagement range"}
         
-        # Check distance
+        # Charge declaration uses a fixed 12" eligibility range. Charge-roll
+        # modifiers only change the later charge move distance.
         distance = self.game_map.get_distance_between_units(self.unit, target)
         max_distance = self._get_max_charge_distance(target)
         modifiers = self._get_charge_modifiers(target)
         mod_text = self._format_charge_modifiers(modifiers)
-        if distance > max_distance:
-            reason = f"Target too far ({distance:.1f}\" > {max_distance:.1f}\")"
+        if float(distance) > 12.0 + 1e-6:
+            reason = f"Target too far ({distance:.1f}\" > 12.0\")"
             if mod_text:
-                reason = f"{reason} mods: {mod_text}"
+                reason = f"{reason} move mods: {mod_text}"
             return {"valid": False, "reason": reason}
-        
-        # Check if path is blocked (simplified)
-        if self.game_map.is_path_blocked(self.unit, target):
-            return {"valid": False, "reason": "Path to target is blocked"}
 
         if not self.unit.can_declare_charge_against(target, game, out_of_turn=out_of_turn):
             return {"valid": False, "reason": "Unit cannot declare a charge against this target"}
 
-        reason = f"Distance: {distance:.1f}\" (max {max_distance:.1f}\")"
+        reason = f"Distance: {distance:.1f}\" (declaration range 12.0\", move max {max_distance:.1f}\")"
         if mod_text:
-            reason = f"{reason} mods: {mod_text}"
+            reason = f"{reason} move mods: {mod_text}"
         return {"valid": True, "reason": reason}
     
     def handle_event(self, event):

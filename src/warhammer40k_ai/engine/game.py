@@ -13106,6 +13106,134 @@ class Game(
         candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
         return candidates
 
+    def _emergency_charge_retarget_candidates(
+        self,
+        charging_unit: 'Unit',
+        *,
+        out_of_turn: bool = False,
+    ) -> list['Unit']:
+        candidates = list(self._charge_declaration_candidate_targets(charging_unit, out_of_turn=out_of_turn) or [])
+        game_map = getattr(self, "map", None)
+        path_blocked = getattr(game_map, "is_path_blocked", None) if game_map is not None else None
+        if not callable(path_blocked):
+            return candidates
+        filtered: list[Unit] = []
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            if bool(path_blocked(charging_unit, candidate)):
+                continue
+            filtered.append(candidate)
+        return filtered
+
+    @staticmethod
+    def _charge_model_base_radius(model: 'Model') -> float:
+        model_base = getattr(model, "model_base", None)
+        if model_base is None:
+            return 0.0
+        radius = getattr(model_base, "radius", (0.0, 0.0))
+        if isinstance(radius, tuple):
+            return float(max(radius[0], radius[1]))
+        return float(radius or 0.0)
+
+    def _iter_charge_destination_candidates(
+        self,
+        charging_model: 'Model',
+        target_model: 'Model',
+    ):
+        game_map = getattr(self, "map", None)
+        if charging_model is None or target_model is None or game_map is None:
+            return
+        charging_pos = tuple(charging_model.get_location() or ())
+        target_pos = tuple(target_model.get_location() or ())
+        if len(charging_pos) < 3 or len(target_pos) < 3:
+            return
+
+        dx = float(charging_pos[0]) - float(target_pos[0])
+        dy = float(charging_pos[1]) - float(target_pos[1])
+        if abs(dx) <= 1e-9 and abs(dy) <= 1e-9:
+            primary_angle = 0.0
+        else:
+            primary_angle = float(math.atan2(dy, dx))
+
+        charging_radius = self._charge_model_base_radius(charging_model)
+        target_radius = self._charge_model_base_radius(target_model)
+        angle_offsets = (0, 30, -30, 60, -60, 90, -90, 180)
+        engagement_gaps = (1.0, 0.5, 0.1)
+        seen: set[tuple[float, float, float]] = set()
+        height_at = getattr(game_map, "get_height_at_point", None)
+        fallback_z = float(target_pos[2])
+        for gap in engagement_gaps:
+            centre_distance = float(charging_radius + target_radius + gap)
+            for angle_offset in angle_offsets:
+                radians = primary_angle + math.radians(float(angle_offset))
+                x = float(target_pos[0]) + math.cos(radians) * centre_distance
+                y = float(target_pos[1]) + math.sin(radians) * centre_distance
+                z = float(height_at(x, y)) if callable(height_at) else fallback_z
+                key = (round(x, 3), round(y, 3), round(z, 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield (x, y, z)
+
+    def _find_charge_destination(
+        self,
+        charging_unit: 'Unit',
+        target_unit: 'Unit',
+        *,
+        max_distance: float,
+    ) -> tuple[float, float, float] | None:
+        if charging_unit is None or target_unit is None:
+            return None
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return None
+        from ..pathing.api import PathQuery, plan_model_path
+        from ..utility.aura_utils import distance_between_models_bases_3d
+        from ..utility.calcs import MovementType
+
+        charging_models = [model for model in list(getattr(charging_unit, "models", []) or []) if getattr(model, "is_alive", False)]
+        target_models = [model for model in list(getattr(target_unit, "models", []) or []) if getattr(model, "is_alive", False)]
+        if not charging_models or not target_models:
+            return None
+
+        closest_pairs: list[tuple[float, Model, Model]] = []
+        for charging_model in charging_models:
+            for target_model in target_models:
+                distance = float(distance_between_models_bases_3d(charging_model, target_model))
+                closest_pairs.append((distance, charging_model, target_model))
+        closest_pairs.sort(key=lambda item: (float(item[0]), str(get_entity_id(item[1]) or ""), str(get_entity_id(item[2]) or "")))
+
+        best_destination: tuple[float, float, float] | None = None
+        best_cost: float | None = None
+        considered_pairs = 0
+        for _distance, charging_model, target_model in closest_pairs:
+            considered_pairs += 1
+            if considered_pairs > 2:
+                break
+            for destination in self._iter_charge_destination_candidates(charging_model, target_model):
+                path_result = plan_model_path(
+                    PathQuery(
+                        model=charging_model,
+                        target=destination,
+                        movement_type=MovementType.CHARGE,
+                        max_distance=float(max_distance),
+                        game_map=game_map,
+                        target_unit=target_unit,
+                        target_units=(target_unit,),
+                        prefer_constrained=False,
+                        enable_exact_refine=False,
+                        exact_refine_max_paths=1,
+                    )
+                )
+                if not bool(getattr(path_result, "valid", False)):
+                    continue
+                total_cost = float(getattr(path_result, "distance_cost", 0.0) or 0.0) + float(getattr(path_result, "pivot_cost", 0.0) or 0.0)
+                if best_cost is None or total_cost < best_cost - 1e-6:
+                    best_cost = total_cost
+                    best_destination = destination
+        return best_destination
+
     def _queue_emergency_combat_embarkation_interrupt(
         self,
         charging_unit: 'Unit',
@@ -13599,7 +13727,7 @@ class Game(
             )
         ability_name = str(spec.get("source", "") or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
         self._mark_emergency_combat_embarkation_used_this_turn(transport, ability_name=ability_name)
-        candidates = self._charge_declaration_candidate_targets(charging_unit, out_of_turn=out_of_turn)
+        candidates = self._emergency_charge_retarget_candidates(charging_unit, out_of_turn=out_of_turn)
         if not candidates:
             return {
                 "roll_id": None,
@@ -14043,62 +14171,24 @@ class Game(
             logger.error("Charge failed: no models move")
             return False
 
-        # Charge roll is sufficient - now attempt the movement
-        # Find the closest models between the two units for accurate distance calculation
-        charging_pos = None
-        target_pos = None
-        closest_distance = float('inf')
-
-        for charging_model in charging_unit.models:
-            if not charging_model.is_alive:
-                continue
-            for target_model in target_unit.models:
-                if not target_model.is_alive:
-                    continue
-
-                from ..utility.aura_utils import distance_between_models_bases_3d
-                distance = float(distance_between_models_bases_3d(charging_model, target_model))
-
-                if distance < closest_distance:
-                    closest_distance = distance
-                    c_pos = charging_model.get_location()
-                    t_pos = target_model.get_location()
-                    charging_pos = c_pos
-                    target_pos = t_pos
-
-        if not charging_pos or not target_pos:
-            logger.error("Charge failed: invalid positions")
-            return False
-
         # CRITICAL: Store original model positions BEFORE attempting movement
         # This allows proper rollback if charge fails to achieve engagement range
         original_model_positions = []
         for model in charging_unit.models:
             original_model_positions.append(model.get_location())
 
-        # Calculate direction vector from charging unit to target
-        dx = target_pos[0] - charging_pos[0]
-        dy = target_pos[1] - charging_pos[1]
-
-        # Normalize the direction vector
-        distance_to_target = (dx ** 2 + dy ** 2) ** 0.5
-        if distance_to_target == 0:
-            logger.error("Charge failed: units are at same position")
+        destination = self._find_charge_destination(
+            charging_unit,
+            target_unit,
+            max_distance=float(charge_roll),
+        )
+        if destination is None:
+            logger.error("Charge failed: no legal routed destination within charge distance")
             return False
-
-        dx /= distance_to_target
-        dy /= distance_to_target
-
-        # Move the charging unit towards the target up to the charge roll distance
-        # Move as close as possible within the charge roll distance for better pile-in positioning
-        movement_distance = min(charge_roll, current_distance - 0.1)  # Get as close as possible without overlapping
-        new_x = charging_pos[0] + dx * movement_distance
-        new_y = charging_pos[1] + dy * movement_distance
-        new_z = self.map.get_height_at_point(new_x, new_y)
 
         # Attempt to move the unit with special charge movement logic
         # During charge, units should be able to move into engagement range
-        success = charging_unit.charge_move((new_x, new_y, new_z), self.map, target_unit)
+        success = charging_unit.charge_move(destination, self.map, target_unit)
         if success:
             # Check if the charge actually achieved engagement range (<= 1.0")
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)

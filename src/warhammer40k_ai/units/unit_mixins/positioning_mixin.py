@@ -8775,20 +8775,12 @@ class PositioningMixin:
         if self._thrill_seekers_restriction_reason(target_unit, game):
             return False
         
-        # Check if target is within maximum charge range (2D6 = max 12")
+        # Charge declaration has a hard 12" target gate; charge-roll modifiers only
+        # affect the later charge move distance after a legal declaration is made.
         distance = game.map.get_distance_between_units(self, target_unit)
-        max_distance = self.max_charge_distance
-        getter = getattr(game, "get_max_charge_distance", None) if game is not None else None
-        if callable(getter):
-            max_distance = float(getter(self, target_unit=target_unit))
-        if distance > max_distance:
+        if float(distance) > 12.0 + 1e-6:
             return False
-            
-        # Check if there's a clear charge path
-        # This is simplified - in real 40k you can charge around terrain
-        if game.map.is_path_blocked(self, target_unit):
-            return False
-            
+
         return True
 
     def _can_declare_charge_base(self, game: 'Game', *, out_of_turn: bool = False) -> bool:
@@ -8841,10 +8833,6 @@ class PositioningMixin:
         enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
         if not enemy_units:
             return False
-        max_distance = float(getattr(self, "max_charge_distance", 0) or 0)
-        getter = getattr(game, "get_max_charge_distance", None)
-        if callable(getter):
-            max_distance = float(getter(self, target_unit=None))
         sycophantic_active_fn = getattr(self, "_carnival_sycophantic_surge_active_for_charge", None)
         sycophantic_target_fn = getattr(self, "_carnival_sycophantic_target_condition_met", None)
         sycophantic_active = bool(callable(sycophantic_active_fn) and sycophantic_active_fn(game=game))
@@ -8852,7 +8840,7 @@ class PositioningMixin:
             return False
         for enemy in enemy_units:
             try:
-                if game_map.get_distance_between_units(self, enemy) > max_distance:
+                if float(game_map.get_distance_between_units(self, enemy)) > 12.0 + 1e-6:
                     continue
                 if sycophantic_active and not bool(sycophantic_target_fn(enemy, game)):
                     continue

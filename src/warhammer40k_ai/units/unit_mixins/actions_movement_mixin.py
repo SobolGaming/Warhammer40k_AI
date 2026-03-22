@@ -15174,6 +15174,9 @@ class ActionsMovementMixin:
                     game_map=game_map,
                     target_unit=targets[0],
                     target_units=tuple(targets),
+                    prefer_constrained=False,
+                    enable_exact_refine=False,
+                    exact_refine_max_paths=1,
                 )
             ).to_legacy_dict()
             
@@ -15243,6 +15246,9 @@ class ActionsMovementMixin:
                             game_map=game_map,
                             target_unit=targets[0],
                             target_units=tuple(targets),
+                            prefer_constrained=False,
+                            enable_exact_refine=False,
+                            exact_refine_max_paths=1,
                         )
                     ).to_legacy_dict()
 

@@ -1,7 +1,9 @@
 from warhammer40k_ai.engine.game import Game, Battlefield
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.roster.army import Army
-from warhammer40k_ai.battlefield.map import Map
+from unittest.mock import patch
+
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -85,6 +87,57 @@ def test_charge_declare_records_multiple_targets():
     assert charger.round_state.charge_target_ids == {t1_id, t2_id}
     assert charger_id in game.phase_charge_targets.get(t1_id, set())
     assert charger_id in game.phase_charge_targets.get(t2_id, set())
+
+
+def test_charge_declaration_range_is_hard_capped_at_twelve_inches():
+    game_map = Map(width=60, height=44)
+    charger = make_unit("Charger")
+    target = make_unit("Target", faction="B")
+    game, _p1, _p2 = attach_to_game(game_map, [charger], [target])
+
+    game.get_max_charge_distance = lambda _unit, target_unit=None: 14.0
+    game_map.get_distance_between_units = lambda _a, _b: 12.1
+    game_map.is_within_engagement_range = lambda _a, _b: False
+
+    assert charger.can_declare_charge(game) is False
+    assert charger.can_declare_charge_against(target, game) is False
+
+
+def test_charge_declaration_does_not_fail_on_straight_line_terrain_block():
+    game_map = Map(width=60, height=44)
+    charger = make_unit("Charger")
+    target = make_unit("Target", faction="B")
+    game, _p1, _p2 = attach_to_game(game_map, [charger], [target])
+
+    game_map.get_distance_between_units = lambda _a, _b: 11.9
+    game_map.is_within_engagement_range = lambda _a, _b: False
+    game_map.is_path_blocked = lambda _a, _b: True
+
+    assert charger.can_declare_charge(game) is True
+    assert charger.can_declare_charge_against(target, game) is True
+
+
+def test_attempt_charge_can_route_around_terrain_to_reach_target():
+    game_map = Map(width=60, height=44)
+    charger = make_unit("Charger")
+    target = make_unit("Target", faction="B")
+    game, _p1, _p2 = attach_to_game(game_map, [charger], [target])
+
+    charger.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    target.models[0].set_location(3.0, 6.0, 0.0, 0.0)
+    game.auto_resolve_dice_rolls = True
+
+    ruins = TerrainFactory.create_ruins(
+        [(5.0, 5.0), (8.0, 5.0), (8.0, 8.0), (5.0, 8.0)],
+        wall_height=4.0,
+        num_floors=1,
+    )
+    game_map.add_terrain_feature(ruins)
+
+    with patch("warhammer40k_ai.utility.dice.get_dice_roll", return_value=6):
+        assert game.attempt_charge(charger, target) is True
+
+    assert game_map.is_within_engagement_range(charger, target) is True
 
 
 def test_charge_end_state_blocks_non_targets():
