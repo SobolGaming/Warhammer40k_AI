@@ -15,7 +15,7 @@ Design note:
 - `objective_targets` can exist as a late-bound execution field inside Tier 0 and Tier 2, but it is not the primary strategic abstraction.
 
 Move candidate metadata includes:
-- `candidate_kind` (`noop` or `move`)
+- `candidate_kind` (`noop`, `move`, or `charge`)
 - `solver_ms`
 - `fallback_mode`
 - `intent_hash`
@@ -42,3 +42,5 @@ Move candidate metadata includes:
 - provenance fields:
   - `rules_provenance_refs`
 - `path_witness_ref` for non-noop move candidates
+- Charge `MOVE_UNIT` candidates are generated from declared `target_unit_ids` and aim to end
+  in a legal engagement state rather than using the generic objective/staging translation path.

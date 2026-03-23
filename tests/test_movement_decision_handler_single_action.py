@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.decision_handlers.movement import (
     _apply_select_movement_action,
     _apply_move_unit,
+    _validate_move_unit,
     _validate_select_movement_action,
 )
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_MOVEMENT_ACTION
@@ -61,6 +62,15 @@ class _UnitStub:
         self.round_state.remained_stationary_this_round = True
         return True
 
+    def is_alive(self) -> bool:
+        return True
+
+    def validate_charge_end_state(self, target_units, game_map) -> tuple[bool, str]:
+        for target_unit in list(target_units or []):
+            if not game_map.is_within_engagement_range(self, target_unit):
+                return False, "not in engagement range"
+        return True, ""
+
 
 class _ArmyStub:
     def __init__(self, unit: _UnitStub) -> None:
@@ -73,9 +83,18 @@ class _PlayerStub:
 
 
 class _GameStub:
-    def __init__(self, unit: _UnitStub) -> None:
-        self.players = [_PlayerStub(_ArmyStub(unit))]
-        self.map = SimpleNamespace(units=[unit])
+    def __init__(self, unit: _UnitStub, enemy_unit: _UnitStub | None = None) -> None:
+        friendly_army = _ArmyStub(unit)
+        enemy_army = _ArmyStub(enemy_unit) if enemy_unit is not None else _ArmyStub(unit)
+        unit.parent_army = friendly_army
+        if enemy_unit is not None:
+            enemy_unit.parent_army = enemy_army
+        self.players = [_PlayerStub(friendly_army), _PlayerStub(enemy_army)]
+        self.map = SimpleNamespace(
+            units=[member for member in [unit, enemy_unit] if member is not None],
+            is_within_engagement_range=lambda lhs, rhs: abs(lhs.models[0].get_location()[0] - rhs.models[0].get_location()[0]) <= 1.0,
+            get_enemy_units=lambda moving_unit: [candidate for candidate in [enemy_unit] if candidate is not None and candidate is not moving_unit],
+        )
 
 
 def _build_move_request(unit: _UnitStub, movement_type: str) -> tuple[DecisionRequest, DecisionResult]:
@@ -187,3 +206,41 @@ def test_apply_select_movement_action_executes_stationary_with_enum_value() -> N
     _apply_select_movement_action(game, request, result)
 
     assert unit.round_state.remained_stationary_this_round is True
+
+
+def test_validate_move_unit_charge_uses_proposed_model_positions() -> None:
+    model = _ModelStub("model-5")
+    enemy_model = _ModelStub("enemy-model-1")
+    unit = _UnitStub("unit-5", model)
+    enemy = _UnitStub("enemy-5", enemy_model)
+    enemy_model.set_location(4.0, 0.0, 0.0, 0.0)
+    game = _GameStub(unit, enemy)
+    option = DecisionOption.create(
+        "Confirm",
+        payload={"unit_id": unit.id, "movement_type": "charge", "action": "confirm"},
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge unit",
+        player_id="player-1",
+        options=[option],
+        context={"unit_id": unit.id, "movement_type": "charge", "target_unit_ids": [enemy.id]},
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={
+            "model_positions": [
+                {
+                    "model_id": unit.models[0]._id,
+                    "position": [3.0, 0.0, 0.0],
+                    "facing": 0.0,
+                }
+            ]
+        },
+    )
+
+    errors = _validate_move_unit(game, request, result)
+
+    assert errors == ()

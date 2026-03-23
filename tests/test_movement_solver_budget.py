@@ -51,6 +51,12 @@ class _ModelStub:
     def get_location(self):
         return (self.model_base.x, self.model_base.y, self.model_base.z, self.model_base.facing)
 
+    def set_location(self, x: float, y: float, z: float, facing: float) -> None:
+        self.model_base.x = float(x)
+        self.model_base.y = float(y)
+        self.model_base.z = float(z)
+        self.model_base.facing = float(facing)
+
 
 class _ArmyStub:
     def __init__(self, units) -> None:
@@ -67,6 +73,12 @@ class _UnitStub:
     def get_parent_army(self):
         return self.parent_army
 
+    def validate_charge_end_state(self, target_units, game_map) -> tuple[bool, str]:
+        for target_unit in list(target_units or []):
+            if not game_map.is_within_engagement_range(self, target_unit):
+                return False, "not in engagement range"
+        return True, ""
+
 
 class _PlayerStub:
     def __init__(self, army) -> None:
@@ -81,6 +93,12 @@ class _MapStub:
     def get_height_at_point(_x: float, _y: float) -> float:
         return 0.0
 
+    @staticmethod
+    def is_within_engagement_range(lhs, rhs) -> bool:
+        lhs_pos = lhs.models[0].get_location()
+        rhs_pos = rhs.models[0].get_location()
+        return abs(float(lhs_pos[0]) - float(rhs_pos[0])) <= 1.0 and abs(float(lhs_pos[1]) - float(rhs_pos[1])) <= 1.0
+
 
 @dataclass
 class _LiveGameStub:
@@ -89,6 +107,10 @@ class _LiveGameStub:
     players: list[object]
     map: object
     objectives: list[object]
+
+    def _find_charge_destination(self, _charging_unit, target_unit, *, max_distance: float):
+        target_x, target_y, target_z, *_rest = target_unit.models[0].get_location()
+        return (float(target_x) - min(float(max_distance), 1.0), float(target_y), float(target_z))
 
 
 def _build_move_request(*, budget_ms: int) -> DecisionRequest:
@@ -215,3 +237,58 @@ def test_move_solver_generates_actual_forward_translation_for_melee_unit() -> No
         or float(metadata.get("distance_to_objective_delta", 0.0) or 0.0) > 0.0
     )
     assert str(metadata.get("path_witness_ref", "") or "").startswith("pathwitness://")
+
+
+def test_move_solver_generates_targeted_charge_candidate_reaching_engagement_range() -> None:
+    mover_model = _ModelStub("model:mover", x=0.0, y=0.0, melee=True, ranged=False)
+    enemy_model = _ModelStub("model:enemy", x=11.0, y=0.0, melee=False, ranged=True)
+    mover_army = _ArmyStub([])
+    enemy_army = _ArmyStub([])
+    mover_unit = _UnitStub("unit:mover", [mover_model], army=mover_army)
+    enemy_unit = _UnitStub("unit:enemy", [enemy_model], army=enemy_army)
+    mover_army.units = [mover_unit]
+    enemy_army.units = [enemy_unit]
+    game = _LiveGameStub(
+        time_manager=TimeManager(),
+        path_witness_store=PathWitnessStore(),
+        players=[_PlayerStub(mover_army), _PlayerStub(enemy_army)],
+        map=_MapStub(),
+        objectives=[],
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:mover",
+            "movement_type": "charge",
+            "max_distance": 12.0,
+            "target_unit_ids": ["unit:enemy"],
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, mask, wall_clock_ms, fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    assert fallback_mode is False
+    assert wall_clock_ms >= 0
+    assert mask == [True, True]
+    confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
+    metadata = dict(confirm_candidate.metadata or {})
+    assert metadata.get("candidate_kind") == "charge"
+    model_positions = list(dict(confirm_candidate.params or {}).get("model_positions", []) or [])
+    assert len(model_positions) == 1
+    position = list(model_positions[0].get("position", []) or [])
+    assert len(position) >= 2
+    assert abs(float(position[0]) - 10.0) <= 1e-6
+    assert float(metadata.get("distance_to_enemy_delta", 0.0) or 0.0) > 0.0

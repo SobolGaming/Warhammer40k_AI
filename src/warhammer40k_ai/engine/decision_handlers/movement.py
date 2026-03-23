@@ -74,6 +74,25 @@ def _parse_xy_point(value: object) -> tuple[float, float] | None:
         return None
 
 
+def _validate_charge_end_state_for_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    target_units: list[object],
+    game_map: object,
+) -> tuple[bool, str]:
+    validate_charge_end_state = getattr(unit, "validate_charge_end_state", None)
+    if not callable(validate_charge_end_state):
+        return False, "Move unit: charge movement requires validate_charge_end_state()."
+    snapshot = current_model_positions(unit)
+    apply_model_positions(game, list(model_positions or []))
+    try:
+        ok, reason = validate_charge_end_state(target_units, game_map)
+    finally:
+        apply_model_positions(game, snapshot)
+    return bool(ok), str(reason or "")
+
+
 def _validate_heresy_begets_retribution_positions(
     game: object,
     unit: object,
@@ -1051,10 +1070,13 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         game_map = getattr(game, "map", None)
         if game_map is None:
             return ("Move unit: charge movement requires an active game map.",)
-        validate_charge_end_state = getattr(unit, "validate_charge_end_state", None)
-        if not callable(validate_charge_end_state):
-            return ("Move unit: charge movement requires validate_charge_end_state().",)
-        ok, reason = validate_charge_end_state(target_units, game_map)
+        ok, reason = _validate_charge_end_state_for_positions(
+            game,
+            unit,
+            model_positions,
+            target_units,
+            game_map,
+        )
         if not ok:
             return (str(reason or "Move unit: charge must end in a legal engagement state."),)
     return ()
