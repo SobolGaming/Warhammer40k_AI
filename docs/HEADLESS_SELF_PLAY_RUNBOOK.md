@@ -53,6 +53,42 @@ Throughput controls:
 - `--reserve-policy forced_only` avoids optional reserve declarations (default; faster and more stable).
 - `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
 
+Logging controls:
+- `--log-level INFO` shows normal engine progress logs; use `--log-level DEBUG` for verbose combat/debug output.
+- Save-failure roll summaries such as `Saves: 3/6 failed ...` now log at `DEBUG`, not `ERROR`.
+- `--log-phase-transitions` emits an `INFO` log whenever the observed setup/battle state changes.
+- Each emitted phase-transition log is tagged with a stable per-game id, so multi-worker output stays attributable:
+  - without `--seed-base`: `selfplay:000000`, `selfplay:000001`, ...
+  - with `--seed-base 9000`: `selfplay:9000`, `selfplay:9001`, ...
+- Phase-transition format:
+
+```text
+(selfplay:000000 pre-deployment setup_phase=DEPLOY_ARMIES)
+(selfplay:000000 post-deployment player=1 battle_round=1 phase=COMMAND_PHASE step=PHASE_START)
+```
+
+Example:
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 3 \
+  --workers 3 \
+  --log-level INFO \
+  --log-phase-transitions \
+  --player1-army army_lists/chaos_test_2.txt \
+  --player2-army army_lists/aeldari_test_2.txt \
+  --output data/headless_self_play_decision_records.json
+```
+
+Result summary:
+- Single-game runs print the winner using the army-list stem plus final score, for example:
+
+```text
+Winners: {'chaos_test_2': <SCORE: 45 vs 32>}
+```
+
+- Multi-game runs print aggregate winner counts by army label plus per-game outcome details keyed by the stable game id.
+
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
 
 If your source records were produced under older rules-pack identifiers, relabel before manifest gating:

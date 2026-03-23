@@ -7,6 +7,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import copy
 import json
+import logging
 from pathlib import Path
 import time
 from typing import Any
@@ -21,6 +22,8 @@ from warhammer40k_ai.engine.reward_profile import (
 )
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
+
+logger = logging.getLogger(__name__)
 
 
 def _json_safe(value: Any) -> Any:
@@ -38,6 +41,124 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _setup_logging(log_level: str) -> logging.Logger:
+    level_name = str(log_level or "WARNING").strip().upper() or "WARNING"
+    level = logging.getLevelNamesMapping().get(level_name, logging.WARNING)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s")
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    return logging.getLogger(__name__)
+
+
+def _game_id_for_index(game_index: int, *, seed_base: int | None = None) -> str:
+    if seed_base is not None:
+        return f"selfplay:{int(seed_base) + int(game_index)}"
+    return f"selfplay:{int(game_index):06d}"
+
+
+def _army_label_from_path(path: str) -> str:
+    path_text = str(path or "").strip()
+    if not path_text:
+        return "unknown_army"
+    parsed = Path(path_text)
+    return parsed.stem or parsed.name or path_text
+
+
+def _player_score(player: object) -> int:
+    getter = getattr(player, "get_score", None)
+    value = getter() if callable(getter) else getattr(player, "score", 0)
+    return int(value or 0)
+
+
+def _winner_summary(
+    *,
+    winner: object | None,
+    player1: object,
+    player2: object,
+    player1_label: str,
+    player2_label: str,
+) -> tuple[str, str, dict[str, int]]:
+    player1_score = _player_score(player1)
+    player2_score = _player_score(player2)
+    scoreboard = {
+        str(player1_label or "player1"): player1_score,
+        str(player2_label or "player2"): player2_score,
+    }
+    if winner is player1 or str(getattr(winner, "id", "") or "") == str(getattr(player1, "id", "") or ""):
+        return player1_label, f"<SCORE: {player1_score} vs {player2_score}>", scoreboard
+    if winner is player2 or str(getattr(winner, "id", "") or "") == str(getattr(player2, "id", "") or ""):
+        return player2_label, f"<SCORE: {player2_score} vs {player1_score}>", scoreboard
+    return "tie", f"<SCORE: {player1_score} vs {player2_score}>", scoreboard
+
+
+def _current_player_label(game: object) -> str:
+    getter = getattr(game, "get_current_player", None)
+    player = getter() if callable(getter) else None
+    if player is None:
+        return "unknown"
+    players = list(getattr(game, "players", []) or [])
+    player_id = str(getattr(player, "id", "") or "")
+    for index, candidate in enumerate(players, start=1):
+        candidate_id = str(getattr(candidate, "id", "") or "")
+        if candidate is player or (player_id and candidate_id and candidate_id == player_id):
+            return str(index)
+    return player_id or str(getattr(player, "name", "") or "unknown")
+
+
+def _current_phase_step_label(game: object) -> str:
+    if bool(getattr(game, "reinforcements_step_active", False)):
+        return "REINFORCEMENTS"
+    queue = getattr(game, "decision_queue", None)
+    requests = list(queue.list() or []) if queue is not None and hasattr(queue, "list") else []
+    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    for request in requests:
+        ctx = dict(getattr(request, "context", {}) or {})
+        request_phase = str(ctx.get("phase_name", "") or "").strip().upper()
+        request_step = str(ctx.get("phase_step", "") or "").strip().upper()
+        if request_phase != phase_name or not request_step:
+            continue
+        return request_step
+    if phase_name == "FIGHT_PHASE":
+        manager = getattr(game, "fight_phase_manager", None)
+        stage = str(getattr(getattr(manager, "current_stage", None), "name", "") or "").strip().upper()
+        if stage and stage != "COMPLETE":
+            return stage
+    return "PHASE_START"
+
+
+def _phase_state_summary(game: object) -> str:
+    if bool(getattr(game, "is_in_setup_phase", lambda: False)()):
+        getter = getattr(game, "get_current_setup_phase", None)
+        setup_phase = getter() if callable(getter) else None
+        setup_phase_name = str(getattr(setup_phase, "name", "") or "UNKNOWN")
+        return f"pre-deployment setup_phase={setup_phase_name}"
+    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "UNKNOWN")
+    battle_round = int(getattr(game, "turn", 0) or 0)
+    return (
+        f"post-deployment player={_current_player_label(game)} "
+        f"battle_round={battle_round} phase={phase_name} step={_current_phase_step_label(game)}"
+    )
+
+
+def _log_phase_state_if_changed(
+    game: Game,
+    *,
+    game_id: str,
+    enabled: bool,
+    last_state: str | None,
+) -> str:
+    state = _phase_state_summary(game)
+    if enabled and state != str(last_state or ""):
+        logger.info("(%s %s)", str(game_id or ""), state)
+    return state
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run deterministic headless self-play and export DecisionRecords."
@@ -45,6 +166,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--player1-army", default="army_lists/chaos_test.txt")
     parser.add_argument("--player2-army", default="army_lists/aeldari_test.txt")
     parser.add_argument("--games", type=int, default=1)
+    parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        help="Root logging level for headless self-play.",
+    )
+    parser.add_argument(
+        "--log-phase-transitions",
+        action="store_true",
+        help=(
+            "Emit INFO logs for setup/battle phase-state transitions using the per-game id. "
+            "Format: '(<game_id> <pre/post-deployment state ...>)'."
+        ),
+    )
     parser.add_argument(
         "--workers",
         type=int,
@@ -100,17 +235,29 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _drain_pending_decisions(game: Game, *, max_attempts: int = 4000) -> None:
+def _drain_pending_decisions(
+    game: Game,
+    *,
+    max_attempts: int = 4000,
+    game_id: str = "",
+    log_phase_transitions: bool = False,
+    last_state: str | None = None,
+) -> str | None:
     queue = getattr(game, "decision_queue", None)
     event_system = getattr(game, "event_system", None)
     if queue is None or event_system is None:
-        return
+        return last_state
 
     attempts = 0
     while True:
         request = queue.peek()
         if request is None:
-            return
+            return _log_phase_state_if_changed(
+                game,
+                game_id=str(game_id or ""),
+                enabled=bool(log_phase_transitions),
+                last_state=last_state,
+            )
         if attempts >= int(max_attempts):
             raise RuntimeError(
                 f"Unable to resolve pending decision after {max_attempts} attempts: "
@@ -118,9 +265,15 @@ def _drain_pending_decisions(game: Game, *, max_attempts: int = 4000) -> None:
             )
         decision_id_before = str(getattr(request, "decision_id", "") or "")
         event_system.publish("decision_requested", request=request, game=game)
+        last_state = _log_phase_state_if_changed(
+            game,
+            game_id=str(game_id or ""),
+            enabled=bool(log_phase_transitions),
+            last_state=last_state,
+        )
         request_after = queue.peek()
         if request_after is None:
-            return
+            return last_state
         decision_id_after = str(getattr(request_after, "decision_id", "") or "")
         if decision_id_after == decision_id_before:
             raise RuntimeError(
@@ -132,6 +285,7 @@ def _drain_pending_decisions(game: Game, *, max_attempts: int = 4000) -> None:
 
 def _run_single_game(
     *,
+    game_id: str,
     player1_army_file: str,
     player2_army_file: str,
     max_phase_steps: int,
@@ -139,10 +293,14 @@ def _run_single_game(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
+    log_phase_transitions: bool = False,
 ) -> dict[str, Any]:
+    player1_label = _army_label_from_path(player1_army_file)
+    player2_label = _army_label_from_path(player2_army_file)
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
+    game.session_id = str(game_id or "")
     if game_seed is not None:
         random_source = getattr(game, "random_source", None)
         seed_fn = getattr(random_source, "seed", None)
@@ -174,10 +332,27 @@ def _run_single_game(
         ),
     }
 
+    last_state = _log_phase_state_if_changed(
+        game,
+        game_id=str(game_id or ""),
+        enabled=bool(log_phase_transitions),
+        last_state=None,
+    )
     while session_game.is_in_setup_phase():
         if runtime.is_driver_managed_setup_phase():
             runtime.run_setup_autosteps()
-            _drain_pending_decisions(game)
+            last_state = _drain_pending_decisions(
+                game,
+                game_id=str(game_id or ""),
+                log_phase_transitions=bool(log_phase_transitions),
+                last_state=last_state,
+            )
+            last_state = _log_phase_state_if_changed(
+                game,
+                game_id=str(game_id or ""),
+                enabled=bool(log_phase_transitions),
+                last_state=last_state,
+            )
             continue
         setup_kwargs: dict[str, Any] = {
             "player1_army_file": player1_army_file,
@@ -187,25 +362,74 @@ def _run_single_game(
         if phase_name == "DEPLOY_ARMIES":
             setup_kwargs["decision_makers"] = deployment_decision_makers
         session_game.execute_current_setup_phase(**setup_kwargs)
-        _drain_pending_decisions(game)
+        last_state = _drain_pending_decisions(
+            game,
+            game_id=str(game_id or ""),
+            log_phase_transitions=bool(log_phase_transitions),
+            last_state=last_state,
+        )
         session_game.advance_setup_phase()
-        _drain_pending_decisions(game)
+        last_state = _drain_pending_decisions(
+            game,
+            game_id=str(game_id or ""),
+            log_phase_transitions=bool(log_phase_transitions),
+            last_state=last_state,
+        )
+        last_state = _log_phase_state_if_changed(
+            game,
+            game_id=str(game_id or ""),
+            enabled=bool(log_phase_transitions),
+            last_state=last_state,
+        )
 
     phase_steps = 0
+    last_state = _log_phase_state_if_changed(
+        game,
+        game_id=str(game_id or ""),
+        enabled=bool(log_phase_transitions),
+        last_state=last_state,
+    )
     while not session_game.is_game_over():
         if phase_steps >= int(max_phase_steps):
             raise RuntimeError(f"Headless game hit max phase steps ({max_phase_steps}) before game over.")
-        _drain_pending_decisions(game)
+        last_state = _drain_pending_decisions(
+            game,
+            game_id=str(game_id or ""),
+            log_phase_transitions=bool(log_phase_transitions),
+            last_state=last_state,
+        )
         session_game.next_phase()
-        _drain_pending_decisions(game)
+        last_state = _drain_pending_decisions(
+            game,
+            game_id=str(game_id or ""),
+            log_phase_transitions=bool(log_phase_transitions),
+            last_state=last_state,
+        )
         phase_steps += 1
+        last_state = _log_phase_state_if_changed(
+            game,
+            game_id=str(game_id or ""),
+            enabled=bool(log_phase_transitions),
+            last_state=last_state,
+        )
 
     winner = game.get_winner()
+    winner_army_label, winner_score_line, scoreboard = _winner_summary(
+        winner=winner,
+        player1=player1,
+        player2=player2,
+        player1_label=player1_label,
+        player2_label=player2_label,
+    )
     records = copy.deepcopy(list(getattr(game.decision_record_store, "records", []) or []))
     return {
+        "game_id": str(game_id or ""),
         "records": records,
         "phase_steps": int(phase_steps),
         "winner_player_id": str(getattr(winner, "id", "") or ""),
+        "winner_army_label": str(winner_army_label or ""),
+        "winner_score_line": str(winner_score_line or ""),
+        "scoreboard": scoreboard,
     }
 
 
@@ -219,12 +443,17 @@ def _run_single_game_job(
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
+    log_level: str = "WARNING",
+    log_phase_transitions: bool = False,
 ) -> dict[str, Any]:
+    _setup_logging(str(log_level or "WARNING"))
     game_seed = None
     if seed_base is not None:
         game_seed = int(seed_base) + int(game_index)
+    game_id = _game_id_for_index(int(game_index), seed_base=seed_base)
     started_at = time.perf_counter()
     result = _run_single_game(
+        game_id=str(game_id),
         player1_army_file=player1_army_file,
         player2_army_file=player2_army_file,
         max_phase_steps=max_phase_steps,
@@ -232,11 +461,16 @@ def _run_single_game_job(
         reserve_policy=str(reserve_policy or "forced_only"),
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         deployment_ranker_model=str(deployment_ranker_model or ""),
+        log_phase_transitions=bool(log_phase_transitions),
     )
     serialized_result = {
+        "game_id": str(result.get("game_id", "") or ""),
         "records": _json_safe(list(result.get("records", []) or [])),
         "phase_steps": int(result.get("phase_steps", 0) or 0),
         "winner_player_id": str(result.get("winner_player_id", "") or ""),
+        "winner_army_label": str(result.get("winner_army_label", "") or ""),
+        "winner_score_line": str(result.get("winner_score_line", "") or ""),
+        "scoreboard": _json_safe(dict(result.get("scoreboard", {}) or {})),
     }
     elapsed_s = float(time.perf_counter() - started_at)
     return {
@@ -248,15 +482,16 @@ def _run_single_game_job(
 
 def main() -> int:
     args = _parse_args()
+    _setup_logging(str(args.log_level))
     games = max(1, int(args.games or 1))
     workers = max(1, int(args.workers or 1))
     max_phase_steps = max(1, int(args.max_phase_steps or 1))
 
     all_records: list[dict[str, Any]] = []
     total_phase_steps = 0
-    winners: Counter[str] = Counter()
     decision_type_counts: Counter[str] = Counter()
     per_game_outputs: list[dict[str, Any]] = []
+    game_outcomes: dict[str, dict[str, Any]] = {}
 
     seed_base = int(args.seed_base) if args.seed_base is not None else None
 
@@ -271,12 +506,15 @@ def main() -> int:
                 reserve_policy=str(args.reserve_policy),
                 max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
                 deployment_ranker_model=str(args.deployment_ranker_model),
+                log_level=str(args.log_level),
+                log_phase_transitions=bool(args.log_phase_transitions),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
             records = list(result.get("records", []) or [])
+            game_id = str(result.get("game_id", "") or "")
             print(
-                f"Completed game {game_index + 1}/{games} in "
+                f"Completed game {game_index + 1}/{games} ({game_id}) in "
                 f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
                 f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
             )
@@ -294,6 +532,8 @@ def main() -> int:
                     reserve_policy=str(args.reserve_policy),
                     max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
                     deployment_ranker_model=str(args.deployment_ranker_model),
+                    log_level=str(args.log_level),
+                    log_phase_transitions=bool(args.log_phase_transitions),
                 )
                 for game_index in range(games)
             ]
@@ -303,8 +543,9 @@ def main() -> int:
                 game_index = int(payload.get("game_index", 0) or 0)
                 result = dict(payload.get("result", {}) or {})
                 records = list(result.get("records", []) or [])
+                game_id = str(result.get("game_id", "") or "")
                 print(
-                    f"Completed game {game_index + 1}/{games} in "
+                    f"Completed game {game_index + 1}/{games} ({game_id}) in "
                     f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
                     f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
                 )
@@ -315,9 +556,16 @@ def main() -> int:
         records = list(result.get("records", []) or [])
         all_records.extend(records)
         total_phase_steps += int(result.get("phase_steps", 0) or 0)
-        winner_player_id = str(result.get("winner_player_id", "") or "")
-        if winner_player_id:
-            winners[winner_player_id] += 1
+        winner_army_label = str(result.get("winner_army_label", "") or "")
+        winner_score_line = str(result.get("winner_score_line", "") or "")
+        scoreboard = dict(result.get("scoreboard", {}) or {})
+        game_id = str(result.get("game_id", "") or "")
+        if game_id:
+            game_outcomes[game_id] = {
+                "winner": winner_army_label or "tie",
+                "score": winner_score_line,
+                "scoreboard": scoreboard,
+            }
         for record in records:
             decision_type = str(record.get("decision_type", "") or "")
             if decision_type:
@@ -341,8 +589,18 @@ def main() -> int:
     print(f"Decision records: {len(exported_records)}")
     if not bool(args.no_reward_annotation):
         print(f"Reward profile: {args.reward_profile}")
-    if winners:
-        print(f"Winners by player id: {dict(winners)}")
+    if games == 1 and game_outcomes:
+        only_game_id = next(iter(sorted(game_outcomes)))
+        outcome = dict(game_outcomes.get(only_game_id, {}) or {})
+        winner_army_label = str(outcome.get("winner", "") or "tie")
+        winner_score_line = str(outcome.get("score", "") or "<SCORE: 0 vs 0>")
+        print(f"Winners: {{{winner_army_label!r}: {winner_score_line}}}")
+    elif game_outcomes:
+        winner_counts: Counter[str] = Counter(
+            str(outcome.get("winner", "") or "tie") for outcome in game_outcomes.values()
+        )
+        print(f"Winner counts: {dict(winner_counts)}")
+        print(f"Game outcomes: {game_outcomes}")
     print(f"Top decision types: {dict(decision_type_counts.most_common(10))}")
     print(f"Wrote: {output_path}")
     return 0

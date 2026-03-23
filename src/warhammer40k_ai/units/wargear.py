@@ -26028,7 +26028,7 @@ class WargearProfile:
                 needed_str = f"needed {first_save['needed']}+ {save_type_str}"
 
             failed_saves = len(result.save_results) - sum(1 for s in result.save_results if s['saved'])
-            logger.error(f"   Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]")
+            logger.debug(f"   Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]")
 
         # Damage results with Feel No Pain details
         if result.damage_results:
