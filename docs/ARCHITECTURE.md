@@ -11,6 +11,9 @@ This document is a *high-level* map of the codebase. Detailed designs live in `d
 - **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui|client-headless ...`.
 - **Headless/controller-driven**: the engine can be driven purely by Commands + DecisionResults (see `docs/NETWORK_SAVELOAD_DESIGN.md`).
   - Local self-play (`scripts/run_headless_self_play.py`) now reuses the same local authoritative runtime shell (`LocalAuthoritativeRuntime` + `AuthoritativeSessionDriver`) as interactive local play.
+  - Headless local setup/deployment is split by ownership: `DeterministicDeploymentDecisionMaker` answers deployment-manager-owned setup choices, while `HeadlessPolicyDecisionController` answers the remaining masked `DecisionRequest`s.
+  - `MOVE_UNIT` is the shared movement decision surface for deployment placement, reserves arrival, battle movement, charge movement, and fight-phase pile-in/consolidate. UI and headless differ in who chooses the payload, not in the authoritative validation path.
+  - Self-play exports authoritative `DecisionRecord`s from the live game store and can bound long-running games with `--max-phase-steps` plus per-decision reserve-arrival search limits.
 
 ## Core architectural idea
 
@@ -77,14 +80,24 @@ flowchart LR
   Gateway --> Runtime["LocalAuthoritativeRuntime"]
   Runtime --> Driver["AuthoritativeSessionDriver"]
   Driver --> Game["Authoritative Game"]
-  Policy["HeadlessPolicyDecisionController<br/>(AI/policy)"] --> Hub["DecisionControllerHub"]
+  Deploy["DeterministicDeploymentDecisionMaker<br/>(setup/deployment policy)"] --> Game
+  Policy["HeadlessPolicyDecisionController<br/>(non-deployment decision policy)"] --> Hub["DecisionControllerHub"]
   Hub --> Game
   Game --> Hub
+  Game --> Solver["Time-budgeted candidate generation<br/>(tier2_orchestrator.py / movement_solver.py)"]
+  Solver --> Game
   Game --> Records["DecisionRecord store / replay artifacts"]
 ```
 
 Use case:
 - AI vs AI self-play (`scripts/run_headless_self_play.py`).
+
+Current headless flow:
+- `scripts/run_headless_self_play.py` drives setup and phase progression through the same authoritative runtime/driver shell as local interactive play, then drains pending decisions until the game ends or the configured phase-step cap is reached.
+- Deployment is not a special UI-only path in headless mode. Zone selection, reserve declarations, next-unit selection, and placement are resolved by `DeterministicDeploymentDecisionMaker`, optionally with a deployment ranking model.
+- Non-deployment choices go through `HeadlessPolicyDecisionController`, which ranks only legal masked candidates and falls back to first-legal resolution or bounded reserves-arrival brute force when needed.
+- Time-budgeted solvers feed candidate metadata into `DecisionRecord`s, so headless runs capture candidates, masks, chosen actions, wall-clock timing, and fallback mode for replay/training use.
+- Fight-phase pile-in and consolidate now continue through the same authoritative `MOVE_UNIT` pipeline as other movement decisions, with shared planning/validation instead of legacy UI-only movement hooks.
 
 ### 4) Remote + non-headless (server authoritative, UI clients)
 
@@ -175,6 +188,7 @@ Explicit controller ownership:
 ### Entry points
 
 - `scripts/main.py`: main local entry point (loads armies, initializes game + UI, runs loop).
+- `scripts/run_headless_self_play.py`: local AI-vs-AI self-play entry point for deterministic headless runs and `DecisionRecord` export.
 - `warhammer40k_ai.network.cli`: server/client entry points for WebSocket play.
 
 ### Game engine (`src/warhammer40k_ai/engine/`)
@@ -188,6 +202,9 @@ Key responsibilities:
 - Local authoritative runtime composition (`local_runtime.py`)
 - Decision system (`decision_requests.py`, `decisions.py`, `decision_kinds.py`, `decision_dispatcher.py`, `decision_handlers/`)
 - Decision controllers & routing (`decision_controller.py`) for UI/AI/network integration
+- Headless setup/deployment and policy control (`deployment_headless.py`, `headless_policy_controller.py`)
+- Time-budgeted candidate generation and telemetry (`time_manager.py`, `tier2_orchestrator.py`, `movement_solver.py`, `decision_record.py`)
+- Shared movement/fight planning and authoritative movement validation (`movement_intent.py`, `fight_move.py`, `decision_handlers/movement.py`)
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
 - Persistence/replay (`snapshot.py`, `ref_codec.py`, `event_log.py`, `replay.py`, `replay_store.py`, `session_store.py`)
 

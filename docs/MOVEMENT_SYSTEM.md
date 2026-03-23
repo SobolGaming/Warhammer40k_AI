@@ -275,14 +275,15 @@ Coherency is still required after charge moves and validated separately.
 
 ### Fight-phase movement (Pile-in and Consolidate)
 
-Pile-in and consolidate moves are expected to be UI-controlled and use
-the same pathfinding/validation system with different rule constraints:
+Pile-in and consolidate moves now use authoritative `MOVE_UNIT` decisions in
+all runtime modes and share the same pathfinding/validation system with
+different rule constraints:
 - Must end closer to enemies (pile-in) or closer to enemies/objectives (consolidate).
 - Max move distances are governed by `PILE_IN_DISTANCE` and `CONSOLIDATE_DISTANCE`,
   with possible overrides from rules.
 - Pivot costs apply normally; if a model pivots, the pivot value reduces its remaining distance.
 
-See [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md) for the workflow and UI details.
+See [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md) for the workflow, headless behavior, and UI details.
 
 ### Terrain movement
 
