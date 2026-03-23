@@ -41,6 +41,28 @@ python scripts/run_headless_self_play.py \
   --output data/headless_self_play_decision_records.json
 ```
 
+Optional replay capture for UI playback:
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 5 \
+  --workers 2 \
+  --reserve-policy forced_only \
+  --max-reserves-arrival-seconds 10 \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt \
+  --output data/headless_self_play_decision_records.json \
+  --replay-dir data/headless_self_play_replays
+```
+
+When `--replay-dir` is enabled, each game writes a session directory:
+- `data/headless_self_play_replays/<game_id>/manifest.json`
+- `data/headless_self_play_replays/<game_id>/snapshot.json`
+- `data/headless_self_play_replays/<game_id>/replay.sqlite3`
+
+Use `--replay-keyframe-interval <N>` to control sparse replay keyframe density.
+Use a fresh replay base directory for each generation run, or delete conflicting `<game_id>/` session directories first.
+
 What `--max-phase-steps 80` means:
 - It is a safety cap on battle-phase transitions per game after setup.
 - If a game appears stuck and reaches this cap, the script fails fast instead of running forever.
@@ -88,6 +110,31 @@ Winners: {'chaos_test_2': <SCORE: 45 vs 32>}
 ```
 
 - Multi-game runs print aggregate winner counts by army label plus per-game outcome details keyed by the stable game id.
+- If `--replay-dir` is enabled, the run also prints the resolved replay-session base directory.
+
+## 1a) Load a recorded game into the replay viewer
+
+Open a replay session by stable session id:
+
+```bash
+python scripts/replay_viewer.py \
+  --session-id selfplay:000000 \
+  --replay-dir data/headless_self_play_replays
+```
+
+Or open the SQLite artifact directly:
+
+```bash
+python scripts/replay_viewer.py \
+  --replay-path data/headless_self_play_replays/selfplay:000000/replay.sqlite3
+```
+
+Viewer controls:
+- `Left` / `Right`: move by one decision
+- `Shift+Left` / `Shift+Right`: move by ten decisions
+- `PageUp` / `PageDown`: move by twenty-five decisions
+- `Home` / `End`: jump to first or last decision
+- `Esc`: quit
 
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+from ..prospective_positions import calculate_prospective_model_positions
 import logging
 logger = logging.getLogger(__name__)
 
@@ -784,8 +785,13 @@ class GameSetupDeploymentReservesMixin:
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
             # Use deployment boundary repulsors (mission-zone aware) to guide formation inside zone
             deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
-            model_positions = unit.calculate_model_positions(
-                x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors
+            model_positions = calculate_prospective_model_positions(
+                unit,
+                x,
+                y,
+                self.map,
+                avoid_friendly_units=False,
+                boundary_repulsors=deployment_repulsors,
             )
 
             if not model_positions:
@@ -842,8 +848,13 @@ class GameSetupDeploymentReservesMixin:
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
             deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
-            model_positions = unit.calculate_model_positions(
-                x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors
+            model_positions = calculate_prospective_model_positions(
+                unit,
+                x,
+                y,
+                self.map,
+                avoid_friendly_units=False,
+                boundary_repulsors=deployment_repulsors,
             )
 
             if not model_positions:

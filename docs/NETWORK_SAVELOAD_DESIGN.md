@@ -310,7 +310,7 @@ Movement:
 - spirit_mark_friendly_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="spirit_mark_friendly"`, `source_unit_id`, `model_id`, `range`, `keyword`, `sustained_hits_value`)
 - spirit_mark_enemy_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_mark_enemy"`, `source_unit_id`, `model_id`, `friendly_unit_id`, `sustained_hits_value`, `keyword`)
 - individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip`; fight-phase pile-in/consolidate use `phase_name="FIGHT_PHASE"` plus `movement_type="pile_in"` or `movement_type="consolidate"`)
-- coherency_violation_dialog: RESOLVE_COHERENCY {model_id} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`)
+- coherency_violation_dialog: RESOLVE_COHERENCY {model_ids[1]} (context `unit_id`, `coherency_failure_reason="post_casualty"`, `required_until_coherent=true`)
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)

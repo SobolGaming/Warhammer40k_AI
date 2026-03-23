@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
+from enum import Enum
 import hashlib
 import json
 from pathlib import Path
@@ -24,8 +25,32 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(inner) for key, inner in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(inner) for inner in value]
+    if isinstance(value, set):
+        return [_json_safe(inner) for inner in sorted(value, key=lambda entry: str(entry))]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        enum_value = value.value
+        if enum_value is None or isinstance(enum_value, (str, int, float, bool)):
+            return enum_value
+        return str(value)
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _json_safe(to_dict())
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    return str(value)
+
+
 def _canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def _pack_json(value: Any) -> bytes:
@@ -482,6 +507,19 @@ class ReplayStoreReader:
         if row is None:
             raise IndexError(f"Decision step not found: {decision_idx}")
         return dict(_unpack_json(bytes(row["decision_record_blob"])))
+
+    def get_request_payload(self, decision_idx: int) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT request_blob FROM decision_steps WHERE decision_idx = ?",
+                (int(decision_idx),),
+            ).fetchone()
+        if row is None:
+            raise IndexError(f"Decision step not found: {decision_idx}")
+        blob = row["request_blob"]
+        if blob is None:
+            return {}
+        return dict(_unpack_json(bytes(blob)))
 
     def get_events_for_decision(self, decision_idx: int) -> list[dict[str, Any]]:
         step = self.get_step(decision_idx)

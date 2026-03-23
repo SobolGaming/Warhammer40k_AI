@@ -207,6 +207,7 @@ Key responsibilities:
 - Shared movement/fight planning and authoritative movement validation (`movement_intent.py`, `fight_move.py`, `decision_handlers/movement.py`)
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
 - Persistence/replay (`snapshot.py`, `ref_codec.py`, `event_log.py`, `replay.py`, `replay_store.py`, `session_store.py`)
+  - Snapshot/ref encoding preserves stable object references, including `WargearProfile` values via parent-wargear/profile-name reconstruction during load/resync.
 
 `Game` composition notes:
 - `game.py` keeps constructor/state wiring and cross-cutting orchestration.

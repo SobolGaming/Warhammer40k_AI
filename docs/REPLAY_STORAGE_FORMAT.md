@@ -51,6 +51,8 @@ Canonical runtime module:
 ## Compression
 
 - JSON blobs are stored compressed with `zlib`.
+- Replay blobs are JSON-normalized before compression, so dataclasses and engine
+  objects with `to_dict()` payloads are persisted as plain JSON.
 - Repeated timeline queries avoid decoding full snapshots or full DecisionRecords.
 
 ## Playback Model
@@ -58,6 +60,7 @@ Canonical runtime module:
 Reader API supports:
 - list decisions (`list_steps`)
 - fetch one decision record (`get_decision_record`)
+- fetch one decision request payload (`get_request_payload`)
 - fetch events for a decision (`get_events_for_decision`)
 - reconstruct state at decision `N` (`reconstruct_game_at_decision`)
 

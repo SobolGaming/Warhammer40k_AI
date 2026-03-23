@@ -16,6 +16,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit, UnitRoundState
 from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
+from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.waha_helper import WahaHelper
 
 
@@ -269,6 +270,49 @@ def test_snapshot_preserves_army_points_totals(waha_helper):
     after_points = [pl.army.get_total_points() for pl in loaded.players]
 
     assert after_points == before_points
+
+
+def test_snapshot_roundtrip_preserves_wargear_profile_references(waha_helper):
+    game, unit_one, _, _, _ = _build_game(waha_helper)
+
+    model = unit_one.models[0]
+    assert list(getattr(model, "wargear", []) or [])
+    wargear = model.wargear[0]
+    profile_name = next(iter(dict(getattr(wargear, "profiles", {}) or {})))
+    profile = wargear.profiles[profile_name]
+    unit_one.snapshot_selected_wargear_profile = profile
+
+    snapshot = snapshot_game(game)
+    loaded = load_game_snapshot(snapshot)
+    loaded_unit_one = next(unit for player in list(loaded.players or []) for unit in list(player.army.units or []) if unit.id == unit_one.id)
+    loaded_model = loaded_unit_one.models[0]
+    loaded_wargear = loaded_model.wargear[0]
+    loaded_profile = getattr(loaded_unit_one, "snapshot_selected_wargear_profile", None)
+
+    assert loaded_profile is loaded_wargear.profiles[profile_name]
+    assert loaded_profile.parent_wargear is loaded_wargear
+
+
+def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_helper):
+    game, unit_one, _, player_one, _ = _build_game(waha_helper)
+
+    unit_one.snapshot_runtime_base = Base(BaseType.CIRCULAR, 1.0)
+    player_one.stratagems.snapshot_runtime_hooks = [
+        {
+            "unit": unit_one,
+            "callback": lambda: None,
+        }
+    ]
+
+    snapshot = snapshot_game(game)
+    loaded = load_game_snapshot(snapshot)
+    loaded_players = {player.id: player for player in list(loaded.players or [])}
+    loaded_player_one = loaded_players[player_one.id]
+    loaded_unit_one = next(unit for unit in list(loaded_player_one.army.units or []) if unit.id == unit_one.id)
+
+    assert not hasattr(loaded_unit_one, "snapshot_runtime_base")
+    hooks = list(getattr(loaded_player_one.stratagems, "snapshot_runtime_hooks", []) or [])
+    assert hooks == [{"unit": loaded_unit_one}]
 
 
 def test_snapshot_roundtrip_preserves_player_color_state_and_pending_color_decisions(waha_helper):

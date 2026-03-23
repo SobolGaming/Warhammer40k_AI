@@ -9,6 +9,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
+    DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_UNIT,
 )
@@ -230,6 +231,36 @@ def test_headless_policy_controller_marks_skip_payload_when_falling_back_to_skip
             found_skip = True
             break
     assert found_skip
+
+
+def test_headless_policy_controller_resolves_coherency_with_model_ids_payload() -> None:
+    class _CoherencyGame(_FakeGame):
+        def apply_command(self, command):
+            self.commands.append(command)
+            payload = dict(command.payload or {})
+            result_payload = dict(payload.get("result_payload", {}) or {})
+            return _ApplyResult(ok=list(result_payload.get("model_ids", []) or []) == ["model:1"])
+
+    game = _CoherencyGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_RESOLVE_COHERENCY,
+        "Remove one model",
+        player_id="p1",
+        options=[
+            DecisionOption.create(
+                "Model 1",
+                payload={"model_id": "model:1", "model_ids": ["model:1"], "action_id": "cohere:model:1"},
+            )
+        ],
+        context={"unit_id": "unit:1", "coherency_failure_reason": "post_casualty"},
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert dict(payload.get("result_payload", {}) or {})["model_ids"] == ["model:1"]
 
 
 def test_headless_policy_controller_deprioritizes_move_units_pass_option() -> None:

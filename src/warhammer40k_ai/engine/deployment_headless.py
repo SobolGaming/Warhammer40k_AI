@@ -9,6 +9,7 @@ from .decisions import DecisionOption, DecisionRequest, DecisionResult
 from .deployment import DeploymentDecisionMaker
 from .deployment_ranker import DeploymentCandidateRanker
 from .pregame_deployment_agent import PregameDeploymentAgent
+from .prospective_positions import calculate_prospective_model_positions
 from ..roster.player import Player
 from ..utility.entity_ids import get_entity_id
 
@@ -477,7 +478,8 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             repulsor_fn = getattr(self.game, "get_boundary_repulsors", None)
             if callable(repulsor_fn):
                 boundary_repulsors = repulsor_fn(unit, context="deployment")
-        model_positions = unit.calculate_model_positions(
+        model_positions = calculate_prospective_model_positions(
+            unit,
             float(x),
             float(y),
             game_map,

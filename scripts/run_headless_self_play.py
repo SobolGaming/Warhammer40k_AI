@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import copy
 import json
 import logging
 from pathlib import Path
@@ -16,9 +15,15 @@ from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
+from warhammer40k_ai.engine.replay_store import DEFAULT_KEYFRAME_INTERVAL
 from warhammer40k_ai.engine.reward_profile import (
     annotate_decision_records_with_rewards,
     list_reward_profile_ids,
+)
+from warhammer40k_ai.engine.session_store import (
+    create_session,
+    enable_session_replay_recording,
+    save_session_snapshot,
 )
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -68,6 +73,18 @@ def _army_label_from_path(path: str) -> str:
         return "unknown_army"
     parsed = Path(path_text)
     return parsed.stem or parsed.name or path_text
+
+
+def _resolved_replay_base_dir(path: str | None) -> Path | None:
+    path_text = str(path or "").strip()
+    if not path_text:
+        return None
+    return Path(path_text).expanduser().resolve()
+
+
+def _export_decision_records(records: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, Any]]:
+    safe_records = _json_safe(list(records or []))
+    return list(safe_records or [])
 
 
 def _player_score(player: object) -> int:
@@ -232,6 +249,24 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable reward annotation and export raw engine DecisionRecords.",
     )
+    parser.add_argument(
+        "--replay-dir",
+        default="",
+        help=(
+            "Optional base directory for per-game replay sessions. "
+            "Each game writes <replay-dir>/<game_id>/{manifest.json,snapshot.json,replay.sqlite3}. "
+            "Because game ids are stable, reuse a fresh directory or remove conflicting session subdirectories first."
+        ),
+    )
+    parser.add_argument(
+        "--replay-keyframe-interval",
+        type=int,
+        default=DEFAULT_KEYFRAME_INTERVAL,
+        help=(
+            "Decision interval for sparse replay keyframes when --replay-dir is enabled "
+            f"(default: {DEFAULT_KEYFRAME_INTERVAL})."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -294,6 +329,8 @@ def _run_single_game(
     max_reserves_arrival_seconds: float = 10.0,
     deployment_ranker_model: str | None = None,
     log_phase_transitions: bool = False,
+    replay_dir: str | None = None,
+    replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
 ) -> dict[str, Any]:
     player1_label = _army_label_from_path(player1_army_file)
     player2_label = _army_label_from_path(player2_army_file)
@@ -301,6 +338,24 @@ def _run_single_game(
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
     game.session_id = str(game_id or "")
+    replay_base_dir = _resolved_replay_base_dir(replay_dir)
+    replay_path: Path | None = None
+    snapshot_path: Path | None = None
+    replay_label = f"{player1_label}_vs_{player2_label}"
+    if replay_base_dir is not None:
+        create_session(
+            game,
+            base_dir=replay_base_dir,
+            session_id=str(game_id or ""),
+            label=replay_label,
+        )
+        replay_path = enable_session_replay_recording(
+            game,
+            base_dir=replay_base_dir,
+            session_id=str(game_id or ""),
+            label=replay_label,
+            keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
+        )
     if game_seed is not None:
         random_source = getattr(game, "random_source", None)
         seed_fn = getattr(random_source, "seed", None)
@@ -421,7 +476,14 @@ def _run_single_game(
         player1_label=player1_label,
         player2_label=player2_label,
     )
-    records = copy.deepcopy(list(getattr(game.decision_record_store, "records", []) or []))
+    if replay_base_dir is not None:
+        snapshot_path = save_session_snapshot(
+            game,
+            base_dir=replay_base_dir,
+            session_id=str(game_id or ""),
+            label=replay_label,
+        )
+    records = _export_decision_records(list(getattr(game.decision_record_store, "records", []) or []))
     return {
         "game_id": str(game_id or ""),
         "records": records,
@@ -430,6 +492,9 @@ def _run_single_game(
         "winner_army_label": str(winner_army_label or ""),
         "winner_score_line": str(winner_score_line or ""),
         "scoreboard": scoreboard,
+        "replay_session_id": str(game_id or "") if replay_path is not None else "",
+        "replay_path": str(replay_path) if replay_path is not None else "",
+        "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
     }
 
 
@@ -445,6 +510,8 @@ def _run_single_game_job(
     deployment_ranker_model: str | None = None,
     log_level: str = "WARNING",
     log_phase_transitions: bool = False,
+    replay_dir: str | None = None,
+    replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
 ) -> dict[str, Any]:
     _setup_logging(str(log_level or "WARNING"))
     game_seed = None
@@ -462,6 +529,8 @@ def _run_single_game_job(
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
         deployment_ranker_model=str(deployment_ranker_model or ""),
         log_phase_transitions=bool(log_phase_transitions),
+        replay_dir=str(replay_dir or ""),
+        replay_keyframe_interval=max(1, int(replay_keyframe_interval or DEFAULT_KEYFRAME_INTERVAL)),
     )
     serialized_result = {
         "game_id": str(result.get("game_id", "") or ""),
@@ -471,6 +540,9 @@ def _run_single_game_job(
         "winner_army_label": str(result.get("winner_army_label", "") or ""),
         "winner_score_line": str(result.get("winner_score_line", "") or ""),
         "scoreboard": _json_safe(dict(result.get("scoreboard", {}) or {})),
+        "replay_session_id": str(result.get("replay_session_id", "") or ""),
+        "replay_path": str(result.get("replay_path", "") or ""),
+        "snapshot_path": str(result.get("snapshot_path", "") or ""),
     }
     elapsed_s = float(time.perf_counter() - started_at)
     return {
@@ -508,6 +580,8 @@ def main() -> int:
                 deployment_ranker_model=str(args.deployment_ranker_model),
                 log_level=str(args.log_level),
                 log_phase_transitions=bool(args.log_phase_transitions),
+                replay_dir=str(args.replay_dir),
+                replay_keyframe_interval=int(args.replay_keyframe_interval),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
@@ -534,6 +608,8 @@ def main() -> int:
                     deployment_ranker_model=str(args.deployment_ranker_model),
                     log_level=str(args.log_level),
                     log_phase_transitions=bool(args.log_phase_transitions),
+                    replay_dir=str(args.replay_dir),
+                    replay_keyframe_interval=int(args.replay_keyframe_interval),
                 )
                 for game_index in range(games)
             ]
@@ -603,6 +679,9 @@ def main() -> int:
         print(f"Game outcomes: {game_outcomes}")
     print(f"Top decision types: {dict(decision_type_counts.most_common(10))}")
     print(f"Wrote: {output_path}")
+    replay_root = _resolved_replay_base_dir(str(args.replay_dir))
+    if replay_root is not None:
+        print(f"Replay sessions: {replay_root}")
     return 0
 
 

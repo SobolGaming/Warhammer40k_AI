@@ -70,6 +70,8 @@ class DecisionControllerHub:
         game = game or self._game
         player_id = getattr(request, "player_id", None)
         for controller in list(self._controllers):
+            if not self._request_is_pending(game, request):
+                break
             if controller.handles_player(player_id):
                 controller.on_decision_requested(game, request)
 
@@ -81,3 +83,13 @@ class DecisionControllerHub:
         for controller in list(self._controllers):
             if controller.handles_player(player_id):
                 controller.on_decision_resolved(game, request, result)
+
+    @staticmethod
+    def _request_is_pending(game: object, request: DecisionRequest) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return True
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not decision_id:
+            return True
+        return queue.get(decision_id) is not None

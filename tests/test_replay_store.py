@@ -6,10 +6,13 @@ from types import MethodType
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.replay_store import (
     REPLAY_RECORDING_GROUP,
     ReplayStoreReader,
+    _pack_json,
+    _unpack_json,
     enable_decision_replay_recording,
 )
 from warhammer40k_ai.roster.player import Player
@@ -82,10 +85,48 @@ def test_replay_store_records_decisions_events_and_keyframes(tmp_path) -> None:
     assert str(record.get("decision_id", "")) == str(request.decision_id)
     assert str(record.get("decision_type", "")) == DECISION_CONFIRM_YES_NO
 
+    request_payload = reader.get_request_payload(1)
+    assert str(request_payload.get("decision_id", "")) == str(request.decision_id)
+    assert str(request_payload.get("prompt", "")) == "Confirm?"
+    assert [str(option.get("label", "") or "") for option in list(request_payload.get("options", []) or [])] == [
+        "Yes",
+        "No",
+    ]
+
     events = reader.get_events_for_decision(1)
     event_types = {str(entry.get("type", "") or "") for entry in events}
     assert "decision_requested" in event_types
     assert "decision_resolved" in event_types
+
+
+def test_pack_json_normalizes_dice_roll_state_objects() -> None:
+    state = DiceRollState(
+        roll_id=7,
+        player_id="player-1",
+        spec={"reason": "advance_roll"},
+        status="resolved",
+        total=6,
+        final=True,
+    )
+
+    unpacked = dict(_unpack_json(_pack_json({"roll_state": state})))
+
+    assert dict(unpacked["roll_state"]) == {
+        "created_at": float(state.created_at),
+        "dice": [],
+        "final": True,
+        "per_die_success": {},
+        "player_id": "player-1",
+        "reroll_history": [],
+        "reroll_options": [],
+        "resolved_at": None,
+        "roll_id": 7,
+        "sorted_ids": [],
+        "spec": {"reason": "advance_roll"},
+        "status": "resolved",
+        "sum_success": None,
+        "total": 6,
+    }
 
 
 def test_replay_store_reconstructs_state_at_decision_idx(tmp_path) -> None:

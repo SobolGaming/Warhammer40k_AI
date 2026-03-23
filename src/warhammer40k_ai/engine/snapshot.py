@@ -97,6 +97,8 @@ _ARMY_STATE_EXCLUDE = {
     "detachment_managers",
 }
 
+_SNAPSHOT_OMIT = object()
+
 _MANAGER_STATE_EXCLUDE = {
     "_waha",
     "_subscribed_handlers",
@@ -158,6 +160,42 @@ def _to_angle_fixed(value: float) -> int:
 
 def _from_angle_fixed(value: int) -> float:
     return _from_fixed(value, scale=ANGLE_SCALE)
+
+
+def _sanitize_snapshot_state_value(value: Any) -> Any:
+    if callable(value):
+        return _SNAPSHOT_OMIT
+    if isinstance(value, Base):
+        return _SNAPSHOT_OMIT
+    if isinstance(value, dict):
+        encoded: dict[Any, Any] = {}
+        for key, inner in value.items():
+            if callable(key) or isinstance(key, Base):
+                continue
+            sanitized = _sanitize_snapshot_state_value(inner)
+            if sanitized is _SNAPSHOT_OMIT:
+                continue
+            encoded[key] = sanitized
+        return encoded
+    if isinstance(value, list):
+        return [
+            sanitized
+            for item in list(value)
+            if (sanitized := _sanitize_snapshot_state_value(item)) is not _SNAPSHOT_OMIT
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            sanitized
+            for item in value
+            if (sanitized := _sanitize_snapshot_state_value(item)) is not _SNAPSHOT_OMIT
+        )
+    if isinstance(value, set):
+        return {
+            sanitized
+            for item in value
+            if (sanitized := _sanitize_snapshot_state_value(item)) is not _SNAPSHOT_OMIT
+        }
+    return value
 
 
 def _serialize_polygon(poly: Polygon | None) -> dict | None:
@@ -474,7 +512,10 @@ def _serialize_unit(unit: Unit) -> dict:
             continue
         if callable(value):
             continue
-        state[key] = encode_refs(value)
+        sanitized = _sanitize_snapshot_state_value(value)
+        if sanitized is _SNAPSHOT_OMIT:
+            continue
+        state[key] = encode_refs(sanitized)
 
     modifiers = {}
     for char_name, mods in (getattr(unit, "_characteristic_modifiers", {}) or {}).items():
@@ -899,7 +940,10 @@ def _serialize_card(card: MissionCard | None) -> dict | None:
     for key, value in card.__dict__.items():
         if callable(value):
             continue
-        state[key] = encode_refs(value)
+        sanitized = _sanitize_snapshot_state_value(value)
+        if sanitized is _SNAPSHOT_OMIT:
+            continue
+        state[key] = encode_refs(sanitized)
     return {"kind": kind, "name": str(card.name or ""), "state": state}
 
 
@@ -926,7 +970,10 @@ def _serialize_player(player: Player) -> dict:
             continue
         if callable(value):
             continue
-        state[key] = encode_refs(value)
+        sanitized = _sanitize_snapshot_state_value(value)
+        if sanitized is _SNAPSHOT_OMIT:
+            continue
+        state[key] = encode_refs(sanitized)
     return {
         "id": get_entity_id(player),
         "name": str(player.name or ""),
@@ -968,7 +1015,10 @@ def _serialize_manager_state(manager: object) -> dict | None:
             continue
         if is_dataclass(value):
             continue
-        state[key] = encode_refs(value)
+        sanitized = _sanitize_snapshot_state_value(value)
+        if sanitized is _SNAPSHOT_OMIT:
+            continue
+        state[key] = encode_refs(sanitized)
     return state
 
 
@@ -991,7 +1041,10 @@ def _serialize_army(army: Army) -> dict:
             continue
         if _is_rule_manager(value):
             continue
-        state[key] = encode_refs(value)
+        sanitized = _sanitize_snapshot_state_value(value)
+        if sanitized is _SNAPSHOT_OMIT:
+            continue
+        state[key] = encode_refs(sanitized)
 
     managers = {}
     for key, value in army.__dict__.items():

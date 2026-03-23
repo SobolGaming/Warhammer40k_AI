@@ -54,6 +54,8 @@ Key goals:
   - RUINS placement rules for per-model deployment.
 - `Game.get_boundary_repulsors(context="deployment")` keeps model placement inside zone boundaries
   during formation placement.
+- Speculative deployment probes snapshot and restore unit model state, so headless candidate generation
+  and legality checks do not leak temporary placements into later deployment decisions.
 - Deployment candidates include semantic deltas used by replay/telemetry and headless ranking,
   including reserve-denial, screen-integrity, countercharge-coverage, aura-connectivity, and
   enemy-first-turn exposure estimates.

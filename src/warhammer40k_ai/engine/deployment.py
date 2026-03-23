@@ -13,6 +13,7 @@ from .decision_requests import (
     build_select_next_deploy_unit_request,
     canonical_deployment_zone_key,
 )
+from .prospective_positions import calculate_prospective_model_positions
 from ..roster.player import Player
 from ..utility.calcs import get_dist
 from ..utility.decision_utils import resolve_decision_command
@@ -1061,7 +1062,8 @@ class DeploymentManager:
             repulsor_fn = getattr(self.game, "get_boundary_repulsors", None)
             if callable(repulsor_fn):
                 boundary_repulsors = repulsor_fn(unit, context="deployment")
-        model_positions = unit.calculate_model_positions(
+        model_positions = calculate_prospective_model_positions(
+            unit,
             x,
             y,
             game_map,

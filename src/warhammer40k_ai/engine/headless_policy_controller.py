@@ -13,6 +13,7 @@ from .decision_kinds import (
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
+    DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
@@ -128,7 +129,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             if masked is False:
                 continue
             option_payload = dict(getattr(option, "payload", {}) or {})
-            result_payload: dict[str, Any] = {}
+            result_payload = self._normalized_result_payload(request, option_payload)
             if bool(option_payload.get("skip", False)):
                 result_payload["skipped"] = True
             if str(option_payload.get("action", "") or "").strip().lower() == "skip":
@@ -147,7 +148,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         option_id = self._option_id_for_action_id(request, str(candidate.action_id or ""))
         if not option_id:
             return False
-        payload = dict(getattr(candidate, "params", {}) or {})
+        payload = self._normalized_result_payload(request, dict(getattr(candidate, "params", {}) or {}))
         if bool(payload.get("skip", False)):
             payload["skipped"] = True
         if str(payload.get("action", "") or "").strip().lower() == "skip":
@@ -160,6 +161,19 @@ class HeadlessPolicyDecisionController(DecisionController):
             player_id=getattr(request, "player_id", None),
         )
         return bool(getattr(apply_result, "ok", False))
+
+    @staticmethod
+    def _normalized_result_payload(request: DecisionRequest, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload or {})
+        if str(getattr(request, "decision_type", "") or "") == DECISION_RESOLVE_COHERENCY:
+            model_ids = [str(value or "") for value in list(normalized.get("model_ids", []) or []) if str(value or "")]
+            if not model_ids:
+                model_id = str(normalized.get("model_id", "") or "").strip()
+                if model_id:
+                    model_ids = [model_id]
+            if model_ids:
+                normalized["model_ids"] = model_ids
+        return normalized
 
     def _option_id_for_action_id(self, request: DecisionRequest, action_id: str) -> str:
         if not action_id:

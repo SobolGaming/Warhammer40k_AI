@@ -669,6 +669,7 @@ def build_resolve_coherency_request(
                 payload={
                     "unit_id": unit_id,
                     "model_id": model_id,
+                    "model_ids": [model_id],
                     "action_id": f"{DECISION_RESOLVE_COHERENCY}:{unit_id}:{model_id}",
                 },
             )

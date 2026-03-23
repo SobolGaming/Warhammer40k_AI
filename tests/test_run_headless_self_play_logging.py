@@ -66,6 +66,49 @@ def test_army_label_from_path_uses_file_stem() -> None:
     assert mod._army_label_from_path("army_lists/chaos_test_2.txt") == "chaos_test_2"
 
 
+def test_resolved_replay_base_dir_returns_absolute_path(tmp_path) -> None:
+    mod = _load_script_module()
+
+    replay_dir = mod._resolved_replay_base_dir(str(tmp_path / "replays"))
+
+    assert replay_dir == (tmp_path / "replays").resolve()
+
+
+def test_export_decision_records_normalizes_uncopyable_objects() -> None:
+    mod = _load_script_module()
+
+    class _Uncopyable:
+        def __deepcopy__(self, _memo):
+            raise AssertionError("deepcopy should not be used for export")
+
+        def __str__(self) -> str:
+            return "uncopyable-value"
+
+    exported = mod._export_decision_records(
+        [
+            {
+                "decision_type": "MOVE_UNIT",
+                "outcome": {
+                    "immediate_deltas": {
+                        "value": _Uncopyable(),
+                    }
+                },
+            }
+        ]
+    )
+
+    assert exported == [
+        {
+            "decision_type": "MOVE_UNIT",
+            "outcome": {
+                "immediate_deltas": {
+                    "value": "uncopyable-value",
+                }
+            },
+        }
+    ]
+
+
 def test_winner_summary_uses_army_labels_and_winner_first_score_order() -> None:
     mod = _load_script_module()
     player1 = SimpleNamespace(id="p1", get_score=lambda: 17)
@@ -101,3 +144,46 @@ def test_log_phase_state_if_changed_emits_parenthesized_game_id(caplog) -> None:
 
     assert state == "pre-deployment setup_phase=DEPLOY_ARMIES"
     assert "(selfplay:000001 pre-deployment setup_phase=DEPLOY_ARMIES)" in caplog.text
+
+
+def test_run_single_game_job_serializes_replay_artifact_fields(monkeypatch) -> None:
+    mod = _load_script_module()
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run_single_game(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "game_id": "selfplay:000000",
+            "records": [{"decision_type": "choose"}],
+            "phase_steps": 12,
+            "winner_player_id": "player-1",
+            "winner_army_label": "chaos_test",
+            "winner_score_line": "<SCORE: 45 vs 32>",
+            "scoreboard": {"chaos_test": 45, "aeldari_test": 32},
+            "replay_session_id": "selfplay:000000",
+            "replay_path": "/tmp/replays/selfplay:000000/replay.sqlite3",
+            "snapshot_path": "/tmp/replays/selfplay:000000/snapshot.json",
+        }
+
+    monkeypatch.setattr(mod, "_run_single_game", _fake_run_single_game)
+
+    payload = mod._run_single_game_job(
+        0,
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
+        max_phase_steps=80,
+        reserve_policy="forced_only",
+        max_reserves_arrival_seconds=10.0,
+        deployment_ranker_model="",
+        log_level="WARNING",
+        log_phase_transitions=False,
+        replay_dir="data/headless_self_play_replays",
+        replay_keyframe_interval=7,
+    )
+
+    assert captured_kwargs["replay_dir"] == "data/headless_self_play_replays"
+    assert captured_kwargs["replay_keyframe_interval"] == 7
+    result = dict(payload.get("result", {}) or {})
+    assert result["replay_session_id"] == "selfplay:000000"
+    assert result["replay_path"] == "/tmp/replays/selfplay:000000/replay.sqlite3"
+    assert result["snapshot_path"] == "/tmp/replays/selfplay:000000/snapshot.json"

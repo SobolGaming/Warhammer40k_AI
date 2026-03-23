@@ -11,6 +11,7 @@ from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, De
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.deployment_ranker import DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
+from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import GameSetupDeploymentReservesMixin
 
 
 class _StubBase:
@@ -18,6 +19,9 @@ class _StubBase:
 
     def __init__(self, radius: float = 0.5) -> None:
         self._radius = float(radius)
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
         self.facing = 0.0
 
     def get_radius(self) -> float:
@@ -32,6 +36,21 @@ class _StubModel:
         self._id = model_id
         self.id = model_id
         self.model_base = _StubBase(radius=0.5)
+        self.is_alive = True
+
+    def set_location(self, x: float, y: float, z: float, facing: float = 0.0) -> None:
+        self.model_base.x = float(x)
+        self.model_base.y = float(y)
+        self.model_base.z = float(z)
+        self.model_base.facing = float(facing)
+
+    def get_location(self) -> tuple[float, float, float, float]:
+        return (
+            float(self.model_base.x),
+            float(self.model_base.y),
+            float(self.model_base.z),
+            float(self.model_base.facing),
+        )
 
 
 class _StubUnit:
@@ -393,6 +412,74 @@ def test_headless_builds_multiple_runtime_deployment_candidates(monkeypatch: pyt
     assert isinstance(first.get("anchor"), list)
     assert isinstance(first.get("model_positions"), list)
     assert str(first.get("source", "") or "")
+
+
+def test_headless_deployment_candidate_probe_restores_unit_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _MutatingUnit(_StubUnit):
+        def __init__(self, unit_id: str) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=_FlatMap())
+            self.models = [_StubModel(f"{unit_id}:model:0"), _StubModel(f"{unit_id}:model:1")]
+            self.reserve_status = "deployed"
+
+        def calculate_model_positions(self, x, y, game_map, avoid_friendly_units=False, boundary_repulsors=None):
+            del game_map, avoid_friendly_units, boundary_repulsors
+            positions = [
+                (float(x), float(y), 0.0, 0.0),
+                (float(x) + 1.0, float(y), 0.0, 0.0),
+            ]
+            for model, pos in zip(self.models, positions):
+                model.set_location(*pos)
+            return positions
+
+    class _ProbeGame(GameSetupDeploymentReservesMixin):
+        def __init__(self) -> None:
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def get_boundary_repulsors(self, unit, context="deployment"):
+            del unit, context
+            return []
+
+        def is_position_wholly_in_deployment_zone(self, x: float, y: float, base: object, player_id: str) -> bool:
+            del x, y, base, player_id
+            return True
+
+        def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
+            del x, y, player_id
+            return False
+
+        def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+        def get_distance_to_enemy_models(self, x: float, y: float, player_id: str) -> float:
+            del x, y, player_id
+            return 999.0
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game = _ProbeGame()
+    unit = _MutatingUnit("unit:probe")
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=game)
+
+    zone = {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]}
+    initial_positions = [model.get_location() for model in list(unit.models)]
+
+    candidates = maker.build_deployment_move_candidates(unit, zone, already_deployed=[], max_candidates=2)
+
+    assert candidates
+    assert [model.get_location() for model in list(unit.models)] == initial_positions
 
 
 def test_deployment_headless_uses_ranker_model_for_option_selection(tmp_path: Path) -> None:
