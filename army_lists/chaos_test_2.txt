@@ -1,0 +1,37 @@
+CHAOS TEST (2000 Points)
+
+Chaos Daemons
+Daemonic Incursion
+Strike Force (2000 points)
+
+CHARACTERS
+
+Shalaxi Helbane (340 Points)
+  • Warlord
+  • 1x Lash of Slaanesh
+  • 1x Pavane of Slaanesh
+  • 1x Snapping claws
+  • 1x Soulpiercer
+
+BATTLELINE
+
+Bloodletters (110 Points)
+  • 1x Bloodreaper
+     ◦ 1x Hellblade
+  • 9x Bloodletter
+     ◦ 1x Daemonic Icon
+     ◦ 9x Hellblade
+     ◦ 1x Instrument of Chaos
+
+OTHER DATASHEETS
+
+Flesh Hounds (75 Points)
+  • 1x Gore Hound
+     ◦ 1x Burning roar
+     ◦ 1x Collar of Khorne
+     ◦ 1x Gore-drenched fangs
+  • 4x Flesh Hound
+     ◦ 4x Collar of Khorne
+     ◦ 4x Gore-drenched fangs
+
+Exported with App Version: v1.45.0 (1), Data Version: v720

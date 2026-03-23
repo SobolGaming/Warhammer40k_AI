@@ -19,15 +19,22 @@ Move candidate metadata includes:
 - `solver_ms`
 - `fallback_mode`
 - `intent_hash`
+- Headless move candidates now carry actual translated `model_positions` payloads rather than
+  mirroring the unit's current footprint, so a selected `MOVE_UNIT` candidate represents a real
+  battlefield relocation.
 - solver/geometry fields:
   - `screen_coverage_score`
   - `coherency_score`
   - `threat_score`
+  - `movement_distance_inches`
+  - `distance_to_enemy_delta`
+  - `distance_to_objective_delta`
 - semantic projection fields:
   - `projected_score_delta_next_window`
   - `projected_deny_delta_next_window`
   - `projected_control_delta`
   - `projected_action_enablement_delta`
+  - `projected_melee_staging_delta`
   - `projected_exposure_delta`
   - `cover_delta`
   - `los_delta`

@@ -465,6 +465,64 @@ class GamePhaseHandlersMixin:
             context={"battle_round": int(getattr(self, "turn", 0) or 0)},
         )
 
+    def _pending_fight_target_selection_request(self, *, unit_id: str):
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        from ..decision_kinds import DECISION_SELECT_FIGHT_TARGETS
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_FIGHT_TARGETS:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("unit_id", "") or "").strip() != str(unit_id or "").strip():
+                continue
+            return request
+        return None
+
+    def _queue_fight_target_selection_request(self, *, fighting_unit, eligible_targets, active_player):
+        if fighting_unit is None or active_player is None:
+            return None
+        from ..decision_kinds import DECISION_SELECT_FIGHT_TARGETS
+
+        unit_id = str(get_entity_id(fighting_unit) or "").strip()
+        if not unit_id:
+            return None
+        pending = self._pending_fight_target_selection_request(unit_id=unit_id)
+        if pending is not None:
+            return pending
+        targets = [
+            target
+            for target in sorted(
+                list(eligible_targets or []),
+                key=lambda candidate: str(get_entity_id(candidate) or ""),
+            )
+            if target is not None and str(get_entity_id(target) or "").strip()
+        ]
+        if not targets:
+            return None
+        options = [
+            DecisionOption.create(
+                str(getattr(target, "name", "Target") or "Target"),
+                payload={"target_unit_id": str(get_entity_id(target) or "")},
+            )
+            for target in targets
+        ]
+        request = DecisionRequest.create(
+            DECISION_SELECT_FIGHT_TARGETS,
+            f"Select targets for {getattr(fighting_unit, 'name', 'Unit')}",
+            player_id=getattr(active_player, "id", None),
+            options=options,
+            context={
+                "unit_id": unit_id,
+                "phase_name": "FIGHT_PHASE",
+                "selection_purpose": "SELECT_FIGHT_TARGETS",
+                "allowed_target_unit_ids": [str(get_entity_id(target) or "") for target in targets],
+            },
+        )
+        self.request_decision(request)
+        return request
+
     def _ensure_fight_phase_manager_started(self):
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
             return None
@@ -614,8 +672,50 @@ class GamePhaseHandlersMixin:
             return
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
             return
-        from ..decision_kinds import DECISION_CONFIRM_YES_NO
-        if str(getattr(request, "decision_type", "") or "").strip() != DECISION_CONFIRM_YES_NO:
+        from ..decision_handlers._helpers import find_option
+        from ..decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_SELECT_FIGHT_TARGETS
+        decision_type = str(getattr(request, "decision_type", "") or "").strip()
+        if decision_type == DECISION_SELECT_FIGHT_TARGETS:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return
+            fighting_unit = self._resolve_unit_by_id(unit_id)
+            if fighting_unit is None:
+                return
+            option = find_option(request, getattr(result, "option_id", ""))
+            option_payload = dict(getattr(option, "payload", {}) or {}) if option is not None else {}
+            target_unit_ids = [
+                str(value or "").strip()
+                for value in list(getattr(result, "payload", {}).get("target_unit_ids", []) or [])
+                if str(value or "").strip()
+            ]
+            if not target_unit_ids:
+                target_unit_id = str(
+                    getattr(result, "payload", {}).get("target_unit_id", "")
+                    or option_payload.get("target_unit_id", "")
+                    or ""
+                ).strip()
+                if target_unit_id:
+                    target_unit_ids = [target_unit_id]
+            target_units = []
+            for target_unit_id in target_unit_ids:
+                target_unit = self._resolve_unit_by_id(target_unit_id)
+                if target_unit is not None:
+                    target_units.append(target_unit)
+            if not target_units:
+                return
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is None:
+                return
+            manager.targets_selected(
+                fighting_unit,
+                {target_units[0]: []},
+                self.get_current_player(),
+                self.get_opponent(),
+            )
+            return
+        if decision_type != DECISION_CONFIRM_YES_NO:
             return
         ctx = dict(getattr(request, "context", {}) or {})
         if str(ctx.get("ability", "") or "").strip().lower() != "battle_focus_sudden_strike":

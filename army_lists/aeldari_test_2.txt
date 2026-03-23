@@ -1,0 +1,41 @@
+Anvanth's Swift (1995 points)
+
+Aeldari
+Strike Force (2000 points)
+Warhost
+
+CHARACTERS
+
+Jain Zar (120 points)
+  • Warlord
+  • 1x Blade of Destruction
+  • 1x Silent Death
+
+DEDICATED TRANSPORTS
+
+Wave Serpent (125 points)
+  • 1x Shuriken cannon
+  • 1x Twin bright lance
+  • 1x Wraithbone hull
+
+OTHER DATASHEETS
+
+Fire Dragons (120 points)
+  • 1x Aspect Shrine Token
+  • 1x Fire Dragon Exarch
+    • 1x Close combat weapon
+    • 1x Exarch’s Dragon fusion gun
+  • 4x Fire Dragon
+    • 4x Close combat weapon
+    • 4x Dragon fusion gun
+
+Howling Banshees (95 points)
+  • 1x Aspect Shrine Token
+  • 1x Howling Banshee Exarch
+    • 1x Banshee blade
+    • 1x Shuriken pistol
+  • 4x Howling Banshee
+    • 4x Banshee blade
+    • 4x Shuriken pistol
+
+Exported with App Version: v1.45.0 (1), Data Version: v720

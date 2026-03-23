@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import (
@@ -398,6 +399,54 @@ def test_fight_select_unit_resolution_delegates_to_fight_phase_manager() -> None
 
     assert len(calls) == 1
     assert calls[0][0] is unit
+
+
+def test_fight_target_selection_request_is_queued_for_headless_flow() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit, enemy_units=[enemy])
+
+    request = game._queue_fight_target_selection_request(
+        fighting_unit=unit,
+        eligible_targets=[enemy],
+        active_player=game.get_current_player(),
+    )
+
+    assert request is not None
+    assert request.decision_type == DECISION_SELECT_FIGHT_TARGETS
+    assert request.context["unit_id"] == unit.id
+    assert request.context["allowed_target_unit_ids"] == [enemy.id]
+
+
+def test_fight_target_selection_followup_calls_fight_manager_targets_selected() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit, enemy_units=[enemy])
+    calls = []
+    game.fight_phase_manager = SimpleNamespace(
+        targets_selected=lambda fighting_unit, target_declarations, current_player, opponent_player: calls.append(
+            (fighting_unit, target_declarations, current_player, opponent_player)
+        ),
+        is_complete=lambda: False,
+    )
+    request = DecisionRequest.create(
+        DECISION_SELECT_FIGHT_TARGETS,
+        f"Select targets for {unit.name}",
+        player_id="player-1",
+        options=[DecisionOption.create(enemy.name, payload={"target_unit_id": enemy.id})],
+        context={"unit_id": unit.id, "phase_name": "FIGHT_PHASE"},
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    game._maybe_queue_fight_phase_followup(request, result)
+
+    assert len(calls) == 1
+    assert calls[0][0] is unit
+    assert list(calls[0][1].keys()) == [enemy]
+    assert calls[0][1][enemy] == []
 
 
 def test_fight_followup_resumes_pending_target_selection_after_battle_focus_confirmation() -> None:

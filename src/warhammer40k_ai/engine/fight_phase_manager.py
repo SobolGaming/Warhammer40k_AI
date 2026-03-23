@@ -417,6 +417,14 @@ class FightPhaseManager:
         logger.info(f"{selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
         if self.on_target_selection_required:
             self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
+            return
+        queue_request = getattr(self.game, "_queue_fight_target_selection_request", None)
+        if callable(queue_request):
+            queue_request(
+                fighting_unit=selected_unit,
+                eligible_targets=eligible_targets,
+                active_player=self.active_player,
+            )
 
     def _has_pending_battle_focus_confirmation(self, unit: Unit) -> bool:
         if unit is None:
