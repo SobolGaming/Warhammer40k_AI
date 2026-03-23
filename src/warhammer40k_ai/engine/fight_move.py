@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 from ..pathing.api import PathQuery, plan_model_path
@@ -173,6 +174,7 @@ def plan_deterministic_fight_move(
     movement_type: str,
     max_distance: float,
     target_unit_ids: list[str] | None = None,
+    deadline: float | None = None,
 ) -> list[dict[str, Any]]:
     move_tag = str(movement_type or "").strip().lower()
     path_movement_type = _MOVEMENT_TYPE_BY_TAG.get(move_tag)
@@ -189,6 +191,8 @@ def plan_deterministic_fight_move(
     moved_models: list[object] = []
     try:
         for model in attached_unit_models(unit):
+            if deadline is not None and time.perf_counter() >= float(deadline):
+                break
             if _model_in_base_contact(model, unit=unit, game_map=game_map):
                 continue
             current_pose = _model_pose_entry(model)
@@ -200,6 +204,8 @@ def plan_deterministic_fight_move(
                 movement_type=move_tag,
                 max_distance=float(max_distance),
             ):
+                if deadline is not None and time.perf_counter() >= float(deadline):
+                    break
                 path_result = plan_model_path(
                     PathQuery(
                         model=model,

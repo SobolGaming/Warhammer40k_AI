@@ -13182,6 +13182,8 @@ class Game(
         target_unit: 'Unit',
         *,
         max_distance: float,
+        max_pairs: int | None = None,
+        max_candidates_per_pair: int | None = None,
     ) -> tuple[float, float, float] | None:
         if charging_unit is None or target_unit is None:
             return None
@@ -13206,12 +13208,18 @@ class Game(
 
         best_destination: tuple[float, float, float] | None = None
         best_cost: float | None = None
+        pair_limit = max(1, int(max_pairs or 2))
+        candidate_limit = int(max_candidates_per_pair or 0)
         considered_pairs = 0
         for _distance, charging_model, target_model in closest_pairs:
             considered_pairs += 1
-            if considered_pairs > 2:
+            if considered_pairs > pair_limit:
                 break
+            considered_candidates = 0
             for destination in self._iter_charge_destination_candidates(charging_model, target_model):
+                considered_candidates += 1
+                if candidate_limit > 0 and considered_candidates > candidate_limit:
+                    break
                 path_result = plan_model_path(
                     PathQuery(
                         model=charging_model,

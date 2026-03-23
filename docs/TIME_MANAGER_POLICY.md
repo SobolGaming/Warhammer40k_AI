@@ -26,6 +26,7 @@ Timeout behavior:
 - `TimeManager.run_with_time_budget(...)` measures wall clock around the full solver action call.
 - If elapsed wall clock is `> budget_ms`, the time manager returns the provided fallback value and marks `fallback_used=True`.
 - This is a post-action enforcement contract (soft cap): the action is not interrupted mid-call.
+- Budget-aware solvers are therefore expected to cooperate with the deadline they receive and avoid unbounded inner searches.
 
 ## Movement Solver Fallback Contract (PR-AI-011)
 
@@ -34,6 +35,7 @@ For `DECISION_MOVE_UNIT`, `Game.request_decision(...)` decorates context via `Ti
 
 When `time_budget_ms > 0` and a `TimeManager` is present:
 - solver action executes through `run_with_time_budget(...)`.
+- movement candidate generation passes the soft deadline into internal helpers so charge/fight move planning can prefer bounded heuristic search before expensive routed/pathing fallback.
 - on over-budget elapsed runtime:
   - solver output is discarded.
   - fallback candidates are rebuilt deterministically from `request.candidates` (already canonicalized/sorted by action id).

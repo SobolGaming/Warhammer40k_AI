@@ -44,3 +44,5 @@ Move candidate metadata includes:
 - `path_witness_ref` for non-noop move candidates
 - Charge `MOVE_UNIT` candidates are generated from declared `target_unit_ids` and aim to end
   in a legal engagement state rather than using the generic objective/staging translation path.
+- In budgeted solving, charge candidates try bounded heuristic engagement endpoints before
+  falling back to routed destination search, so headless self-play can keep charge generation responsive.

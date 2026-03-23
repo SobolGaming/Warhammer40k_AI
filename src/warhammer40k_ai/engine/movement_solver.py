@@ -10,6 +10,19 @@ from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
 
 
+def _deadline_exceeded(deadline: float | None) -> bool:
+    return deadline is not None and time.perf_counter() >= float(deadline)
+
+
+def _entity_text_id(entity: object) -> str:
+    return str(getattr(entity, "id", "") or getattr(entity, "_id", "") or "")
+
+
+def _is_alive(entity: object) -> bool:
+    value = getattr(entity, "is_alive", True)
+    return bool(value() if callable(value) else value)
+
+
 def _resolve_unit(game: object, unit_id: str):
     resolver = getattr(game, "_resolve_unit_by_id", None)
     if callable(resolver):
@@ -190,6 +203,224 @@ def _charge_end_state_valid(
     return bool(ok)
 
 
+def _charge_closest_pairs(unit: object, target_units: list[object]) -> list[tuple[float, object, object, object]]:
+    from ..utility.aura_utils import distance_between_models_bases_3d
+
+    charging_models = [model for model in _model_entries(unit) if _is_alive(model)]
+    if not charging_models:
+        return []
+    pairs: list[tuple[float, object, object, object]] = []
+    for target_unit in list(target_units or []):
+        if target_unit is None:
+            continue
+        for target_model in _model_entries(target_unit):
+            if not _is_alive(target_model):
+                continue
+            for charging_model in charging_models:
+                distance = float(distance_between_models_bases_3d(charging_model, target_model))
+                pairs.append((distance, charging_model, target_model, target_unit))
+    pairs.sort(
+        key=lambda item: (
+            float(item[0]),
+            _entity_text_id(item[1]),
+            _entity_text_id(item[2]),
+            _entity_text_id(item[3]),
+        )
+    )
+    return pairs
+
+
+def _iter_charge_destination_candidates(
+    game: object,
+    *,
+    charging_model: object,
+    target_model: object,
+):
+    generator = getattr(game, "_iter_charge_destination_candidates", None)
+    if callable(generator):
+        yield from generator(charging_model, target_model)
+        return
+
+    charging_pos = tuple(getattr(charging_model, "get_location", lambda: ())() or ())
+    target_pos = tuple(getattr(target_model, "get_location", lambda: ())() or ())
+    if len(charging_pos) < 3 or len(target_pos) < 3:
+        return
+
+    charging_base = getattr(charging_model, "model_base", None)
+    target_base = getattr(target_model, "model_base", None)
+    if charging_base is None or target_base is None:
+        return
+
+    get_radius = getattr(charging_base, "get_radius", None)
+    charging_radius = float(get_radius()) if callable(get_radius) else 0.0
+    get_radius = getattr(target_base, "get_radius", None)
+    target_radius = float(get_radius()) if callable(get_radius) else 0.0
+    dx = float(charging_pos[0]) - float(target_pos[0])
+    dy = float(charging_pos[1]) - float(target_pos[1])
+    if abs(dx) <= 1e-9 and abs(dy) <= 1e-9:
+        primary_angle = 0.0
+    else:
+        primary_angle = float(math.atan2(dy, dx))
+
+    height_at = getattr(getattr(game, "map", None), "get_height_at_point", None)
+    fallback_z = float(target_pos[2])
+    for gap in (1.0, 0.5, 0.1):
+        center_distance = float(charging_radius + target_radius + gap)
+        for angle_offset in (0, 30, -30, 60, -60, 90, -90, 180):
+            radians = primary_angle + math.radians(float(angle_offset))
+            x = float(target_pos[0]) + math.cos(radians) * center_distance
+            y = float(target_pos[1]) + math.sin(radians) * center_distance
+            z = float(height_at(x, y)) if callable(height_at) else fallback_z
+            yield (x, y, z)
+
+
+def _build_charge_candidate_action(
+    *,
+    game: object,
+    request: DecisionRequest,
+    unit: object,
+    confirm_option: object,
+    start_positions: list[dict[str, Any]],
+    model_positions: list[dict[str, Any]],
+    target_unit: object,
+    rules_bundle_id: str,
+    intent: MovementIntent,
+    candidate_source: str,
+) -> CandidateAction:
+    confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
+    confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})
+    confirm_payload.pop("action_id", None)
+    confirm_payload["model_positions"] = model_positions
+    witness = build_model_path_witness_for_unit(
+        unit=unit,
+        model_positions=model_positions,
+        movement_type="charge",
+    )
+    store = getattr(game, "path_witness_store", None)
+    if store is None:
+        raise RuntimeError("Game is missing path_witness_store.")
+    path_witness_ref = store.put(witness)
+    origin = _position_centroid(start_positions)
+    new_origin = _position_centroid(model_positions)
+    target_points = [
+        (_safe_float(point[0]), _safe_float(point[1]))
+        for point in (_alive_unit_positions(target_unit) or [])
+    ]
+    enemy_distance_delta = 0.0
+    if target_points:
+        enemy_distance_delta = _nearest_distance(origin, target_points) - _nearest_distance(new_origin, target_points)
+    movement_distance = max(0.0, _distance_2d(origin, new_origin))
+    rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
+    return CandidateAction(
+        action_id=str(confirm_action_id),
+        params=confirm_payload,
+        metadata={
+            "candidate_kind": "charge",
+            "candidate_source": str(candidate_source or "heuristic"),
+            "solver_ms": 0,
+            "fallback_mode": False,
+            "intent_hash": intent.stable_hash(),
+            "path_witness_ref": path_witness_ref,
+            "movement_distance_inches": float(round(movement_distance, 4)),
+            "distance_to_enemy_delta": float(round(enemy_distance_delta, 4)),
+            "distance_to_objective_delta": 0.0,
+            "screen_coverage_score": 0.0,
+            "coherency_score": 0.0,
+            "threat_score": 1.0,
+            "projected_score_delta_next_window": max(0.0, enemy_distance_delta) * 0.25,
+            "projected_score_delta_round": max(0.0, enemy_distance_delta) * 0.35,
+            "projected_deny_delta_next_window": 0.0,
+            "projected_control_delta": max(0.0, enemy_distance_delta) * 0.1,
+            "projected_action_enablement_delta": 1.0 + max(0.0, enemy_distance_delta) * 0.2,
+            "projected_exposure_delta": 0.0,
+            "projected_trade_ev": max(0.0, enemy_distance_delta) * 0.1,
+            "projected_melee_staging_delta": max(0.0, enemy_distance_delta),
+            "cover_delta": 0.0,
+            "los_delta": 0.0,
+            "resource_delta": 0.0,
+            "rules_provenance_refs": rules_provenance_refs,
+        },
+    )
+
+
+def _heuristic_charge_candidate(
+    game: object,
+    *,
+    request: DecisionRequest,
+    unit: object,
+    confirm_option: object,
+    start_positions: list[dict[str, Any]],
+    max_distance: float,
+    target_units: list[object],
+    rules_bundle_id: str,
+    intent: MovementIntent,
+    deadline: float | None,
+) -> CandidateAction | None:
+    pairs = _charge_closest_pairs(unit, target_units)
+    if not pairs:
+        return None
+
+    max_pairs = 1 if deadline is not None else 2
+    max_candidates_per_pair = 6 if deadline is not None else 12
+    seen_destinations: set[tuple[float, float, float]] = set()
+    for pair_index, (_distance, charging_model, target_model, target_unit) in enumerate(pairs):
+        if pair_index >= int(max_pairs) or _deadline_exceeded(deadline):
+            break
+        for candidate_index, destination in enumerate(
+            _iter_charge_destination_candidates(
+                game,
+                charging_model=charging_model,
+                target_model=target_model,
+            )
+        ):
+            if candidate_index >= int(max_candidates_per_pair) or _deadline_exceeded(deadline):
+                break
+            destination_key = (
+                round(float(destination[0]), 3),
+                round(float(destination[1]), 3),
+                round(float(destination[2]), 3),
+            )
+            if destination_key in seen_destinations:
+                continue
+            seen_destinations.add(destination_key)
+            charging_location = tuple(getattr(charging_model, "get_location", lambda: ())() or ())
+            if len(charging_location) >= 2:
+                travel_2d = _distance_2d(
+                    (_safe_float(charging_location[0]), _safe_float(charging_location[1])),
+                    (_safe_float(destination[0]), _safe_float(destination[1])),
+                )
+                if travel_2d > float(max_distance) + 1.0:
+                    continue
+            model_positions = _build_charge_model_positions(
+                game,
+                unit=unit,
+                start_positions=start_positions,
+                destination=destination,
+            )
+            if not model_positions:
+                continue
+            if not _charge_end_state_valid(
+                unit,
+                model_positions=model_positions,
+                target_units=target_units,
+                game_map=getattr(game, "map", None),
+            ):
+                continue
+            return _build_charge_candidate_action(
+                game=game,
+                request=request,
+                unit=unit,
+                confirm_option=confirm_option,
+                start_positions=start_positions,
+                model_positions=model_positions,
+                target_unit=target_unit,
+                rules_bundle_id=rules_bundle_id,
+                intent=intent,
+                candidate_source="heuristic_endpoint",
+            )
+    return None
+
+
 def _translate_positions_by_delta(
     game: object,
     *,
@@ -298,18 +529,48 @@ def _charge_candidate(
     target_units: list[object],
     rules_bundle_id: str,
     intent: MovementIntent,
+    deadline: float | None = None,
 ) -> CandidateAction | None:
     if not target_units:
-        return None
-    destination_finder = getattr(game, "_find_charge_destination", None)
-    if not callable(destination_finder):
         return None
     game_map = getattr(game, "map", None)
     if game_map is None:
         return None
-    destination = None
+
+    heuristic_candidate = _heuristic_charge_candidate(
+        game,
+        request=request,
+        unit=unit,
+        confirm_option=confirm_option,
+        start_positions=start_positions,
+        max_distance=float(max_distance),
+        target_units=target_units,
+        rules_bundle_id=rules_bundle_id,
+        intent=intent,
+        deadline=deadline,
+    )
+    if heuristic_candidate is not None:
+        return heuristic_candidate
+    if _deadline_exceeded(deadline):
+        return None
+
+    destination_finder = getattr(game, "_find_charge_destination", None)
+    if not callable(destination_finder):
+        return None
+
     for target_unit in list(target_units or []):
-        destination = destination_finder(unit, target_unit, max_distance=float(max_distance))
+        if _deadline_exceeded(deadline):
+            break
+        try:
+            destination = destination_finder(
+                unit,
+                target_unit,
+                max_distance=float(max_distance),
+                max_pairs=1,
+                max_candidates_per_pair=6,
+            )
+        except TypeError:
+            destination = destination_finder(unit, target_unit, max_distance=float(max_distance))
         if destination is None:
             continue
         model_positions = _build_charge_model_positions(
@@ -327,58 +588,17 @@ def _charge_candidate(
             game_map=game_map,
         ):
             continue
-        confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
-        confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})
-        confirm_payload.pop("action_id", None)
-        confirm_payload["model_positions"] = model_positions
-        witness = build_model_path_witness_for_unit(
+        return _build_charge_candidate_action(
+            game=game,
+            request=request,
             unit=unit,
+            confirm_option=confirm_option,
+            start_positions=start_positions,
             model_positions=model_positions,
-            movement_type="charge",
-        )
-        store = getattr(game, "path_witness_store", None)
-        if store is None:
-            raise RuntimeError("Game is missing path_witness_store.")
-        path_witness_ref = store.put(witness)
-        origin = _position_centroid(start_positions)
-        new_origin = _position_centroid(model_positions)
-        target_points = [
-            (_safe_float(point[0]), _safe_float(point[1]))
-            for point in (_alive_unit_positions(target_unit) or [])
-        ]
-        enemy_distance_delta = 0.0
-        if target_points:
-            enemy_distance_delta = _nearest_distance(origin, target_points) - _nearest_distance(new_origin, target_points)
-        movement_distance = max(0.0, _distance_2d(origin, new_origin))
-        rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
-        return CandidateAction(
-            action_id=str(confirm_action_id),
-            params=confirm_payload,
-            metadata={
-                "candidate_kind": "charge",
-                "solver_ms": 0,
-                "fallback_mode": False,
-                "intent_hash": intent.stable_hash(),
-                "path_witness_ref": path_witness_ref,
-                "movement_distance_inches": float(round(movement_distance, 4)),
-                "distance_to_enemy_delta": float(round(enemy_distance_delta, 4)),
-                "distance_to_objective_delta": 0.0,
-                "screen_coverage_score": 0.0,
-                "coherency_score": 0.0,
-                "threat_score": 1.0,
-                "projected_score_delta_next_window": max(0.0, enemy_distance_delta) * 0.25,
-                "projected_score_delta_round": max(0.0, enemy_distance_delta) * 0.35,
-                "projected_deny_delta_next_window": 0.0,
-                "projected_control_delta": max(0.0, enemy_distance_delta) * 0.1,
-                "projected_action_enablement_delta": 1.0 + max(0.0, enemy_distance_delta) * 0.2,
-                "projected_exposure_delta": 0.0,
-                "projected_trade_ev": max(0.0, enemy_distance_delta) * 0.1,
-                "projected_melee_staging_delta": max(0.0, enemy_distance_delta),
-                "cover_delta": 0.0,
-                "los_delta": 0.0,
-                "resource_delta": 0.0,
-                "rules_provenance_refs": rules_provenance_refs,
-            },
+            target_unit=target_unit,
+            rules_bundle_id=rules_bundle_id,
+            intent=intent,
+            candidate_source="routed_destination",
         )
     return None
 
@@ -563,7 +783,13 @@ def _fallback_candidates(request: DecisionRequest) -> tuple[list[CandidateAction
     return fallback, mask
 
 
-def _solver_candidates(game: object, request: DecisionRequest, intent: MovementIntent) -> tuple[list[CandidateAction], list[bool]]:
+def _solver_candidates(
+    game: object,
+    request: DecisionRequest,
+    intent: MovementIntent,
+    *,
+    deadline: float | None = None,
+) -> tuple[list[CandidateAction], list[bool]]:
     ctx = dict(getattr(request, "context", {}) or {})
     movement_type = str(ctx.get("movement_type", "move") or "move")
     unit_id = str(ctx.get("unit_id", "") or "")
@@ -617,6 +843,7 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: MovementI
                 target_units=target_units,
                 rules_bundle_id=rules_bundle_id,
                 intent=intent,
+                deadline=deadline,
             )
             if charge_candidate is not None:
                 candidates.append(charge_candidate)
@@ -630,6 +857,7 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: MovementI
                 movement_type=movement_type,
                 max_distance=float(max_distance),
                 target_unit_ids=[str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")],
+                deadline=deadline,
             )
             confirm_payload["model_positions"] = planned_positions
             witness = build_model_path_witness_for_unit(
@@ -763,8 +991,8 @@ def generate_move_unit_candidates(game: object, request: DecisionRequest, intent
         wall_clock_ms = int(round((time.perf_counter() - start) * 1000.0))
         return candidates, mask, wall_clock_ms, False
 
-    def _action(_deadline: float):
-        return _solver_candidates(game, request, intent)
+    def _action(deadline: float):
+        return _solver_candidates(game, request, intent, deadline=deadline)
 
     def _fallback():
         return _fallback_candidates(request)
