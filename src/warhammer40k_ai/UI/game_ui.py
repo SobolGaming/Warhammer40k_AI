@@ -3656,7 +3656,10 @@ class GameView:
             ctx = dict(getattr(request, "context", {}) or {})
             placement_kind = str(ctx.get("placement_kind", "") or "")
             movement_type = str(ctx.get("movement_type", "") or "").strip().lower()
-            if placement_kind not in ("reserves_arrival", "advance_redeploy_9h", "normal_move_redeploy_9h") and movement_type != "charge":
+            if (
+                placement_kind not in ("reserves_arrival", "advance_redeploy_9h", "normal_move_redeploy_9h")
+                and movement_type not in ("charge", "pile_in", "consolidate")
+            ):
                 return
             player = self._resolve_player_by_id(getattr(request, "player_id", None))
             if player is None:

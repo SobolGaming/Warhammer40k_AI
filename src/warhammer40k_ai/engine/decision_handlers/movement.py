@@ -16,6 +16,7 @@ from ..decision_kinds import (
     DECISION_SELECT_MOVEMENT_ACTION,
 )
 from ..decisions import DecisionOption, DecisionRequest, DecisionResult
+from ..fight_move import validate_fight_move_positions
 from ..path_witness import (
     current_model_positions,
     detect_normal_move_engagement_crossing,
@@ -937,6 +938,17 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         if placement_errors:
             return placement_errors
     movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "move").strip().lower()
+    if movement_type in ("pile_in", "consolidate"):
+        fight_move_errors = validate_fight_move_positions(
+            game,
+            unit,
+            movement_type=movement_type,
+            model_positions=list(model_positions or []),
+            max_distance=float(ctx.get("max_distance", 0.0) or 0.0) or 3.0,
+            target_unit_ids=[str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")],
+        )
+        if fight_move_errors:
+            return tuple(fight_move_errors)
     reactive_movement_type = str(ctx.get("reactive_move_movement_type", "") or "").strip().lower()
     validate_normal_move_sweep = movement_type == "move" or (
         movement_type == "reactive" and reactive_movement_type == "move"

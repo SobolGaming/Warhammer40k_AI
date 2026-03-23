@@ -84,6 +84,8 @@ class TestFightPhaseManager(unittest.TestCase):
         """Create a mock unit with specified properties."""
         unit = Mock(spec=Unit)
         unit.name = name
+        unit.id = f"unit:{name.lower().replace(' ', '_')}"
+        unit._id = unit.id
         unit.is_alive.return_value = True
         unit.get_parent_army.return_value = army
         
@@ -212,19 +214,14 @@ class TestFightPhaseManager(unittest.TestCase):
         self.game_map.get_enemy_units.return_value = [self.unit1_charged]
         self.game_map.is_within_engagement_range.return_value = True
         
-        # Set up UI callbacks for the new fight sequence
-        def mock_ui_callback(movement_type, unit, callback):
-            # Simulate successful movement completion
-            callback(True)
-        
-        self.manager.on_movement_required = mock_ui_callback
-        
-        # Mock weapon selection callback
-        def mock_weapon_selection_callback(fighting_unit, target_unit, callback):
-            # Simulate weapon selection completion with empty declarations
-            callback([])
-        
-        self.manager.on_weapon_selection_required = mock_weapon_selection_callback
+        self.game._resolve_unit_by_id = Mock(
+            side_effect=lambda unit_id: {
+                self.unit1_charged.id: self.unit1_charged,
+                self.unit2_fight_first.id: self.unit2_fight_first,
+            }.get(unit_id)
+        )
+        self.manager._resolve_target_declaration_attacks = Mock()
+        self.manager._queue_fight_move_request = Mock(side_effect=[None, None])
         
         # First selection (Player 2)
         self.assertEqual(self.manager.get_active_player(), self.player2)
@@ -238,7 +235,8 @@ class TestFightPhaseManager(unittest.TestCase):
         target_declarations = {self.unit1_charged: []}
         self.manager.targets_selected(self.unit2_fight_first, target_declarations, self.player1, self.player2)
         
-        # Should switch to Player 1
+        self.manager._resolve_target_declaration_attacks.assert_called_once()
+        # Should switch to Player 1 after pile-in -> attacks -> consolidate -> finalize
         self.assertEqual(self.manager.get_active_player(), self.player1)
     
     def test_stage_progression(self):
@@ -316,19 +314,18 @@ class TestFightPhaseManager(unittest.TestCase):
         model2 = Mock(spec=Model)
         target_declarations = {target_unit: [model1, model2]}
         
-        # Mock methods
-        self.unit2_fight_first.pile_in_towards_enemies = Mock()
-        self.unit2_fight_first.consolidate_towards_enemies = Mock()
-        
+        self.manager._queue_fight_move_request = Mock(return_value=Mock())
+
         # Execute with declarations
         self.manager.targets_selected(self.unit2_fight_first, target_declarations, self.player1, self.player2)
-        
-        # Should execute fight sequence
-        self.unit2_fight_first.pile_in_towards_enemies.assert_called_once()
-        self.unit2_fight_first.consolidate_towards_enemies.assert_called_once()
-        
-        # Unit should be marked as fought
-        self.assertIn(self.unit2_fight_first, self.manager.fought_units)
+
+        self.manager._queue_fight_move_request.assert_called_once()
+        self.assertEqual(
+            self.manager._queue_fight_move_request.call_args.kwargs["movement_type"],
+            "pile_in",
+        )
+        self.assertEqual(self.manager._pending_fight_sequence["step"], "pile_in")
+        self.assertNotIn(self.unit2_fight_first, self.manager.fought_units)
     
     def test_stage_info_reporting(self):
         """Test that stage info is reported correctly."""

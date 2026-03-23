@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from .decisions import CandidateAction, DecisionRequest
+from .fight_move import plan_deterministic_fight_move
 from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
 
@@ -516,6 +517,34 @@ def _translate_model_positions(
     }
 
 
+def _fight_move_metrics(
+    start_positions: list[dict[str, Any]],
+    end_positions: list[dict[str, Any]],
+) -> dict[str, float]:
+    start_by_id = {
+        str(entry.get("model_id", "") or ""): dict(entry)
+        for entry in list(start_positions or [])
+        if entry is not None
+    }
+    total_distance = 0.0
+    moved_models = 0
+    for entry in list(end_positions or []):
+        model_id = str(dict(entry or {}).get("model_id", "") or "")
+        start_entry = start_by_id.get(model_id)
+        if start_entry is None:
+            continue
+        sx, sy, _sz = _entry_position(start_entry)
+        ex, ey, _ez = _entry_position(dict(entry or {}))
+        delta = _distance_2d((sx, sy), (ex, ey))
+        total_distance += float(delta)
+        if delta > 1e-4:
+            moved_models += 1
+    return {
+        "movement_distance": float(total_distance),
+        "moved_models": float(moved_models),
+    }
+
+
 def _fallback_candidates(request: DecisionRequest) -> tuple[list[CandidateAction], list[bool]]:
     fallback: list[CandidateAction] = []
     for candidate in list(request.candidates or []):
@@ -591,6 +620,60 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: MovementI
             )
             if charge_candidate is not None:
                 candidates.append(charge_candidate)
+        elif movement_type in {"pile_in", "consolidate"}:
+            confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
+            confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})
+            confirm_payload.pop("action_id", None)
+            planned_positions = plan_deterministic_fight_move(
+                game,
+                unit,
+                movement_type=movement_type,
+                max_distance=float(max_distance),
+                target_unit_ids=[str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")],
+            )
+            confirm_payload["model_positions"] = planned_positions
+            witness = build_model_path_witness_for_unit(
+                unit=unit,
+                model_positions=planned_positions,
+                movement_type=movement_type,
+            )
+            store = getattr(game, "path_witness_store", None)
+            if store is None:
+                raise RuntimeError("Game is missing path_witness_store.")
+            path_witness_ref = store.put(witness)
+            metrics = _fight_move_metrics(start_positions, planned_positions)
+            moved_models = int(metrics.get("moved_models", 0.0) or 0.0)
+            candidates.append(
+                CandidateAction(
+                    action_id=str(confirm_action_id),
+                    params=confirm_payload,
+                    metadata={
+                        "candidate_kind": movement_type,
+                        "solver_ms": 0,
+                        "fallback_mode": False,
+                        "intent_hash": intent.stable_hash(),
+                        "path_witness_ref": path_witness_ref,
+                        "movement_distance_inches": float(round(float(metrics.get("movement_distance", 0.0) or 0.0), 4)),
+                        "distance_to_enemy_delta": float(moved_models),
+                        "distance_to_objective_delta": 0.0,
+                        "screen_coverage_score": 0.0,
+                        "coherency_score": 1.0 if moved_models or planned_positions else 0.5,
+                        "threat_score": 1.0,
+                        "projected_score_delta_next_window": 0.25 + (0.1 * moved_models),
+                        "projected_score_delta_round": 0.35 + (0.15 * moved_models),
+                        "projected_deny_delta_next_window": 0.0,
+                        "projected_control_delta": 0.1 * moved_models,
+                        "projected_action_enablement_delta": 0.5 + (0.2 * moved_models),
+                        "projected_exposure_delta": 0.0,
+                        "projected_trade_ev": 0.1 * moved_models,
+                        "projected_melee_staging_delta": 0.5 + (0.25 * moved_models),
+                        "cover_delta": 0.0,
+                        "los_delta": 0.0,
+                        "resource_delta": 0.0,
+                        "rules_provenance_refs": [rules_bundle_id] if rules_bundle_id else [],
+                    },
+                )
+            )
         else:
             confirm_action_id = request.action_id_for_option_id(getattr(confirm_option, "option_id", None))
             confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})

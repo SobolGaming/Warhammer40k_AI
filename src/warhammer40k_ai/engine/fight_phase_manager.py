@@ -41,9 +41,12 @@ class FightPhaseManager:
         self._current_player = None
         self._opponent_player = None
         self._pending_target_selection_unit = None
+        self._pending_fight_sequence = None
         # Callbacks for human player interaction
         self.on_unit_selection_required = None
         self.on_target_selection_required = None
+        self.on_movement_required = None
+        self.on_weapon_selection_required = None
         self.on_stage_complete = None
 
     def _canonical_unit_for_fight(self, unit: Unit) -> Unit:
@@ -100,6 +103,7 @@ class FightPhaseManager:
         self._current_player = current_player
         self._opponent_player = opponent_player
         self._pending_target_selection_unit = None
+        self._pending_fight_sequence = None
         self._reset_fight_phase_eligibility_flags(current_player, opponent_player)
         
         # In fight phase, the non-current player goes first
@@ -335,6 +339,9 @@ class FightPhaseManager:
     def finalize_unit_fight(self, fighting_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Finalize a unit's fight sequence and advance turn order."""
         fighting_unit = self._canonical_unit_for_fight(fighting_unit)
+        pending = dict(self._pending_fight_sequence or {})
+        if str(pending.get("fighting_unit_id", "") or "") == str(get_entity_id(fighting_unit) or ""):
+            self._pending_fight_sequence = None
         # Mark unit as having fought
         self.fought_units.add(fighting_unit)
         try:
@@ -471,6 +478,246 @@ class FightPhaseManager:
                 pass
             return
         self._dispatch_target_selection(unit, eligible_targets)
+
+    def _fight_phase_step_name(self) -> str:
+        if self.current_stage == FightStage.FIGHT_FIRST:
+            return "FIGHT_FIRST"
+        if self.current_stage == FightStage.REMAINING_COMBATANTS:
+            return "REMAINING_COMBATANTS"
+        return ""
+
+    def _serialize_target_declarations(self, target_declarations: Dict[Unit, List['Model']]) -> list[dict]:
+        serialized: list[dict] = []
+        for target_unit in sorted(list(target_declarations or {}), key=lambda unit: str(get_entity_id(unit) or "")):
+            target_unit_id = str(get_entity_id(target_unit) or "").strip()
+            if not target_unit_id:
+                continue
+            models = []
+            for model in list(target_declarations.get(target_unit, []) or []):
+                model_id = str(get_entity_id(model) or "").strip()
+                if model_id:
+                    models.append(model_id)
+            serialized.append(
+                {
+                    "target_unit_id": target_unit_id,
+                    "attacking_model_ids": sorted(set(models)),
+                }
+            )
+        return serialized
+
+    def _resolve_model_by_id(self, model_id: str):
+        key = str(model_id or "").strip()
+        if not key:
+            return None
+        registry = getattr(self.game, "entity_registry", None)
+        getter = getattr(registry, "get", None)
+        if callable(getter):
+            model = getter(key, kind="model")
+            if model is not None:
+                return model
+        for player in list(getattr(self.game, "players", []) or []):
+            army = player.get_army() if hasattr(player, "get_army") else getattr(player, "army", None)
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    models = list(unit.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(unit, "models", []) or [])
+                for model in models:
+                    if str(get_entity_id(model) or "").strip() == key:
+                        return model
+        return None
+
+    def _deserialize_target_declarations(self, serialized: list[dict]) -> Dict[Unit, List['Model']]:
+        declarations: Dict[Unit, List['Model']] = {}
+        resolve_unit = getattr(self.game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return declarations
+        for entry in list(serialized or []):
+            target_unit_id = str(dict(entry or {}).get("target_unit_id", "") or "").strip()
+            if not target_unit_id:
+                continue
+            target_unit = resolve_unit(target_unit_id)
+            if target_unit is None:
+                continue
+            models = []
+            for model_id in list(dict(entry or {}).get("attacking_model_ids", []) or []):
+                model = self._resolve_model_by_id(str(model_id or ""))
+                if model is not None:
+                    models.append(model)
+            declarations[target_unit] = models
+        return declarations
+
+    def _queue_fight_move_request(
+        self,
+        *,
+        fighting_unit: Unit,
+        target_declarations: Dict[Unit, List['Model']],
+        movement_type: str,
+    ):
+        from .decision_requests import queue_move_unit_request
+
+        move_tag = str(movement_type or "").strip().lower()
+        max_distance = 3.0
+        try:
+            override = fighting_unit.get_fight_phase_move_distance_override(move_tag)
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
+        context = {
+            "phase_name": "FIGHT_PHASE",
+            "phase_step": self._fight_phase_step_name(),
+            "selection_purpose": "FIGHT_MOVE",
+            "fight_sequence_step": move_tag,
+            "target_unit_ids": [
+                str(get_entity_id(target_unit) or "")
+                for target_unit in sorted(list(target_declarations or {}), key=lambda unit: str(get_entity_id(unit) or ""))
+                if target_unit is not None
+            ],
+        }
+        request = queue_move_unit_request(
+            self.game,
+            fighting_unit,
+            movement_type=move_tag,
+            prompt=f"{move_tag.replace('_', ' ').title()} {getattr(fighting_unit, 'name', 'Unit')}",
+            player_id=getattr(self.active_player, "id", None),
+            max_distance=max_distance,
+            allow_skip=True,
+            context=context,
+        )
+        ui_callback = getattr(self, "on_movement_required", None)
+        if request is not None and callable(ui_callback):
+            try:
+                ui_callback(move_tag, fighting_unit, lambda _completed: None, request)
+            except TypeError:
+                ui_callback(move_tag, fighting_unit, lambda _completed: None)
+        return request
+
+    def _resolve_target_declaration_attacks(
+        self,
+        fighting_unit: Unit,
+        target_declarations: Dict[Unit, List['Model']],
+    ) -> None:
+        auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
+        hits_by_target_total = {}
+        hit_models_by_target_total = {}
+        hit_models_by_target_psychic_total = {}
+        killing_models_by_target_total = {}
+        for target_unit, attacking_models in target_declarations.items():
+            logger.info(f"  {len(attacking_models)} models attacking {target_unit.name}")
+            attack_summary = {}
+            decls = list(auto_decls or [])
+            if attacking_models:
+                decls = [declaration for declaration in decls if declaration.get("model") in attacking_models]
+            attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
+            for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
+                hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
+            for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
+                if unit not in hit_models_by_target_total:
+                    hit_models_by_target_total[unit] = set()
+                try:
+                    hit_models_by_target_total[unit].update(set(models or []))
+                except Exception:
+                    pass
+            for unit, models in (attack_summary.get("hit_models_by_target_psychic") or {}).items():
+                if unit not in hit_models_by_target_psychic_total:
+                    hit_models_by_target_psychic_total[unit] = set()
+                try:
+                    hit_models_by_target_psychic_total[unit].update(set(models or []))
+                except Exception:
+                    pass
+            for unit, models in (attack_summary.get("killing_models_by_target") or {}).items():
+                if unit not in killing_models_by_target_total:
+                    killing_models_by_target_total[unit] = set()
+                try:
+                    killing_models_by_target_total[unit].update(set(models or []))
+                except Exception:
+                    pass
+            try:
+                if hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "fight_attacks_resolved",
+                        unit=fighting_unit,
+                        target_unit=target_unit,
+                        hits_by_target=attack_summary.get("hits_by_target"),
+                        hit_models_by_target=attack_summary.get("hit_models_by_target"),
+                        hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
+                        killing_models_by_target=attack_summary.get("killing_models_by_target"),
+                    )
+            except Exception:
+                pass
+        if hits_by_target_total:
+            self.game._maybe_trigger_daemonic_poisons(
+                attacker_unit=self._as_attached_view(fighting_unit),
+                hits_by_target=hits_by_target_total,
+                hit_models_by_target=hit_models_by_target_total,
+                phase="fight",
+            )
+        try:
+            setattr(
+                fighting_unit,
+                "_gift_of_chaos_hit_models_by_target_psychic",
+                dict(hit_models_by_target_psychic_total or {}),
+            )
+        except Exception:
+            pass
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish(
+                    "fight_attacks_resolved",
+                    unit=fighting_unit,
+                    target_unit=None,
+                    hits_by_target=hits_by_target_total,
+                    hit_models_by_target=hit_models_by_target_total,
+                    hit_models_by_target_psychic=hit_models_by_target_psychic_total,
+                    killing_models_by_target=killing_models_by_target_total,
+                )
+        except Exception:
+            pass
+
+    def on_fight_move_resolved(self, *, unit_id: str, movement_type: str) -> None:
+        sequence = dict(self._pending_fight_sequence or {})
+        if not sequence:
+            return
+        if str(sequence.get("fighting_unit_id", "") or "") != str(unit_id or ""):
+            return
+        move_tag = str(movement_type or "").strip().lower()
+        expected_step = str(sequence.get("step", "") or "").strip().lower()
+        if expected_step and move_tag != expected_step:
+            return
+        resolve_unit = getattr(self.game, "_resolve_unit_by_id", None)
+        if not callable(resolve_unit):
+            return
+        fighting_unit = resolve_unit(str(unit_id or ""))
+        if fighting_unit is None:
+            self._pending_fight_sequence = None
+            return
+        target_declarations = self._deserialize_target_declarations(sequence.get("target_declarations", []))
+        if move_tag == "pile_in":
+            logger.info(f"{fighting_unit.name} pile-in resolved via MOVE_UNIT")
+            self._resolve_target_declaration_attacks(fighting_unit, target_declarations)
+            self._pending_fight_sequence = {
+                **sequence,
+                "step": "consolidate",
+            }
+            request = self._queue_fight_move_request(
+                fighting_unit=fighting_unit,
+                target_declarations=target_declarations,
+                movement_type="consolidate",
+            )
+            if request is None:
+                self.on_fight_move_resolved(unit_id=str(unit_id or ""), movement_type="consolidate")
+            return
+        if move_tag != "consolidate":
+            return
+        logger.info(f"{fighting_unit.name} consolidate resolved via MOVE_UNIT")
+        self._pending_fight_sequence = None
+        try:
+            if hasattr(fighting_unit, "_clear_formless_horror_allowed"):
+                fighting_unit._clear_formless_horror_allowed()
+        except Exception:
+            pass
+        self.finalize_unit_fight(fighting_unit, self._current_player, self._opponent_player)
     
     def targets_selected(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
         """Handle target selection and execute the fight sequence."""
@@ -499,11 +746,6 @@ class FightPhaseManager:
         # Execute the complete fight sequence
         ui_callback = getattr(self, 'on_movement_required', None)
         self._execute_fight_sequence_with_declarations(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
-        try:
-            if hasattr(fighting_unit, "_clear_formless_horror_allowed"):
-                fighting_unit._clear_formless_horror_allowed()
-        except Exception:
-            pass
     
     def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
@@ -673,82 +915,22 @@ class FightPhaseManager:
     def _execute_fight_sequence_with_declarations(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence with target declarations."""
         logger.info(f"Executing fight sequence with declarations: {fighting_unit.name}")
-
-        # If UI callback is provided, use individual model movement for pile-in and consolidate
-        if ui_callback:
-            self._execute_fight_sequence_with_declarations_ui(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
-            return
-        try:
-            if hasattr(fighting_unit, "pile_in_towards_enemies"):
-                fighting_unit.pile_in_towards_enemies(getattr(self.game, "map", None))
-        except Exception:
-            pass
-        try:
-            auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
-        except Exception:
-            auto_decls = []
-        hits_by_target_total = {}
-        hit_models_by_target_total = {}
-        hit_models_by_target_psychic_total = {}
-        for target_unit, attacking_models in target_declarations.items():
-            attack_summary = {}
-            try:
-                decls = list(auto_decls or [])
-                if attacking_models:
-                    decls = [d for d in decls if d.get("model") in attacking_models]
-                attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
-                for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
-                    hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
-                for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
-                    if unit not in hit_models_by_target_total:
-                        hit_models_by_target_total[unit] = set()
-                    try:
-                        hit_models_by_target_total[unit].update(set(models or []))
-                    except Exception:
-                        pass
-                for unit, models in (attack_summary.get("hit_models_by_target_psychic") or {}).items():
-                    if unit not in hit_models_by_target_psychic_total:
-                        hit_models_by_target_psychic_total[unit] = set()
-                    try:
-                        hit_models_by_target_psychic_total[unit].update(set(models or []))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                if hasattr(self.game, "event_system"):
-                    self.game.event_system.publish(
-                        "fight_attacks_resolved",
-                        unit=fighting_unit,
-                        target_unit=target_unit,
-                        hits_by_target=attack_summary.get("hits_by_target"),
-                        hit_models_by_target=attack_summary.get("hit_models_by_target"),
-                        hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
-                        killing_models_by_target=attack_summary.get("killing_models_by_target"),
-                    )
-            except Exception:
-                pass
-        if hits_by_target_total:
-            self.game._maybe_trigger_daemonic_poisons(
-                attacker_unit=self._as_attached_view(fighting_unit),
-                hits_by_target=hits_by_target_total,
-                hit_models_by_target=hit_models_by_target_total,
-                phase="fight",
+        fighting_unit = self._canonical_unit_for_fight(fighting_unit)
+        self._pending_fight_sequence = {
+            "fighting_unit_id": str(get_entity_id(fighting_unit) or ""),
+            "target_declarations": self._serialize_target_declarations(target_declarations),
+            "step": "pile_in",
+        }
+        request = self._queue_fight_move_request(
+            fighting_unit=fighting_unit,
+            target_declarations=target_declarations,
+            movement_type="pile_in",
+        )
+        if request is None:
+            self.on_fight_move_resolved(
+                unit_id=str(get_entity_id(fighting_unit) or ""),
+                movement_type="pile_in",
             )
-        try:
-            setattr(
-                fighting_unit,
-                "_gift_of_chaos_hit_models_by_target_psychic",
-                dict(hit_models_by_target_psychic_total or {}),
-            )
-        except Exception:
-            pass
-        try:
-            if hasattr(fighting_unit, "consolidate_towards_enemies"):
-                fighting_unit.consolidate_towards_enemies(getattr(self.game, "map", None))
-        except Exception:
-            pass
-        self.finalize_unit_fight(fighting_unit, current_player, opponent_player)
         return
 
     def _execute_fight_sequence_with_declarations_ui(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback) -> None:

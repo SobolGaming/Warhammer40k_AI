@@ -673,7 +673,7 @@ class GamePhaseHandlersMixin:
         if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
             return
         from ..decision_handlers._helpers import find_option
-        from ..decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_SELECT_FIGHT_TARGETS
+        from ..decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT, DECISION_SELECT_FIGHT_TARGETS
         decision_type = str(getattr(request, "decision_type", "") or "").strip()
         if decision_type == DECISION_SELECT_FIGHT_TARGETS:
             ctx = dict(getattr(request, "context", {}) or {})
@@ -714,6 +714,23 @@ class GamePhaseHandlersMixin:
                 self.get_current_player(),
                 self.get_opponent(),
             )
+            return
+        if decision_type == DECISION_MOVE_UNIT:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "FIGHT_PHASE":
+                return
+            movement_type = str(ctx.get("movement_type", "") or "").strip().lower()
+            if movement_type not in {"pile_in", "consolidate"}:
+                return
+            unit_id = str(ctx.get("unit_id", "") or "").strip()
+            if not unit_id:
+                return
+            manager = self._ensure_fight_phase_manager_started()
+            if manager is None:
+                return
+            on_resolved = getattr(manager, "on_fight_move_resolved", None)
+            if callable(on_resolved):
+                on_resolved(unit_id=unit_id, movement_type=movement_type)
             return
         if decision_type != DECISION_CONFIRM_YES_NO:
             return

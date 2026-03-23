@@ -3,13 +3,18 @@
 ## Overview
 Pile-in and consolidate movement are validated in `src/warhammer40k_ai/utility/calcs.py`
 using `MovementType.PILE_IN` and `MovementType.CONSOLIDATE`. The UI surfaces the same
-rules through the per-model movement dialog and range visualization.
+rules through the per-model movement dialog and range visualization. Fight-phase
+activation now queues authoritative `MOVE_UNIT` decisions for both pile-in and
+consolidate, so local UI, remote UI, and headless controllers all use the same
+decision type and move validation path.
 
 Cross-links:
 - `get_validation_rules(...)`: `src/warhammer40k_ai/utility/calcs.py`
 - Final-position validation (pile-in/consolidate): `src/warhammer40k_ai/utility/calcs.py`
 - Fight-phase distance overrides: `Unit.get_fight_phase_move_distance_override(...)` in
   `src/warhammer40k_ai/units/unit.py`
+- Fight move planning/validation helpers: `src/warhammer40k_ai/engine/fight_move.py`
+- Fight-phase `MOVE_UNIT` sequencing: `src/warhammer40k_ai/engine/fight_phase_manager.py`
 
 ## Pile-In rules enforced
 - Models already in base-to-base contact cannot pile in.
@@ -40,6 +45,15 @@ This reduces the candidate set while keeping validation correct for pile-in lega
 - `IndividualModelMovementDialog` lists all models and disables those already in base
   contact with a reason tooltip.
 - Pile-in/consolidate share the same per-model movement dialog and range visualization.
+- Remote/non-authoritative clients open the same movement dialog from the queued
+  `MOVE_UNIT` request when `context.phase_name="FIGHT_PHASE"` and
+  `movement_type` is `pile_in` or `consolidate`.
+
+## Headless behavior
+- Headless fight activations resolve pile-in/consolidate through `MOVE_UNIT`
+  candidate generation rather than legacy auto-move stubs.
+- The engine revalidates submitted pile-in/consolidate `model_positions`
+  against pathing and coherency before applying them.
 
 ## Constants
 Defined in `src/warhammer40k_ai/utility/constants.py`:

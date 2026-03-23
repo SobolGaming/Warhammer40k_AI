@@ -473,3 +473,36 @@ def test_fight_followup_resumes_pending_target_selection_after_battle_focus_conf
     game._maybe_queue_fight_phase_followup(request, result)
 
     assert resumed == [unit.id]
+
+
+def test_fight_move_unit_followup_resumes_pending_fight_sequence() -> None:
+    _player, _army, unit, _enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit)
+    resumed = []
+    game.fight_phase_manager = SimpleNamespace(
+        on_fight_move_resolved=lambda unit_id=None, movement_type=None: resumed.append((unit_id, movement_type)),
+        is_complete=lambda: False,
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Pile In",
+        player_id="player-1",
+        options=[DecisionOption.create("Confirm", payload={"unit_id": unit.id, "movement_type": "pile_in"})],
+        context={
+            "unit_id": unit.id,
+            "movement_type": "pile_in",
+            "phase_name": "FIGHT_PHASE",
+            "phase_step": "FIGHT_FIRST",
+            "selection_purpose": "FIGHT_MOVE",
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={"model_positions": []},
+    )
+
+    game._maybe_queue_fight_phase_followup(request, result)
+
+    assert resumed == [(unit.id, "pile_in")]

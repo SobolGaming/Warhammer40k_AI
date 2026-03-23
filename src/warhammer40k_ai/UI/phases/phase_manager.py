@@ -3381,7 +3381,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
             self._maybe_prompt_rise_to_challenge(current_player, opponent_player, _advance_phase)
 
-        def on_movement_required(movement_type: str, unit: Unit, callback):
+        def on_movement_required(movement_type: str, unit: Unit, callback, decision_request=None):
             """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
             logger.info(f"{unit.name} needs to perform {movement_type} movement")
 
@@ -3399,6 +3399,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 movement_type,
                 callback,
                 max_distance=max_distance,
+                decision_request=decision_request,
             )
 
         def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
