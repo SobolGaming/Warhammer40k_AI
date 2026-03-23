@@ -8387,7 +8387,7 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -8462,7 +8462,7 @@ class WargearProfile:
                     except Exception:
                         option_id = None
                     if option_id:
-                        value, apply_result = resolve_decision_value(
+                        value, apply_result = resolve_or_reuse_decision_value(
                             game,
                             req,
                             option_id,
@@ -8705,7 +8705,7 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -8779,7 +8779,7 @@ class WargearProfile:
                     except Exception:
                         option_id = None
                     if option_id:
-                        value, apply_result = resolve_decision_value(
+                        value, apply_result = resolve_or_reuse_decision_value(
                             game,
                             req,
                             option_id,
@@ -9045,7 +9045,7 @@ class WargearProfile:
                     try:
                         from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                         from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                        from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                         from warhammer40k_ai.utility.entity_ids import get_entity_id
                     except Exception:
                         decision = None
@@ -9098,7 +9098,7 @@ class WargearProfile:
                         except Exception:
                             option_id = None
                         if option_id:
-                            value, apply_result = resolve_decision_value(
+                            value, apply_result = resolve_or_reuse_decision_value(
                                 game,
                                 req,
                                 option_id,
@@ -9261,7 +9261,7 @@ class WargearProfile:
                 try:
                     from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                     from warhammer40k_ai.utility.entity_ids import get_entity_id
                 except Exception:
                     decision = None
@@ -9310,7 +9310,7 @@ class WargearProfile:
                     except Exception:
                         option_id = None
                     if option_id:
-                        value, apply_result = resolve_decision_value(
+                        value, apply_result = resolve_or_reuse_decision_value(
                             game,
                             req,
                             option_id,
@@ -22689,7 +22689,7 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                                 except Exception:
                                     use_it = False
                                 else:
@@ -22733,7 +22733,7 @@ class WargearProfile:
                                             option_id = option.option_id
                                             break
                                     if option_id:
-                                        value, apply_result = resolve_decision_value(
+                                        value, apply_result = resolve_or_reuse_decision_value(
                                             game,
                                             request,
                                             option_id,
@@ -23387,7 +23387,7 @@ class WargearProfile:
                                 try:
                                     from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
                                     from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                                    from warhammer40k_ai.utility.decision_utils import resolve_or_reuse_decision_value
                                 except Exception:
                                     use_it = False
                                 else:
@@ -23424,7 +23424,7 @@ class WargearProfile:
                                             option_id = option.option_id
                                             break
                                     if option_id:
-                                        value, apply_result = resolve_decision_value(
+                                        value, apply_result = resolve_or_reuse_decision_value(
                                             game,
                                             request,
                                             option_id,

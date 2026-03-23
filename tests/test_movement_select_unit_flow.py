@@ -178,3 +178,26 @@ def test_move_units_followup_queues_move_unit_after_move_choice() -> None:
     assert queued.decision_type == DECISION_MOVE_UNIT
     assert queued.context["movement_type"] == "move"
     assert float(queued.context["max_distance"]) == 6.0
+
+
+def test_transport_select_movement_action_excludes_embark_and_disembark() -> None:
+    game, unit = _build_flow_game()
+    unit.is_transport = True
+    unit.transport_passengers = [object()]
+
+    request = build_select_movement_action_request(
+        unit,
+        player_id="player-1",
+        phase_name="MOVEMENT_PHASE",
+        phase_step="MOVE_UNITS",
+        selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+        game_map=game.map,
+    )
+
+    assert request is not None
+    action_types = {str(option.payload.get("action_type", "") or "") for option in request.options}
+    assert "move" in action_types
+    assert "advance" in action_types
+    assert "stationary" in action_types
+    assert "embark" not in action_types
+    assert "disembark" not in action_types

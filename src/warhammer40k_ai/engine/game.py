@@ -11967,6 +11967,9 @@ class Game(
             value=getattr(apply_result, "value", None),
         )
         accepted = bool(getattr(apply_result, "ok", False))
+        setattr(request, "_resolved_decision_result", result)
+        setattr(request, "_resolved_decision_apply_result", apply_result)
+        setattr(request, "_resolved_decision_value", getattr(apply_result, "value", None))
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
@@ -12529,7 +12532,7 @@ class Game(
         if not entries:
             return 0
 
-        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.decision_utils import resolve_or_reuse_decision_value
 
         def _choice_from_overrides(objective_key: str) -> str:
             selections = getattr(player, "_next_optional_selections", None)
@@ -12623,7 +12626,7 @@ class Game(
                         break
             if option_id is None:
                 continue
-            value, apply_result = resolve_decision_value(
+            value, apply_result = resolve_or_reuse_decision_value(
                 self,
                 request,
                 option_id,
@@ -12883,7 +12886,7 @@ class Game(
                 except Exception:
                     is_below_half = False
             if is_below_half:
-                logger.warning(f"WARN: {unit.name} is below half strength - taking Battle-Shock test")
+                logger.debug(f"{unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)

@@ -128,9 +128,17 @@ Movement actions are `MovementAction` values applied through `Unit._execute_acti
 - `ADVANCE`
 - `FALL_BACK`
 
+`SELECT_MOVEMENT_ACTION` is limited to those movement modes. Transport embark and
+disembark use separate `EMBARK` / `DISEMBARK` decisions and are not exposed as
+movement-action choices.
+
 The action handler also gates movement due to transport disembark restrictions,
 including immediate disembarks after a reserves transport is set up, and publishes
 movement-start/finish events for reaction windows.
+
+Destroyed-transport disembark keeps a second safety net: if an initial 3" placement
+passes candidate search but fails final aggregate map validation, the engine retries
+it as an emergency disembark instead of surfacing a terminal placement error.
 
 ```6614:6726:src/warhammer40k_ai/units/unit.py
     def get_available_move_actions(self, state: int) -> List[int]:

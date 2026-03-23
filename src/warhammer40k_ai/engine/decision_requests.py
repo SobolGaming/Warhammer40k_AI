@@ -34,7 +34,6 @@ from ..rules.imperial_agents_shadow_assignment import (
     unit_has_shadow_assignment,
 )
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
-from ..utility.movement_utils import compute_embark_candidates
 
 PLAYER_COLOR_HUE_STEP_DEGREES = 15
 PLAYER_COLOR_SATURATION = 0.85
@@ -431,11 +430,6 @@ def _available_move_action_names(unit: object, *, game_map: object | None = None
         "stationary": MovementAction.REMAIN_STATIONARY.value,
     }
     actions = [name for name, action_value in action_map.items() if action_value in available]
-    if bool(getattr(unit, "is_transport", False)):
-        if game_map is not None and compute_embark_candidates(unit, game_map):
-            actions.append("embark")
-        if list(getattr(unit, "transport_passengers", []) or []):
-            actions.append("disembark")
     deduped: list[str] = []
     for action in actions:
         text = str(action or "").strip().lower()

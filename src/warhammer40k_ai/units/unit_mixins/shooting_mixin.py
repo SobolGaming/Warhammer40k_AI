@@ -4573,12 +4573,36 @@ class ShootingMixin:
         # Commit placements (include attached leaders' models if any)
         placement_models = [m for m in self.get_models_for_collision() if getattr(m, "is_alive", False)]
 
+        prior_locations = [
+            (
+                float(getattr(model.model_base, "x", 0.0)),
+                float(getattr(model.model_base, "y", 0.0)),
+                float(getattr(model.model_base, "z", 0.0)),
+                float(getattr(model.model_base, "facing", 0.0)),
+            )
+            for model in placement_models
+        ]
+
         for model, pos in zip(placement_models, placements):
             model.set_location(*pos)
         # Add back to map (place_unit validates collisions)
         if not hasattr(game_map, "place_unit"):
             raise RuntimeError("Disembark requires a game map with place_unit().")
         if not game_map.place_unit(self):
+            for model, pos in zip(placement_models, prior_locations):
+                model.set_location(*pos)
+            if destroyed_transport and not emergency:
+                logger.warning(
+                    f"WARN: {self.name} destroyed-transport disembark placement failed validation; "
+                    "attempting emergency disembarkation"
+                )
+                return self.disembark(
+                    game_map=game_map,
+                    transport_unit=transport_unit,
+                    destroyed_transport=True,
+                    emergency=True,
+                    current_turn=current_turn,
+                )
             logger.error(f"ERROR: {self.name} disembark failed: map placement validation failed")
             return False
 

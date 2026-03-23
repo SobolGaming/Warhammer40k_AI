@@ -166,7 +166,7 @@ class DamageDeathMixin:
             elif game is not None:
                 from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
                 from ...engine.decisions import DecisionOption, DecisionRequest
-                from ...utility.decision_utils import resolve_decision_value
+                from ...utility.decision_utils import resolve_or_reuse_decision_value
 
                 request = DecisionRequest.create(
                     DECISION_CONFIRM_YES_NO,
@@ -191,7 +191,7 @@ class DamageDeathMixin:
                         option_id = opt.option_id
                         break
                 if option_id:
-                    _value, apply_result = resolve_decision_value(
+                    _value, apply_result = resolve_or_reuse_decision_value(
                         game,
                         request,
                         option_id,
@@ -353,7 +353,7 @@ class DamageDeathMixin:
 
         from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from ...engine.decisions import DecisionOption, DecisionRequest
-        from ...utility.decision_utils import resolve_decision_value
+        from ...utility.decision_utils import resolve_or_reuse_decision_value
 
         context = {
             "ability": "death_vision_of_sanguinius",
@@ -390,7 +390,7 @@ class DamageDeathMixin:
                 break
         if not option_id:
             return False
-        _value, apply_result = resolve_decision_value(
+        _value, apply_result = resolve_or_reuse_decision_value(
             game,
             request,
             option_id,
@@ -2677,4 +2677,3 @@ class DamageDeathMixin:
         except Exception:
             return False
         return False
-

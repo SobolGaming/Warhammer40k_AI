@@ -124,6 +124,9 @@ Validation:
 
 DecisionResult command:
 - `RESOLVE_DECISION` payload: `decision_id`, `option_id`, `result_payload` (optional dict)
+- `request_decision(...)` may settle the request immediately when a headless/controller path auto-resolves it.
+  Callers that enqueue a request and also provide a local fallback choice must first verify that the
+  request is still pending before issuing a second `RESOLVE_DECISION`, or reuse the stored settled result.
 
 DecisionRequest command:
 - `REQUEST_DECISION` payload: `decision` (DecisionRequest dict with decision_id, decision_type, options, candidates, mask, context)
