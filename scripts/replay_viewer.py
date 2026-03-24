@@ -225,7 +225,7 @@ def _format_roll_line(payload: dict[str, object]) -> str:
     if not dice_values:
         return ""
     reason = str(payload.get("reason", "") or "").strip()
-    if reason == "Legacy get_roll(1D6)":
+    if reason == "get_roll(1D6)":
         reason = "Replay roll"
     if not reason:
         reason = "Replay roll"
@@ -281,6 +281,23 @@ def _overlay_fonts():
         return font_module.Font(None, 18), font_module.Font(None, 16)
 
 
+def _font_linesize(font: object, default: int) -> int:
+    get_linesize = getattr(font, "get_linesize", None)
+    if not callable(get_linesize):
+        return int(default)
+    try:
+        value = get_linesize()
+    except (AttributeError, TypeError, ValueError, pygame.error):
+        return int(default)
+    if isinstance(value, bool):
+        return int(default)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float) and value > 0:
+        return int(value)
+    return int(default)
+
+
 def _overlay_layout(
     screen: pygame.Surface,
     lines: list[tuple[str, tuple[int, int, int]]],
@@ -291,8 +308,8 @@ def _overlay_layout(
         line_height = 19
         header_height = 38
     else:
-        line_height = body_font.get_linesize()
-        header_height = title_font.get_linesize() + 16
+        line_height = _font_linesize(body_font, 19)
+        header_height = _font_linesize(title_font, 22) + 16
     width = min(560, max(420, int(screen.get_width() * 0.34)))
     height = min(screen.get_height() - (OVERLAY_MARGIN * 2), header_height + 18 + (len(lines) * line_height))
     if position is None:

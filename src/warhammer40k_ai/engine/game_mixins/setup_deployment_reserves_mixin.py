@@ -2658,24 +2658,39 @@ class GameSetupDeploymentReservesMixin:
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
         
-        player1_roll = get_roll("1D6")
-        player2_roll = get_roll("1D6")
-        append_dice(self.players[0], f"First turn roll: {player1_roll}")
-        append_dice(self.players[1], f"First turn roll: {player2_roll}")
+        p1 = self.players[0]
+        p2 = self.players[1]
         
-        logger.info(f"{self.players[0].name} rolled: {player1_roll}")
-        logger.info(f"{self.players[1].name} rolled: {player2_roll}")
+        player1_roll = get_roll(
+            "1D6",
+            game=self,
+            player=p1,
+            reason=f"Determine attacker and defender: {p1.name}",
+            roll_type="determine_attacker_defender",
+        )
+        player2_roll = get_roll(
+            "1D6",
+            game=self,
+            player=p2,
+            reason=f"Determine attacker and defender: {p2.name}",
+            roll_type="determine_attacker_defender",
+        )
+        append_dice(p1, f"First turn roll: {player1_roll}")
+        append_dice(p2, f"First turn roll: {player2_roll}")
+        
+        logger.info(f"{p1.name} rolled: {player1_roll}")
+        logger.info(f"{p2.name} rolled: {player2_roll}")
         
         if player1_roll > player2_roll:
             self.attacker_index = 0
             self.defender_index = 1
-            logger.info(f"{self.players[0].name} is the Attacker")
-            logger.info(f"{self.players[1].name} is the Defender")
+            logger.info(f"{p1.name} is the Attacker")
+            logger.info(f"{p2.name} is the Defender")
         elif player2_roll > player1_roll:
             self.attacker_index = 1
             self.defender_index = 0
-            logger.info(f"{self.players[1].name} is the Attacker")
-            logger.info(f"{self.players[0].name} is the Defender")
+            logger.info(f"{p2.name} is the Attacker")
+            logger.info(f"{p1.name} is the Defender")
         else:
             # Tie - re-roll
             logger.info("Tie! Re-rolling...")
@@ -4017,8 +4032,20 @@ class GameSetupDeploymentReservesMixin:
         p2 = self.players[1]
 
         while True:
-            roll1 = get_roll("1D6")
-            roll2 = get_roll("1D6")
+            roll1 = get_roll(
+                "1D6",
+                game=self,
+                player=p1,
+                reason=f"Determine first turn order: {p1.name}",
+                roll_type="determine_first_turn_order",
+            )
+            roll2 = get_roll(
+                "1D6",
+                game=self,
+                player=p2,
+                reason=f"Determine first turn order: {p2.name}",
+                roll_type="determine_first_turn_order",
+            )
             append_dice(p1, f"First turn roll-off: {roll1}")
             append_dice(p2, f"First turn roll-off: {roll2}")
             logger.info(f"INFO: {p1.name} rolled: {roll1}")

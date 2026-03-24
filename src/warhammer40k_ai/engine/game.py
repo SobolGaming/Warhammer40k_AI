@@ -6004,8 +6004,15 @@ class Game(
         }
         if bool(getattr(self, "auto_resolve_dice_rolls", False)):
             try:
-                from ..utility.dice import get_roll
-                roll_spec["fixed_dice"] = [int(get_roll(mortal_die) or 0)]
+                from ..utility.dice import get_roll, suppress_get_roll_requests
+
+                with suppress_get_roll_requests():
+                    if mortal_die == "D3":
+                        raw_roll = int(get_roll("D6", game=self) or 0)
+                        roll_spec["fixed_dice"] = [int((raw_roll + 1) // 2)]
+                        roll_spec["fixed_raw_dice"] = [raw_roll]
+                    else:
+                        roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0)]
             except Exception:
                 pass
         try:
@@ -6136,11 +6143,12 @@ class Game(
             roll_spec["reroll_rules"] = list(reroll_rules)
         if bool(getattr(self, "auto_resolve_dice_rolls", False)):
             try:
-                from ..utility.dice import get_roll
+                from ..utility.dice import get_roll, suppress_get_roll_requests
 
-                roll_spec["fixed_dice"] = [int(get_roll("D6") or 0) for _ in range(int(dice_count))]
-                if reroll_rules:
-                    roll_spec["roll_sequence"] = [int(get_roll("D6") or 0) for _ in range(int(reroll_count))]
+                with suppress_get_roll_requests():
+                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(dice_count))]
+                    if reroll_rules:
+                        roll_spec["roll_sequence"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(reroll_count))]
             except Exception:
                 pass
         try:
@@ -6367,8 +6375,10 @@ class Game(
         }
         if bool(getattr(self, "auto_resolve_dice_rolls", False)):
             try:
-                from ..utility.dice import get_roll
-                roll_spec["fixed_dice"] = [int(get_roll("D6") or 0) for _ in range(int(dice_count))]
+                from ..utility.dice import get_roll, suppress_get_roll_requests
+
+                with suppress_get_roll_requests():
+                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=self) or 0) for _ in range(int(dice_count))]
             except Exception:
                 pass
         try:
@@ -13523,8 +13533,10 @@ class Game(
                 use_aof_rolls = False
             if not fixed_dice:
                 try:
-                    from ..utility.dice import get_dice_roll
-                    fixed_dice = [int(get_dice_roll(6) or 0) for _ in range(dice_count)]
+                    from ..utility.dice import get_roll, suppress_get_roll_requests
+
+                    with suppress_get_roll_requests():
+                        fixed_dice = [int(get_roll("D6", game=self) or 0) for _ in range(dice_count)]
                 except Exception:
                     fixed_dice = []
         else:
@@ -13623,8 +13635,10 @@ class Game(
                     from ..rules import acts_of_faith as aof
                     roll_spec["roll_sequence"] = [int(aof.get_dice_roll(6) or 0) for _ in range(dice_count)]
                 else:
-                    from ..utility.dice import get_dice_roll
-                    roll_spec["roll_sequence"] = [int(get_dice_roll(6) or 0) for _ in range(dice_count)]
+                    from ..utility.dice import get_roll, suppress_get_roll_requests
+
+                    with suppress_get_roll_requests():
+                        roll_spec["roll_sequence"] = [int(get_roll("D6", game=self) or 0) for _ in range(dice_count)]
             except Exception:
                 pass
         req = self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])

@@ -1,4 +1,6 @@
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -9,6 +11,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 # get result of a random dice roll, defaults to D6
+
+
+_SUPPRESS_GET_ROLL_REQUESTS: ContextVar[bool] = ContextVar("_SUPPRESS_GET_ROLL_REQUESTS", default=False)
 
 
 def get_dice_roll(size: int = 6) -> int:
@@ -42,6 +47,33 @@ def get_dice_roll(size: int = 6) -> int:
     return RNG.randint(1, size)
 
 
+@contextmanager
+def suppress_get_roll_requests():
+    token = _SUPPRESS_GET_ROLL_REQUESTS.set(True)
+    try:
+        yield
+    finally:
+        _SUPPRESS_GET_ROLL_REQUESTS.reset(token)
+
+
+def _roll_untracked_die(size: int, game: object | None = None) -> int:
+    if game is not None:
+        rng = getattr(game, "random_source", None)
+        if rng is not None:
+            return int(rng.randint(1, size))
+    return int(RNG.randint(1, size))
+
+
+def _roll_untracked_expr(expr: str, game: object | None = None) -> int:
+    normalized_expr = str(expr or "").strip()
+    if normalized_expr.upper() == "D33":
+        tens = _roll_untracked_die(3, game)
+        ones = _roll_untracked_die(3, game)
+        return int(int(tens) * 10 + int(ones))
+    dice = DiceCollection.from_string(normalized_expr)
+    return int(sum(_roll_untracked_die(int(dice.die_faces), game) for _ in range(int(dice.number))) + int(dice.modifier))
+
+
 def _current_player_id(game: object) -> Optional[str]:
     getter = getattr(game, "get_current_player", None)
     if not callable(getter):
@@ -56,39 +88,61 @@ def _current_player_id(game: object) -> Optional[str]:
     return str(player_id) if player_id is not None else None
 
 
-def _build_legacy_request_spec(expr: str) -> tuple[dict, int]:
+def _resolve_roll_player_id(
+    game: object | None,
+    *,
+    player: object | None = None,
+    player_id: object | None = None,
+) -> Optional[str]:
+    if player_id is not None:
+        return str(player_id)
+    if player is not None:
+        resolved = getattr(player, "id", None)
+        return str(resolved) if resolved is not None else None
+    if game is None:
+        return None
+    return _current_player_id(game)
+
+
+def _build_get_roll_request_spec(
+    expr: str,
+    *,
+    reason: Optional[str] = None,
+    roll_type: Optional[str] = None,
+    command_reroll_allowed: bool = False,
+) -> dict:
     normalized_expr = str(expr or "").strip()
     upper_expr = normalized_expr.upper()
-    roll_ctx = str(get_roll_context() or "").strip()
-    reason = (
-        f"{roll_ctx}: {normalized_expr}"
-        if roll_ctx
-        else f"Legacy get_roll({normalized_expr})"
-    )
-    if upper_expr == "D33":
-        return (
-            {
-                "dice_count": 2,
-                "faces": 3,
-                "display_kind": "d33",
-                "roll_type": "legacy_get_roll",
-                "reason": reason,
-                "show_sum": True,
-                "reroll_rules": [],
-                "command_reroll_allowed": False,
-            },
-            0,
+    normalized_reason = str(reason or "").strip()
+    if not normalized_reason:
+        roll_ctx = str(get_roll_context() or "").strip()
+        normalized_reason = (
+            f"{roll_ctx}: {normalized_expr}"
+            if roll_ctx
+            else f"get_roll({normalized_expr})"
         )
+    normalized_roll_type = str(roll_type or "").strip() or "get_roll"
+    if upper_expr == "D33":
+        return {
+            "dice_count": 2,
+            "faces": 3,
+            "display_kind": "d33",
+            "roll_type": normalized_roll_type,
+            "reason": normalized_reason,
+            "show_sum": True,
+            "reroll_rules": [],
+            "command_reroll_allowed": bool(command_reroll_allowed),
+        }
 
     dice = DiceCollection.from_string(normalized_expr)
     spec = {
         "dice_count": int(dice.number),
         "faces": int(dice.die_faces),
-        "roll_type": "legacy_get_roll",
-        "reason": reason,
+        "roll_type": normalized_roll_type,
+        "reason": normalized_reason,
         "show_sum": True,
         "reroll_rules": [],
-        "command_reroll_allowed": False,
+        "command_reroll_allowed": bool(command_reroll_allowed),
     }
     modifier = int(dice.modifier or 0)
     if modifier:
@@ -103,10 +157,10 @@ def _build_legacy_request_spec(expr: str) -> tuple[dict, int]:
                 "contributor_type": "rule",
             }
         ]
-    return spec, modifier
+    return spec
 
 
-def _resolve_make_roll(game: object, request: object) -> None:
+def _resolve_roll_request(game: object, request: object) -> None:
     resolve_fn = getattr(game, "resolve_decision", None)
     if not callable(resolve_fn):
         return
@@ -133,37 +187,6 @@ def _resolve_make_roll(game: object, request: object) -> None:
             payload={},
         )
     )
-
-
-def _request_legacy_roll(expr: str) -> Optional[int]:
-    game = get_active_game()
-    if game is None:
-        return None
-    request_roll = getattr(game, "request_dice_roll", None)
-    roll_manager = getattr(game, "roll_manager", None)
-    if not callable(request_roll) or roll_manager is None:
-        return None
-    spec, modifier = _build_legacy_request_spec(expr)
-    request = request_roll(
-        player_id=_current_player_id(game),
-        spec=spec,
-        prompt=str(spec.get("reason") or "Roll dice"),
-    )
-    context = dict(getattr(request, "context", {}) or {})
-    roll_id_raw = context.get("roll_id")
-    if roll_id_raw is None:
-        return None
-    roll_id = int(roll_id_raw)
-    state = roll_manager.get_roll(roll_id)
-    if state is None:
-        return None
-    if str(getattr(state, "status", "")) != "rolled":
-        _resolve_make_roll(game, request)
-        state = roll_manager.get_roll(roll_id)
-    if state is None or str(getattr(state, "status", "")) != "rolled":
-        return None
-    base_total = int(getattr(state, "total", 0) or 0)
-    return int(base_total + int(modifier))
 
 @dataclass
 class DiceCollection:
@@ -222,19 +245,56 @@ class DiceCollection:
     def __repr__(self) -> str:
         return f"DiceCollection({self.number}, {self.die_faces}, {self.modifier})"
 
-def get_roll(data: str) -> Union[int, None]:
+def get_roll(
+    data: str,
+    *,
+    game: object | None = None,
+    player: object | None = None,
+    player_id: object | None = None,
+    reason: Optional[str] = None,
+    roll_type: Optional[str] = None,
+    command_reroll_allowed: bool = False,
+) -> Union[int, None]:
     try:
-        try:
-            requested = _request_legacy_roll(str(data or "").strip())
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            requested = None
-        if requested is not None:
-            return int(requested)
-        if str(data or "").strip().upper() == "D33":
+        normalized_expr = str(data or "").strip()
+        active_game = game if game is not None else get_active_game()
+        if bool(_SUPPRESS_GET_ROLL_REQUESTS.get()):
+            return _roll_untracked_expr(normalized_expr, active_game)
+        request_roll = getattr(active_game, "request_dice_roll", None) if active_game is not None else None
+        roll_manager = getattr(active_game, "roll_manager", None) if active_game is not None else None
+        if callable(request_roll) and roll_manager is not None:
+            spec = _build_get_roll_request_spec(
+                normalized_expr,
+                reason=reason,
+                roll_type=roll_type,
+                command_reroll_allowed=command_reroll_allowed,
+            )
+            request = request_roll(
+                player_id=_resolve_roll_player_id(active_game, player=player, player_id=player_id),
+                spec=spec,
+                prompt=str(spec.get("reason") or "Roll dice"),
+            )
+            context = dict(getattr(request, "context", {}) or {})
+            roll_id_raw = context.get("roll_id")
+            if roll_id_raw is None:
+                return None
+            roll_id = int(roll_id_raw)
+            state = roll_manager.get_roll(roll_id)
+            if state is None:
+                return None
+            if str(getattr(state, "status", "")) != "rolled":
+                _resolve_roll_request(active_game, request)
+                state = roll_manager.get_roll(roll_id)
+            if state is None or str(getattr(state, "status", "")) != "rolled":
+                return None
+            base_total = int(getattr(state, "total", 0) or 0)
+            modifier = int(spec.get("sum_modifier", 0) or 0)
+            return int(base_total + modifier)
+        if normalized_expr.upper() == "D33":
             tens = get_dice_roll(3)
             ones = get_dice_roll(3)
             return int(int(tens) * 10 + int(ones))
-        dice = DiceCollection.from_string(data)
+        dice = DiceCollection.from_string(normalized_expr)
         return dice.roll()
     except ValueError as e:
         logger.exception(f"ERROR: {e}")

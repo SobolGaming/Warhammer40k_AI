@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pygame
 
@@ -141,6 +142,14 @@ def test_overlay_lines_use_prebattle_label_when_setup_is_incomplete() -> None:
     assert ("setup phase: DECLARE_BATTLE_FORMATIONS", replay_viewer.OVERLAY_TEXT) in lines
     assert ("decision type: ATTACH_LEADER", replay_viewer.OVERLAY_TEXT) in lines
     assert ("phase: COMMAND_PHASE | turn 1", replay_viewer.OVERLAY_TEXT) not in lines
+
+
+def test_format_roll_line_normalizes_get_roll_reason() -> None:
+    replay_viewer = _load_replay_viewer_module()
+
+    line = replay_viewer._format_roll_line({"reason": "get_roll(1D6)", "dice": [4], "value": 4})
+
+    assert line == "Replay roll: 4"
 
 
 def test_replay_viewer_uses_game_view_post_draw_callback_without_extra_flip(monkeypatch) -> None:
@@ -348,3 +357,19 @@ def test_overlay_header_hitbox_is_drag_handle() -> None:
 
     assert replay_viewer._point_in_overlay_header(layout, (120, 100)) is True
     assert replay_viewer._point_in_overlay_header(layout, (120, 140)) is False
+
+
+def test_overlay_layout_handles_mocked_font_line_sizes(monkeypatch) -> None:
+    replay_viewer = _load_replay_viewer_module()
+    screen = pygame.Surface((1280, 720))
+    mocked_font = SimpleNamespace(get_linesize=MagicMock(return_value=MagicMock()))
+
+    monkeypatch.setattr(replay_viewer, "_overlay_fonts", lambda: (mocked_font, mocked_font))
+
+    layout = replay_viewer._overlay_layout(
+        screen,
+        [("Replay", replay_viewer.OVERLAY_TEXT)] * 4,
+    )
+
+    assert layout["line_height"] == 19
+    assert layout["header_height"] == 38

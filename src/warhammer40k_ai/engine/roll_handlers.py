@@ -296,8 +296,15 @@ def handle_stasis_bomb_mortal_wounds(game: object, state: DiceRollState):
     }
     if bool(getattr(game, "auto_resolve_dice_rolls", False)):
         try:
-            from ..utility.dice import get_roll
-            roll_spec["fixed_dice"] = [int(get_roll(restriction_roll_die) or 0)]
+            from ..utility.dice import get_roll, suppress_get_roll_requests
+
+            with suppress_get_roll_requests():
+                if restriction_roll_die == "D3":
+                    raw_roll = int(get_roll("D6", game=game) or 0)
+                    roll_spec["fixed_dice"] = [int((raw_roll + 1) // 2)]
+                    roll_spec["fixed_raw_dice"] = [raw_roll]
+                else:
+                    roll_spec["fixed_dice"] = [int(get_roll("D6", game=game) or 0)]
         except Exception:
             pass
     try:

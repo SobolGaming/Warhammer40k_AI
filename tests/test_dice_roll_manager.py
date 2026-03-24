@@ -3,7 +3,7 @@ from __future__ import annotations
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.game import Game
-from warhammer40k_ai.utility.dice import get_roll
+from warhammer40k_ai.utility.dice import get_roll, suppress_get_roll_requests
 from warhammer40k_ai.utility.game_context import game_context
 
 
@@ -111,7 +111,7 @@ def test_dice_roll_one_reroll_per_die():
     assert int(rerolled_again.get("reroll_count", 0) or 0) == 1
 
 
-def test_legacy_get_roll_uses_request_roll_with_modifier():
+def test_get_roll_uses_request_roll_with_modifier():
     game = _make_game_with_players()
     game.auto_resolve_dice_rolls = False
     game.random_source = _StubRng([4])
@@ -121,7 +121,7 @@ def test_legacy_get_roll_uses_request_roll_with_modifier():
         if request is not None:
             requested.append(request)
 
-    game.event_system.subscribe("decision_requested", _capture_request, group="test:legacy_get_roll")
+    game.event_system.subscribe("decision_requested", _capture_request, group="test:get_roll")
     with game_context(game):
         value = get_roll("D6+2")
 
@@ -134,20 +134,72 @@ def test_legacy_get_roll_uses_request_roll_with_modifier():
     state = game.roll_manager.get_roll(roll_id)
     assert state is not None
     assert state.final is True
-    assert str((state.spec or {}).get("roll_type", "") or "") == "legacy_get_roll"
+    assert str((state.spec or {}).get("roll_type", "") or "") == "get_roll"
     explanation = dict((state.spec or {}).get("roll_explanation", {}) or {})
     sum_modifier = dict(explanation.get("sum_modifier", {}) or {})
     assert int(sum_modifier.get("total", 0) or 0) == 2
     assert game.decision_queue.get(req.decision_id) is None
 
 
-def test_legacy_get_roll_d33_uses_request_roll():
+def test_get_roll_d33_uses_request_roll():
     game = _make_game_with_players()
     game.auto_resolve_dice_rolls = False
     game.random_source = _StubRng([5, 6])
     with game_context(game):
         value = get_roll("D33")
     assert value == 33
+
+
+def test_get_roll_uses_explicit_game_and_player_metadata():
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = False
+    game.random_source = _StubRng([3])
+    requested = []
+
+    def _capture_request(request=None, **_kwargs):
+        if request is not None:
+            requested.append(request)
+
+    game.event_system.subscribe("decision_requested", _capture_request, group="test:get_roll_explicit_game")
+    value = get_roll(
+        "D6",
+        game=game,
+        player=game.players[1],
+        reason="Determine attacker and defender: p2",
+        roll_type="determine_attacker_defender",
+    )
+
+    assert value == 3
+    req = next(
+        req for req in requested
+        if str(getattr(req, "decision_type", "") or "") == DECISION_REQUEST_DICE_ROLL
+    )
+    assert str(getattr(req, "player_id", "") or "") == "p2"
+
+    roll_id = int((req.context or {}).get("roll_id", 0) or 0)
+    state = game.roll_manager.get_roll(roll_id)
+    assert state is not None
+    assert str((state.spec or {}).get("reason", "") or "") == "Determine attacker and defender: p2"
+    assert str((state.spec or {}).get("roll_type", "") or "") == "determine_attacker_defender"
+
+
+def test_suppressed_get_roll_skips_request_roll_emission():
+    game = _make_game_with_players()
+    game.auto_resolve_dice_rolls = False
+    game.random_source = _StubRng([4])
+    requested = []
+
+    def _capture_request(request=None, **_kwargs):
+        if request is not None:
+            requested.append(request)
+
+    game.event_system.subscribe("decision_requested", _capture_request, group="test:get_roll_suppressed")
+    with game_context(game):
+        with suppress_get_roll_requests():
+            value = get_roll("D6")
+
+    assert value == 4
+    assert requested == []
 
 
 def test_request_d3_roll_uses_d6_mapping_and_records_raw_dice():

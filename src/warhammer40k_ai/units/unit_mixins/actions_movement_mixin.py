@@ -14178,11 +14178,14 @@ class ActionsMovementMixin:
                     spec["miracle_used"] = True
             try:
                 if bool(getattr(game, "auto_resolve_dice_rolls", False)):
-                    if fixed_roll is None:
-                        fixed_val = int(get_roll("D6") or 0)
-                        spec["fixed_dice"] = [fixed_val]
-                    if (reroll_rules or command_reroll_ok) and fixed_source is None:
-                        spec["roll_sequence"] = [int(get_roll("D6") or 0)]
+                    from ...utility.dice import suppress_get_roll_requests
+
+                    with suppress_get_roll_requests():
+                        if fixed_roll is None:
+                            fixed_val = int(get_roll("D6") or 0)
+                            spec["fixed_dice"] = [fixed_val]
+                        if (reroll_rules or command_reroll_ok) and fixed_source is None:
+                            spec["roll_sequence"] = [int(get_roll("D6") or 0)]
             except Exception:
                 pass
             req = None
