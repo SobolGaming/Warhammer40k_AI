@@ -5,6 +5,18 @@ from warhammer40k_ai.utility.event_bus import get_recent_actions, get_recent_dic
 from ..ui_constants import TILE_SIZE
 
 
+def _resolve_log_lines(self, key: str, default_factory):
+    overrides = getattr(self, "hud_log_overrides", None)
+    if isinstance(overrides, dict) and key in overrides:
+        value = overrides.get(key)
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+    return default_factory()
+
+
 def draw_top_status_pane(self, pane_height_px: int) -> None:
     left = self.battlefield_left
     width = self.scaled_battlefield_width
@@ -157,10 +169,10 @@ def draw_bottom_logs_pane(self) -> None:
     p2 = self.player2
     p1_name = p1.name
     p2_name = p2.name
-    p1_actions = get_recent_actions(p1, limit=50)
-    p1_dice = get_recent_dice(p1, limit=50)
-    p2_actions = get_recent_actions(p2, limit=50)
-    p2_dice = get_recent_dice(p2, limit=50)
+    p1_actions = _resolve_log_lines(self, "p1_actions", lambda: get_recent_actions(p1, limit=50))
+    p1_dice = _resolve_log_lines(self, "p1_dice", lambda: get_recent_dice(p1, limit=50))
+    p2_actions = _resolve_log_lines(self, "p2_actions", lambda: get_recent_actions(p2, limit=50))
+    p2_dice = _resolve_log_lines(self, "p2_dice", lambda: get_recent_dice(p2, limit=50))
 
     # Draw left/right rule buttons (stacked)
     half_h = max(1, height // 2)

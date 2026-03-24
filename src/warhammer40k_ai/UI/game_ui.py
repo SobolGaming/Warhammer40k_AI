@@ -2881,6 +2881,7 @@ class GameView:
         self._cp_history_popup = None
         self.popup_overlays = PopupOverlayRenderer()
         self.post_draw_callback = None
+        self.hud_log_overrides = {}
 
         # Blessings of Khorne start-of-battle-round hook
         self._pending_blessings_queue = []

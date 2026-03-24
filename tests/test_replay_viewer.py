@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pygame
 
 import warhammer40k_ai.UI.game_ui as game_ui_mod
+import warhammer40k_ai.UI.layout.hud_layout as hud_layout_mod
 from warhammer40k_ai.UI.game_ui import GameView
 
 
@@ -137,8 +138,9 @@ def test_overlay_lines_use_prebattle_label_when_setup_is_incomplete() -> None:
         SimpleNamespace(setup_complete=False, setup_phase=SimpleNamespace(name="DECLARE_BATTLE_FORMATIONS")),
     )
 
-    assert ("DECLARE_BATTLE_FORMATIONS | pre-battle | ATTACH_LEADER", replay_viewer.OVERLAY_TEXT) in lines
-    assert ("COMMAND_PHASE | turn 1 | ATTACH_LEADER", replay_viewer.OVERLAY_TEXT) not in lines
+    assert ("setup phase: DECLARE_BATTLE_FORMATIONS", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("decision type: ATTACH_LEADER", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("phase: COMMAND_PHASE | turn 1", replay_viewer.OVERLAY_TEXT) not in lines
 
 
 def test_replay_viewer_uses_game_view_post_draw_callback_without_extra_flip(monkeypatch) -> None:
@@ -231,10 +233,118 @@ def test_replay_viewer_uses_game_view_post_draw_callback_without_extra_flip(monk
     monkeypatch.setattr(
         replay_viewer,
         "_draw_overlay",
-        lambda surface, lines: overlay_draws.append((surface, list(lines))),
+        lambda surface, lines, position=None: overlay_draws.append((surface, list(lines))),
     )
 
     assert replay_viewer.main() == 0
     assert created_view["instance"].post_draw_callback is not None
     assert overlay_draws == [(screen, [("Controls", (1, 2, 3))])]
     assert display_state["flip_calls"] == 0
+
+
+def test_build_hud_log_overrides_includes_current_decision_roll(monkeypatch) -> None:
+    replay_viewer = _load_replay_viewer_module()
+    player1 = SimpleNamespace(id="player-1", name="Player 1")
+    player2 = SimpleNamespace(id="player-2", name="Player 2")
+
+    monkeypatch.setattr(
+        replay_viewer,
+        "get_recent_actions",
+        lambda player, limit=50: ["existing action"] if player is player1 else ["other action"],
+    )
+    monkeypatch.setattr(
+        replay_viewer,
+        "get_recent_dice",
+        lambda player, limit=50: ["existing die"] if player is player2 else [],
+    )
+
+    fake_reader = SimpleNamespace(
+        get_events_for_decision=lambda idx: [
+            {
+                "type": "roll_made",
+                "payload": {
+                    "player_id": "player-1",
+                    "reason": "Advance roll",
+                    "dice": [5],
+                    "value": 5,
+                },
+            }
+        ]
+        if idx == 7
+        else []
+    )
+
+    overrides = replay_viewer._build_hud_log_overrides(
+        fake_reader,
+        7,
+        SimpleNamespace(players=[player1, player2]),
+    )
+
+    assert overrides["p1_actions"] == ["existing action"]
+    assert overrides["p1_dice"] == ["Advance roll: 5"]
+    assert overrides["p2_actions"] == ["other action"]
+    assert overrides["p2_dice"] == ["existing die"]
+
+
+def test_draw_bottom_logs_pane_prefers_hud_log_overrides(monkeypatch) -> None:
+    captured: dict[str, list[str]] = {}
+
+    monkeypatch.setattr(hud_layout_mod, "draw_rule_button", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        hud_layout_mod,
+        "draw_scroll_text_box",
+        lambda _self, _rect, lines, key, title="Logs": captured.__setitem__(key, list(lines)),
+    )
+    monkeypatch.setattr(hud_layout_mod, "get_recent_actions", lambda *_args, **_kwargs: ["event action"])
+    monkeypatch.setattr(hud_layout_mod, "get_recent_dice", lambda *_args, **_kwargs: ["event die"])
+
+    screen = pygame.Surface((1200, 240))
+    player1 = SimpleNamespace(name="Player 1")
+    player2 = SimpleNamespace(name="Player 2")
+    view = SimpleNamespace(
+        screen=screen,
+        scaled_info_height=120,
+        scaled_battlefield_height=120,
+        player1=player1,
+        player2=player2,
+        hud_log_overrides={
+            "p1_actions": ["override p1 action"],
+            "p1_dice": ["override p1 die"],
+            "p2_dice": ["override p2 die"],
+            "p2_actions": ["override p2 action"],
+        },
+        _ui_hitboxes={},
+    )
+
+    hud_layout_mod.draw_bottom_logs_pane(view)
+
+    assert captured == {
+        "p1_actions": ["override p1 action"],
+        "p1_dice": ["override p1 die"],
+        "p2_dice": ["override p2 die"],
+        "p2_actions": ["override p2 action"],
+    }
+
+
+def test_overlay_layout_clamps_dragged_position() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    screen = pygame.Surface((1280, 720))
+
+    layout = replay_viewer._overlay_layout(
+        screen,
+        [("Replay", replay_viewer.OVERLAY_TEXT)] * 4,
+        position=(-250, 5000),
+    )
+
+    assert layout["x"] >= replay_viewer.OVERLAY_MARGIN
+    assert layout["y"] >= replay_viewer.OVERLAY_MARGIN
+    assert layout["x"] + layout["width"] <= screen.get_width() - replay_viewer.OVERLAY_MARGIN
+    assert layout["y"] + layout["height"] <= screen.get_height() - replay_viewer.OVERLAY_MARGIN
+
+
+def test_overlay_header_hitbox_is_drag_handle() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    layout = {"x": 100, "y": 80, "width": 320, "height": 240, "header_height": 42}
+
+    assert replay_viewer._point_in_overlay_header(layout, (120, 100)) is True
+    assert replay_viewer._point_in_overlay_header(layout, (120, 140)) is False

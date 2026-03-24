@@ -15,11 +15,16 @@ from warhammer40k_ai.UI.human_interface import HumanUIInterface
 from warhammer40k_ai.UI.window import create_pygame_screen
 from warhammer40k_ai.engine.replay_store import ReplayStoreReader
 from warhammer40k_ai.engine.session_store import load_session_replay_reader
+from warhammer40k_ai.utility.event_bus import clear_recent_logs, get_recent_actions, get_recent_dice
 
 OVERLAY_BG = (16, 18, 24, 216)
 OVERLAY_TEXT = (236, 236, 236)
 OVERLAY_MUTED = (176, 182, 193)
 OVERLAY_ACCENT = (122, 190, 255)
+OVERLAY_BORDER = (88, 103, 129, 255)
+OVERLAY_HEADER_BG = (27, 35, 49, 244)
+OVERLAY_SHADOW = (0, 0, 0, 112)
+OVERLAY_MARGIN = 16
 
 
 def _parse_args() -> argparse.Namespace:
@@ -66,6 +71,7 @@ def _clamp_decision_idx(raw_idx: int, total_decisions: int) -> int:
 
 
 def _load_game_for_index(reader: ReplayStoreReader, decision_idx: int):
+    clear_recent_logs()
     game = reader.reconstruct_game_at_decision(decision_idx, strict=True)
     game.is_authoritative = False
     return game
@@ -147,6 +153,7 @@ def _overlay_lines(
     if decision_idx == 0:
         lines.append(("Initial state before the first recorded decision.", OVERLAY_TEXT))
     else:
+        lines.append(("Showing settled state after the selected decision.", OVERLAY_MUTED))
         step = reader.get_step(decision_idx)
         request_payload = reader.get_request_payload(decision_idx)
         record = reader.get_decision_record(decision_idx)
@@ -154,9 +161,11 @@ def _overlay_lines(
         chosen_label = _chosen_option_label(request_payload, str(step.chosen_option_id))
         if not bool(getattr(game, "setup_complete", True)):
             setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
-            lines.append((f"{setup_phase} | pre-battle | {step.decision_type}", OVERLAY_TEXT))
+            lines.append((f"setup phase: {setup_phase}", OVERLAY_TEXT))
+            lines.append((f"decision type: {step.decision_type}", OVERLAY_TEXT))
         else:
-            lines.append((f"{step.phase} | turn {step.turn_id} | {step.decision_type}", OVERLAY_TEXT))
+            lines.append((f"phase: {step.phase} | turn {step.turn_id}", OVERLAY_TEXT))
+            lines.append((f"decision type: {step.decision_type}", OVERLAY_TEXT))
         lines.append((f"actor {step.actor_player_id} ({step.controller_kind})", OVERLAY_MUTED))
         if prompt:
             for wrapped in _wrap_text(f"prompt: {prompt}", width=68):
@@ -164,7 +173,7 @@ def _overlay_lines(
         if chosen_label:
             lines.append((f"chosen option: {chosen_label}", OVERLAY_TEXT))
         lines.append((f"chosen action: {step.chosen_action_id}", OVERLAY_MUTED))
-        lines.append((f"events: {len(reader.get_events_for_decision(decision_idx))}", OVERLAY_MUTED))
+        lines.append((f"recorded events: {len(reader.get_events_for_decision(decision_idx))}", OVERLAY_MUTED))
         if step.time_budget_ms is not None:
             lines.append((f"time: {step.wall_clock_ms}ms / budget {step.time_budget_ms}ms", OVERLAY_MUTED))
         else:
@@ -184,19 +193,184 @@ def _overlay_lines(
     return lines
 
 
-def _draw_overlay(screen: pygame.Surface, lines: list[tuple[str, tuple[int, int, int]]]) -> None:
-    font = pygame.font.SysFont("Arial", 16)
-    line_height = font.get_linesize()
-    width = min(720, max(420, int(screen.get_width() * 0.42)))
-    height = min(screen.get_height() - 24, 20 + (len(lines) * line_height))
+def _coerce_roll_values(payload: dict[str, object]) -> list[int]:
+    values: list[int] = []
+    for entry in list(payload.get("dice", []) or []):
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, int):
+            values.append(entry)
+            continue
+        if isinstance(entry, float) and entry.is_integer():
+            values.append(int(entry))
+            continue
+        if isinstance(entry, str) and entry.strip().lstrip("-").isdigit():
+            values.append(int(entry.strip()))
+    if values:
+        return values
+    value = payload.get("value")
+    if isinstance(value, bool):
+        return values
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, float) and value.is_integer():
+        return [int(value)]
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return [int(value.strip())]
+    return values
+
+
+def _format_roll_line(payload: dict[str, object]) -> str:
+    dice_values = _coerce_roll_values(payload)
+    if not dice_values:
+        return ""
+    reason = str(payload.get("reason", "") or "").strip()
+    if reason == "Legacy get_roll(1D6)":
+        reason = "Replay roll"
+    if not reason:
+        reason = "Replay roll"
+    dice_text = ", ".join(str(value) for value in dice_values)
+    total = payload.get("value")
+    if len(dice_values) > 1 and isinstance(total, int):
+        return f"{reason}: {dice_text} = {int(total)}"
+    return f"{reason}: {dice_text}"
+
+
+def _build_hud_log_overrides(reader: ReplayStoreReader, decision_idx: int, game) -> dict[str, list[str]]:
+    player1, player2 = _resolve_players(game)
+    overrides = {
+        "p1_actions": list(get_recent_actions(player1, limit=50)),
+        "p1_dice": list(get_recent_dice(player1, limit=50)),
+        "p2_actions": list(get_recent_actions(player2, limit=50)),
+        "p2_dice": list(get_recent_dice(player2, limit=50)),
+    }
+    if decision_idx <= 0:
+        return overrides
+    player_to_key = {
+        str(getattr(player1, "id", "") or ""): "p1_dice",
+        str(getattr(player2, "id", "") or ""): "p2_dice",
+    }
+    for event in reader.get_events_for_decision(decision_idx):
+        if str(event.get("type", "") or "") != "roll_made":
+            continue
+        payload = dict(event.get("payload", {}) or {})
+        player_key = player_to_key.get(str(payload.get("player_id", "") or ""))
+        if not player_key:
+            continue
+        line = _format_roll_line(payload)
+        if not line:
+            continue
+        merged = list(overrides.get(player_key, []))
+        if line not in merged:
+            merged.append(line)
+        overrides[player_key] = merged[-50:]
+    return overrides
+
+
+def _overlay_fonts():
+    font_module = getattr(pygame, "font", None)
+    if font_module is None:
+        return None, None
+    get_init = getattr(font_module, "get_init", None)
+    init = getattr(font_module, "init", None)
+    if callable(get_init) and callable(init) and not bool(get_init()):
+        init()
+    try:
+        return font_module.SysFont("Arial", 18, bold=True), font_module.SysFont("Arial", 16)
+    except (AttributeError, pygame.error):
+        return font_module.Font(None, 18), font_module.Font(None, 16)
+
+
+def _overlay_layout(
+    screen: pygame.Surface,
+    lines: list[tuple[str, tuple[int, int, int]]],
+    position: tuple[int, int] | None = None,
+) -> dict[str, int]:
+    title_font, body_font = _overlay_fonts()
+    if title_font is None or body_font is None:
+        line_height = 19
+        header_height = 38
+    else:
+        line_height = body_font.get_linesize()
+        header_height = title_font.get_linesize() + 16
+    width = min(560, max(420, int(screen.get_width() * 0.34)))
+    height = min(screen.get_height() - (OVERLAY_MARGIN * 2), header_height + 18 + (len(lines) * line_height))
+    if position is None:
+        x = max(OVERLAY_MARGIN, screen.get_width() - width - 24)
+        y = 24
+    else:
+        x = int(position[0])
+        y = int(position[1])
+    max_x = max(OVERLAY_MARGIN, screen.get_width() - width - OVERLAY_MARGIN)
+    max_y = max(OVERLAY_MARGIN, screen.get_height() - height - OVERLAY_MARGIN)
+    return {
+        "x": min(max(OVERLAY_MARGIN, x), max_x),
+        "y": min(max(OVERLAY_MARGIN, y), max_y),
+        "width": int(width),
+        "height": int(height),
+        "header_height": int(header_height),
+        "line_height": int(line_height),
+    }
+
+
+def _point_in_layout(layout: dict[str, int], point: tuple[int, int]) -> bool:
+    px, py = point
+    return (
+        layout["x"] <= int(px) <= (layout["x"] + layout["width"])
+        and layout["y"] <= int(py) <= (layout["y"] + layout["height"])
+    )
+
+
+def _point_in_overlay_header(layout: dict[str, int], point: tuple[int, int]) -> bool:
+    px, py = point
+    return (
+        layout["x"] <= int(px) <= (layout["x"] + layout["width"])
+        and layout["y"] <= int(py) <= (layout["y"] + layout["header_height"])
+    )
+
+
+def _draw_overlay(
+    screen: pygame.Surface,
+    lines: list[tuple[str, tuple[int, int, int]]],
+    position: tuple[int, int] | None = None,
+) -> dict[str, int]:
+    layout = _overlay_layout(screen, lines, position=position)
+    title_font, body_font = _overlay_fonts()
+    x = layout["x"]
+    y = layout["y"]
+    width = layout["width"]
+    height = layout["height"]
+    header_height = layout["header_height"]
+    line_height = layout["line_height"]
+
+    shadow = pygame.Surface((width + 8, height + 8), pygame.SRCALPHA)
+    shadow.fill(OVERLAY_SHADOW)
+    screen.blit(shadow, (x + 6, y + 6))
+
     panel = pygame.Surface((width, height), pygame.SRCALPHA)
-    panel.fill(OVERLAY_BG)
-    y = 10
-    for text, color in lines:
-        rendered = font.render(text, True, color)
-        panel.blit(rendered, (12, y))
-        y += line_height
-    screen.blit(panel, (12, 12))
+    pygame.draw.rect(panel, OVERLAY_BG, panel.get_rect(), border_radius=12)
+    pygame.draw.rect(panel, OVERLAY_BORDER, panel.get_rect(), width=2, border_radius=12)
+    pygame.draw.rect(
+        panel,
+        OVERLAY_HEADER_BG,
+        pygame.Rect(0, 0, width, header_height),
+        border_top_left_radius=12,
+        border_top_right_radius=12,
+    )
+    if title_font is not None:
+        title = title_font.render("Replay Controls", True, OVERLAY_TEXT)
+        panel.blit(title, (16, max(0, (header_height - title.get_height()) // 2)))
+
+    y_cursor = header_height + 10
+    if body_font is not None:
+        for text, color in lines:
+            if (y_cursor + line_height) > (height - 10):
+                break
+            rendered = body_font.render(text, True, color)
+            panel.blit(rendered, (16, y_cursor))
+            y_cursor += line_height
+    screen.blit(panel, (x, y))
+    return layout
 
 
 def main() -> int:
@@ -209,13 +383,25 @@ def main() -> int:
     screen = create_pygame_screen(title=_window_title(metadata, source_label, decision_idx, total_decisions))
     game = _load_game_for_index(reader, decision_idx)
     player1, player2 = _resolve_players(game)
+    hud_log_overrides = _build_hud_log_overrides(reader, decision_idx, game)
     ui_interface = HumanUIInterface(screen.get_width(), screen.get_height())
     game_view = GameView(screen, None, game, getattr(game, "map", None), player1, player2, ui_interface)
+    game_view.hud_log_overrides = hud_log_overrides
     overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions, game)
-    overlay_state = {"lines": overlay_lines}
+    overlay_state = {
+        "lines": overlay_lines,
+        "position": None,
+        "layout": _overlay_layout(screen, overlay_lines, position=None),
+        "dragging": False,
+        "drag_offset": (0, 0),
+    }
+    overlay_state["position"] = (overlay_state["layout"]["x"], overlay_state["layout"]["y"])
 
     def _render_overlay(surface: pygame.Surface) -> None:
-        _draw_overlay(surface, overlay_state["lines"])
+        layout = _draw_overlay(surface, overlay_state["lines"], position=overlay_state["position"])
+        if isinstance(layout, dict):
+            overlay_state["layout"] = layout
+            overlay_state["position"] = (layout["x"], layout["y"])
 
     game_view.post_draw_callback = _render_overlay
 
@@ -232,6 +418,33 @@ def main() -> int:
                 ui_interface.screen_height = event.h
                 game_view.screen = screen
                 game_view.resize_layout(event.w, event.h)
+                layout = _overlay_layout(screen, overlay_state["lines"], position=overlay_state["position"])
+                overlay_state["layout"] = layout
+                overlay_state["position"] = (layout["x"], layout["y"])
+                continue
+            if event.type == pygame.MOUSEBUTTONDOWN and int(getattr(event, "button", 0) or 0) == 1:
+                layout = overlay_state["layout"]
+                pos = tuple(getattr(event, "pos", (0, 0)) or (0, 0))
+                if _point_in_overlay_header(layout, pos):
+                    overlay_state["dragging"] = True
+                    overlay_state["drag_offset"] = (int(pos[0]) - layout["x"], int(pos[1]) - layout["y"])
+                    continue
+                if _point_in_layout(layout, pos):
+                    continue
+            if event.type == pygame.MOUSEBUTTONUP and int(getattr(event, "button", 0) or 0) == 1:
+                if bool(overlay_state["dragging"]):
+                    overlay_state["dragging"] = False
+                    continue
+            if event.type == pygame.MOUSEMOTION and bool(overlay_state["dragging"]):
+                pos = tuple(getattr(event, "pos", (0, 0)) or (0, 0))
+                drag_offset = tuple(overlay_state.get("drag_offset", (0, 0)) or (0, 0))
+                overlay_state["position"] = (
+                    int(pos[0]) - int(drag_offset[0]),
+                    int(pos[1]) - int(drag_offset[1]),
+                )
+                layout = _overlay_layout(screen, overlay_state["lines"], position=overlay_state["position"])
+                overlay_state["layout"] = layout
+                overlay_state["position"] = (layout["x"], layout["y"])
                 continue
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -243,8 +456,12 @@ def main() -> int:
                     game = _load_game_for_index(reader, decision_idx)
                     player1, player2 = _resolve_players(game)
                     game_view.set_game(game, getattr(game, "map", None), player1, player2)
+                    game_view.hud_log_overrides = _build_hud_log_overrides(reader, decision_idx, game)
                     overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions, game)
                     overlay_state["lines"] = overlay_lines
+                    layout = _overlay_layout(screen, overlay_state["lines"], position=overlay_state["position"])
+                    overlay_state["layout"] = layout
+                    overlay_state["position"] = (layout["x"], layout["y"])
                     pygame.display.set_caption(_window_title(metadata, source_label, decision_idx, total_decisions))
                     continue
             if game_view.handle_pygame_event(event):

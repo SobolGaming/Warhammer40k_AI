@@ -29,6 +29,15 @@ def append_dice(player_or_id: object, text: str) -> None:
     q = _get_queue(_DICE, player_id)
     q.append(text)
 
+def clear_recent_logs(player_or_id: object | None = None) -> None:
+    if player_or_id is None:
+        _ACTIONS.clear()
+        _DICE.clear()
+        return
+    player_id = _resolve_player_id(player_or_id)
+    _ACTIONS.pop(player_id, None)
+    _DICE.pop(player_id, None)
+
 def get_recent_actions(player_or_id: object, limit: int = 20) -> List[str]:
     player_id = _resolve_player_id(player_or_id)
     q = _get_queue(_ACTIONS, player_id)

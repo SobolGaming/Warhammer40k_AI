@@ -136,6 +136,10 @@ Viewer controls:
 - `Home` / `End`: jump to first or last decision
 - `Esc`: quit
 
+Viewer notes:
+- Replay controls render in a separate floating dialog pane instead of the battlefield HUD, and can be dragged by the panel header.
+- Bottom action/dice panes are rebuilt for the selected replay decision on every seek, so stepping backward clears future log entries.
+
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
 
 If your source records were produced under older rules-pack identifiers, relabel before manifest gating:
