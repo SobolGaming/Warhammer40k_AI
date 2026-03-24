@@ -2880,6 +2880,7 @@ class GameView:
         self._vp_history_popup = None
         self._cp_history_popup = None
         self.popup_overlays = PopupOverlayRenderer()
+        self.post_draw_callback = None
 
         # Blessings of Khorne start-of-battle-round hook
         self._pending_blessings_queue = []
@@ -21676,6 +21677,8 @@ class GameView:
             self.popup_overlays.draw_vp_history_popup(self._vp_history_popup.get("player"))
         if getattr(self, '_cp_history_popup', None):
             self.popup_overlays.draw_cp_history_popup(self._cp_history_popup.get("player"))
+        if callable(getattr(self, "post_draw_callback", None)):
+            self.post_draw_callback(self.screen)
         pygame.display.update()
 
     # Note: on_key_press is now handled by phase-specific handlers in PhaseManager

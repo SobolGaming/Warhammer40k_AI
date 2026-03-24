@@ -136,6 +136,7 @@ def _overlay_lines(
     source_label: str,
     decision_idx: int,
     total_decisions: int,
+    game,
 ) -> list[tuple[str, tuple[int, int, int]]]:
     lines: list[tuple[str, tuple[int, int, int]]] = []
     label = str(metadata.get("label", "") or "").strip()
@@ -151,7 +152,11 @@ def _overlay_lines(
         record = reader.get_decision_record(decision_idx)
         prompt = str(request_payload.get("prompt", "") or "").strip()
         chosen_label = _chosen_option_label(request_payload, str(step.chosen_option_id))
-        lines.append((f"{step.phase} | turn {step.turn_id} | {step.decision_type}", OVERLAY_TEXT))
+        if not bool(getattr(game, "setup_complete", True)):
+            setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
+            lines.append((f"{setup_phase} | pre-battle | {step.decision_type}", OVERLAY_TEXT))
+        else:
+            lines.append((f"{step.phase} | turn {step.turn_id} | {step.decision_type}", OVERLAY_TEXT))
         lines.append((f"actor {step.actor_player_id} ({step.controller_kind})", OVERLAY_MUTED))
         if prompt:
             for wrapped in _wrap_text(f"prompt: {prompt}", width=68):
@@ -206,7 +211,13 @@ def main() -> int:
     player1, player2 = _resolve_players(game)
     ui_interface = HumanUIInterface(screen.get_width(), screen.get_height())
     game_view = GameView(screen, None, game, getattr(game, "map", None), player1, player2, ui_interface)
-    overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions)
+    overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions, game)
+    overlay_state = {"lines": overlay_lines}
+
+    def _render_overlay(surface: pygame.Surface) -> None:
+        _draw_overlay(surface, overlay_state["lines"])
+
+    game_view.post_draw_callback = _render_overlay
 
     clock = pygame.time.Clock()
     running = True
@@ -232,15 +243,14 @@ def main() -> int:
                     game = _load_game_for_index(reader, decision_idx)
                     player1, player2 = _resolve_players(game)
                     game_view.set_game(game, getattr(game, "map", None), player1, player2)
-                    overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions)
+                    overlay_lines = _overlay_lines(reader, metadata, source_label, decision_idx, total_decisions, game)
+                    overlay_state["lines"] = overlay_lines
                     pygame.display.set_caption(_window_title(metadata, source_label, decision_idx, total_decisions))
                     continue
             if game_view.handle_pygame_event(event):
                 continue
 
         game_view.draw()
-        _draw_overlay(screen, overlay_lines)
-        pygame.display.flip()
         clock.tick(60)
 
     pygame.quit()

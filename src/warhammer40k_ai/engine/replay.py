@@ -11,6 +11,10 @@ from .snapshot import load_game_snapshot
 def prepare_replay(snapshot: dict, event_tail: Iterable[dict]) -> "Game":
     """Load a snapshot and attach a deterministic event log in replay mode."""
     game = load_game_snapshot(snapshot)
+    game.auto_resolve_dice_rolls = False
+    controller_hub = getattr(game, "decision_controller_hub", None)
+    if controller_hub is not None and hasattr(controller_hub, "detach"):
+        controller_hub.detach()
     existing_log = getattr(game, "event_log", None)
     if existing_log is not None:
         existing_log.detach()
