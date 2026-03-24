@@ -914,6 +914,91 @@ class ReplayStoreReader:
         )
 
     @staticmethod
+    def _selected_option_payload(request: DecisionRequest, result: DecisionResult) -> dict[str, Any]:
+        for option in list(getattr(request, "options", []) or []):
+            if getattr(option, "option_id", None) == getattr(result, "option_id", None):
+                return dict(getattr(option, "payload", {}) or {})
+        return {}
+
+    @classmethod
+    def _apply_reconstructed_setup_side_effects(
+        cls,
+        game: Game,
+        request: DecisionRequest,
+        result: DecisionResult,
+    ) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != "CHOOSE_DEPLOYMENT_ZONE":
+            return
+        chooser_player_id = str(getattr(request, "player_id", None) or getattr(result, "player_id", None) or "")
+        players = list(getattr(game, "players", []) or [])
+        if len(players) != 2 or not chooser_player_id:
+            return
+        chooser_idx = next(
+            (idx for idx, player in enumerate(players) if str(getattr(player, "id", "") or "") == chooser_player_id),
+            None,
+        )
+        if chooser_idx is None:
+            return
+        chosen_payload = cls._selected_option_payload(request, result)
+        chosen_zone_choice_id = str(chosen_payload.get("zone_choice_id", "") or "")
+        chosen_zone_key = str(chosen_payload.get("zone_key", "") or "")
+        if not chosen_zone_choice_id and not chosen_zone_key:
+            return
+        available_zone_choices = list(dict(getattr(request, "context", {}) or {}).get("available_zone_choices", []) or [])
+        chosen_zone: dict[str, Any] | None = None
+        other_zone: dict[str, Any] | None = None
+        for entry in available_zone_choices:
+            data = dict(entry or {})
+            choice_id = str(data.get("zone_choice_id", "") or "")
+            zone_key = str(data.get("zone_key", "") or "")
+            if (
+                (chosen_zone_choice_id and choice_id == chosen_zone_choice_id)
+                or (chosen_zone_key and zone_key == chosen_zone_key)
+            ):
+                chosen_zone = data
+            elif other_zone is None:
+                other_zone = data
+        if chosen_zone is None or other_zone is None:
+            return
+        existing_by_type: dict[str, dict[str, Any]] = {}
+        for zone in list(getattr(game, "deployment_zones", {}).values() or []):
+            if not isinstance(zone, dict):
+                continue
+            zone_type = str(zone.get("zone_type", "") or "")
+            if zone_type and zone_type not in existing_by_type:
+                existing_by_type[zone_type] = dict(zone)
+
+        def _zone_for_choice(choice: dict[str, Any]) -> dict[str, Any]:
+            zone_type = str(choice.get("zone_type", "") or "")
+            zone_payload = dict(existing_by_type.get(zone_type, {}) or {})
+            if not zone_payload:
+                return {}
+            zone_payload["name"] = str(choice.get("zone_name", "") or zone_payload.get("name", "") or "")
+            zone_payload["zone_type"] = zone_type or str(zone_payload.get("zone_type", "") or "")
+            return zone_payload
+
+        chooser = players[int(chooser_idx)]
+        other = players[1 - int(chooser_idx)]
+        chooser_zone = _zone_for_choice(chosen_zone)
+        other_zone_payload = _zone_for_choice(other_zone)
+        if not chooser_zone or not other_zone_payload:
+            return
+        # Deployment-zone ownership is applied by the surrounding setup flow, not by
+        # the CHOOSE_DEPLOYMENT_ZONE decision handler itself. Replay reconstruction
+        # needs to restore that player->zone mapping explicitly so later deployment
+        # legality checks use the recorded zone ownership.
+        game.deployment_zones = {
+            str(getattr(chooser, "id", "") or ""): chooser_zone,
+            str(getattr(other, "id", "") or ""): other_zone_payload,
+        }
+        game.defender_index = int(chooser_idx)
+        game.attacker_index = int(1 - chooser_idx)
+        game.deployment_turn_index = int(chooser_idx)
+        game.current_player_index = int(chooser_idx)
+
+    @staticmethod
     def _prime_request_state(game: Game, request: DecisionRequest) -> None:
         if request is None:
             return
@@ -1064,6 +1149,8 @@ class ReplayStoreReader:
                 game.decision_queue.add(request)
             result = self._result_for_record(request, record, request_payload=payload, game=game)
             apply_result = game.resolve_decision(result)
+            if bool(getattr(apply_result, "ok", False)):
+                self._apply_reconstructed_setup_side_effects(game, request, result)
             if bool(strict) and not bool(getattr(apply_result, "ok", False)):
                 errors = list(getattr(apply_result, "errors", ()) or ())
                 raise ValueError(f"Replay failed at decision {decision_id}: {errors}")

@@ -12,10 +12,11 @@ from warhammer40k_ai.engine.command_dispatcher import register_command_handler
 from warhammer40k_ai.engine.command_kinds import CMD_RESOLVE_DECISION
 from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.engine.decision_dispatcher import register_decision_handler
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType
 from warhammer40k_ai.engine.replay_store import (
     REPLAY_RECORDING_GROUP,
     ReplayStoreReader,
@@ -30,6 +31,7 @@ from warhammer40k_ai.utility.game_context import game_context
 TEST_REPLAY_NOP_COMMAND = "TEST_REPLAY_NOP_COMMAND"
 TEST_DYNAMIC_REQUEST_COMMAND = "TEST_DYNAMIC_REQUEST_COMMAND"
 TEST_DYNAMIC_REQUEST_DECISION = "TEST_DYNAMIC_REQUEST_DECISION"
+TEST_ZONE_DEPENDENT_DECISION = "TEST_ZONE_DEPENDENT_DECISION"
 
 
 def _build_game() -> tuple[Game, Player]:
@@ -96,6 +98,16 @@ def _register_test_dynamic_request_handlers() -> None:
     )
 
 
+def _register_test_zone_dependent_handler() -> None:
+    if TEST_ZONE_DEPENDENT_DECISION in decision_dispatcher._HANDLERS:
+        return
+    register_decision_handler(
+        TEST_ZONE_DEPENDENT_DECISION,
+        validate=_validate_test_zone_dependent_decision,
+        apply=lambda _game, _request, _result: True,
+    )
+
+
 def _apply_test_dynamic_request_command(game: Game, command: GameCommand) -> DecisionRequest:
     primary_id = str(uuid.uuid4())
     setattr(game, "_test_dynamic_entities", {"primary": primary_id})
@@ -138,6 +150,22 @@ def _apply_test_dynamic_request_decision(game: Game, request: DecisionRequest, r
     entity_id = dict(getattr(selected_option, "payload", {}) or {}).get("entity_id", None)
     setattr(game, "_test_dynamic_choice", entity_id)
     return entity_id
+
+
+def _validate_test_zone_dependent_decision(game: Game, request: DecisionRequest, result: DecisionResult):
+    selected_option = next(
+        (option for option in list(getattr(request, "options", []) or []) if option.option_id == result.option_id),
+        None,
+    )
+    if selected_option is None:
+        return ("Selected option is missing.",)
+    player_id = str(getattr(request, "player_id", None) or getattr(result, "player_id", None) or "")
+    zone = dict(getattr(game, "deployment_zones", {}).get(player_id, {}) or {})
+    if str(zone.get("zone_type", "") or "") != str(request.context.get("expected_zone_type", "") or ""):
+        return ("Unexpected deployment zone type.",)
+    if str(zone.get("name", "") or "") != str(request.context.get("expected_zone_name", "") or ""):
+        return ("Unexpected deployment zone name.",)
+    return ()
 
 
 def test_replay_store_records_decisions_events_and_keyframes(tmp_path) -> None:
@@ -348,6 +376,120 @@ def test_replay_store_reconstructs_steps_with_leading_dice_roll_events(tmp_path)
 
     replayed_game = reader.reconstruct_game_at_decision(1, strict=True)
     assert _canonical_snapshot(replayed_game.save_snapshot()) == _canonical_snapshot(expected_snapshot)
+
+
+def test_replay_store_reapplies_recorded_deployment_zone_ownership(tmp_path) -> None:
+    _register_test_zone_dependent_handler()
+    player1 = Player("P1")
+    player2 = Player("P2")
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
+    game.turn = 1
+    attacker_zone = DeploymentZone(
+        name="Attacker Zone",
+        zone_type=DeploymentZoneType.ATTACKER,
+        vertices=[(30.0, 0.0), (60.0, 0.0), (60.0, 22.0), (30.0, 22.0)],
+    )
+    defender_zone = DeploymentZone(
+        name="Defender Zone",
+        zone_type=DeploymentZoneType.DEFENDER,
+        vertices=[(0.0, 22.0), (30.0, 22.0), (30.0, 44.0), (0.0, 44.0)],
+    )
+    game.deployment_zones = {
+        player1.id: {"name": "Attacker Zone", "zone_type": "attacker", "mission_zones": [attacker_zone]},
+        player2.id: {"name": "Defender Zone", "zone_type": "defender", "mission_zones": [defender_zone]},
+    }
+    replay_path = tmp_path / "deployment_zone_assignment.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-zone-assignment",
+        label="Replay Deployment Zone Assignment",
+    )
+
+    zone_choice_context = {
+        "available_zone_choice_ids": ["zone:player2", "zone:player1"],
+        "available_zone_keys": ["zone:player2", "zone:player1"],
+        "available_zone_choices": [
+            {
+                "zone_choice_id": "zone:player2",
+                "zone_key": "zone:player2",
+                "zone_name": "Player 2's Zone",
+                "zone_type": "attacker",
+                "zone_index": 1,
+            },
+            {
+                "zone_choice_id": "zone:player1",
+                "zone_key": "zone:player1",
+                "zone_name": "Player 1's Zone",
+                "zone_type": "defender",
+                "zone_index": 0,
+            },
+        ],
+    }
+    zone_request = DecisionRequest.create(
+        DECISION_CHOOSE_DEPLOYMENT_ZONE,
+        "Choose deployment zone.",
+        player_id=player2.id,
+        options=[
+            DecisionOption.create(
+                "Player 2's Zone",
+                payload={
+                    "zone_choice_id": "zone:player2",
+                    "zone_key": "zone:player2",
+                    "zone_name": "Player 2's Zone",
+                    "zone_type": "attacker",
+                    "zone_index": 1,
+                },
+            ),
+            DecisionOption.create(
+                "Player 1's Zone",
+                payload={
+                    "zone_choice_id": "zone:player1",
+                    "zone_key": "zone:player1",
+                    "zone_name": "Player 1's Zone",
+                    "zone_type": "defender",
+                    "zone_index": 0,
+                },
+            ),
+        ],
+        context=zone_choice_context,
+    )
+    game.decision_queue.add(zone_request)
+    game.event_system.publish("decision_requested", request=zone_request, game=game)
+    _resolve_option(game, zone_request, option_index=0)
+
+    game.deployment_zones = {
+        player2.id: {"name": "Player 2's Zone", "zone_type": "attacker", "mission_zones": [attacker_zone]},
+        player1.id: {"name": "Player 1's Zone", "zone_type": "defender", "mission_zones": [defender_zone]},
+    }
+    game.defender_index = 1
+    game.attacker_index = 0
+    game.deployment_turn_index = 1
+    game.current_player_index = 1
+
+    validation_request = DecisionRequest.create(
+        TEST_ZONE_DEPENDENT_DECISION,
+        "Check deployment zone ownership.",
+        player_id=player2.id,
+        options=[DecisionOption.create("Continue", payload={})],
+        context={"expected_zone_name": "Player 2's Zone", "expected_zone_type": "attacker"},
+    )
+    game.decision_queue.add(validation_request)
+    game.event_system.publish("decision_requested", request=validation_request, game=game)
+    _resolve_option(game, validation_request, option_index=0)
+
+    reader = ReplayStoreReader(replay_path)
+    replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
+
+    assert replayed_game.deployment_zones[player2.id]["name"] == "Player 2's Zone"
+    assert replayed_game.deployment_zones[player2.id]["zone_type"] == "attacker"
+    assert replayed_game.deployment_zones[player2.id]["mission_zones"][0].vertices == attacker_zone.vertices
+    assert replayed_game.deployment_zones[player1.id]["name"] == "Player 1's Zone"
+    assert replayed_game.deployment_zones[player1.id]["zone_type"] == "defender"
+    assert replayed_game.deployment_zones[player1.id]["mission_zones"][0].vertices == defender_zone.vertices
+    assert int(replayed_game.deployment_turn_index) == 1
+    assert int(replayed_game.current_player_index) == 1
 
 
 def test_enable_decision_replay_recording_is_idempotent(tmp_path) -> None:

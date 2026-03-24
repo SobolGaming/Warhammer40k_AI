@@ -67,6 +67,9 @@ Reader API supports:
 State reconstruction strategy:
 1. Load nearest keyframe at or before `N`.
 2. Replay DecisionRecords from `keyframe_idx+1..N` with strict mode and event tail.
+3. Reapply setup-only ownership side effects that are carried by recorded decisions rather than
+   by standalone decision handlers. `CHOOSE_DEPLOYMENT_ZONE` restores the recorded player-to-zone
+   assignment so later deployment legality checks use the same zone ownership as the original game.
 
 Reconstruction guarantee:
 - If a keyframe exists exactly at decision `N`, that snapshot already reflects
