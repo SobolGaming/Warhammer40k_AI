@@ -335,7 +335,7 @@ def test_draw_bottom_logs_pane_prefers_hud_log_overrides(monkeypatch) -> None:
     }
 
 
-def test_overlay_layout_clamps_dragged_position() -> None:
+def test_overlay_layout_allows_partial_offscreen_dragging() -> None:
     replay_viewer = _load_replay_viewer_module()
     screen = pygame.Surface((1280, 720))
 
@@ -343,6 +343,23 @@ def test_overlay_layout_clamps_dragged_position() -> None:
         screen,
         [("Replay", replay_viewer.OVERLAY_TEXT)] * 4,
         position=(-250, 5000),
+    )
+
+    assert layout["x"] >= (replay_viewer.OVERLAY_GRAB_MARGIN - layout["width"])
+    assert layout["x"] <= (screen.get_width() - replay_viewer.OVERLAY_GRAB_MARGIN)
+    assert layout["y"] >= (replay_viewer.OVERLAY_GRAB_MARGIN - layout["height"])
+    assert layout["y"] <= (screen.get_height() - replay_viewer.OVERLAY_GRAB_MARGIN)
+    assert layout["x"] < replay_viewer.OVERLAY_MARGIN
+    assert layout["y"] > (screen.get_height() - layout["height"] - replay_viewer.OVERLAY_MARGIN)
+
+
+def test_overlay_layout_defaults_to_fully_visible_panel() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    screen = pygame.Surface((1280, 720))
+
+    layout = replay_viewer._overlay_layout(
+        screen,
+        [("Replay", replay_viewer.OVERLAY_TEXT)] * 4,
     )
 
     assert layout["x"] >= replay_viewer.OVERLAY_MARGIN
@@ -357,6 +374,15 @@ def test_overlay_header_hitbox_is_drag_handle() -> None:
 
     assert replay_viewer._point_in_overlay_header(layout, (120, 100)) is True
     assert replay_viewer._point_in_overlay_header(layout, (120, 140)) is False
+
+
+def test_overlay_body_is_also_drag_handle() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    layout = {"x": 100, "y": 80, "width": 320, "height": 240, "header_height": 42}
+
+    assert replay_viewer._point_in_overlay_drag_region(layout, (120, 100)) is True
+    assert replay_viewer._point_in_overlay_drag_region(layout, (120, 200)) is True
+    assert replay_viewer._point_in_overlay_drag_region(layout, (50, 50)) is False
 
 
 def test_overlay_layout_handles_mocked_font_line_sizes(monkeypatch) -> None:

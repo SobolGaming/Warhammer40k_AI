@@ -25,6 +25,7 @@ OVERLAY_BORDER = (88, 103, 129, 255)
 OVERLAY_HEADER_BG = (27, 35, 49, 244)
 OVERLAY_SHADOW = (0, 0, 0, 112)
 OVERLAY_MARGIN = 16
+OVERLAY_GRAB_MARGIN = 48
 
 
 def _parse_args() -> argparse.Namespace:
@@ -315,14 +316,20 @@ def _overlay_layout(
     if position is None:
         x = max(OVERLAY_MARGIN, screen.get_width() - width - 24)
         y = 24
+        min_x = OVERLAY_MARGIN
+        max_x = max(OVERLAY_MARGIN, screen.get_width() - width - OVERLAY_MARGIN)
+        min_y = OVERLAY_MARGIN
+        max_y = max(OVERLAY_MARGIN, screen.get_height() - height - OVERLAY_MARGIN)
     else:
         x = int(position[0])
         y = int(position[1])
-    max_x = max(OVERLAY_MARGIN, screen.get_width() - width - OVERLAY_MARGIN)
-    max_y = max(OVERLAY_MARGIN, screen.get_height() - height - OVERLAY_MARGIN)
+        min_x = min(OVERLAY_MARGIN, OVERLAY_GRAB_MARGIN - width)
+        max_x = max(OVERLAY_MARGIN, screen.get_width() - OVERLAY_GRAB_MARGIN)
+        min_y = min(OVERLAY_MARGIN, OVERLAY_GRAB_MARGIN - height)
+        max_y = max(OVERLAY_MARGIN, screen.get_height() - OVERLAY_GRAB_MARGIN)
     return {
-        "x": min(max(OVERLAY_MARGIN, x), max_x),
-        "y": min(max(OVERLAY_MARGIN, y), max_y),
+        "x": min(max(min_x, x), max_x),
+        "y": min(max(min_y, y), max_y),
         "width": int(width),
         "height": int(height),
         "header_height": int(header_height),
@@ -344,6 +351,10 @@ def _point_in_overlay_header(layout: dict[str, int], point: tuple[int, int]) -> 
         layout["x"] <= int(px) <= (layout["x"] + layout["width"])
         and layout["y"] <= int(py) <= (layout["y"] + layout["header_height"])
     )
+
+
+def _point_in_overlay_drag_region(layout: dict[str, int], point: tuple[int, int]) -> bool:
+    return _point_in_layout(layout, point)
 
 
 def _draw_overlay(
@@ -442,7 +453,7 @@ def main() -> int:
             if event.type == pygame.MOUSEBUTTONDOWN and int(getattr(event, "button", 0) or 0) == 1:
                 layout = overlay_state["layout"]
                 pos = tuple(getattr(event, "pos", (0, 0)) or (0, 0))
-                if _point_in_overlay_header(layout, pos):
+                if _point_in_overlay_drag_region(layout, pos):
                     overlay_state["dragging"] = True
                     overlay_state["drag_offset"] = (int(pos[0]) - layout["x"], int(pos[1]) - layout["y"])
                     continue

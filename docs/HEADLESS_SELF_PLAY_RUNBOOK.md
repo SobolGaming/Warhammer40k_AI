@@ -137,7 +137,7 @@ Viewer controls:
 - `Esc`: quit
 
 Viewer notes:
-- Replay controls render in a separate floating dialog pane instead of the battlefield HUD, and can be dragged by the panel header.
+- Replay controls render in a separate floating dialog pane instead of the battlefield HUD, can be dragged from anywhere on the panel, and may hang partly off-screen while leaving a visible grab strip.
 - Bottom action/dice panes are rebuilt for the selected replay decision on every seek, so stepping backward clears future log entries.
 
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
