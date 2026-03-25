@@ -1036,7 +1036,7 @@ class FightPhaseManager:
         self.active_player = opponent_player if self.active_player == current_player else current_player
 
         # Clear enemy model cache when switching players since enemy positions may have changed
-        clear_enemy_model_cache(id(self.game.map))
+        clear_enemy_model_cache(self.game.map)
         logger.info(f"Fight phase player switched to {self.active_player.name} - cleared enemy model cache")
 
         # Request next unit selection

@@ -125,5 +125,5 @@ def test_phase_a_build_collision_trees_uses_army_identity_not_faction() -> None:
     assert enemy_count == 1
     assert friendly_count == 1
 
-    expected_cache_key = (id(game_map), ("army", id(army_a)))
+    expected_cache_key = (calcs.game_map_cache_key(game_map), ("army", id(army_a)))
     assert expected_cache_key in calcs._enemy_model_cache

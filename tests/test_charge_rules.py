@@ -134,7 +134,7 @@ def test_attempt_charge_can_route_around_terrain_to_reach_target():
     )
     game_map.add_terrain_feature(ruins)
 
-    with patch("warhammer40k_ai.utility.dice.get_dice_roll", return_value=6):
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=6):
         assert game.attempt_charge(charger, target) is True
 
     assert game_map.is_within_engagement_range(charger, target) is True

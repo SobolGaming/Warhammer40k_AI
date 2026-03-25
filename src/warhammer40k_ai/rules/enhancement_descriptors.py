@@ -6767,6 +6767,55 @@ _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.values()
 }
 
+_TYRANIDS_CRUSHER_STAMPEDE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008404002": EnhancementToolDescriptor(
+        enhancement_id="000008404002",
+        name="Ominous Presence",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="objective_control_bonus",
+        effect_params={"objective_control_bonus": 3, "bearer_only": True},
+    ),
+    "000008404003": EnhancementToolDescriptor(
+        enhancement_id="000008404003",
+        name="Enraged Reserves",
+        timing="on_bearer_destroyed_by_melee",
+        target="bearer",
+        duration="instant",
+        effect="melee_fight_on_death_after_attacks",
+        effect_params={"roll": "D6", "success_on": 3, "bearer_only": True},
+    ),
+    "000008404004": EnhancementToolDescriptor(
+        enhancement_id="000008404004",
+        name="Null Nodules",
+        timing="when_psychic_attack_allocated",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="conditional_feel_no_pain",
+        effect_params={
+            "feel_no_pain": 5,
+            "condition": "against psychic attacks",
+            "once_per_battle_key": "null_nodules",
+            "bearer_only": True,
+            "optional": True,
+        },
+    ),
+    "000008404005": EnhancementToolDescriptor(
+        enhancement_id="000008404005",
+        name="Monstrous Nemesis",
+        timing="passive",
+        target="bearer_melee_attacks_vs_monster_or_vehicle",
+        duration="constant",
+        effect="melee_wound_bonus",
+        effect_params={"wound_bonus": 1, "target_keywords": ("MONSTER", "VEHICLE"), "bearer_only": True},
+    ),
+}
+
+_TYRANIDS_CRUSHER_STAMPEDE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_CRUSHER_STAMPEDE_DESCRIPTORS.values()
+}
+
 _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008412003": EnhancementToolDescriptor(
         enhancement_id="000008412003",
@@ -7664,6 +7713,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TYRANIDS_CRUSHER_STAMPEDE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7828,6 +7880,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
+        or _TYRANIDS_CRUSHER_STAMPEDE_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)
         or _ORKS_BULLY_BOYZ_BY_NAME.get(key)
         or _ORKS_DA_BIG_HUNT_BY_NAME.get(key)

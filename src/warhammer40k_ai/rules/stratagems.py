@@ -54,6 +54,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COORDINATED TRAP",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
+    "CORROSIVE VISCERA",
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
@@ -85,6 +86,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS IRE",
     "EYE OF THE GODS",
     "FESTERING MIASMA",
+    "MASSIVE IMPACT",
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
@@ -122,9 +124,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SECURE BIOMASS",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "RAMPAGING MONSTROSITIES",
     "SELFLESS DEMISE",
+    "SAVAGE ROAR",
     "STEADFAST DETERMINATION",
     "SPECIMENS FOR THE SPIDER",
+    "SWARM-GUIDED SALVOES",
     "TO THE FAVOURED THE SPOILS",
     "ENCIRCLING SURGE",
     "BRINGERS OF DESPAIR",
@@ -698,7 +703,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "LIGHTNING-FAST REACTIONS",
     "A DEADLY SNARE",
     "A CEASELESS CAUSE",
+    "CORROSIVE VISCERA",
     "LYING IN WAIT",
+    "MASSIVE IMPACT",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -708,6 +715,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REVENGE OF THE RUBRICAE",
     "RAPTORIAL VIGILANCE",
     "SAVAGE ECHOES",
+    "SAVAGE ROAR",
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
     "THUNDEROUS PURSUIT",
@@ -1872,6 +1880,7 @@ class StratagemManager(
             "THUNDEROUS PURSUIT",
             "COILS OF DECEPTION",
             "RELENTLESS TERROR",
+            "MASSIVE IMPACT",
             "RELENTLESS PURSUIT",
             "PREDATORY PURSUIT",
             "MILLENNIA OF EXPERIENCE",
@@ -1940,6 +1949,7 @@ class StratagemManager(
 
         if names & {
             "SUMMONED BY SLAUGHTER",
+            "CORROSIVE VISCERA",
             "PUTRID DETONATION",
             "SANCTIFIED IMMOLATION",
             "STAGED DEATH",
@@ -2162,6 +2172,7 @@ class StratagemManager(
             "HYPERSTIMMS",
             "SHIELD NODES",
             "STRENGTH IN UNITY",
+            "SAVAGE ROAR",
             "ETERNAL HATE",
             "NEVER OUTGUNNED",
             "VENGEFUL DESTRUCTION",
@@ -2454,6 +2465,9 @@ class StratagemManager(
             "SCRAMBLED COORDINATES",
             "ONLY IN DEATH DOES DUTY END",
             "RELENTLESS TERROR",
+            "RAMPAGING MONSTROSITIES",
+            "SWARM-GUIDED SALVOES",
+            "UNTRAMMELLED FEROCITY",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -4821,6 +4835,73 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase and a TYRANIDS unit within Synapse Range that Fell Back this phase"
             return result
+        if name_u == "CORROSIVE VISCERA":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() == "CORROSIVE VISCERA":
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires Shooting/Fight model-destroyed-before-removal trigger for a just-destroyed non-FLY TYRANIDS MONSTER model with Deadly Demise"
+            return result
+        if name_u == "MASSIVE IMPACT":
+            source_model_candidates = list(context.get("source_model_candidates") or [])
+            if not source_model_candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "MASSIVE IMPACT":
+                        continue
+                    source_model_candidates = list(reaction.get("source_model_candidates") or [])
+                    if source_model_candidates or reaction.get("target_model") is not None:
+                        result["available"] = True
+                        result["reason"] = None
+                        return result
+                source_unit = context.get("source_unit") or context.get("unit") or context.get("target_unit")
+                if source_unit is not None:
+                    source_model_candidates = self._tyr_massive_impact_source_models(source_unit)
+            if source_model_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase trigger after a TYRANIDS MONSTER model ends a Charge move and an enemy unit within that model's Engagement Range"
+            return result
+        if name_u == "RAMPAGING MONSTROSITIES":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_rampaging_monstrosities_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase and a friendly TYRANIDS MONSTER unit that has not been selected to fight this phase"
+            return result
+        if name_u == "SAVAGE ROAR":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_savage_roar_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight target-selection trigger with an enemy unit that selected one of your TYRANIDS MONSTER units as a target"
+            return result
+        if name_u == "SWARM-GUIDED SALVOES":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_swarm_guided_salvoes_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a friendly TYRANIDS MONSTER unit that has not been selected to shoot this phase"
+            return result
         if name_u == "ABLATIVE CARAPACE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -5573,6 +5654,8 @@ class StratagemManager(
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
             "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
+            "CORROSIVE VISCERA": "Target: just-destroyed non-FLY TYRANIDS MONSTER model with Deadly Demise",
+            "MASSIVE IMPACT": "Charge phase, just after a TYRANIDS MONSTER model ends a Charge move: select that model and one enemy unit within its Engagement Range; roll six D6 and inflict 1 mortal wound for each 4+",
             "ABLATIVE CARAPACE": "Opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets: selected HARVESTER unit gains Feel No Pain 5+, or Feel No Pain 4+ while within range of a controlled objective, until end of phase",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
@@ -5588,16 +5671,19 @@ class StratagemManager(
             "PULSE ONSLAUGHT": "Target: one enemy non-MONSTER/non-VEHICLE unit hit by your non-KROOT T'AU EMPIRE INFANTRY unit that just shot; enemy is shaken (-2 Move, -2 Advance, -2 Charge) until end of opponent's next turn",
             "RAPACIOUS HUNGER": "Your Fight phase: selected TYRANIDS unit that just destroyed an enemy unit immediately regenerates; if the selected unit is a HARVESTER and heals, it regains up to 3 lost wounds instead of D3",
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
+            "RAMPAGING MONSTROSITIES": "Fight phase: target your TYRANIDS MONSTER unit that has not been selected to fight; it can re-roll Hit rolls this phase",
             "RECLAIM BIOMASS": "Any phase, when one of your TYRANIDS units is destroyed before the last model is removed: selected HARVESTER within 6\" immediately regenerates another friendly TYRANIDS unit within 6\"",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "RELENTLESS ASSAULT": "Target: your ADEPTUS ASTARTES unit that just Fell Back; choose shoot or charge this turn, or choose Red Thirst to become Battle-shocked and do both",
             "RED RAMPAGE": "Target: your ADEPTUS ASTARTES unit that has not been selected to fight this phase; choose [LANCE], [LETHAL HITS], or Red Thirst for both plus Battle-shock",
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
+            "SAVAGE ROAR": "Fight phase, just after an enemy unit selects targets: target your TYRANIDS MONSTER unit selected as one of those targets; the attacker takes a Battle-shock test and suffers -1 to hit it this phase, and on a failed test also -1 to wound it",
             "SECURE BIOMASS": "Fight phase: selected TYRANIDS unit that has not fought gains [LETHAL HITS] on melee weapons until end of phase; HARVESTER units also score critical hits on unmodified 5+",
             "SAVAGE ECHOES": "Target: your ADEPTUS ASTARTES unit just charged by an enemy unit; choose +1 Strength or +1 Attacks for melee weapons this turn, or choose Red Thirst to become Battle-shocked and gain both",
             "TYRANNOFORMED": "Command phase: selected HARVESTER unit within range of a controlled objective makes that objective sticky until your opponent controls it",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
+            "SWARM-GUIDED SALVOES": "Shooting phase: target your TYRANIDS MONSTER unit that has not been selected to shoot; its ranged weapons gain [IGNORES COVER] and it can ignore Ballistic Skill and Hit roll modifiers this phase",
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
             "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
@@ -9604,6 +9690,7 @@ class StratagemManager(
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
         self._queue_veterans_move_end_reactions(unit=unit, action=action)
+        self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -11821,6 +11908,13 @@ class StratagemManager(
             raise
         try:
             self._queue_creations_of_bile_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_crusher_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -14098,6 +14192,10 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_assimilation_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_crusher_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

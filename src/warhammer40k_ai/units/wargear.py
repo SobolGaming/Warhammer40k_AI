@@ -9721,6 +9721,22 @@ class WargearProfile:
                 brute_fervour_rule = None
             if isinstance(brute_fervour_rule, dict) and brute_fervour_rule:
                 return brute_fervour_rule
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        swarm_guided_rule_fn = (
+            getattr(tyr_mgr, "crusher_swarm_guided_salvoes_ignore_hit_modifiers_rule", None)
+            if tyr_mgr is not None
+            else None
+        )
+        if callable(swarm_guided_rule_fn):
+            try:
+                tyr_rule = swarm_guided_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                tyr_rule = None
+            if isinstance(tyr_rule, dict) and tyr_rule:
+                return tyr_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None
@@ -17936,6 +17952,19 @@ class WargearProfile:
                 wound_result['modifiers'].append(
                     reason or f"+{int(bonus)} to wound from Enraged Behemoths"
                 )
+        monstrous_bonus_fn = getattr(mgr, "crusher_monstrous_nemesis_wound_bonus", None) if mgr is not None else None
+        if callable(monstrous_bonus_fn):
+            bonus, reason = monstrous_bonus_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=game,
+            )
+            if bonus:
+                dice_modifier += int(bonus)
+                wound_result['modifiers'].append(
+                    reason or f"+{int(bonus)} to wound from Monstrous Nemesis"
+                )
         # Adeptus Custodes: Against All Odds (+1 to wound when isolated).
         unit = getattr(attacker, "parent_unit", None)
         army = None
@@ -25500,6 +25529,7 @@ class WargearProfile:
             attacker=attacker,
             attack_instance=attack_instance,
         )
+        is_psychic_attack = bool(self._is_psychic_attack(attacker))
 
         if is_mortal:
             target_unit = getattr(target_model, "parent_unit", None)
@@ -25512,7 +25542,18 @@ class WargearProfile:
                     weapon_profile=self,
                     game_map=game_map,
                 )
-        
+        if is_psychic_attack:
+            target_unit = getattr(target_model, "parent_unit", None)
+            maybe_null_nodules = getattr(target_unit, "_maybe_activate_null_nodules", None)
+            if callable(maybe_null_nodules):
+                maybe_null_nodules(
+                    target_model=target_model,
+                    attacker_model=attacker,
+                    attacker_unit=getattr(attacker, "parent_unit", None),
+                    weapon_profile=self,
+                    game_map=game_map,
+                )
+
         # Handle Feel No Pain saves
         final_damage = damage_amount
         try:

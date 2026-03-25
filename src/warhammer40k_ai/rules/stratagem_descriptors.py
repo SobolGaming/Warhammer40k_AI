@@ -4804,6 +4804,48 @@ _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME = {
 }
 
 _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008422002": StratagemToolDescriptor(
+        stratagem_id="000008422002",
+        name="Corrosive Viscera",
+        timing="opponent_shooting_or_fight_phase_on_destroyed_model_before_removal",
+        target="destroyed_non_fly_tyranids_monster_model_with_deadly_demise",
+        duration="immediate",
+        effect="auto_trigger_deadly_demise",
+        cp_cost=1,
+        effect_params={
+            "requires_deadly_demise": True,
+            "forbid_keywords": ["FLY"],
+            "target_kind": "model",
+        },
+    ),
+    "000008422003": StratagemToolDescriptor(
+        stratagem_id="000008422003",
+        name="Rampaging Monstrosities",
+        timing="fight_phase_on_select",
+        target="tyranids_monster_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="reroll_hit_rolls",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_mode": "full",
+        },
+    ),
+    "000008422004": StratagemToolDescriptor(
+        stratagem_id="000008422004",
+        name="Savage Roar",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="tyranids_monster_unit_selected_as_enemy_target",
+        duration="until_end_of_phase",
+        effect="force_battleshock_and_apply_attacker_filtered_melee_penalties",
+        cp_cost=1,
+        effect_params={
+            "battle_shock_test": True,
+            "attack_type": "melee",
+            "hit_penalty": 1,
+            "wound_penalty_on_failed_battleshock": 1,
+        },
+    ),
     "000008422005": StratagemToolDescriptor(
         stratagem_id="000008422005",
         name="Untrammelled Ferocity",
@@ -4822,6 +4864,36 @@ _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "tall_terrain_battleshock_roll": "D6",
             "tall_terrain_battleshock_on": 1,
             "tall_terrain_threshold": 4.0,
+        },
+    ),
+    "000008422006": StratagemToolDescriptor(
+        stratagem_id="000008422006",
+        name="Swarm-guided Salvoes",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tyranids_monster_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_ignores_cover_and_ignore_ballistic_skill_and_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "grant_ranged_keywords": ["IGNORES COVER"],
+            "ignore_skill_modifier_kinds": ["ballistic", "weapon"],
+            "allow_hit": True,
+        },
+    ),
+    "000008422007": StratagemToolDescriptor(
+        stratagem_id="000008422007",
+        name="Massive Impact",
+        timing="charge_phase_after_charge_move",
+        target="tyranids_monster_model_that_ended_charge_move",
+        duration="immediate",
+        effect="charge_end_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "target_kind": "model",
+            "enemy_target": "enemy_unit_within_engagement_range",
+            "roll_count": 6,
+            "success_on": 4,
+            "mortal_wounds_per_success": 1,
         },
     ),
 }

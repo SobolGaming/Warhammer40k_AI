@@ -655,6 +655,63 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return True
         return False
 
+    @staticmethod
+    def _model_matches_enhancement_bearer(model, member, special_rules: Optional[dict] = None) -> bool:
+        if model is None or member is None:
+            return False
+        sr = special_rules if isinstance(special_rules, dict) else getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        model_id = str(get_entity_id(model) or "").strip()
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            return bool(model_id) and model_id == bearer_id
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                if bearer is model:
+                    return True
+                bearer_model_id = str(get_entity_id(bearer) or "").strip()
+                return bool(model_id) and bool(bearer_model_id) and model_id == bearer_model_id
+        models = list(getattr(member, "models", []) or [])
+        if len(models) != 1:
+            return False
+        only_model = models[0]
+        if only_model is model:
+            return True
+        only_model_id = str(get_entity_id(only_model) or "").strip()
+        return bool(model_id) and bool(only_model_id) and model_id == only_model_id
+
+    def _crusher_bearer_entry_for_model(
+        self,
+        model,
+        *,
+        flag_key: str,
+        unit=None,
+        require_alive: bool = True,
+    ) -> tuple[Any, Any, Optional[dict]]:
+        if not self.is_crusher_stampede():
+            return None, None, None
+        if model is None:
+            return None, None, None
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return None, None, None
+        if not self._unit_in_army(root):
+            return None, None, None
+        if not self._unit_is_tyranids_monster(root):
+            return None, None, None
+        if not self._model_is_monster(model):
+            return None, None, None
+        if require_alive and not self._model_is_alive(model):
+            return None, None, None
+        for member, sr in self._attached_member_special_rules_with_flag(root, flag_key):
+            if self._model_matches_enhancement_bearer(model, member, sr):
+                return root, member, sr
+        return root, None, None
+
     def _assimilation_parasitic_member(self, unit) -> tuple[Any, Optional[dict]]:
         if not self.is_assimilation_swarm():
             return None, None
@@ -896,6 +953,152 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if callable(below_start) and bool(below_start()):
             return 0, ""
         return 2, f"{_ENRAGED_BEHEMOTHS_SOURCE} (+2 OC at Starting Strength)"
+
+    def crusher_ominous_presence_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        _root, _member, sr = self._crusher_bearer_entry_for_model(
+            model,
+            unit=unit,
+            flag_key="enhancement_ominous_presence",
+        )
+        if sr is None:
+            return 0, ""
+        bonus = int(sr.get("enhancement_ominous_presence_objective_control_bonus", 3) or 0)
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_ominous_presence_source", "") or "Ominous Presence").strip()
+        if not source:
+            source = "Ominous Presence"
+        return bonus, f"{source} (+{bonus} OC)"
+
+    def crusher_monstrous_nemesis_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+            if callable(is_melee) and not bool(is_melee()):
+                return 0, ""
+        root, _member, sr = self._crusher_bearer_entry_for_model(
+            attacker_model,
+            flag_key="enhancement_monstrous_nemesis",
+        )
+        if root is None or sr is None:
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if target_root.get_parent_army() is root.get_parent_army():
+            return 0, ""
+        if not (self._unit_has_keyword(target_root, "MONSTER") or self._unit_has_keyword(target_root, "VEHICLE")):
+            return 0, ""
+        bonus = int(sr.get("enhancement_monstrous_nemesis_wound_bonus", 1) or 0)
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_monstrous_nemesis_source", "") or "Monstrous Nemesis").strip()
+        if not source:
+            source = "Monstrous Nemesis"
+        return bonus, source
+
+    def crusher_enraged_reserves_fight_on_death_rule(self, unit, *, model=None, game=None) -> Optional[dict]:
+        if model is None:
+            return None
+        root, _member, sr = self._crusher_bearer_entry_for_model(
+            model,
+            unit=unit,
+            flag_key="enhancement_enraged_reserves",
+            require_alive=False,
+        )
+        if root is None or sr is None:
+            return None
+        gm = game
+        if gm is None:
+            gm = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if gm is not None:
+            phase_name = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "FIGHT_PHASE":
+                return None
+        threshold = int(sr.get("enhancement_enraged_reserves_threshold", 3) or 0)
+        if threshold < 2 or threshold > 6:
+            return None
+        source = str(sr.get("enhancement_enraged_reserves_source", "") or "Enraged Reserves").strip()
+        if not source:
+            source = "Enraged Reserves"
+        return {"threshold": threshold, "source": source}
+
+    def crusher_null_nodules_spec(self, model, *, unit=None) -> Optional[dict]:
+        _root, _member, sr = self._crusher_bearer_entry_for_model(
+            model,
+            unit=unit,
+            flag_key="enhancement_null_nodules",
+        )
+        if sr is None:
+            return None
+        source = str(sr.get("enhancement_null_nodules_source", "") or "Null Nodules").strip()
+        if not source:
+            source = "Null Nodules"
+        fnp_value = int(sr.get("enhancement_null_nodules_fnp_value", 5) or 0)
+        if fnp_value <= 0:
+            return None
+        ability_key = str(sr.get("enhancement_null_nodules_once_per_battle_key", "") or "null_nodules").strip().lower()
+        if not ability_key:
+            ability_key = "null_nodules"
+        condition = str(sr.get("enhancement_null_nodules_condition", "") or "against psychic attacks").strip()
+        if not condition:
+            condition = "against psychic attacks"
+        return {
+            "ability_key": ability_key,
+            "source": source,
+            "fnp_value": fnp_value,
+            "condition": condition,
+        }
+
+    def crusher_swarm_guided_salvoes_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> Optional[dict]:
+        if not self.is_crusher_stampede():
+            return None
+        if attacker_model is None:
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        if not self._unit_is_tyranids_monster(root):
+            return None
+        if not self._model_is_monster(attacker_model):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("tyranids_swarm_guided_salvoes_active"))):
+            return None
+        if not self._timed_unit_effect_is_active(
+            root,
+            "tyranids_swarm_guided_salvoes_active",
+            expires_phase_key="tyranids_swarm_guided_salvoes_expires_phase",
+            turn_key="tyranids_swarm_guided_salvoes_turn",
+            owner_key="tyranids_swarm_guided_salvoes_turn_owner",
+            game=game,
+        ):
+            return None
+        source = str(sr.get("tyranids_swarm_guided_salvoes_source", "") or "Swarm-guided Salvoes").strip()
+        if not source:
+            source = "Swarm-guided Salvoes"
+        return {
+            "name": source,
+            "attack_type": "ranged",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+        }
 
     def _unit_in_synapse_range(self, unit, *, game=None) -> bool:
         root = self._unit_root(unit)

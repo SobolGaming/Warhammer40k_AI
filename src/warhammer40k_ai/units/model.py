@@ -2143,6 +2143,17 @@ class Model:
                     weapon_profile=weapon_profile,
                     game_map=game_map,
                 )
+        if is_psychic_attack:
+            maybe_null_nodules = getattr(self.parent_unit, "_maybe_activate_null_nodules", None)
+            if callable(maybe_null_nodules):
+                atk_ctx = attack_context if isinstance(attack_context, dict) else {}
+                maybe_null_nodules(
+                    target_model=self,
+                    attacker_model=atk_ctx.get("attacker_model"),
+                    attacker_unit=atk_ctx.get("attacker_unit"),
+                    weapon_profile=weapon_profile,
+                    game_map=game_map,
+                )
 
         try:
             fnp_abilities = self.parent_unit.has_feel_no_pain(target_model=self)
