@@ -8614,6 +8614,20 @@ class ActionsMovementMixin:
                 source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
                 mods["wound"] += int(bonus)
                 wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+        try:
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            bonus_fn = getattr(tyr_mgr, "broodguard_impulse_wound_bonus", None) if tyr_mgr is not None else None
+            if callable(bonus_fn) and attacker_model is not None and target is not None:
+                game_now = game
+                if game_now is None:
+                    game_now = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker_model, target_unit=target, game=game_now)
+                if int(bonus or 0):
+                    source_name = str(source or "Broodguard Impulse").strip() or "Broodguard Impulse"
+                    mods["wound"] += int(bonus)
+                    wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+        except Exception:
+            pass
 
         has_active_ability_fn = getattr(self, "_unit_has_active_ability_named", None)
         storm_bonus_applies_fn = getattr(self, "_storm_of_retribution_bonus_applies", None)

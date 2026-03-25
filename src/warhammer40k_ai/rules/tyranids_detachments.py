@@ -505,14 +505,94 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         root = self._unit_root(unit)
         if root is None:
             return False
+        for member in self._iter_attached_members(root):
+            if self._unit_has_keyword(member, keyword):
+                return True
+        return False
+
+    def _iter_attached_members(self, unit) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
         get_members = getattr(root, "get_attached_unit_members", None)
         members = list(get_members() or []) if callable(get_members) else [root]
         if not members:
             members = [root]
-        for member in members:
-            if self._unit_has_keyword(member, keyword):
+        members.sort(key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")))
+        return members
+
+    def _attached_member_special_rules_with_flag(self, unit, flag_key: str) -> list[tuple[Any, dict]]:
+        out: list[tuple[Any, dict]] = []
+        for member in self._iter_attached_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(flag_key)):
+                continue
+            out.append((member, sr))
+        return out
+
+    @staticmethod
+    def _enhancement_bearer_is_alive_for_member(member, special_rules: Optional[dict] = None) -> bool:
+        unit = member
+        sr = special_rules if isinstance(special_rules, dict) else getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                return TyranidsDetachmentManager._model_is_alive(model)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return TyranidsDetachmentManager._model_is_alive(bearer)
+        for model in list(getattr(unit, "models", []) or []):
+            if TyranidsDetachmentManager._model_is_alive(model):
                 return True
         return False
+
+    def _timed_unit_effect_is_active(
+        self,
+        unit,
+        flag_key: str,
+        *,
+        expires_phase_key: str,
+        turn_key: str,
+        owner_key: str,
+        game=None,
+    ) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+            return False
+        gm = game
+        if gm is None:
+            army = getattr(root, "get_parent_army", lambda: None)()
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is None:
+            return True
+        expected_phase = str(sr.get(expires_phase_key, "") or "").strip().upper()
+        if expected_phase:
+            current_phase = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+            if current_phase and current_phase != expected_phase:
+                return False
+        effect_turn = int(sr.get(turn_key, 0) or 0)
+        current_turn = int(getattr(gm, "turn", 0) or 0)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        owner_id = str(sr.get(owner_key, "") or "").strip()
+        if owner_id:
+            current_player = getattr(gm, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_owner_id and current_owner_id != owner_id:
+                return False
+        return True
 
     @staticmethod
     def _model_is_alive(model) -> bool:
@@ -574,6 +654,192 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if callable(has_any) and bool(has_any("MONSTER")):
             return True
         return False
+
+    def _assimilation_parasitic_member(self, unit) -> tuple[Any, Optional[dict]]:
+        if not self.is_assimilation_swarm():
+            return None, None
+        for member, sr in self._attached_member_special_rules_with_flag(unit, "enhancement_parasitic_biomorphology"):
+            if self._enhancement_bearer_is_alive_for_member(member, sr):
+                return member, sr
+        return None, None
+
+    def _assimilation_secure_biomass_state(self, unit, *, game=None) -> Optional[dict]:
+        if not self.is_assimilation_swarm():
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        for member in self._iter_attached_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not self._timed_unit_effect_is_active(
+                member,
+                "tyranids_secure_biomass_active",
+                expires_phase_key="tyranids_secure_biomass_expires_phase",
+                turn_key="tyranids_secure_biomass_turn",
+                owner_key="tyranids_secure_biomass_owner",
+                game=game,
+            ):
+                continue
+            return sr
+        return None
+
+    def _assimilation_bearer_within_harvester_range(self, bearer_unit, *, range_value: float = 6.0) -> bool:
+        member, sr = self._assimilation_parasitic_member(bearer_unit)
+        if member is None or sr is None:
+            return False
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        bearer = get_bearer() if callable(get_bearer) else None
+        if bearer is None or not self._model_is_alive(bearer):
+            return False
+        base = getattr(bearer, "model_base", None)
+        if base is None:
+            return False
+        x = float(getattr(base, "x", 0.0) or 0.0)
+        y = float(getattr(base, "y", 0.0) or 0.0)
+        max_range = float(range_value or 0.0)
+        if max_range <= 0.0:
+            return False
+        for candidate_root in self._iter_army_roots():
+            if candidate_root is None:
+                continue
+            if not self._unit_on_battlefield(candidate_root):
+                continue
+            if not self._unit_is_tyranids(candidate_root):
+                continue
+            if not self._attached_unit_has_keyword(candidate_root, "HARVESTER"):
+                continue
+            get_models = getattr(candidate_root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(candidate_root, "models", []) or [])
+            for model in models:
+                if not self._model_is_alive(model):
+                    continue
+                if float(horizontal_distance_point_to_model_base_2d(model, x, y)) <= max_range + 1e-6:
+                    return True
+        return False
+
+    def parasitic_biomorphology_melee_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, int, str]:
+        _ = game
+        if not self.is_assimilation_swarm():
+            return 0, 0, ""
+        if attacker_model is None:
+            return 0, 0, ""
+        is_melee = getattr(weapon_profile, "is_melee", None)
+        if callable(is_melee) and not bool(is_melee()):
+            return 0, 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, 0, ""
+        member, sr = self._assimilation_parasitic_member(root)
+        if member is None or sr is None:
+            return 0, 0, ""
+        strength_bonus = int(sr.get("enhancement_parasitic_biomorphology_melee_strength_bonus", 1) or 0)
+        attacks_bonus = 0
+        if bool(sr.get("enhancement_parasitic_biomorphology_attacks_unlocked")):
+            attacks_bonus = int(sr.get("enhancement_parasitic_biomorphology_melee_attacks_bonus", 1) or 0)
+        source = str(sr.get("enhancement_parasitic_biomorphology_source", "") or "Parasitic Biomorphology").strip()
+        if not source:
+            source = "Parasitic Biomorphology"
+        return max(0, strength_bonus), max(0, attacks_bonus), source
+
+    def broodguard_impulse_wound_bonus(self, attacker_model, target_unit=None, *, game=None) -> tuple[int, str]:
+        _ = game
+        if not self.is_assimilation_swarm():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        source_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tyranids_broodguard_impulse_active")):
+            return 0, ""
+        owner_id = str(sr.get("tyranids_broodguard_impulse_owner_id", "") or "").strip()
+        current_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return 0, ""
+        bonus = int(sr.get("tyranids_broodguard_impulse_wound_bonus", 1) or 0)
+        source = str(sr.get("tyranids_broodguard_impulse_source", "") or "Broodguard Impulse").strip()
+        if not source:
+            source = "Broodguard Impulse"
+        return max(0, bonus), source
+
+    def secure_biomass_lethal_hits_applies(self, attacker_model, *, weapon_profile=None, game=None) -> bool:
+        if not self.is_assimilation_swarm():
+            return False
+        if attacker_model is None:
+            return False
+        is_melee = getattr(weapon_profile, "is_melee", None)
+        if callable(is_melee) and not bool(is_melee()):
+            return False
+        unit = getattr(attacker_model, "parent_unit", None)
+        state = self._assimilation_secure_biomass_state(unit, game=game)
+        return state is not None
+
+    def secure_biomass_crit_hit_threshold(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        if not self.is_assimilation_swarm():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        is_melee = getattr(weapon_profile, "is_melee", None)
+        if callable(is_melee) and not bool(is_melee()):
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        state = self._assimilation_secure_biomass_state(root, game=game)
+        if state is None:
+            return 0, ""
+        if not self._attached_unit_has_keyword(root, "HARVESTER"):
+            return 0, ""
+        threshold = int(state.get("tyranids_secure_biomass_crit_threshold", 5) or 0)
+        if threshold <= 0:
+            return 0, ""
+        source = str(state.get("tyranids_secure_biomass_source", "") or "Secure Biomass").strip()
+        if not source:
+            source = "Secure Biomass"
+        return threshold, source
+
+    def unlock_parasitic_biomorphology_after_kill(self, destroyed_unit, *, destroyed_by_unit=None, game=None) -> bool:
+        if not self.is_assimilation_swarm():
+            return False
+        if destroyed_unit is None or destroyed_by_unit is None:
+            return False
+        gm = game
+        if gm is None:
+            gm = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        phase_name = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper() if gm is not None else ""
+        if phase_name and phase_name != "FIGHT_PHASE":
+            return False
+        destroyed_root = self._unit_root(destroyed_unit)
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if destroyed_root is None or attacker_root is None:
+            return False
+        if not self._unit_in_army(attacker_root):
+            return False
+        if destroyed_root.get_parent_army() is attacker_root.get_parent_army():
+            return False
+        member, sr = self._assimilation_parasitic_member(attacker_root)
+        if member is None or sr is None:
+            return False
+        if bool(sr.get("enhancement_parasitic_biomorphology_attacks_unlocked")):
+            return False
+        range_value = float(sr.get("enhancement_parasitic_biomorphology_harvester_range", 6.0) or 6.0)
+        if not self._assimilation_bearer_within_harvester_range(attacker_root, range_value=range_value):
+            return False
+        updated = dict(sr)
+        updated["enhancement_parasitic_biomorphology_attacks_unlocked"] = True
+        member.special_rules = updated
+        return True
 
     def _enraged_behemoths_model_context(self, model, unit=None) -> tuple[bool, Any]:
         if not self.is_crusher_stampede():
@@ -906,6 +1172,78 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _feed_the_swarm_options_for_target(self, source_unit, target_unit, *, range_value: float) -> list[dict]:
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return []
+        source_id = str(get_entity_id(source_root) or "").strip()
+        target_id = str(get_entity_id(target_root) or "").strip()
+        if not target_id:
+            return []
+        options: list[dict] = []
+
+        for model in self._feed_the_swarm_wounded_models(target_root):
+            model_id = str(get_entity_id(model) or "").strip()
+            if not model_id:
+                continue
+            option_key = f"heal:{target_id}:{model_id}"
+            options.append(
+                {
+                    "option_key": option_key,
+                    "action": "heal",
+                    "source_unit": source_root,
+                    "target_unit": target_root,
+                    "target_model": model,
+                    "return_models": [],
+                    "return_count": 0,
+                    "range": float(range_value),
+                    "label": (
+                        f"{getattr(target_root, 'name', 'Unit')}: "
+                        f"heal {getattr(model, 'name', 'Model')}"
+                    ),
+                    "payload": {
+                        "action": "heal",
+                        "source_unit_id": source_id,
+                        "target_unit_id": target_id,
+                        "target_model_id": model_id,
+                        "option_key": option_key,
+                    },
+                }
+            )
+
+        returnable = self._feed_the_swarm_returnable_models(target_root)
+        if returnable:
+            return_count = min(len(returnable), self._feed_the_swarm_max_return_count(target_root))
+            if return_count > 0:
+                selected = list(returnable[:return_count])
+                option_key = f"return:{target_id}:{int(return_count)}"
+                options.append(
+                    {
+                        "option_key": option_key,
+                        "action": "return",
+                        "source_unit": source_root,
+                        "target_unit": target_root,
+                        "target_model": None,
+                        "return_models": selected,
+                        "return_count": int(return_count),
+                        "range": float(range_value),
+                        "label": (
+                            f"{getattr(target_root, 'name', 'Unit')}: "
+                            f"return {int(return_count)} model(s)"
+                        ),
+                        "payload": {
+                            "action": "return",
+                            "source_unit_id": source_id,
+                            "target_unit_id": target_id,
+                            "return_count": int(return_count),
+                            "option_key": option_key,
+                        },
+                    }
+                )
+        options.sort(key=lambda item: str(item.get("option_key", "") or ""))
+        return options
+
     def feed_the_swarm_source_can_act(self, source_unit, *, game=None, player=None) -> bool:
         if not self.is_assimilation_swarm():
             return False
@@ -926,7 +1264,6 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return []
         options: list[dict] = []
         range_value = self._feed_the_swarm_range_for_source(source_root)
-        source_id = str(get_entity_id(source_root) or "").strip()
         for target_root in self._iter_army_roots():
             target_id = str(get_entity_id(target_root) or "").strip()
             if not target_id:
@@ -939,67 +1276,144 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 player=player,
             ):
                 continue
-
-            for model in self._feed_the_swarm_wounded_models(target_root):
-                model_id = str(get_entity_id(model) or "").strip()
-                if not model_id:
-                    continue
-                option_key = f"heal:{target_id}:{model_id}"
-                options.append(
-                    {
-                        "option_key": option_key,
-                        "action": "heal",
-                        "source_unit": source_root,
-                        "target_unit": target_root,
-                        "target_model": model,
-                        "return_models": [],
-                        "return_count": 0,
-                        "range": float(range_value),
-                        "label": (
-                            f"{getattr(target_root, 'name', 'Unit')}: "
-                            f"heal {getattr(model, 'name', 'Model')}"
-                        ),
-                        "payload": {
-                            "action": "heal",
-                            "source_unit_id": source_id,
-                            "target_unit_id": target_id,
-                            "target_model_id": model_id,
-                            "option_key": option_key,
-                        },
-                    }
-                )
-
-            returnable = self._feed_the_swarm_returnable_models(target_root)
-            if returnable:
-                return_count = min(len(returnable), self._feed_the_swarm_max_return_count(target_root))
-                if return_count > 0:
-                    selected = list(returnable[:return_count])
-                    option_key = f"return:{target_id}:{int(return_count)}"
-                    options.append(
-                        {
-                            "option_key": option_key,
-                            "action": "return",
-                            "source_unit": source_root,
-                            "target_unit": target_root,
-                            "target_model": None,
-                            "return_models": selected,
-                            "return_count": int(return_count),
-                            "range": float(range_value),
-                            "label": (
-                                f"{getattr(target_root, 'name', 'Unit')}: "
-                                f"return {int(return_count)} model(s)"
-                            ),
-                            "payload": {
-                                "action": "return",
-                                "source_unit_id": source_id,
-                                "target_unit_id": target_id,
-                                "return_count": int(return_count),
-                                "option_key": option_key,
-                            },
-                        }
-                    )
+            options.extend(self._feed_the_swarm_options_for_target(source_root, target_root, range_value=range_value))
         options.sort(key=lambda item: str(item.get("option_key", "") or ""))
         return options
+
+    def assimilation_regeneration_options_for_unit(self, target_unit, *, game=None, player=None) -> list[dict]:
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return []
+        if not self._unit_on_battlefield(target_root):
+            return []
+        if not self._unit_is_tyranids(target_root):
+            return []
+        if self._feed_the_swarm_target_regens_this_phase(target_root, game=game, player=player) >= self._feed_the_swarm_target_regen_limit(target_root):
+            return []
+        return self._feed_the_swarm_options_for_target(target_root, target_root, range_value=0.0)
+
+    def assimilation_regeneration_options_for_harvester(
+        self,
+        source_unit,
+        *,
+        game=None,
+        player=None,
+        exclude_target_ids: tuple[str, ...] = (),
+    ) -> list[dict]:
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        if not self._attached_unit_has_keyword(source_root, "HARVESTER"):
+            return []
+        excluded = {str(item or "").strip() for item in tuple(exclude_target_ids or ()) if str(item or "").strip()}
+        options: list[dict] = []
+        for target_root in self._iter_army_roots():
+            target_id = str(get_entity_id(target_root) or "").strip()
+            if target_id and target_id in excluded:
+                continue
+            if not self._feed_the_swarm_target_eligible(
+                source_root,
+                target_root,
+                range_value=6.0,
+                game=game,
+                player=player,
+            ):
+                continue
+            options.extend(self._feed_the_swarm_options_for_target(source_root, target_root, range_value=6.0))
+        options.sort(key=lambda item: str(item.get("option_key", "") or ""))
+        return options
+
+    def _apply_regeneration_option(
+        self,
+        selected_option: dict,
+        *,
+        game=None,
+        player=None,
+        mark_source_used: bool = True,
+        heal_amount_override: Optional[int] = None,
+        placement_source: str = "feed_the_swarm",
+    ) -> Optional[dict]:
+        if not isinstance(selected_option, dict):
+            return None
+        source_root = self._unit_root(selected_option.get("source_unit"))
+        target_root = self._unit_root(selected_option.get("target_unit"))
+        if target_root is None:
+            return None
+        source_id = str(get_entity_id(source_root) or "") if source_root is not None else ""
+        target_id = str(get_entity_id(target_root) or "")
+        action = str(selected_option.get("action", "") or "").strip().lower()
+
+        if action == "heal":
+            model = selected_option.get("target_model")
+            if model is None or not self._model_is_alive(model):
+                return None
+            before, _base = self._wounds_snapshot(model)
+            if heal_amount_override is None:
+                heal_roll = max(0, int(get_roll("D3") or 0)) + 1
+            else:
+                heal_roll = max(0, int(heal_amount_override))
+            heal_fn = getattr(model, "heal", None)
+            if callable(heal_fn):
+                heal_fn(int(heal_roll))
+            else:
+                setattr(model, "wounds", int(before + int(heal_roll)))
+            check_profile = getattr(model, "_check_damaged_profile", None)
+            if callable(check_profile):
+                check_profile()
+            after, _ = self._wounds_snapshot(model)
+            healed = max(0, int(after - before))
+            if source_root is not None and mark_source_used:
+                self._feed_the_swarm_mark_source_used(source_root, game=game, player=player)
+            self._feed_the_swarm_increment_target_regens(target_root, game=game, player=player)
+            return {
+                "action": "heal",
+                "source_unit_id": source_id,
+                "source_unit_name": str(getattr(source_root, "name", "") or "Unit") if source_root is not None else "",
+                "target_unit_id": target_id,
+                "target_unit_name": str(getattr(target_root, "name", "") or "Unit"),
+                "target_model_id": str(get_entity_id(model) or ""),
+                "target_model_name": str(getattr(model, "name", "") or "Model"),
+                "heal_roll": int(heal_roll),
+                "healed_wounds": int(healed),
+            }
+
+        if action == "return":
+            return_models = [m for m in list(selected_option.get("return_models", []) or []) if m is not None]
+            if not return_models:
+                return None
+            requested = int(selected_option.get("return_count", 0) or 0)
+            if requested <= 0:
+                return None
+            game_map = getattr(game, "map", None) if game is not None else None
+            return_fn = getattr(target_root, "return_destroyed_bodyguard_models", None)
+            if not callable(return_fn):
+                return None
+            returned = int(
+                return_fn(
+                    int(requested),
+                    game_map=game_map,
+                    chosen_models=list(return_models[:requested]),
+                    placement_source=str(placement_source or "feed_the_swarm"),
+                )
+                or 0
+            )
+            if returned <= 0:
+                return None
+            if source_root is not None and mark_source_used:
+                self._feed_the_swarm_mark_source_used(source_root, game=game, player=player)
+            self._feed_the_swarm_increment_target_regens(target_root, game=game, player=player)
+            return {
+                "action": "return",
+                "source_unit_id": source_id,
+                "source_unit_name": str(getattr(source_root, "name", "") or "Unit") if source_root is not None else "",
+                "target_unit_id": target_id,
+                "target_unit_name": str(getattr(target_root, "name", "") or "Unit"),
+                "return_count_requested": int(requested),
+                "return_count": int(returned),
+            }
+        return None
 
     def feed_the_swarm_payload_is_valid(self, source_unit, payload: dict, *, game=None, player=None) -> tuple[bool, str]:
         if not isinstance(payload, dict):
@@ -1036,81 +1450,13 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             if str(option.get("option_key", "") or "") == option_key:
                 selected_option = option
                 break
-        if selected_option is None:
-            return None
-
-        target_root = self._unit_root(selected_option.get("target_unit"))
-        if target_root is None:
-            return None
-        source_id = str(get_entity_id(source_root) or "")
-        target_id = str(get_entity_id(target_root) or "")
-        action = str(selected_option.get("action", "") or "").strip().lower()
-
-        if action == "heal":
-            model = selected_option.get("target_model")
-            if model is None or not self._model_is_alive(model):
-                return None
-            before, _base = self._wounds_snapshot(model)
-            heal_roll = max(0, int(get_roll("D3") or 0)) + 1
-            heal_fn = getattr(model, "heal", None)
-            if callable(heal_fn):
-                heal_fn(int(heal_roll))
-            else:
-                new_wounds = before + int(heal_roll)
-                setattr(model, "wounds", int(new_wounds))
-            check_profile = getattr(model, "_check_damaged_profile", None)
-            if callable(check_profile):
-                check_profile()
-            after, _ = self._wounds_snapshot(model)
-            healed = max(0, int(after - before))
-            self._feed_the_swarm_mark_source_used(source_root, game=game, player=player)
-            self._feed_the_swarm_increment_target_regens(target_root, game=game, player=player)
-            return {
-                "action": "heal",
-                "source_unit_id": source_id,
-                "source_unit_name": str(getattr(source_root, "name", "") or "Unit"),
-                "target_unit_id": target_id,
-                "target_unit_name": str(getattr(target_root, "name", "") or "Unit"),
-                "target_model_id": str(get_entity_id(model) or ""),
-                "target_model_name": str(getattr(model, "name", "") or "Model"),
-                "heal_roll": int(heal_roll),
-                "healed_wounds": int(healed),
-            }
-
-        if action == "return":
-            return_models = [m for m in list(selected_option.get("return_models", []) or []) if m is not None]
-            if not return_models:
-                return None
-            requested = int(selected_option.get("return_count", 0) or 0)
-            if requested <= 0:
-                return None
-            game_map = getattr(game, "map", None) if game is not None else None
-            return_fn = getattr(target_root, "return_destroyed_bodyguard_models", None)
-            if not callable(return_fn):
-                return None
-            returned = int(
-                return_fn(
-                    int(requested),
-                    game_map=game_map,
-                    chosen_models=list(return_models[:requested]),
-                    placement_source="feed_the_swarm",
-                )
-                or 0
-            )
-            if returned <= 0:
-                return None
-            self._feed_the_swarm_mark_source_used(source_root, game=game, player=player)
-            self._feed_the_swarm_increment_target_regens(target_root, game=game, player=player)
-            return {
-                "action": "return",
-                "source_unit_id": source_id,
-                "source_unit_name": str(getattr(source_root, "name", "") or "Unit"),
-                "target_unit_id": target_id,
-                "target_unit_name": str(getattr(target_root, "name", "") or "Unit"),
-                "return_count_requested": int(requested),
-                "return_count": int(returned),
-            }
-        return None
+        return self._apply_regeneration_option(
+            selected_option,
+            game=game,
+            player=player,
+            mark_source_used=True,
+            placement_source="feed_the_swarm",
+        )
 
     def queue_feed_the_swarm_requests(self, *, game=None, player=None) -> None:
         if game is None:

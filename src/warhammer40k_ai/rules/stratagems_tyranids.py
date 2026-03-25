@@ -56,6 +56,11 @@ class TyranidsStratagemMixin:
         checker = getattr(mgr, "is_invasion_fleet", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tyranids_assimilation_swarm_detachment(self) -> bool:
+        mgr = self._tyr_detachment_mgr()
+        checker = getattr(mgr, "is_assimilation_swarm", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_tyranids_vanguard_onslaught_detachment(self) -> bool:
         mgr = self._tyr_detachment_mgr()
         checker = getattr(mgr, "is_vanguard_onslaught", None) if mgr is not None else None
@@ -121,6 +126,35 @@ class TyranidsStratagemMixin:
         if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
             return False
         return True
+
+    def _tyr_objective_candidates_you_control(self, unit: Any) -> list[Any]:
+        root = self._tyr_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if not bool(is_within(loc)):
+                continue
+            controller = getattr(loc, "controlling_player", None)
+            sticky_controller = getattr(loc, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
 
     def _tyr_unit_in_synapse_range(self, unit: Any) -> bool:
         root = self._tyr_root(unit)
@@ -390,6 +424,210 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_ablative_carapace_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return []
+        if attacking_unit is not None:
+            attacker_root = self._tyr_root(attacking_unit)
+            if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+                return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_has_keyword(root, "HARVESTER"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_rapacious_hunger_candidates(
+        self,
+        *,
+        destroyed_unit: Any = None,
+        destroyed_by_unit: Any = None,
+    ) -> list[Any]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return []
+        if destroyed_unit is None or destroyed_by_unit is None:
+            return []
+        attacker_root = self._tyr_root(destroyed_by_unit)
+        destroyed_root = self._tyr_root(destroyed_unit)
+        if attacker_root is None or destroyed_root is None:
+            return []
+        if not self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        if self._tyr_owned_by_player(destroyed_root, self.player):
+            return []
+        if not self._tyr_on_battlefield(attacker_root, require_targetable=True):
+            return []
+        if not self._is_tyranids_unit(attacker_root):
+            return []
+        mgr = self._tyr_detachment_mgr()
+        options_fn = getattr(mgr, "assimilation_regeneration_options_for_unit", None) if mgr is not None else None
+        if not callable(options_fn):
+            return []
+        options = list(options_fn(attacker_root, game=getattr(self, "game", None), player=self.player) or [])
+        if not options:
+            return []
+        return [attacker_root]
+
+    def _tyr_broodguard_impulse_candidates(
+        self,
+        *,
+        destroyed_unit: Any = None,
+        destroyed_by_unit: Any = None,
+    ) -> list[Any]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return []
+        destroyed_root = self._tyr_root(destroyed_unit)
+        attacker_root = self._tyr_root(destroyed_by_unit)
+        if destroyed_root is None or attacker_root is None:
+            return []
+        if not self._tyr_owned_by_player(destroyed_root, self.player):
+            return []
+        if not self._is_tyranids_unit(destroyed_root):
+            return []
+        if not self._tyr_has_keyword(destroyed_root, "HARVESTER"):
+            return []
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        return [destroyed_root]
+
+    def _tyr_reclaim_biomass_candidates(self, *, destroyed_unit: Any = None) -> list[Any]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return []
+        destroyed_root = self._tyr_root(destroyed_unit)
+        if destroyed_root is None:
+            return []
+        if not self._tyr_owned_by_player(destroyed_root, self.player):
+            return []
+        if not self._is_tyranids_unit(destroyed_root):
+            return []
+        mgr = self._tyr_detachment_mgr()
+        options_fn = getattr(mgr, "assimilation_regeneration_options_for_harvester", None) if mgr is not None else None
+        if not callable(options_fn):
+            return []
+        destroyed_id = self._tyr_sort_key(destroyed_root)
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if root is destroyed_root:
+                continue
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_has_keyword(root, "HARVESTER"):
+                continue
+            options = list(
+                options_fn(
+                    root,
+                    game=getattr(self, "game", None),
+                    player=self.player,
+                    exclude_target_ids=(destroyed_id,),
+                )
+                or []
+            )
+            if not options:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_secure_biomass_candidates(self) -> list[Any]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_tyrannoformed_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return [], {}
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return [], {}
+        candidates: list[Any] = []
+        objective_map: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_has_keyword(root, "HARVESTER"):
+                continue
+            objectives = self._tyr_objective_candidates_you_control(root)
+            if not objectives:
+                continue
+            candidates.append(root)
+            objective_map[uid] = objectives
+        return sorted(candidates, key=self._tyr_sort_key), objective_map
+
     def _tyr_death_frenzy_candidates(
         self,
         *,
@@ -658,6 +896,244 @@ class TyranidsStratagemMixin:
         for key in list(cache.keys()):
             if str(key).startswith("melee_fight_on_death_after_attacks:"):
                 cache.pop(key, None)
+
+    def _queue_tyranids_assimilation_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ABLATIVE CARAPACE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_ablative_carapace_candidates(attacking_unit=attacker_root, target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tyranids_assimilation_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if not callable(queue_reaction):
+            return
+
+        ablative = getattr(self, "get_by_name", lambda _name: None)("ABLATIVE CARAPACE")
+        if ablative is not None and int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(ablative, "cp_cost", 0) or 0):
+            name_u = str(getattr(ablative, "name", "") or "").strip().upper()
+            if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                candidates = self._tyr_ablative_carapace_candidates(attacking_unit=attacker_root, target_units=target_units)
+                if candidates:
+                    already = False
+                    for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                        if (
+                            reaction.get("event") == "fight_targets_selected"
+                            and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                            and reaction.get("attacking_unit") is attacking_unit
+                        ):
+                            already = True
+                            break
+                    if not already:
+                        payload = {
+                            "event": "fight_targets_selected",
+                            "phase_name": "Fight phase",
+                            "stratagem": ablative.name,
+                            "cp_cost": ablative.cp_cost,
+                            "attacking_unit": attacking_unit,
+                            "target_units": list(target_units or []),
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        queue_reaction(payload)
+
+    def _queue_tyranids_assimilation_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if unit is None or model is None:
+            return
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return
+        root = self._tyr_root(unit)
+        if root is None:
+            return
+        models = list(root.get_attached_unit_models() or []) if hasattr(root, "get_attached_unit_models") else list(getattr(root, "models", []) or [])
+        for other in models:
+            if other is model:
+                continue
+            if self._tyr_is_alive(other):
+                return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("RECLAIM BIOMASS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_reclaim_biomass_candidates(destroyed_unit=root)
+        if not candidates:
+            return
+        destroyed_id = self._tyr_sort_key(root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("destroyed_unit_id", "") or "") == destroyed_id:
+                return
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_unit_id": destroyed_id,
+            "destroyed_model": model,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_tyranids_assimilation_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if destroyed_unit is None or destroyed_by_unit is None:
+            return
+        if not self._is_tyranids_assimilation_swarm_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase"
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if not callable(queue_reaction):
+            return
+
+        broodguard = getattr(self, "get_by_name", lambda _name: None)("BROODGUARD IMPULSE")
+        if broodguard is not None and int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(broodguard, "cp_cost", 0) or 0):
+            name_u = str(getattr(broodguard, "name", "") or "").strip().upper()
+            if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                candidates = self._tyr_broodguard_impulse_candidates(
+                    destroyed_unit=destroyed_unit,
+                    destroyed_by_unit=destroyed_by_unit,
+                )
+                if candidates:
+                    destroyed_id = self._tyr_sort_key(destroyed_unit)
+                    already = False
+                    for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                        if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                            continue
+                        if str(reaction.get("destroyed_unit_id", "") or "") == destroyed_id:
+                            already = True
+                            break
+                    if not already:
+                        payload = {
+                            "event": "unit_destroyed",
+                            "phase_name": phase_name,
+                            "stratagem": broodguard.name,
+                            "cp_cost": broodguard.cp_cost,
+                            "destroyed_unit": self._tyr_root(destroyed_unit),
+                            "destroyed_unit_id": destroyed_id,
+                            "destroyed_by_unit": self._tyr_root(destroyed_by_unit),
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        queue_reaction(payload, use_timer=False)
+
+        rapacious = getattr(self, "get_by_name", lambda _name: None)("RAPACIOUS HUNGER")
+        if rapacious is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(rapacious, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(rapacious, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_rapacious_hunger_candidates(
+            destroyed_unit=destroyed_unit,
+            destroyed_by_unit=destroyed_by_unit,
+        )
+        if not candidates:
+            return
+        attacker_id = self._tyr_sort_key(destroyed_by_unit)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("destroyed_by_unit_id", "") or "") == attacker_id:
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": phase_name,
+            "stratagem": rapacious.name,
+            "cp_cost": rapacious.cp_cost,
+            "destroyed_unit": self._tyr_root(destroyed_unit),
+            "destroyed_by_unit": self._tyr_root(destroyed_by_unit),
+            "destroyed_by_unit_id": attacker_id,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction(payload, use_timer=False)
 
     def _queue_tyranids_invasion_fleet_fight_target_reactions(
         self,
@@ -1039,6 +1515,19 @@ class TyranidsStratagemMixin:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if self._is_tyranids_assimilation_swarm_detachment():
+            if name_u == "ABLATIVE CARAPACE":
+                return self._use_tyranids_ablative_carapace(stratagem, **kwargs)
+            if name_u == "BROODGUARD IMPULSE":
+                return self._use_tyranids_broodguard_impulse(stratagem, **kwargs)
+            if name_u == "RAPACIOUS HUNGER":
+                return self._use_tyranids_rapacious_hunger(stratagem, **kwargs)
+            if name_u == "RECLAIM BIOMASS":
+                return self._use_tyranids_reclaim_biomass(stratagem, **kwargs)
+            if name_u == "SECURE BIOMASS":
+                return self._use_tyranids_secure_biomass(stratagem, **kwargs)
+            if name_u == "TYRANNOFORMED":
+                return self._use_tyranids_tyrannoformed(stratagem, **kwargs)
         if self._is_tyranids_invasion_fleet_detachment():
             if name_u == "RAPID REGENERATION":
                 return self._use_tyranids_rapid_regeneration(stratagem, **kwargs)
@@ -1062,6 +1551,430 @@ class TyranidsStratagemMixin:
             if name_u == "UNTRAMMELLED FEROCITY":
                 return self._use_tyranids_untrammelled_ferocity(stratagem, **kwargs)
         return None
+
+    def _use_tyranids_ablative_carapace(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ABLATIVE CARAPACE":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        target_roots = self._tyr_resolve_units(target_unit)
+        root = target_roots[0] if target_roots else None
+        attacker_root = self._tyr_root(attacking_unit)
+        if root is None:
+            logger.error("ERROR: ABLATIVE CARAPACE: no target unit provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: ABLATIVE CARAPACE: missing attacking unit context")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: ABLATIVE CARAPACE: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tyranids_unit(root) or not self._tyr_has_keyword(root, "HARVESTER"):
+            logger.error("ERROR: ABLATIVE CARAPACE: target must be a friendly HARVESTER unit")
+            return False
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: ABLATIVE CARAPACE: attacker must be an enemy unit")
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: ABLATIVE CARAPACE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: ABLATIVE CARAPACE: not opponent's Shooting phase")
+            return False
+
+        eligible = candidates or self._tyr_ablative_carapace_candidates(attacking_unit=attacker_root, target_units=target_units)
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ABLATIVE CARAPACE: target must be one of the selected HARVESTER targets")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: ABLATIVE CARAPACE: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        within_controlled = bool(getattr(root, "_within_controlled_objective_range", lambda game_map=None: False)(game_map=getattr(self.game, "map", None)))
+        fnp_value = 4 if within_controlled else 5
+        phase_key_fn = getattr(self, "_phase_key_from_name", None)
+        phase_key = phase_key_fn(phase_name) if callable(phase_key_fn) else ""
+        if not phase_key:
+            phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        entry = {
+            "value": int(fnp_value),
+            "attack_type": "any",
+            "expires_phase": str(phase_key),
+            "source": str(getattr(stratagem, "name", "") or "ABLATIVE CARAPACE"),
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_fnp_overrides", entry)
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_fnp_overrides", []) or [])
+            items.append(entry)
+            sr["defensive_fnp_overrides"] = items
+            root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_broodguard_impulse(self, stratagem: Any, **kwargs) -> bool:
+        destroyed_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        destroyed_by_unit = kwargs.get("destroyed_by_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if destroyed_unit is None or destroyed_by_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BROODGUARD IMPULSE":
+                    continue
+                if destroyed_unit is None:
+                    destroyed_unit = reaction.get("destroyed_unit") or reaction.get("target_unit") or reaction.get("unit")
+                if destroyed_by_unit is None:
+                    destroyed_by_unit = reaction.get("destroyed_by_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        destroyed_root = self._tyr_root(destroyed_unit)
+        attacker_root = self._tyr_root(destroyed_by_unit)
+        if destroyed_root is None:
+            logger.error("ERROR: BROODGUARD IMPULSE: no destroyed HARVESTER provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: BROODGUARD IMPULSE: missing destroying enemy unit")
+            return False
+        eligible = candidates or self._tyr_broodguard_impulse_candidates(
+            destroyed_unit=destroyed_root,
+            destroyed_by_unit=attacker_root,
+        )
+        if not eligible or not self._tyr_unit_in_candidates(destroyed_root, eligible):
+            logger.error("ERROR: BROODGUARD IMPULSE: target must be the just-destroyed friendly HARVESTER")
+            return False
+        phase_label = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "Any phase").strip() or "Any phase"
+        if not stratagem.can_use(self.player, self.game, phase_name=phase_label):
+            logger.error("ERROR: BROODGUARD IMPULSE: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, enemy_unit=attacker_root):
+            return False
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_broodguard_impulse_active"] = True
+        sr["tyranids_broodguard_impulse_owner_id"] = str(getattr(self.player, "id", "") or "")
+        sr["tyranids_broodguard_impulse_wound_bonus"] = 1
+        sr["tyranids_broodguard_impulse_source"] = str(getattr(stratagem, "name", "") or "BROODGUARD IMPULSE")
+        sr["tyranids_broodguard_impulse_destroyed_harvester_id"] = self._tyr_sort_key(destroyed_root)
+        attacker_root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_rapacious_hunger(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_by_unit")
+        destroyed_unit = kwargs.get("destroyed_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "RAPACIOUS HUNGER":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit") or reaction.get("destroyed_by_unit")
+                if destroyed_unit is None:
+                    destroyed_unit = reaction.get("destroyed_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        target_roots = self._tyr_resolve_units(target_unit)
+        root = target_roots[0] if target_roots else None
+        if root is None:
+            logger.error("ERROR: RAPACIOUS HUNGER: no target unit provided")
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: RAPACIOUS HUNGER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RAPACIOUS HUNGER: not your turn")
+            return False
+        eligible = candidates or self._tyr_rapacious_hunger_candidates(destroyed_unit=destroyed_unit, destroyed_by_unit=root)
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RAPACIOUS HUNGER: target must be the TYRANIDS unit that just destroyed an enemy unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: RAPACIOUS HUNGER: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        options_fn = getattr(mgr, "assimilation_regeneration_options_for_unit", None) if mgr is not None else None
+        apply_fn = getattr(mgr, "_apply_regeneration_option", None) if mgr is not None else None
+        if not callable(options_fn) or not callable(apply_fn):
+            return False
+        options = list(options_fn(root, game=getattr(self, "game", None), player=self.player) or [])
+        option_key = str(kwargs.get("option_key", "") or "").strip()
+        if not option_key and len(options) == 1:
+            option_key = str(options[0].get("option_key", "") or "").strip()
+        if not option_key:
+            logger.error("ERROR: RAPACIOUS HUNGER: regeneration option is required")
+            return False
+        selected_option = None
+        for option in options:
+            if str(option.get("option_key", "") or "") == option_key:
+                selected_option = option
+                break
+        if selected_option is None:
+            logger.error("ERROR: RAPACIOUS HUNGER: selected regeneration option is not eligible")
+            return False
+        heal_override = 3 if self._tyr_has_keyword(root, "HARVESTER") and str(selected_option.get("action", "") or "").strip().lower() == "heal" else None
+        result = apply_fn(
+            selected_option,
+            game=getattr(self, "game", None),
+            player=self.player,
+            mark_source_used=False,
+            heal_amount_override=heal_override,
+            placement_source="rapacious_hunger",
+        )
+        if result is None:
+            return False
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_reclaim_biomass(self, stratagem: Any, **kwargs) -> bool:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        destroyed_unit = kwargs.get("destroyed_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if source_unit is None or destroyed_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "RECLAIM BIOMASS":
+                    continue
+                if source_unit is None:
+                    source_unit = reaction.get("target_unit") or reaction.get("unit")
+                if destroyed_unit is None:
+                    destroyed_unit = reaction.get("destroyed_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        source_roots = self._tyr_resolve_units(source_unit)
+        root = source_roots[0] if source_roots else None
+        destroyed_root = self._tyr_root(destroyed_unit)
+        if root is None:
+            logger.error("ERROR: RECLAIM BIOMASS: no HARVESTER source provided")
+            return False
+        if destroyed_root is None:
+            logger.error("ERROR: RECLAIM BIOMASS: missing destroyed unit context")
+            return False
+        eligible = candidates or self._tyr_reclaim_biomass_candidates(destroyed_unit=destroyed_root)
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RECLAIM BIOMASS: selected HARVESTER is not eligible")
+            return False
+        phase_label = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "Any phase").strip() or "Any phase"
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: RECLAIM BIOMASS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        options_fn = getattr(mgr, "assimilation_regeneration_options_for_harvester", None) if mgr is not None else None
+        apply_fn = getattr(mgr, "_apply_regeneration_option", None) if mgr is not None else None
+        if not callable(options_fn) or not callable(apply_fn):
+            return False
+        destroyed_id = self._tyr_sort_key(destroyed_root)
+        options = list(
+            options_fn(
+                root,
+                game=getattr(self, "game", None),
+                player=self.player,
+                exclude_target_ids=(destroyed_id,),
+            )
+            or []
+        )
+        option_key = str(kwargs.get("option_key", "") or "").strip()
+        if not option_key and len(options) == 1:
+            option_key = str(options[0].get("option_key", "") or "").strip()
+        if not option_key:
+            logger.error("ERROR: RECLAIM BIOMASS: regeneration option is required")
+            return False
+        selected_option = None
+        for option in options:
+            if str(option.get("option_key", "") or "") == option_key:
+                selected_option = option
+                break
+        if selected_option is None:
+            logger.error("ERROR: RECLAIM BIOMASS: selected regeneration option is not eligible")
+            return False
+        result = apply_fn(
+            selected_option,
+            game=getattr(self, "game", None),
+            player=self.player,
+            mark_source_used=False,
+            placement_source="reclaim_biomass",
+        )
+        if result is None:
+            return False
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_secure_biomass(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SECURE BIOMASS":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        target_roots = self._tyr_resolve_units(target_unit)
+        root = target_roots[0] if target_roots else None
+        if root is None:
+            logger.error("ERROR: SECURE BIOMASS: no target unit provided")
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: SECURE BIOMASS: wrong phase")
+            return False
+        eligible = candidates or self._tyr_secure_biomass_candidates()
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SECURE BIOMASS: selected unit is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: SECURE BIOMASS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_secure_biomass_active"] = True
+        sr["tyranids_secure_biomass_expires_phase"] = "FIGHT_PHASE"
+        sr["tyranids_secure_biomass_turn"] = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        sr["tyranids_secure_biomass_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["tyranids_secure_biomass_source"] = str(getattr(stratagem, "name", "") or "SECURE BIOMASS")
+        sr["tyranids_secure_biomass_crit_threshold"] = 5
+        root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_tyrannoformed(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        objective_candidates_by_unit = dict(kwargs.get("objective_candidates_by_unit") or {})
+        candidates = list(kwargs.get("candidates") or [])
+
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "TYRANNOFORMED":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if objective is None:
+                    objective = reaction.get("objective") or reaction.get("objective_marker")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not objective_candidates:
+                    objective_candidates = list(reaction.get("objective_candidates") or [])
+                if not objective_candidates_by_unit:
+                    objective_candidates_by_unit = dict(reaction.get("objective_candidates_by_unit") or {})
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        target_roots = self._tyr_resolve_units(target_unit)
+        root = target_roots[0] if target_roots else None
+        if root is None:
+            logger.error("ERROR: TYRANNOFORMED: no HARVESTER target provided")
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "command phase":
+            logger.error("ERROR: TYRANNOFORMED: wrong phase")
+            return False
+        available_candidates, objective_map = self._tyr_tyrannoformed_candidates()
+        eligible = candidates or available_candidates
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: TYRANNOFORMED: selected HARVESTER is not eligible")
+            return False
+        if not objective_candidates and objective_candidates_by_unit:
+            objective_candidates = list(objective_candidates_by_unit.get(self._tyr_sort_key(root)) or [])
+        if not objective_candidates:
+            objective_candidates = list(objective_map.get(self._tyr_sort_key(root)) or self._tyr_objective_candidates_you_control(root))
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if isinstance(objective, str):
+            for candidate in list(objective_candidates or []):
+                objective_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+                loc = getattr(candidate, "location", None)
+                location_id = str(getattr(loc, "id", "") or get_entity_id(loc) or "")
+                if objective == objective_id or objective == location_id:
+                    objective = candidate
+                    break
+        if objective not in list(objective_candidates or []):
+            logger.error("ERROR: TYRANNOFORMED: objective marker selection is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: TYRANNOFORMED: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        loc = getattr(objective, "location", None) or objective
+        set_sticky = getattr(loc, "set_sticky_control", None)
+        if not callable(set_sticky):
+            return False
+        set_sticky(self.player, source="tyrannoformed")
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
 
     def _use_tyranids_rapid_regeneration(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")
