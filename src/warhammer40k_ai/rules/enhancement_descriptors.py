@@ -6784,6 +6784,19 @@ _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] =
             "requires_bearer_on_battlefield": True,
         },
     ),
+    "000008412005": EnhancementToolDescriptor(
+        enhancement_id="000008412005",
+        name="Parasitic Biomorphology",
+        timing="passive_with_first_fight_phase_kill_upgrade",
+        target="bearer_unit_melee_weapons",
+        duration="constant_with_persistent_upgrade",
+        effect="unit_melee_strength_bonus_with_first_fight_phase_kill_unit_melee_attacks_bonus_near_harvester",
+        effect_params={
+            "melee_strength_bonus": 1,
+            "melee_attacks_bonus": 1,
+            "harvester_range": 6.0,
+        },
+    ),
 }
 
 _TYRANIDS_ASSIMILATION_SWARM_BY_NAME = {

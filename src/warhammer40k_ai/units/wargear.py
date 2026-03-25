@@ -5592,6 +5592,27 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                bonus_fn = getattr(tyr_mgr, "parasitic_biomorphology_melee_bonus", None) if tyr_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    _strength_bonus, attacks_bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(attacks_bonus or 0):
+                        source_name = str(source or "Parasitic Biomorphology").strip() or "Parasitic Biomorphology"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(attacks_bonus),
+                                source="enhancement:parasitic_biomorphology_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(f"{source_name} +{int(attacks_bonus)}A")
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and not self.parent_wargear.is_melee() and self.is_pistol():
                 sr = self._unit_special_rules(attacker)
                 if bool(sr.get("enhancement_legacy_sidearm", False)):
@@ -15357,6 +15378,22 @@ class WargearProfile:
                     crit_hit_reasons.append(f"Adrenal Surge: critical hit on {int(threshold)}+")
         except Exception:
             pass
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                threshold_fn = getattr(tyr_mgr, "secure_biomass_crit_hit_threshold", None) if tyr_mgr is not None else None
+                if callable(threshold_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    threshold, source = threshold_fn(attacker, weapon_profile=self, game=game)
+                    if int(threshold or 0):
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        source_name = str(source or "Secure Biomass").strip() or "Secure Biomass"
+                        crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
 
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -15639,6 +15676,18 @@ class WargearProfile:
                 leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits(attack_type=attack_type))
         except Exception:
             leading_lethal = False
+        secure_biomass_lethal = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                lethal_fn = getattr(tyr_mgr, "secure_biomass_lethal_hits_applies", None) if tyr_mgr is not None else None
+                if callable(lethal_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    secure_biomass_lethal = bool(lethal_fn(attacker, weapon_profile=self, game=game))
+        except Exception:
+            secure_biomass_lethal = False
         deadly_debut_lethal = False
         try:
             if is_melee:
@@ -16001,7 +16050,7 @@ class WargearProfile:
                 attack_instance["bonus_precision"] = True
                 hit_result['special_effects'].append("Precision")
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal or deadly_debut_lethal or dread_mob_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or secure_biomass_lethal or bonus_lethal or malefic_lethal or deadly_debut_lethal or dread_mob_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
@@ -16097,7 +16146,7 @@ class WargearProfile:
                 # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
 
                 # Apply Lethal Hits from all sources (same as baseline critical)
-                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or deadly_debut_lethal or dread_mob_lethal:
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or secure_biomass_lethal or bonus_lethal or deadly_debut_lethal or dread_mob_lethal:
                     hit_result['special_effects'].append("Lethal Hits")
                     attack_instance['lethal_hit'] = True
 
@@ -16789,6 +16838,21 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                bonus_fn = getattr(tyr_mgr, "parasitic_biomorphology_melee_bonus", None) if tyr_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, _attacks_bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Parasitic Biomorphology").strip() or "Parasitic Biomorphology"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
         if self.parent_wargear and self.parent_wargear.is_melee():

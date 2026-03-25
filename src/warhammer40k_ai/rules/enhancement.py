@@ -9492,6 +9492,28 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "parasitic biomorphology" or enh_id == "000008412005":
+            if not is_assimilation_swarm:
+                return
+            unit.special_rules["enhancement_parasitic_biomorphology"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("melee_strength_bonus", 1) or 1, default=1)
+            attacks_bonus = _coerce_int(params.get("melee_attacks_bonus", 1) or 1, default=1)
+            try:
+                harvester_range = float(params.get("harvester_range", 6.0) or 6.0)
+            except Exception:
+                harvester_range = 6.0
+            if harvester_range <= 0.0:
+                harvester_range = 6.0
+            source_name = str(getattr(desc, "name", "") or "Parasitic Biomorphology").strip() or "Parasitic Biomorphology"
+            unit.special_rules["enhancement_parasitic_biomorphology_source"] = source_name
+            unit.special_rules["enhancement_parasitic_biomorphology_harvester_range"] = float(harvester_range)
+            unit.special_rules["enhancement_parasitic_biomorphology_melee_strength_bonus"] = int(max(0, strength_bonus))
+            unit.special_rules["enhancement_parasitic_biomorphology_melee_attacks_bonus"] = int(max(0, attacks_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
         if name == "slaughterthirst (aura)" or enh_id == "000009815002":
             if not is_blood_legion:
                 return

@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
     "AGGRESSIVE ONSLAUGHT",
     "AGGRESSIVE MOBILITY",
@@ -62,6 +63,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXEMPLAR’S WISDOM",
     "AUTOSTIMULANTS",
     "BLACK CRUSADE",
+    "BROODGUARD IMPULSE",
     "COILS OF DECEPTION",
     "DELAYED MUTATIONS",
     "DETONATOR",
@@ -110,11 +112,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNFAILINGLY OBDURATE",
     "VICIOUS BLADES",
     "PREDATORY IMPERATIVE",
+    "RAPACIOUS HUNGER",
     "RAPID REGENERATION",
+    "RECLAIM BIOMASS",
     "RECKLESS HASTE",
     "REAVERS' FLURRY",
     "SIEGECRAFT",
     "SEIZE THE PRIZE",
+    "SECURE BIOMASS",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "SELFLESS DEMISE",
@@ -126,6 +131,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "WARPCHARGED ENGINES",
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
+    "TYRANNOFORMED",
     "ALPHA STRIKE",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -4815,6 +4821,48 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase and a TYRANIDS unit within Synapse Range that Fell Back this phase"
             return result
+        if name_u == "ABLATIVE CARAPACE":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_ablative_carapace_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets including one of your HARVESTER units"
+            return result
+        if name_u == "BROODGUARD IMPULSE":
+            destroyed_unit = (
+                context.get("destroyed_unit")
+                or context.get("unit")
+                or context.get("target_unit")
+            )
+            destroyed_by_unit = (
+                context.get("destroyed_by_unit")
+                or context.get("attacking_unit")
+                or context.get("enemy_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_broodguard_impulse_candidates(
+                    destroyed_unit=destroyed_unit,
+                    destroyed_by_unit=destroyed_by_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase, just after one of your HARVESTER units is destroyed by an enemy unit"
+            return result
         if name_u == "PINNING FIRE":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -4831,6 +4879,65 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires one TYRANIDS unit eligible to fight (or up to two such units if both are within Synapse Range)"
+            return result
+        if name_u == "RAPACIOUS HUNGER":
+            destroyed_unit = (
+                context.get("destroyed_unit")
+                or context.get("unit")
+                or context.get("target_unit")
+            )
+            destroyed_by_unit = (
+                context.get("destroyed_by_unit")
+                or context.get("attacking_unit")
+                or context.get("unit")
+                or context.get("target_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_rapacious_hunger_candidates(
+                    destroyed_unit=destroyed_unit,
+                    destroyed_by_unit=destroyed_by_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Fight phase, just after one of your TYRANIDS units destroys an enemy unit and can immediately regenerate"
+            return result
+        if name_u == "RECLAIM BIOMASS":
+            destroyed_unit = (
+                context.get("destroyed_unit")
+                or context.get("unit")
+                or context.get("target_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_reclaim_biomass_candidates(destroyed_unit=destroyed_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase, when one of your TYRANIDS units is destroyed before the last model is removed, and a friendly HARVESTER within 6\" can regenerate another TYRANIDS unit"
+            return result
+        if name_u == "SECURE BIOMASS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_secure_biomass_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase and a TYRANIDS unit that has not been selected to fight this phase"
+            return result
+        if name_u == "TYRANNOFORMED":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates, _objective_map = self._tyr_tyrannoformed_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Command phase and a friendly HARVESTER unit within range of an objective marker you control"
             return result
         if name_u == "PREDATORY IMPERATIVE":
             if self._tyr_predatory_imperative_candidates():
@@ -5466,9 +5573,11 @@ class StratagemManager(
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
             "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
+            "ABLATIVE CARAPACE": "Opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets: selected HARVESTER unit gains Feel No Pain 5+, or Feel No Pain 4+ while within range of a controlled objective, until end of phase",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
+            "BROODGUARD IMPULSE": "Any phase: target your HARVESTER unit that was just destroyed; friendly TYRANIDS models add 1 to Wound rolls against the enemy unit that destroyed it until end of battle",
             "DEATH FRENZY": "Target: TYRANIDS unit selected as a target of an enemy unit's fight attacks",
             "ENDLESS SWARM": "Target: one ENDLESS MULTITUDE unit with destroyed models, or up to two such units if both are within Synapse Range; each selected unit returns up to D3+3 destroyed models",
             "EXPERIMENTAL AMMUNITION": "Target: T'AU EMPIRE unit not yet selected to shoot; choose +1S or +1S/+1AP/[HAZARDOUS] (cannot also target with THREAT ASSESSMENT ANALYSER this phase)",
@@ -5477,12 +5586,16 @@ class StratagemManager(
             "OVERRUN": "Target: TYRANIDS unit just before it consolidates; gets +3\" consolidate (if it can end in Engagement Range), and if within Synapse and not in Engagement Range it can make a 6\" Normal move instead",
             "PREDATORY IMPERATIVE": "Target: one TYRANIDS unit, or up to two TYRANIDS units if both are within Synapse Range; choose one Hyper-adaptation (other than the one chosen at battle round 1) for selected units until your next Command phase",
             "PULSE ONSLAUGHT": "Target: one enemy non-MONSTER/non-VEHICLE unit hit by your non-KROOT T'AU EMPIRE INFANTRY unit that just shot; enemy is shaken (-2 Move, -2 Advance, -2 Charge) until end of opponent's next turn",
+            "RAPACIOUS HUNGER": "Your Fight phase: selected TYRANIDS unit that just destroyed an enemy unit immediately regenerates; if the selected unit is a HARVESTER and heals, it regains up to 3 lost wounds instead of D3",
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
+            "RECLAIM BIOMASS": "Any phase, when one of your TYRANIDS units is destroyed before the last model is removed: selected HARVESTER within 6\" immediately regenerates another friendly TYRANIDS unit within 6\"",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "RELENTLESS ASSAULT": "Target: your ADEPTUS ASTARTES unit that just Fell Back; choose shoot or charge this turn, or choose Red Thirst to become Battle-shocked and do both",
             "RED RAMPAGE": "Target: your ADEPTUS ASTARTES unit that has not been selected to fight this phase; choose [LANCE], [LETHAL HITS], or Red Thirst for both plus Battle-shock",
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
+            "SECURE BIOMASS": "Fight phase: selected TYRANIDS unit that has not fought gains [LETHAL HITS] on melee weapons until end of phase; HARVESTER units also score critical hits on unmodified 5+",
             "SAVAGE ECHOES": "Target: your ADEPTUS ASTARTES unit just charged by an enemy unit; choose +1 Strength or +1 Attacks for melee weapons this turn, or choose Red Thirst to become Battle-shocked and gain both",
+            "TYRANNOFORMED": "Command phase: selected HARVESTER unit within range of a controlled objective makes that objective sticky until your opponent controls it",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
@@ -10874,6 +10987,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_tyranids_assimilation_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_corsair_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -11878,6 +11998,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_invasion_fleet_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_assimilation_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13969,6 +14096,10 @@ class StratagemManager(
             self._queue_deceptors_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
+        try:
+            self._queue_tyranids_assimilation_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
 
         # Death Guard (Virulent Vectorium): PUTRID DETONATION
         try:
@@ -14252,6 +14383,13 @@ class StratagemManager(
             raise
         try:
             self._queue_veterans_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_assimilation_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

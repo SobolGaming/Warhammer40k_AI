@@ -8159,6 +8159,27 @@ class Game(
                 set_up_as_reinforcements=bool(set_up_as_reinforcements),
             )
 
+    def _on_unit_destroyed_tyranids_detachments(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        handlers = []
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else None
+            if army is None:
+                continue
+            mgr = getattr(army, "tyranids_detachments", None)
+            if mgr is None:
+                continue
+            unlock_fn = getattr(mgr, "unlock_parasitic_biomorphology_after_kill", None)
+            if not callable(unlock_fn):
+                continue
+            handlers.append(unlock_fn)
+        for unlock_fn in handlers:
+            unlock_fn(unit, destroyed_by_unit=destroyed_by_unit, game=self)
+
     def _on_unit_set_up_orks_detachments(
         self,
         unit=None,

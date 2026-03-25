@@ -4675,6 +4675,93 @@ _INVASION_FLEET_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INVASION_FLEET_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ASSIMILATION_SWARM_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008413005": StratagemToolDescriptor(
+        stratagem_id="000008413005",
+        name="Ablative Carapace",
+        timing="opponent_shooting_or_either_fight_phase_after_enemy_targets_selected",
+        target="harvester_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="conditional_feel_no_pain_by_controlled_objective",
+        cp_cost=2,
+        effect_params={
+            "base_fnp": 5,
+            "boosted_fnp": 4,
+            "boost_condition": "within_controlled_objective_range",
+            "required_keyword": "HARVESTER",
+        },
+    ),
+    "000008413002": StratagemToolDescriptor(
+        stratagem_id="000008413002",
+        name="Broodguard Impulse",
+        timing="any_phase_when_friendly_harvester_just_destroyed",
+        target="just_destroyed_harvester_unit",
+        duration="until_end_of_battle",
+        effect="mark_destroyer_for_tyranids_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "wound_bonus": 1,
+            "required_friendly_keyword": "HARVESTER",
+        },
+    ),
+    "000008413007": StratagemToolDescriptor(
+        stratagem_id="000008413007",
+        name="Rapacious Hunger",
+        timing="your_fight_phase_when_friendly_tyranids_unit_just_destroyed_enemy",
+        target="friendly_tyranids_unit_that_just_destroyed_enemy",
+        duration="immediate",
+        effect="immediate_regenerate_with_harvester_flat_three_heal",
+        cp_cost=1,
+        effect_params={
+            "heal_override_if_harvester": 3,
+        },
+    ),
+    "000008413003": StratagemToolDescriptor(
+        stratagem_id="000008413003",
+        name="Reclaim Biomass",
+        timing="any_phase_before_last_model_removed_when_friendly_tyranids_unit_just_destroyed",
+        target="friendly_harvester_within_6_of_destroyed_friendly_tyranids_unit",
+        duration="immediate",
+        effect="harvester_regenerates_nearby_tyranids_unit",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "required_keyword": "HARVESTER",
+            "exclude_destroyed_unit": True,
+        },
+    ),
+    "000008413006": StratagemToolDescriptor(
+        stratagem_id="000008413006",
+        name="Secure Biomass",
+        timing="either_fight_phase",
+        target="tyranids_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_lethal_hits_with_harvester_critical_hits_on_5plus",
+        cp_cost=1,
+        effect_params={
+            "lethal_hits": True,
+            "harvester_critical_hit_threshold": 5,
+        },
+    ),
+    "000008413004": StratagemToolDescriptor(
+        stratagem_id="000008413004",
+        name="Tyrannoformed",
+        timing="command_phase",
+        target="harvester_unit_within_controlled_objective_range",
+        duration="until_opponent_controls_start_or_end_of_turn",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={
+            "required_keyword": "HARVESTER",
+        },
+    ),
+}
+
+_ASSIMILATION_SWARM_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ASSIMILATION_SWARM_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008418007": StratagemToolDescriptor(
         stratagem_id="000008418007",
@@ -8328,6 +8415,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ASSIMILATION_SWARM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8536,6 +8626,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _AUXILIARY_CADRE_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
+        or _ASSIMILATION_SWARM_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
