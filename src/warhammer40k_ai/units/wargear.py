@@ -12392,7 +12392,13 @@ class WargearProfile:
             lead_mods = None
         try:
             unit = attacker.parent_unit
-            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type, target=target, attacker_model=attacker)
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(
+                attack_type,
+                target=target,
+                attacker_model=attacker,
+                weapon_profile=self,
+                closest_dist=float(attack_instance.get("distance_to_target", 0.0) or 0.0),
+            )
             if isinstance(unit_hit_mods, dict) and int(unit_hit_mods.get("hit", 0) or 0):
                 bonus = int(unit_hit_mods.get("hit", 0) or 0)
                 _add_hit_mod(bonus, list(unit_hit_mods.get("hit_reasons", ()) or ()))
@@ -18231,6 +18237,48 @@ class WargearProfile:
                 source_name = str(source or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
                 already_applied = any(source_name in str(mod or "") for mod in list(wound_result.get("modifiers", []) or []))
                 if penalty and not already_applied:
+                    dice_modifier -= int(penalty)
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
+        try:
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            temp_effect_iter = getattr(target_root, "iter_active_death_guard_temp_effects", None)
+            if callable(temp_effect_iter):
+                attack_type = "any"
+                try:
+                    if self.parent_wargear and self.parent_wargear.is_ranged():
+                        attack_type = "ranged"
+                    elif self.parent_wargear and self.parent_wargear.is_melee():
+                        attack_type = "melee"
+                except Exception:
+                    attack_type = "any"
+                for effect in list(
+                    temp_effect_iter(
+                        effect_type="wound_roll_penalty",
+                        attack_type=attack_type,
+                        require_target_match=False,
+                        strength=strength,
+                        target_toughness=target_toughness,
+                    )
+                    or []
+                ):
+                    try:
+                        penalty = int(effect.get("value", effect.get("penalty", 0)) or 0)
+                    except (TypeError, ValueError):
+                        penalty = 0
+                    if penalty <= 0:
+                        continue
+                    source_name = (
+                        str(effect.get("source", "") or "Death Guard temporary effect").strip()
+                        or "Death Guard temporary effect"
+                    )
+                    already_applied = any(source_name in str(mod or "") for mod in list(wound_result.get("modifiers", []) or []))
+                    if already_applied:
+                        continue
                     dice_modifier -= int(penalty)
                     wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
         except Exception:

@@ -7849,6 +7849,9 @@ class PositioningMixin:
             try:
                 sr = getattr(root, "special_rules", None)
                 if isinstance(sr, dict):
+                    dist = sr.get("stratagem_pile_in_distance_override")
+                    if dist is not None:
+                        override = max(float(override or 0.0), float(dist))
                     dist = sr.get("bearer_unit_pile_in_distance_override")
                     if dist is not None:
                         override = max(float(override or 0.0), float(dist))

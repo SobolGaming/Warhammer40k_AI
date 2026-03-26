@@ -80,12 +80,35 @@ class _UnitStub:
     def _get_unit_attack_roll_rules(self):
         return []
 
-    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
+    def get_unit_hit_reroll_modifiers(
+        self,
+        attack_type: str,
+        *,
+        target=None,
+        attacker_model=None,
+        weapon_profile=None,
+        closest_dist=None,
+    ) -> dict:
         from warhammer40k_ai.units.unit import Unit
 
-        return Unit.get_unit_hit_reroll_modifiers(self, attack_type, target=target, attacker_model=attacker_model)
+        return Unit.get_unit_hit_reroll_modifiers(
+            self,
+            attack_type,
+            target=target,
+            attacker_model=attacker_model,
+            weapon_profile=weapon_profile,
+            closest_dist=closest_dist,
+        )
 
-    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
+    def get_unit_wound_reroll_modifiers(
+        self,
+        attack_type: str,
+        *,
+        target=None,
+        attacker_model=None,
+        weapon_profile=None,
+        target_toughness=None,
+    ) -> dict:
         from warhammer40k_ai.units.unit import Unit
 
         return Unit.get_unit_wound_reroll_modifiers(
@@ -93,6 +116,8 @@ class _UnitStub:
             attack_type,
             target=target,
             attacker_model=attacker_model,
+            weapon_profile=weapon_profile,
+            target_toughness=target_toughness,
         )
 
     def _target_within_objective_range(self, target_unit=None, game_map=None) -> bool:

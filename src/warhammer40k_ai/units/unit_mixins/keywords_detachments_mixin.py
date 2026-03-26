@@ -13017,11 +13017,17 @@ class KeywordsDetachmentsMixin:
         entry: dict,
         *,
         target=None,
+        model: Optional['Model'] = None,
+        weapon_profile=None,
+        closest_dist: Optional[float] = None,
+        strength=None,
+        target_toughness=None,
     ) -> bool:
-        if target is None:
-            return False
         target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
-        if target_root is None:
+        condition = str(entry.get("condition", "") or "").strip().lower()
+        if target is None and condition not in {"strength_gt_toughness"}:
+            return False
+        if target is not None and target_root is None:
             return False
 
         condition = str(entry.get("target_condition", "") or "").strip().lower()
@@ -13042,6 +13048,37 @@ class KeywordsDetachmentsMixin:
                     return False
                 if callable(has_keyword) and bool(has_keyword(keyword)):
                     return False
+        extra_condition = str(entry.get("condition", "") or "").strip().lower()
+        if extra_condition == "within_half_range":
+            if model is None or weapon_profile is None or target_root is None:
+                return False
+            range_fn = getattr(weapon_profile, "_effective_range_max", None)
+            effective_range = float(range_fn(model) or 0.0) if callable(range_fn) else 0.0
+            if effective_range <= 0.0:
+                return False
+            try:
+                current_distance = float(closest_dist or 0.0)
+            except (TypeError, ValueError):
+                current_distance = 0.0
+            within_half_range = current_distance <= (effective_range / 2.0)
+            if not within_half_range:
+                counts_as_half_range = getattr(self, "weapon_target_counts_as_half_range", None)
+                if callable(counts_as_half_range):
+                    within_half_range = bool(
+                        counts_as_half_range(
+                            model=model,
+                            target=target_root,
+                            weapon_profile=weapon_profile,
+                        )
+                    )
+            return within_half_range
+        if extra_condition == "strength_gt_toughness":
+            try:
+                current_strength = int(strength or 0)
+                current_toughness = int(target_toughness or 0)
+            except (TypeError, ValueError):
+                return False
+            return current_strength > current_toughness
         return True
 
     def iter_active_death_guard_temp_effects(
@@ -13050,6 +13087,11 @@ class KeywordsDetachmentsMixin:
         effect_type: str = "",
         attack_type: str = "any",
         target=None,
+        model: Optional['Model'] = None,
+        weapon_profile=None,
+        closest_dist: Optional[float] = None,
+        strength=None,
+        target_toughness=None,
         require_target_match: bool = True,
     ):
         expected = str(effect_type or "").strip().lower()
@@ -13061,7 +13103,16 @@ class KeywordsDetachmentsMixin:
                 continue
             if not self._death_guard_temp_effect_matches_attack_type(entry, attack_type=attack_type):
                 continue
-            if require_target_match and not self._death_guard_temp_effect_target_matches(entry, target=target):
+            needs_match = bool(require_target_match) or bool(str(entry.get("condition", "") or "").strip())
+            if needs_match and not self._death_guard_temp_effect_target_matches(
+                entry,
+                target=target,
+                model=model,
+                weapon_profile=weapon_profile,
+                closest_dist=closest_dist,
+                strength=strength,
+                target_toughness=target_toughness,
+            ):
                 continue
             yield dict(entry)
 

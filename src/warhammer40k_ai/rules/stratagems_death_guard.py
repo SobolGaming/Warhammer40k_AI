@@ -72,6 +72,11 @@ class DeathGuardStratagemMixin:
         checker = getattr(mgr, "is_death_lords_chosen", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_flyblown_host_detachment(self) -> bool:
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "is_flyblown_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _dg_has_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -334,6 +339,181 @@ class DeathGuardStratagemMixin:
             candidates.append(root)
         candidates.sort(key=self._dg_sort_key)
         return candidates
+
+    def _dg_flyblown_host_infantry_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_engaged: bool = False,
+    ) -> list[Any]:
+        if not self._is_flyblown_host_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_attached_unit_has_keyword(root, "INFANTRY"):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if require_not_shot and not self._dg_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                continue
+            if require_not_fought and not self._dg_unit_not_selected_for_phase_action(root, phase_key="FIGHT_PHASE"):
+                continue
+            if require_engaged and not self._dg_is_unit_engaged(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_engagement_enemy_candidates(
+        self,
+        source_unit: Any,
+        *,
+        exclude_keywords_any: tuple[str, ...] = (),
+    ) -> list[Any]:
+        root = self._dg_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(within_engagement):
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._dg_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._dg_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._dg_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._dg_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if exclude_keywords_any and any(
+                self._dg_has_keyword(enemy_root, keyword) for keyword in list(exclude_keywords_any or ())
+            ):
+                continue
+            if not bool(within_engagement(root, enemy_root)):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_enervating_onslaught_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        return self._dg_engagement_enemy_candidates(
+            source_unit,
+            exclude_keywords_any=("MONSTER", "VEHICLE"),
+        )
+
+    def _dg_nauseating_paroxysms_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        return self._dg_engagement_enemy_candidates(source_unit)
+
+    def _dg_unit_within_range_of_friendly_named_unit(
+        self,
+        source_unit: Any,
+        token: str,
+        *,
+        max_distance: float,
+        exclude_self: bool = True,
+    ) -> bool:
+        source_root = self._dg_root(source_unit)
+        if source_root is None:
+            return False
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        seen: set[str] = set()
+        source_models = list(self._dg_alive_models(source_root) or [])
+        if not source_models:
+            return False
+        for entry in list(getattr(army, "units", []) or []):
+            other_root = self._dg_root(entry)
+            if other_root is None:
+                continue
+            if exclude_self and other_root is source_root:
+                continue
+            other_id = self._dg_sort_key(other_root)
+            if other_id and other_id in seen:
+                continue
+            if other_id:
+                seen.add(other_id)
+            if not self._dg_is_death_guard_unit(other_root):
+                continue
+            if not self._dg_on_battlefield(other_root, require_targetable=True):
+                continue
+            if not self._dg_unit_contains_named_member(other_root, token):
+                continue
+            target_models = list(self._dg_alive_models(other_root) or [])
+            for source_model in list(source_models or []):
+                for target_model in list(target_models or []):
+                    try:
+                        distance = float(distance_between_models_bases_3d(source_model, target_model))
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                    if distance <= float(max_distance) + 1e-6:
+                        return True
+        return False
+
+    def _dg_unit_is_within_myphitic_blight_hauler_range(self, source_unit: Any) -> bool:
+        return self._dg_unit_within_range_of_friendly_named_unit(
+            source_unit,
+            "Myphitic Blight-hauler",
+            max_distance=6.0,
+            exclude_self=True,
+        )
+
+    def _dg_wargear_has_keyword(self, wargear: Any, keyword: str) -> bool:
+        if wargear is None:
+            return False
+        target = str(keyword or "").strip().upper()
+        if not target:
+            return False
+        has_keyword = getattr(wargear, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword(target)):
+            return True
+        tokens: list[str] = []
+        get_keywords = getattr(wargear, "get_keywords", None)
+        if callable(get_keywords):
+            tokens.extend(list(get_keywords() or []))
+        else:
+            tokens.extend(list(getattr(wargear, "keywords", []) or []))
+        profiles = getattr(wargear, "profiles", None)
+        if isinstance(profiles, dict):
+            for profile in list(profiles.values() or []):
+                profile_get_keywords = getattr(profile, "get_keywords", None)
+                if callable(profile_get_keywords):
+                    tokens.extend(list(profile_get_keywords() or []))
+                else:
+                    tokens.extend(list(getattr(profile, "keywords", []) or []))
+        normalized = {
+            re.sub(r"^[\[\(]+|[\]\)]+$", "", str(token or "").strip()).upper()
+            for token in list(tokens or [])
+            if str(token or "").strip()
+        }
+        return target in normalized
 
     def _dg_signal_pox_objective_candidates(self, source_unit: Any) -> list[Any]:
         source_member = self._dg_named_member_unit(source_unit, "Lord of Virulence")
@@ -670,6 +850,120 @@ class DeathGuardStratagemMixin:
             phase_name=phase_name,
             event_name=event_name,
         )
+        self._queue_flyblown_host_myphitic_invigoration_reaction(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name=phase_name,
+            event_name=event_name,
+        )
+
+    def _queue_death_guard_phase_start_reactions(self, *, player=None, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        self._queue_flyblown_host_nauseating_paroxysms_phase_start_reaction(player=player, phase=phase)
+
+    def _queue_flyblown_host_nauseating_paroxysms_phase_start_reaction(self, *, player=None, phase=None) -> None:
+        if not self._is_flyblown_host_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("NAUSEATING PAROXYSMS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._dg_flyblown_host_infantry_candidates(require_engaged=True)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "phase_start"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "NAUSEATING PAROXYSMS"
+                and str(reaction.get("phase_name", "") or "").strip().upper() == "FIGHT PHASE"
+            ):
+                return
+        payload = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_flyblown_host_myphitic_invigoration_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if not self._is_flyblown_host_detachment():
+            return
+        if self._dg_phase_key(phase_name) != "SHOOTING_PHASE":
+            return
+        stratagem = self.get_by_name("MYPHITIC INVIGORATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_attached_unit_has_keyword(root, "INFANTRY"):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._dg_unit_is_within_myphitic_blight_hauler_range(root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == event_name
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "MYPHITIC INVIGORATION"
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
 
     def _queue_death_lords_chosen_undying_spite_reaction(
         self,
@@ -734,8 +1028,6 @@ class DeathGuardStratagemMixin:
         self._queue_reaction(payload)
 
     def _queue_death_guard_move_end_reactions(self, *, unit: Any, action: str) -> None:
-        if not self._is_death_lords_chosen_detachment():
-            return
         game = getattr(self, "game", None)
         if game is None:
             return
@@ -743,6 +1035,9 @@ class DeathGuardStratagemMixin:
             return
         active_player = getattr(game, "get_current_player", lambda: None)()
         if active_player is not self.player:
+            return
+        self._queue_flyblown_host_enervating_onslaught_reaction(unit=unit, action=action)
+        if not self._is_death_lords_chosen_detachment():
             return
         action_key = str(action or "").strip().lower().replace("_", " ")
         if action_key not in {"charge", "charge move"}:
@@ -766,6 +1061,53 @@ class DeathGuardStratagemMixin:
             if (
                 reaction.get("event") == "unit_move_ended"
                 and str(reaction.get("stratagem", "") or "").strip().upper() == "SICKENING IMPACT"
+                and self._dg_root(reaction.get("unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "source_unit": root,
+            "action": str(action or ""),
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["target_enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_flyblown_host_enervating_onslaught_reaction(self, *, unit: Any, action: str) -> None:
+        if not self._is_flyblown_host_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"}:
+            return
+        root = self._dg_root(unit)
+        if root is None or not self._dg_owned_by_player(root, self.player):
+            return
+        if root not in self._dg_flyblown_host_infantry_candidates():
+            return
+        stratagem = self.get_by_name("ENERVATING ONSLAUGHT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem, target_unit=root):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = self._dg_enervating_onslaught_enemy_candidates(root)
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_ended"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "ENERVATING ONSLAUGHT"
                 and self._dg_root(reaction.get("unit")) is root
             ):
                 return
@@ -842,15 +1184,21 @@ class DeathGuardStratagemMixin:
             "BLOOMING PESTILENCE",
             "BLESSINGS OF FILTH",
             "DEATH'S HEADS",
+            "DRONING HORROR",
+            "ENERVATING ONSLAUGHT",
+            "EYE OF THE SWARM",
             "GRIM REAPERS",
             "GROTESQUE FORTITUDE",
             "MALIGNANCE MAGNIFIED",
             "MORTARION'S TEACHINGS",
             "MOBILE VECTOR",
+            "MYPHITIC INVIGORATION",
+            "NAUSEATING PAROXYSMS",
             "RABID INFUSION",
             "SICKENING IMPACT",
             "SIGNAL POX",
             "UNDYING SPITE",
+            "VERMIN CLOUD",
         }:
             return None
 
@@ -862,6 +1210,14 @@ class DeathGuardStratagemMixin:
             "MOBILE VECTOR",
             "RABID INFUSION",
         }
+        flyblown_name = name_u in {
+            "DRONING HORROR",
+            "ENERVATING ONSLAUGHT",
+            "EYE OF THE SWARM",
+            "MYPHITIC INVIGORATION",
+            "NAUSEATING PAROXYSMS",
+            "VERMIN CLOUD",
+        }
         death_lords_name = name_u in {
             "BLOOMING PESTILENCE",
             "GRIM REAPERS",
@@ -871,6 +1227,8 @@ class DeathGuardStratagemMixin:
             "UNDYING SPITE",
         }
         if champions_name and not self._is_champions_of_contagion_detachment():
+            return False
+        if flyblown_name and not self._is_flyblown_host_detachment():
             return False
         if death_lords_name and not self._is_death_lords_chosen_detachment():
             return False
@@ -1191,6 +1549,339 @@ class DeathGuardStratagemMixin:
             enemy_root.special_rules = sr
             self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
             logger.info("INFO: DEATH'S HEADS: target enemy unit gains all Plague effects until your next turn.")
+            return True
+
+        if name_u == "DRONING HORROR":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: DRONING HORROR: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: DRONING HORROR: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: DRONING HORROR: not your turn")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates(require_not_shot=True):
+                logger.error("ERROR: DRONING HORROR: target must be an eligible DEATH GUARD INFANTRY unit that has not shot")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="flyblown_host",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "hit_reroll",
+                        "attack_type": "ranged",
+                        "reroll_mode": "ones",
+                        "source": str(s.name or "Droning Horror"),
+                    },
+                    {
+                        "effect": "hit_reroll",
+                        "attack_type": "ranged",
+                        "reroll_mode": "full",
+                        "condition": "within_half_range",
+                        "source": str(s.name or "Droning Horror"),
+                    },
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: DRONING HORROR: target unit re-rolls ranged Hit rolls of 1, or all ranged Hit rolls against targets within half range, this phase."
+            )
+            return True
+
+        if name_u == "EYE OF THE SWARM":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: EYE OF THE SWARM: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: EYE OF THE SWARM: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: EYE OF THE SWARM: not your turn")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates(require_not_shot=True):
+                logger.error("ERROR: EYE OF THE SWARM: target must be an eligible DEATH GUARD INFANTRY unit that has not shot")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            source_name = str(s.name or "Eye of the Swarm")
+            root_id = self._dg_sort_key(root)
+            for model in list(self._dg_alive_models(root) or []):
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                model_id = self._dg_sort_key(model)
+                weapon_names: list[str] = []
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_ranged = getattr(wargear, "is_ranged", None)
+                    if callable(is_ranged) and not bool(is_ranged()):
+                        continue
+                    if not callable(is_ranged):
+                        is_melee = getattr(wargear, "is_melee", None)
+                        if callable(is_melee) and bool(is_melee()):
+                            continue
+                    if self._dg_wargear_has_keyword(wargear, "BLAST"):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if weapon_name and weapon_name not in weapon_names:
+                        weapon_names.append(weapon_name)
+                for weapon_name in sorted(list(weapon_names or []), key=str.lower):
+                    set_keywords(
+                        key=f"death_guard_flyblown_host_eye_of_the_swarm:{root_id}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["PISTOL"],
+                        source=source_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: EYE OF THE SWARM: target unit gains [PISTOL] on non-BLAST ranged weapons this phase.")
+            return True
+
+        if name_u == "NAUSEATING PAROXYSMS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "NAUSEATING PAROXYSMS":
+                        continue
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: NAUSEATING PAROXYSMS: no target unit provided")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: NAUSEATING PAROXYSMS: wrong phase")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: NAUSEATING PAROXYSMS: target is not currently eligible")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates(require_engaged=True):
+                logger.error("ERROR: NAUSEATING PAROXYSMS: target must be an eligible DEATH GUARD INFANTRY unit within Engagement Range")
+                return False
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            enemy_candidates = self._dg_nauseating_paroxysms_enemy_candidates(root)
+            enemy_root = self._dg_root(enemy_unit) if enemy_unit is not None else None
+            if enemy_root is None and len(enemy_candidates) == 1:
+                enemy_root = self._dg_root(enemy_candidates[0])
+            if enemy_root is None:
+                logger.error("ERROR: NAUSEATING PAROXYSMS: missing enemy unit within Engagement Range")
+                return False
+            if enemy_root not in enemy_candidates:
+                logger.error("ERROR: NAUSEATING PAROXYSMS: selected enemy unit is not eligible")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            force_test = getattr(enemy_root, "force_battle_shock_test", None)
+            if not callable(force_test):
+                logger.error("ERROR: NAUSEATING PAROXYSMS: target enemy unit cannot take a forced Battle-shock test")
+                return False
+            force_test(
+                int(self._dg_current_turn() or 1),
+                modifier=-1,
+                source=str(s.name or "NAUSEATING PAROXYSMS"),
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: NAUSEATING PAROXYSMS: %s forces %s to take a Battle-shock test at -1.",
+                getattr(root, "name", "Unit"),
+                getattr(enemy_root, "name", "Enemy"),
+            )
+            return True
+
+        if name_u == "VERMIN CLOUD":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: VERMIN CLOUD: no target unit provided")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: VERMIN CLOUD: wrong phase")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates(require_not_fought=True):
+                logger.error("ERROR: VERMIN CLOUD: target must be an eligible DEATH GUARD INFANTRY unit that has not fought")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["stratagem_pile_in_distance_override"] = max(6.0, float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0))
+            sr["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+            sr["stratagem_pile_in_source"] = str(s.name or "VERMIN CLOUD")
+            sr["stratagem_consolidate_distance_override"] = max(
+                6.0,
+                float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0),
+            )
+            sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+            sr["stratagem_consolidate_source"] = str(s.name or "VERMIN CLOUD")
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: VERMIN CLOUD: target unit can Pile-in and Consolidate up to 6\" this phase.")
+            return True
+
+        if name_u == "ENERVATING ONSLAUGHT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+            action = str(kwargs.get("action") or "")
+            if unit is None or (enemy_unit is None and not enemy_candidates):
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "ENERVATING ONSLAUGHT":
+                        continue
+                    unit = unit or reaction.get("source_unit") or reaction.get("unit") or reaction.get("target_unit")
+                    enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+                    if not enemy_candidates:
+                        enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                    if not action:
+                        action = str(reaction.get("action") or "")
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: missing source unit")
+                return False
+            if phase_key != "CHARGE_PHASE":
+                logger.error("ERROR: ENERVATING ONSLAUGHT: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: not your turn")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates():
+                logger.error("ERROR: ENERVATING ONSLAUGHT: source must be an eligible DEATH GUARD INFANTRY unit")
+                return False
+            action_key = str(action or "").strip().lower().replace("_", " ")
+            if action_key not in {"charge", "charge move"}:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: source unit must have just ended a Charge move")
+                return False
+            if not enemy_candidates:
+                enemy_candidates = self._dg_enervating_onslaught_enemy_candidates(root)
+            enemy_root = self._dg_root(enemy_unit) if enemy_unit is not None else None
+            if enemy_root is None and len(enemy_candidates) == 1:
+                enemy_root = self._dg_root(enemy_candidates[0])
+            if enemy_root is None:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: missing eligible enemy unit within Engagement Range")
+                return False
+            if enemy_candidates and enemy_root not in enemy_candidates:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: selected enemy unit is not eligible")
+                return False
+            engaged_models = self._dg_models_within_engagement_range_of_enemy(root, enemy_root)
+            if not engaged_models:
+                logger.error("ERROR: ENERVATING ONSLAUGHT: no models in your unit are within Engagement Range of that enemy")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            rolls: list[int] = []
+            success_count = 0
+            for model in list(engaged_models or []):
+                roll = int(dice_module.get_roll("D6") or 0)
+                rolls.append(int(roll))
+                model_unit = getattr(model, "parent_unit", None)
+                is_cultist = bool(model_unit is not None and self._dg_has_keyword(model_unit, "CULTIST"))
+                is_poxwalker = bool(model_unit is not None and self._dg_has_keyword(model_unit, "POXWALKERS"))
+                modifier = 0 if (is_cultist or is_poxwalker) else 1
+                if int(roll) + int(modifier) >= 5:
+                    success_count += 1
+            mortal_wounds = min(6, int(success_count))
+            if mortal_wounds > 0:
+                apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
+                if callable(apply_mortals):
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: ENERVATING ONSLAUGHT: %s rolled %s and dealt %d mortal wound(s) to %s.",
+                getattr(root, "name", "Unit"),
+                list(rolls),
+                int(mortal_wounds),
+                getattr(enemy_root, "name", "Enemy"),
+            )
+            return True
+
+        if name_u == "MYPHITIC INVIGORATION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            if unit is None or attacking_unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "MYPHITIC INVIGORATION":
+                        continue
+                    unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                    attacking_unit = attacking_unit or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            attacker_root = self._dg_root(attacking_unit)
+            if root is None:
+                logger.error("ERROR: MYPHITIC INVIGORATION: no target unit provided")
+                return False
+            if attacker_root is None:
+                logger.error("ERROR: MYPHITIC INVIGORATION: missing attacking unit")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: MYPHITIC INVIGORATION: wrong phase")
+                return False
+            if active_player is self.player:
+                logger.error("ERROR: MYPHITIC INVIGORATION: Shooting phase use requires your opponent's turn")
+                return False
+            if self._dg_owned_by_player(attacker_root, self.player):
+                logger.error("ERROR: MYPHITIC INVIGORATION: attacking unit must be an enemy unit")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: MYPHITIC INVIGORATION: target is not currently eligible")
+                return False
+            if root not in self._dg_flyblown_host_infantry_candidates():
+                logger.error("ERROR: MYPHITIC INVIGORATION: target must be an eligible DEATH GUARD INFANTRY unit")
+                return False
+            if not self._dg_unit_is_within_myphitic_blight_hauler_range(root):
+                logger.error("ERROR: MYPHITIC INVIGORATION: target must be within 6\" of a friendly Myphitic Blight-hauler unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="flyblown_host",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "wound_roll_penalty",
+                        "attack_type": "ranged",
+                        "value": 1,
+                        "condition": "strength_gt_toughness",
+                        "source": str(s.name or "Myphitic Invigoration"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: MYPHITIC INVIGORATION: attacks that target this unit suffer -1 to wound if Strength exceeds its Toughness this phase.")
             return True
 
         if name_u == "BLOOMING PESTILENCE":

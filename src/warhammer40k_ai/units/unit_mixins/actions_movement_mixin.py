@@ -6225,7 +6225,15 @@ class ActionsMovementMixin:
         source = str(getattr(self, "_prey_selection_source", "") or "Prey selection").strip() or "Prey selection"
         return int(hit_bonus), int(wound_bonus), source
 
-    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
+    def get_unit_hit_reroll_modifiers(
+        self,
+        attack_type: str,
+        *,
+        target=None,
+        attacker_model=None,
+        weapon_profile=None,
+        closest_dist=None,
+    ) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
         """
@@ -7183,15 +7191,21 @@ class ActionsMovementMixin:
                     effect_type="hit_reroll",
                     attack_type=atype,
                     target=target,
+                    model=attacker_model,
+                    weapon_profile=weapon_profile,
+                    closest_dist=closest_dist,
                 )
                 or []
             ):
                 reroll_mode = str(effect.get("reroll_mode", "") or "").strip().lower()
                 source = str(effect.get("source", "") or "Death Guard temporary effect").strip() or "Death Guard temporary effect"
+                condition = str(effect.get("condition", "") or "").strip().lower()
                 if reroll_mode == "full":
                     mods["reroll_hit_full"] = True
                     if str(effect.get("target_condition", "") or "").strip().lower() == "below_starting_strength":
                         reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll vs targets below Starting Strength")
+                    elif condition == "within_half_range":
+                        reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll vs targets within half range")
                     else:
                         reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
                 elif reroll_mode == "ones":
@@ -7202,6 +7216,9 @@ class ActionsMovementMixin:
                     effect_type="crit_hit_threshold",
                     attack_type=atype,
                     target=target,
+                    model=attacker_model,
+                    weapon_profile=weapon_profile,
+                    closest_dist=closest_dist,
                 )
                 or []
             ):

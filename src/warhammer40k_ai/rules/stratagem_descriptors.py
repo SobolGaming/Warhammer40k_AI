@@ -547,6 +547,81 @@ _DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_LORDS_CHOSEN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_FLYBLOWN_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009730002": StratagemToolDescriptor(
+        stratagem_id="000009730002",
+        name="Nauseating Paroxysms",
+        timing="fight_phase_start",
+        target="death_guard_infantry_unit_within_engagement_range_and_enemy_unit_within_engagement_range",
+        duration="immediate",
+        effect="force_battleshock_test_at_minus_1",
+        cp_cost=1,
+        effect_params={"battle_shock_modifier": -1},
+    ),
+    "000009730003": StratagemToolDescriptor(
+        stratagem_id="000009730003",
+        name="Vermin Cloud",
+        timing="fight_phase_on_select_to_fight",
+        target="death_guard_infantry_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="pile_in_and_consolidate_up_to_6",
+        cp_cost=1,
+        effect_params={"pile_in_distance": 6, "consolidate_distance": 6},
+    ),
+    "000009730004": StratagemToolDescriptor(
+        stratagem_id="000009730004",
+        name="Eye of the Swarm",
+        timing="shooting_phase_on_select_to_shoot",
+        target="death_guard_infantry_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_pistol_except_blast",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "keywords": ["PISTOL"], "exclude_keywords_any": ["BLAST"]},
+    ),
+    "000009730005": StratagemToolDescriptor(
+        stratagem_id="000009730005",
+        name="Droning Horror",
+        timing="shooting_phase_on_select_to_shoot",
+        target="death_guard_infantry_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_reroll_ones_or_full_within_half_range",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "reroll_hit_ones": True, "reroll_hit_full_if_within_half_range": True},
+    ),
+    "000009730006": StratagemToolDescriptor(
+        stratagem_id="000009730006",
+        name="Enervating Onslaught",
+        timing="charge_phase_after_charge_move",
+        target="death_guard_infantry_unit_that_ended_charge_move",
+        duration="immediate",
+        effect="charge_end_mortal_wounds_against_non_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "enemy_target": "enemy_unit_within_engagement_range_excluding_monster_vehicle",
+            "roll_count": "models_within_engagement_range_of_selected_enemy",
+            "success_on": 5,
+            "non_cultist_non_poxwalker_modifier": 1,
+            "mortal_wounds_per_success": 1,
+            "max_mortal_wounds": 6,
+        },
+    ),
+    "000009730007": StratagemToolDescriptor(
+        stratagem_id="000009730007",
+        name="Myphitic Invigoration",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="death_guard_infantry_unit_within_6_of_friendly_myphitic_blight_hauler_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty_when_strength_exceeds_toughness",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"attack_type": "ranged", "wound_roll_modifier": -1, "requires_strength_gt_toughness": True},
+    ),
+}
+
+_FLYBLOWN_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FLYBLOWN_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8494,6 +8569,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DEATH_LORDS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _FLYBLOWN_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8817,6 +8895,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _PLAGUE_LEGION_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME.get(key)
         or _DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME.get(key)
+        or _FLYBLOWN_HOST_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

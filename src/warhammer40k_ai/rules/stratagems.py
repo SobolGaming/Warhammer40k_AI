@@ -570,16 +570,22 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LEECHSPORE ERUPTION",
     "BLESSINGS OF FILTH",
     "DEATH'S HEADS",
+    "DRONING HORROR",
+    "ENERVATING ONSLAUGHT",
+    "EYE OF THE SWARM",
     "GROTESQUE FORTITUDE",
     "MALIGNANCE MAGNIFIED",
     "MOBILE VECTOR",
     "MORTARION'S TEACHINGS",
+    "MYPHITIC INVIGORATION",
+    "NAUSEATING PAROXYSMS",
     "RABID INFUSION",
     "BLOOMING PESTILENCE",
     "GRIM REAPERS",
     "SICKENING IMPACT",
     "SIGNAL POX",
     "UNDYING SPITE",
+    "VERMIN CLOUD",
     "PRIMED AND READIED",
     "RETURN TO THE SHADOWS",
     "OVERWHELMING GENEROSITY",
@@ -759,6 +765,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BINDING SHADOW",
     "PLAGUE OF WOES",
     "GROTESQUE FORTITUDE",
+    "ENERVATING ONSLAUGHT",
+    "MYPHITIC INVIGORATION",
     "SICKENING IMPACT",
     "UNDYING SPITE",
     "CAVALCADE OF BLADES",
@@ -6736,6 +6744,10 @@ class StratagemManager(
             self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_death_guard_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
         self._clear_deaths_heads_if_expired(player=player, phase=phase)
         self._clear_signal_pox_if_expired(player=player, phase=phase)
         try:
@@ -8842,6 +8854,13 @@ class StratagemManager(
                             sr.pop("tyranids_death_frenzy_source", None)
                             sr.pop("tyranids_death_frenzy_owner", None)
                             sr.pop("tyranids_death_frenzy_turn", None)
+                        if (
+                            "stratagem_pile_in_distance_override" in sr
+                            or "stratagem_pile_in_source" in sr
+                        ):
+                            sr.pop("stratagem_pile_in_distance_override", None)
+                            sr.pop("stratagem_pile_in_expires_phase", None)
+                            sr.pop("stratagem_pile_in_source", None)
                         if (
                             "stratagem_consolidate_distance_override" in sr
                             or sr.get("stratagem_consolidate_requires_engagement")
