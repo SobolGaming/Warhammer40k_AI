@@ -9,7 +9,6 @@ from .decision_kinds import DECISION_MOVE_UNIT
 from .decisions import DecisionOption, DecisionRequest
 from .decision_requests import (
     build_deployment_zone_request,
-    build_reserves_allocation_request,
     build_select_next_deploy_unit_request,
     canonical_deployment_zone_key,
 )
@@ -17,7 +16,6 @@ from .prospective_positions import calculate_prospective_model_positions
 from ..roster.player import Player
 from ..utility.calcs import get_dist
 from ..utility.decision_utils import resolve_decision_command
-from ..utility.dice import get_dice_roll
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from .missions import OfficialMission, MissionRegistry, DeploymentZoneType, create_objectives_from_mission
 
@@ -140,6 +138,52 @@ class DeploymentManager:
         self.defender = None
         self.deployment_zones = []
         logger.info(f"DeploymentManager initialized with mission: {self.mission.name}")
+
+    def _current_setup_roles(self) -> Tuple[Player, Player]:
+        attacker_idx = getattr(self.game, "attacker_index", None)
+        defender_idx = getattr(self.game, "defender_index", None)
+        if attacker_idx is None or defender_idx is None:
+            raise RuntimeError("Attacker and defender must be determined before DEPLOY_ARMIES.")
+        players = list(getattr(self.game, "players", []) or [])
+        attacker_index = int(attacker_idx)
+        defender_index = int(defender_idx)
+        if attacker_index == defender_index:
+            raise RuntimeError("Attacker and defender indices must refer to different players.")
+        if not (0 <= attacker_index < len(players)):
+            raise RuntimeError("Attacker index is out of range for DEPLOY_ARMIES.")
+        if not (0 <= defender_index < len(players)):
+            raise RuntimeError("Defender index is out of range for DEPLOY_ARMIES.")
+        self.attacker = players[attacker_index]
+        self.defender = players[defender_index]
+        return self.attacker, self.defender
+
+    def _current_reserves_decisions(self, player: Player) -> Dict[str, str]:
+        army = player.get_army()
+        if army is None:
+            return {}
+        root_fn = getattr(army, "_reserve_group_roots", None)
+        if callable(root_fn):
+            roots = list(root_fn() or [])
+        else:
+            roots = [
+                unit
+                for unit in list(getattr(army, "units", []) or [])
+                if not bool(getattr(unit, "is_attached_leader", False))
+                and not bool(getattr(unit, "is_joined_support", False))
+            ]
+        decisions: Dict[str, str] = {}
+        for root in list(roots or []):
+            unit_id = str(maybe_entity_id(root) or "")
+            if not unit_id:
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+            if reserve_status == "reserves":
+                decisions[unit_id] = "reserves"
+            elif reserve_status == "strategic_reserves":
+                decisions[unit_id] = "strategic_reserves"
+            else:
+                decisions[unit_id] = "deploy"
+        return decisions
         
     def execute_deployment_sequence(self, decision_makers: Dict[str, DeploymentDecisionMaker]) -> dict:
         """Execute the complete deployment sequence according to Warhammer 40k rules.
@@ -158,14 +202,14 @@ class DeploymentManager:
         
         logger.info("Starting Official Warhammer 40k Deployment Sequence")
         players_by_id = {p.id: p for p in (self.game.players or []) if p is not None}
-        
-        # Step 1: Determine Attacker and Defender
-        self.attacker, self.defender = self.determine_attacker_and_defender()
+
+        # DEPLOY_ARMIES reuses the setup state established in earlier setup phases.
+        self.attacker, self.defender = self._current_setup_roles()
         deployment_results['attacker'] = self.attacker.id
         deployment_results['defender'] = self.defender.id
-        logger.info(f"Attacker: {self.attacker.name}, Defender: {self.defender.name}")
-        
-        # Step 2: Use pre-configured deployment zones (ensures consistency)
+        logger.info(f"Using setup roles - attacker: {self.attacker.name}, defender: {self.defender.name}")
+
+        # Step 1: Use pre-configured deployment zones (ensures consistency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
             # Use zones already set up in the game (ensures consistency across all game types)
             logger.info("Using pre-configured deployment zones for consistency")
@@ -217,68 +261,25 @@ class DeploymentManager:
             }
         
         logger.info(f"{self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
-        
-        # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
-        defender_reserves = self._resolve_reserves_decisions(
-            self.defender,
-            defender_decision_maker,
-            deployment_zone=deployment_results['deployment_zones'].get(self.defender.id),
+
+        # Step 2: Reuse the reserve declarations already resolved in DECLARE_BATTLE_FORMATIONS.
+        deployment_results['reserves'][self.defender.id] = self._current_reserves_decisions(self.defender)
+        deployment_results['reserves'][self.attacker.id] = self._current_reserves_decisions(self.attacker)
+
+        logger.info(
+            f"Using existing reserves declarations - {self.defender.name}: "
+            f"{sum(1 for d in deployment_results['reserves'][self.defender.id].values() if d != 'deploy')} units, "
+            f"{self.attacker.name}: "
+            f"{sum(1 for d in deployment_results['reserves'][self.attacker.id].values() if d != 'deploy')} units"
         )
-        attacker_decision_maker = decision_makers[self.attacker.id]
-        attacker_reserves = self._resolve_reserves_decisions(
-            self.attacker,
-            attacker_decision_maker,
-            deployment_zone=deployment_results['deployment_zones'].get(self.attacker.id),
-        )
-        
-        deployment_results['reserves'][self.defender.id] = defender_reserves
-        deployment_results['reserves'][self.attacker.id] = attacker_reserves
-        
-        logger.info(f"Reserves declared - {self.defender.name}: {sum(1 for d in defender_reserves.values() if d != 'deploy')} units, "
-                   f"{self.attacker.name}: {sum(1 for d in attacker_reserves.values() if d != 'deploy')} units")
-        
-        # Step 4: Alternating Deployment (Defender first)
+
+        # Step 3: Alternating Deployment (Defender first)
         self.execute_alternating_deployment(deployment_results, decision_makers)
-        
-        # Step 5: Determine First Turn
-        first_turn_player = self.determine_first_turn()
-        deployment_results['first_turn_player'] = first_turn_player.id
-        
-        # Set the game's current player to the first turn player
-        if first_turn_player == self.game.players[0]:
-            self.game.current_player_index = 0
-        else:
-            self.game.current_player_index = 1
-        
-        logger.info(f"{first_turn_player.name} will take the first turn")
         logger.info("Deployment sequence complete!")
         
         self.set_reserves_status(deployment_results)
         
         return deployment_results
-    
-    def determine_attacker_and_defender(self) -> Tuple[Player, Player]:
-        """Roll off to determine attacker and defender."""
-        player1_roll = get_dice_roll(6)
-        player2_roll = get_dice_roll(6)
-        
-        logger.info(
-            f"Attacker/Defender roll-off: {self.game.players[0].name}={player1_roll}, "
-            f"{self.game.players[1].name}={player2_roll}"
-        )
-        
-        # Re-roll ties
-        while player1_roll == player2_roll:
-            player1_roll = get_dice_roll(6)
-            player2_roll = get_dice_roll(6)
-            logger.info(
-                f"Tie! Re-rolling: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}={player2_roll}"
-            )
-        
-        if player1_roll > player2_roll:
-            return self.game.players[0], self.game.players[1]  # Player 1 is attacker
-        else:
-            return self.game.players[1], self.game.players[0]  # Player 2 is attacker
     
     def create_deployment_zones(self) -> List[dict]:
         """Create deployment zones based on the selected mission."""
@@ -310,145 +311,6 @@ class DeploymentManager:
             zones.append(attacker_zone)
         
         return zones
-
-    @staticmethod
-    def _decisions_to_buckets(decisions: Dict[str, str]) -> Dict[str, List[str]]:
-        buckets: Dict[str, List[str]] = {
-            "deploy": [],
-            "reserves": [],
-            "strategic_reserves": [],
-        }
-        for unit_id, status in sorted(dict(decisions or {}).items()):
-            unit_key = str(unit_id or "")
-            if not unit_key:
-                continue
-            choice = str(status or "deploy")
-            if choice not in buckets:
-                choice = "deploy"
-            buckets[choice].append(unit_key)
-        return buckets
-
-    @staticmethod
-    def _decisions_from_buckets(
-        buckets: Dict[str, List[str]],
-        *,
-        root_unit_ids: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
-        decisions: Dict[str, str] = {str(unit_id): "deploy" for unit_id in list(root_unit_ids or []) if str(unit_id)}
-        for status in ("deploy", "reserves", "strategic_reserves"):
-            for unit_id in list(dict(buckets or {}).get(status, []) or []):
-                unit_key = str(unit_id or "")
-                if not unit_key:
-                    continue
-                decisions[unit_key] = status
-        return decisions
-
-    @staticmethod
-    def _matching_reserves_option(request: DecisionRequest, decisions: Dict[str, str]) -> Optional[DecisionOption]:
-        target_buckets = DeploymentManager._decisions_to_buckets(decisions)
-        root_unit_ids = [
-            str(unit_id)
-            for unit_id in list(dict(getattr(request, "context", {}) or {}).get("reserve_root_unit_ids", []) or [])
-            if str(unit_id)
-        ]
-        for option in list(getattr(request, "options", []) or []):
-            payload = dict(getattr(option, "payload", {}) or {})
-            option_buckets = dict(payload.get("unit_ids_by_bucket", {}) or {})
-            if DeploymentManager._decisions_to_buckets(
-                DeploymentManager._decisions_from_buckets(
-                    option_buckets,
-                    root_unit_ids=root_unit_ids,
-                )
-            ) == target_buckets:
-                return option
-        return None
-
-    def _resolve_reserves_decisions(
-        self,
-        player: Player,
-        decision_maker: DeploymentDecisionMaker,
-        *,
-        deployment_zone: Optional[dict] = None,
-    ) -> dict:
-        army = player.get_army()
-        if army is None:
-            return {}
-        decisions = dict(decision_maker.declare_reserves(player) or {})
-        request = build_reserves_allocation_request(
-            self.game,
-            army,
-            deployment_intent=decision_maker.build_deployment_intent(
-                decision_kind="reserves",
-                player=player,
-                deployment_zone=deployment_zone,
-                deployable_units=[],
-                already_deployed=[],
-            ),
-            extra_context=decision_maker.build_deployment_decision_context(
-                decision_kind="reserves",
-                player=player,
-                deployment_zone=deployment_zone,
-                deployable_units=[],
-                already_deployed=[],
-            )
-            | {"decision_owner": "deployment_manager"},
-            preferred_decisions=decisions,
-            queue_requests=True,
-        )
-        if request is None:
-            return decisions
-        selected_option: Optional[DecisionOption] = None
-        option_id = str(
-            decision_maker.choose_reserves_allocation_option(
-                request,
-                player,
-                dict(decisions),
-            )
-            or ""
-        )
-        if option_id:
-            for option in list(getattr(request, "options", []) or []):
-                if str(getattr(option, "option_id", "") or "") == option_id:
-                    selected_option = option
-                    break
-            if selected_option is None:
-                raise RuntimeError(
-                    f"Reserves option selection for {player.name} returned unknown option id: {option_id}"
-                )
-        if selected_option is None:
-            selected_option = self._matching_reserves_option(request, decisions)
-        if selected_option is None and getattr(request, "options", None):
-            selected_option = request.options[0]
-        if selected_option is None:
-            raise RuntimeError(f"Reserves allocation request for {player.name} has no selectable option.")
-
-        selected_buckets = dict(getattr(selected_option, "payload", {}) or {}).get("unit_ids_by_bucket")
-        if not isinstance(selected_buckets, dict):
-            selected_buckets = self._decisions_to_buckets(decisions)
-
-        root_unit_ids = [
-            str(unit_id)
-            for unit_id in list(dict(getattr(request, "context", {}) or {}).get("reserve_root_unit_ids", []) or [])
-            if str(unit_id)
-        ]
-        resolved_decisions = self._decisions_from_buckets(selected_buckets, root_unit_ids=root_unit_ids)
-
-        queue = getattr(self.game, "decision_queue", None)
-        pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
-        if pending is not None:
-            apply_result = resolve_decision_command(
-                self.game,
-                request,
-                selected_option.option_id,
-                result_payload={"unit_ids_by_bucket": selected_buckets},
-                player_id=getattr(player, "id", None),
-            )
-            if not bool(getattr(apply_result, "ok", False)):
-                errors = tuple(getattr(apply_result, "errors", ()) or ())
-                raise RuntimeError(
-                    f"Reserves allocation decision rejected for player {getattr(player, 'name', 'Player')}: {list(errors)}"
-                )
-        return resolved_decisions
 
     def _resolve_deployment_zone_decision(
         self,
@@ -1371,19 +1233,6 @@ class DeploymentManager:
             pass
         self.game.map.units.append(unit)
     
-    def determine_first_turn(self) -> Player:
-        """Determine who goes first according to Warhammer 40k rules."""
-        # Attacker rolls D6: 1-3 = Defender goes first, 4-6 = Attacker goes first
-        roll = get_dice_roll(6)
-        logger.info(f"First turn roll: {roll}")
-        
-        if roll <= 3:
-            logger.info(f"{self.defender.name} (Defender) takes first turn")
-            return self.defender
-        else:
-            logger.info(f"{self.attacker.name} (Attacker) takes first turn")
-            return self.attacker
-
     def set_reserves_status(self, deployment_results: dict) -> None:
         """Set the reserve status for all units based on deployment decisions."""
         for player in (self.attacker, self.defender):

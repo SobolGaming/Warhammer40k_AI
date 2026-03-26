@@ -144,6 +144,57 @@ def test_overlay_lines_use_prebattle_label_when_setup_is_incomplete() -> None:
     assert ("phase: COMMAND_PHASE | turn 1", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_overlay_lines_expand_deployment_move_into_per_model_positions() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    fake_reader = SimpleNamespace(
+        get_step=lambda _idx: SimpleNamespace(
+            chosen_option_id="opt-1",
+            phase="DEPLOY_ARMIES",
+            turn_id=0,
+            decision_type="MOVE_UNIT",
+            actor_player_id="player-1",
+            controller_kind="ai",
+            chosen_action_id="action-1",
+            wall_clock_ms=8,
+            time_budget_ms=None,
+        ),
+        get_request_payload=lambda _idx: {
+            "prompt": "Deploy Howling Banshees",
+            "context": {"placement_kind": "deployment", "movement_type": "deploy"},
+            "options": [
+                {
+                    "option_id": "opt-1",
+                    "label": "Place at (49.1, 6.5)",
+                    "payload": {
+                        "action_id": "action-1",
+                        "movement_type": "deploy",
+                        "model_positions": [
+                            {"model_id": "m1", "position": [49.1, 6.5, 0.0], "facing": 90.0},
+                            {"model_id": "m2", "position": [50.2, 6.7, 0.0], "facing": 90.0},
+                        ],
+                    },
+                }
+            ],
+        },
+        get_decision_record=lambda _idx: {"outcome": {"immediate_deltas": {}}, "candidates": []},
+        get_events_for_decision=lambda _idx: [{"type": "decision_requested"}],
+    )
+
+    lines = replay_viewer._overlay_lines(
+        fake_reader,
+        {"session_id": "selfplay:000000"},
+        "/tmp/replay.sqlite3",
+        12,
+        220,
+        SimpleNamespace(setup_complete=False, setup_phase=SimpleNamespace(name="DEPLOY_ARMIES")),
+    )
+
+    assert ("chosen placement: 2 models", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("1. (49.1, 6.5, 0.0, 90.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("2. (50.2, 6.7, 0.0, 90.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("chosen option: Place at (49.1, 6.5)", replay_viewer.OVERLAY_TEXT) not in lines
+
+
 def test_format_roll_line_normalizes_get_roll_reason() -> None:
     replay_viewer = _load_replay_viewer_module()
 

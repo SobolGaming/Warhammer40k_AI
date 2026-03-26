@@ -373,3 +373,57 @@ def test_execute_alternating_deployment_skips_unplaceable_unit_without_crashing(
     assert bool(getattr(doomed, "_deployment_skipped_no_position", False)) is True
     assert bool(doomed.deployed) is True
     assert bool(doomed.models[0].is_alive) is False
+
+
+def test_execute_deployment_sequence_reuses_setup_roles_and_reserves(monkeypatch) -> None:
+    game, defender, attacker = _build_game()
+    defender_unit = _DeployingUnit("unit:defender", "Guardian Defenders")
+    attacker_unit = _DeployingUnit("unit:attacker", "Howling Banshees")
+    defender.army = _DeploymentArmy([defender_unit])
+    attacker.army = _DeploymentArmy([attacker_unit])
+    defender_unit.set_reserve_status("strategic_reserves")
+    attacker_unit.set_reserve_status("deployed")
+
+    game.defender_index = 0
+    game.attacker_index = 1
+    game.first_turn_player_index = 1
+    game.current_player_index = 0
+    game.deployment_zones = {
+        defender.id: {"name": "Defender Zone", "zone_type": "defender"},
+        attacker.id: {"name": "Attacker Zone", "zone_type": "attacker"},
+    }
+
+    class _NoSetupSideEffectsDecisionMaker(_ScriptedDecisionMaker):
+        def declare_reserves(self, player: Player) -> dict:
+            raise AssertionError(f"DEPLOY_ARMIES must not re-run reserve declarations for {player.name}.")
+
+    defender_maker = _NoSetupSideEffectsDecisionMaker(zone_name="Defender Zone", next_unit_id=defender_unit.id)
+    attacker_maker = _NoSetupSideEffectsDecisionMaker(zone_name="Attacker Zone", next_unit_id=attacker_unit.id)
+    manager = DeploymentManager(game)
+
+    def _unexpected_get_dice_roll(*_args, **_kwargs):
+        raise AssertionError("DEPLOY_ARMIES must not re-roll attacker/defender or first-turn dice.")
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment.get_dice_roll", _unexpected_get_dice_roll, raising=False)
+    monkeypatch.setattr(manager, "_resolve_deployment_zone_decision", lambda _player, _maker, zones: zones[0])
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        manager,
+        "execute_alternating_deployment",
+        lambda deployment_results, _decision_makers: captured.__setitem__("results", deployment_results),
+    )
+
+    deployment_results = manager.execute_deployment_sequence(
+        {defender.id: defender_maker, attacker.id: attacker_maker}
+    )
+
+    assert manager.defender is defender
+    assert manager.attacker is attacker
+    assert deployment_results["defender"] == defender.id
+    assert deployment_results["attacker"] == attacker.id
+    assert deployment_results["first_turn_player"] is None
+    assert deployment_results["reserves"][defender.id] == {defender_unit.id: "strategic_reserves"}
+    assert deployment_results["reserves"][attacker.id] == {attacker_unit.id: "deploy"}
+    assert captured["results"] is deployment_results
+    assert game.first_turn_player_index == 1
+    assert game.current_player_index == 0

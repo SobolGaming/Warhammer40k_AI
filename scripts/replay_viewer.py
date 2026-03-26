@@ -120,6 +120,97 @@ def _chosen_option_label(request_payload: dict[str, object], chosen_option_id: s
     return ""
 
 
+def _selected_option_entry(
+    request_payload: dict[str, object],
+    *,
+    chosen_option_id: str,
+    chosen_action_id: str,
+) -> dict[str, object]:
+    option_id = str(chosen_option_id or "")
+    action_id = str(chosen_action_id or "")
+    for entry in list(request_payload.get("options", []) or []):
+        option = dict(entry or {})
+        if option_id and str(option.get("option_id", "") or "") == option_id:
+            return option
+    if not action_id:
+        return {}
+    for entry in list(request_payload.get("options", []) or []):
+        option = dict(entry or {})
+        payload = dict(option.get("payload", {}) or {})
+        if str(payload.get("action_id", "") or "") == action_id:
+            return option
+    return {}
+
+
+def _selected_action_payload(
+    request_payload: dict[str, object],
+    record: dict[str, object],
+    *,
+    chosen_option_id: str,
+    chosen_action_id: str,
+) -> dict[str, object]:
+    option = _selected_option_entry(
+        request_payload,
+        chosen_option_id=chosen_option_id,
+        chosen_action_id=chosen_action_id,
+    )
+    payload = dict(option.get("payload", {}) or {})
+    target_action_id = str(chosen_action_id or "")
+    if not target_action_id:
+        return payload
+    for entry in list(record.get("candidates", []) or []):
+        candidate = dict(entry or {})
+        if str(candidate.get("action_id", "") or "") != target_action_id:
+            continue
+        params = dict(candidate.get("params", {}) or {})
+        if params:
+            merged = dict(payload)
+            merged.update(params)
+            return merged
+    return payload
+
+
+def _selected_deployment_move_lines(
+    request_payload: dict[str, object],
+    record: dict[str, object],
+    step: object,
+) -> list[str]:
+    if str(getattr(step, "decision_type", "") or "") != "MOVE_UNIT":
+        return []
+    context = dict(request_payload.get("context", {}) or {})
+    payload = _selected_action_payload(
+        request_payload,
+        record,
+        chosen_option_id=str(getattr(step, "chosen_option_id", "") or ""),
+        chosen_action_id=str(getattr(step, "chosen_action_id", "") or ""),
+    )
+    placement_kind = str(payload.get("placement_kind", "") or context.get("placement_kind", "") or "").strip().lower()
+    movement_type = str(payload.get("movement_type", "") or context.get("movement_type", "") or "").strip().lower()
+    if placement_kind != "deployment" and movement_type != "deploy":
+        return []
+    positions = [
+        dict(entry or {})
+        for entry in list(payload.get("model_positions", []) or context.get("deployment_model_positions", []) or [])
+        if isinstance(entry, dict)
+    ]
+    if not positions:
+        return []
+    lines = [f"chosen placement: {len(positions)} models"]
+    for idx, entry in enumerate(positions, start=1):
+        pos = list(entry.get("position", []) or [])
+        if len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) >= 3 else 0.0
+            facing = float(entry.get("facing", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        lines.append(f"{idx}. ({x:.1f}, {y:.1f}, {z:.1f}, {facing:.1f})")
+    return lines
+
+
 def _wrap_text(text: str, *, width: int) -> list[str]:
     words = str(text or "").split()
     if not words:
@@ -160,6 +251,7 @@ def _overlay_lines(
         record = reader.get_decision_record(decision_idx)
         prompt = str(request_payload.get("prompt", "") or "").strip()
         chosen_label = _chosen_option_label(request_payload, str(step.chosen_option_id))
+        chosen_move_lines = _selected_deployment_move_lines(request_payload, record, step)
         if not bool(getattr(game, "setup_complete", True)):
             setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
             lines.append((f"setup phase: {setup_phase}", OVERLAY_TEXT))
@@ -171,7 +263,10 @@ def _overlay_lines(
         if prompt:
             for wrapped in _wrap_text(f"prompt: {prompt}", width=68):
                 lines.append((wrapped, OVERLAY_TEXT))
-        if chosen_label:
+        if chosen_move_lines:
+            for entry in chosen_move_lines:
+                lines.append((entry, OVERLAY_TEXT))
+        elif chosen_label:
             lines.append((f"chosen option: {chosen_label}", OVERLAY_TEXT))
         lines.append((f"chosen action: {step.chosen_action_id}", OVERLAY_MUTED))
         lines.append((f"recorded events: {len(reader.get_events_for_decision(decision_idx))}", OVERLAY_MUTED))
