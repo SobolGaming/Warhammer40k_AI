@@ -1684,6 +1684,10 @@ class Enhancement:
         except Exception:
             is_auxiliary_cadre = False
         try:
+            is_kroot_hunting_pack = bool(tau_mgr and tau_mgr.is_kroot_hunting_pack())
+        except Exception:
+            is_kroot_hunting_pack = False
+        try:
             is_kauyon = bool(tau_mgr and tau_mgr.is_kauyon())
         except Exception:
             is_kauyon = False
@@ -3379,6 +3383,117 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_transponder_lock_module_bearer_model_id"] = bearer_id
+
+        if name == "borthrod gland" or enh_id == "000008821002":
+            if not is_kroot_hunting_pack:
+                return
+            unit.special_rules["enhancement_borthrod_gland"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            threshold = _coerce_int(params.get("crit_hit_threshold", 5) or 5, default=5)
+            unit.special_rules["enhancement_borthrod_gland_crit_hit_threshold"] = int(max(2, int(threshold)))
+            unit.special_rules["enhancement_borthrod_gland_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_borthrod_gland_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_borthrod_gland_source"] = "Borthrod Gland"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_borthrod_gland_bearer_model_id"] = bearer_id
+
+        if name == "kroothawk flock" or enh_id == "000008821003":
+            if not is_kroot_hunting_pack:
+                return
+            unit.special_rules["enhancement_kroothawk_flock"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Kroothawk Flock").strip() or "Kroothawk Flock"
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ())
+                if str(v or "").strip()
+            )
+            unit.special_rules["enhancement_kroothawk_flock_source"] = source
+            unit.special_rules["enhancement_kroothawk_flock_min_enemy_distance"] = float(
+                max(0.0, _coerce_float(params.get("enemy_reserves_min_distance", 12.0) or 12.0, default=12.0))
+            )
+            unit.special_rules["enhancement_kroothawk_flock_horizontal_only"] = bool(
+                params.get("horizontal_only", True)
+            )
+            unit.special_rules["enhancement_kroothawk_flock_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type=str(params.get("attack_type", "ranged") or "ranged"),
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_kroothawk_flock_bearer_model_id"] = bearer_id
+
+        if name == "nomadic hunter" or enh_id == "000008821004":
+            if not is_kroot_hunting_pack:
+                return
+            unit.special_rules["enhancement_nomadic_hunter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Nomadic Hunter").strip() or "Nomadic Hunter"
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("ASSAULT",)) or ())
+                if str(v or "").strip()
+            )
+            move_bonus = _coerce_int(params.get("movement_bonus", 3) or 3, default=3)
+            unit.special_rules["enhancement_nomadic_hunter_move_bonus"] = int(max(0, move_bonus))
+            unit.special_rules["enhancement_nomadic_hunter_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_nomadic_hunter_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_nomadic_hunter_source"] = source
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type=str(params.get("attack_type", "ranged") or "ranged"),
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=bool(params.get("requires_bearer_leading", True)),
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nomadic_hunter_bearer_model_id"] = bearer_id
+
+        if name == "root-carved weapons" or enh_id == "000008821005":
+            if not is_kroot_hunting_pack:
+                return
+            unit.special_rules["enhancement_root_carved_weapons"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Root-carved Weapons").strip() or "Root-carved Weapons"
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("PRECISION", "DEVASTATING WOUNDS")) or ())
+                if str(v or "").strip()
+            )
+            unit.special_rules["enhancement_root_carved_weapons_source"] = source
+            _append_enhancement_bearer_weapon_keyword_rule(
+                unit,
+                attack_type=str(params.get("attack_type", "any") or "any"),
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_root_carved_weapons_bearer_model_id"] = bearer_id
 
         if name == "exemplar of the kauyon" or enh_id == "000008442002":
             if not is_kauyon:

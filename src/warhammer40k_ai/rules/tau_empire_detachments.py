@@ -6,6 +6,18 @@ from .detachment_manager import DetachmentManagerBase
 class TauEmpireDetachmentManager(DetachmentManagerBase):
     faction_id = "TAU"
     _TAU_EMPIRE_KEYWORDS = ("T'AU EMPIRE", "TAU EMPIRE")
+    _BORTHROD_GLAND_FLAG = "enhancement_borthrod_gland"
+    _BORTHROD_GLAND_ID = "000008821002"
+    _BORTHROD_GLAND_NAME = "borthrod gland"
+    _KROOTHAWK_FLOCK_FLAG = "enhancement_kroothawk_flock"
+    _KROOTHAWK_FLOCK_ID = "000008821003"
+    _KROOTHAWK_FLOCK_NAME = "kroothawk flock"
+    _NOMADIC_HUNTER_FLAG = "enhancement_nomadic_hunter"
+    _NOMADIC_HUNTER_ID = "000008821004"
+    _NOMADIC_HUNTER_NAME = "nomadic hunter"
+    _ROOT_CARVED_WEAPONS_FLAG = "enhancement_root_carved_weapons"
+    _ROOT_CARVED_WEAPONS_ID = "000008821005"
+    _ROOT_CARVED_WEAPONS_NAME = "root-carved weapons"
     _EXEMPLAR_OF_MONTKA_FLAG = "enhancement_exemplar_of_montka"
     _EXEMPLAR_OF_MONTKA_ID = "000008811003"
     _EXEMPLAR_OF_MONTKA_NAME = "exemplar of the mont'ka"
@@ -851,6 +863,128 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         if value:
             return str(value)
         return ""
+
+    @staticmethod
+    def _member_has_enhancement(member, *, flag_key: str, enhancement_id: str, enhancement_name: str) -> bool:
+        if member is None:
+            return False
+        sr = getattr(member, "special_rules", None)
+        if isinstance(sr, dict) and flag_key and bool(sr.get(flag_key, False)):
+            return True
+        enhancement = getattr(member, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        return bool(
+            (enhancement_id and enh_id == enhancement_id)
+            or (enhancement_name and enh_name == str(enhancement_name or "").strip().lower())
+        )
+
+    def kroot_borthrod_gland_crit_hit_threshold(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_kroot_hunting_pack() or attacker_model is None:
+            return 0, ""
+        is_melee = getattr(weapon_profile, "is_melee", None)
+        if callable(is_melee) and not bool(is_melee()):
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return 0, ""
+        leaders = sorted(list(getattr(root, "attached_leaders", []) or []), key=self._entity_id)
+        for leader in leaders:
+            if not self._member_has_enhancement(
+                leader,
+                flag_key=self._BORTHROD_GLAND_FLAG,
+                enhancement_id=self._BORTHROD_GLAND_ID,
+                enhancement_name=self._BORTHROD_GLAND_NAME,
+            ):
+                continue
+            if not self._enhancement_bearer_alive(leader):
+                continue
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                threshold = int(sr.get("enhancement_borthrod_gland_crit_hit_threshold", 5) or 5)
+            except (TypeError, ValueError):
+                threshold = 5
+            if threshold <= 0:
+                continue
+            source = str(sr.get("enhancement_borthrod_gland_source", "") or "Borthrod Gland").strip()
+            return int(threshold), source or "Borthrod Gland"
+        return 0, ""
+
+    def kroot_nomadic_hunter_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_kroot_hunting_pack() or unit is None:
+            return 0, ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return 0, ""
+        leaders = sorted(list(getattr(root, "attached_leaders", []) or []), key=self._entity_id)
+        for leader in leaders:
+            if not self._member_has_enhancement(
+                leader,
+                flag_key=self._NOMADIC_HUNTER_FLAG,
+                enhancement_id=self._NOMADIC_HUNTER_ID,
+                enhancement_name=self._NOMADIC_HUNTER_NAME,
+            ):
+                continue
+            if not self._enhancement_bearer_alive(leader):
+                continue
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                bonus = int(sr.get("enhancement_nomadic_hunter_move_bonus", 3) or 3)
+            except (TypeError, ValueError):
+                bonus = 3
+            if bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_nomadic_hunter_source", "") or "Nomadic Hunter").strip()
+            return int(bonus), source or "Nomadic Hunter"
+        return 0, ""
+
+    def kroot_hunting_pack_kroothawk_flock_reserves_denial(self, unit, *, game=None) -> dict | None:
+        del game
+        if not self.is_kroot_hunting_pack() or unit is None:
+            return None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return None
+        members = sorted(self._attached_members(root), key=self._entity_id)
+        for member in members:
+            if not self._member_has_enhancement(
+                member,
+                flag_key=self._KROOTHAWK_FLOCK_FLAG,
+                enhancement_id=self._KROOTHAWK_FLOCK_ID,
+                enhancement_name=self._KROOTHAWK_FLOCK_NAME,
+            ):
+                continue
+            if not self._enhancement_bearer_alive(member):
+                continue
+            source_model = self._enhancement_bearer_model(member)
+            if source_model is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                min_distance = float(sr.get("enhancement_kroothawk_flock_min_enemy_distance", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                min_distance = 12.0
+            if min_distance <= 0.0:
+                continue
+            source = str(sr.get("enhancement_kroothawk_flock_source", "") or "Kroothawk Flock").strip()
+            return {
+                "range": float(min_distance),
+                "horizontal_only": bool(sr.get("enhancement_kroothawk_flock_horizontal_only", True)),
+                "source": source or "Kroothawk Flock",
+                "source_model_id": self._entity_id(source_model),
+            }
+        return None
 
     def _unit_has_student_of_kauyon(self, unit) -> bool:
         if unit is None:

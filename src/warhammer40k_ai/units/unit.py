@@ -2166,6 +2166,14 @@ class Unit(
                 if int(bonus or 0):
                     source_name = str(source or "Vile Vigour").strip() or "Vile Vigour"
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            bonus_fn = getattr(tau_mgr, "kroot_nomadic_hunter_movement_bonus", None) if tau_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Nomadic Hunter").strip() or "Nomadic Hunter"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
             bonus_fn = getattr(as_mgr, "righteous_purpose_move_bonus", None) if as_mgr is not None else None
             if callable(bonus_fn):

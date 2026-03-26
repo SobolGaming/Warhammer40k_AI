@@ -1371,6 +1371,66 @@ _TAU_AUXILIARY_CADRE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TAU_AUXILIARY_CADRE_DESCRIPTORS.values()
 }
 
+_TAU_KROOT_HUNTING_PACK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008821002": EnhancementToolDescriptor(
+        enhancement_id="000008821002",
+        name="Borthrod Gland",
+        timing="passive_while_bearer_is_leading",
+        target="bearer_unit_melee_attacks",
+        duration="constant",
+        effect="leading_bearer_unit_melee_critical_hits_on_5plus",
+        effect_params={
+            "attack_type": "melee",
+            "crit_hit_threshold": 5,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000008821003": EnhancementToolDescriptor(
+        enhancement_id="000008821003",
+        name="Kroothawk Flock",
+        timing="passive",
+        target="bearer_unit_ranged_weapons_and_enemy_reinforcements_near_bearer",
+        duration="constant",
+        effect="bearer_unit_ranged_weapons_gain_ignores_cover_and_enemy_reserves_arrival_min_horizontal_distance_from_bearer",
+        effect_params={
+            "attack_type": "ranged",
+            "keywords": ("IGNORES COVER",),
+            "enemy_reserves_min_distance": 12.0,
+            "horizontal_only": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008821004": EnhancementToolDescriptor(
+        enhancement_id="000008821004",
+        name="Nomadic Hunter",
+        timing="passive_while_bearer_is_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="leading_bearer_unit_movement_bonus_and_ranged_assault",
+        effect_params={
+            "movement_bonus": 3,
+            "attack_type": "ranged",
+            "keywords": ("ASSAULT",),
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000008821005": EnhancementToolDescriptor(
+        enhancement_id="000008821005",
+        name="Root-carved Weapons",
+        timing="passive",
+        target="bearer_weapons",
+        duration="constant",
+        effect="bearer_weapons_gain_precision_and_devastating_wounds",
+        effect_params={"attack_type": "any", "keywords": ("PRECISION", "DEVASTATING WOUNDS")},
+    ),
+}
+
+_TAU_KROOT_HUNTING_PACK_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TAU_KROOT_HUNTING_PACK_DESCRIPTORS.values()
+}
+
 _MONTKA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008811002": EnhancementToolDescriptor(
         enhancement_id="000008811002",
@@ -7473,6 +7533,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TAU_AUXILIARY_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TAU_KROOT_HUNTING_PACK_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _MONTKA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7854,6 +7917,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_DEVOTED_OF_YNNEAD_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _TAU_AUXILIARY_CADRE_BY_NAME.get(key)
+        or _TAU_KROOT_HUNTING_PACK_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RETALIATION_CADRE_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
@@ -7956,6 +8020,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)
+        or _TAU_KROOT_HUNTING_PACK_BY_NAME.get(key)
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)

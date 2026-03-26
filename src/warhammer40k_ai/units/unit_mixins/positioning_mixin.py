@@ -4951,6 +4951,22 @@ class PositioningMixin:
         except Exception:
             pass
 
+        for entry in self._enhancement_weapon_keyword_rules(model=model):
+            attack_type = str(entry.get("attack_type", "any") or "any").strip().lower()
+            keyword = str(entry.get("keyword", "") or "").strip()
+            source_name = str(entry.get("source", "") or "Enhancement").strip() or "Enhancement"
+            key = (attack_type, keyword.lower(), source_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            rules.append(
+                {
+                    "attack_type": attack_type,
+                    "keyword": keyword,
+                    "source": source_name,
+                }
+            )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rules

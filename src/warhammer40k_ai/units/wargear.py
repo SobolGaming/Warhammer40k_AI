@@ -15477,6 +15477,22 @@ class WargearProfile:
                         crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         except Exception:
             pass
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+                threshold_fn = getattr(tau_mgr, "kroot_borthrod_gland_crit_hit_threshold", None) if tau_mgr is not None else None
+                if callable(threshold_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    threshold, source = threshold_fn(attacker, weapon_profile=self, game=game)
+                    if int(threshold or 0):
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        source_name = str(source or "Borthrod Gland").strip() or "Borthrod Gland"
+                        crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
 
         try:
             unit = getattr(attacker, "parent_unit", None)
