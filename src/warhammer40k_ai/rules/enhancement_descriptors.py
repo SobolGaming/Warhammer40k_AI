@@ -6637,6 +6637,28 @@ _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME = {
 }
 
 _TAU_KAUYON_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008442002": EnhancementToolDescriptor(
+        enhancement_id="000008442002",
+        name="Exemplar of the Kauyon",
+        timing="passive_while_bearer_is_leading",
+        target="bearer_unit",
+        duration="battle_rounds_2_to_5",
+        effect="extend_patient_hunter_to_round_two",
+    ),
+    "000008442003": EnhancementToolDescriptor(
+        enhancement_id="000008442003",
+        name="Precision of the Patient Hunter",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_ranged_hit_bonus_and_round_three_wound_bonus",
+        effect_params={
+            "attack_type": "ranged",
+            "hit_bonus": 1,
+            "wound_bonus_from_battle_round": 3,
+            "wound_bonus": 1,
+        },
+    ),
     "000008442004": EnhancementToolDescriptor(
         enhancement_id="000008442004",
         name="Solid-image Projection Unit",
@@ -6649,6 +6671,15 @@ _TAU_KAUYON_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "allow_strategic_reserves": True,
             "redeploy_filters": ("T'AU EMPIRE",),
         },
+    ),
+    "000008442005": EnhancementToolDescriptor(
+        enhancement_id="000008442005",
+        name="Through Unity, Devastation",
+        timing="on_becoming_observer_while_bearer_is_leading",
+        target="guided_units_targeting_spotted_unit",
+        duration="until_end_of_phase",
+        effect="grant_ranged_lethal_hits_vs_spotted",
+        effect_params={"lethal_hits": True},
     ),
 }
 

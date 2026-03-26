@@ -43,6 +43,15 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
     _FANATICAL_CONVERT_FLAG = "enhancement_fanatical_convert"
     _FANATICAL_CONVERT_ID = "000009839004"
     _FANATICAL_CONVERT_NAME = "fanatical convert"
+    _EXEMPLAR_OF_KAUYON_FLAG = "enhancement_exemplar_of_the_kauyon"
+    _EXEMPLAR_OF_KAUYON_ID = "000008442002"
+    _EXEMPLAR_OF_KAUYON_NAME = "exemplar of the kauyon"
+    _PRECISION_OF_THE_PATIENT_HUNTER_FLAG = "enhancement_precision_of_the_patient_hunter"
+    _PRECISION_OF_THE_PATIENT_HUNTER_ID = "000008442003"
+    _PRECISION_OF_THE_PATIENT_HUNTER_NAME = "precision of the patient hunter"
+    _THROUGH_UNITY_DEVASTATION_FLAG = "enhancement_through_unity_devastation"
+    _THROUGH_UNITY_DEVASTATION_ID = "000008442005"
+    _THROUGH_UNITY_DEVASTATION_NAME = "through unity, devastation"
 
     def is_experimental_prototype_cadre(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -499,6 +508,31 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Mont'ka")
 
+    def _unit_has_active_exemplar_of_kauyon(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None or not self._has_attached_leaders(root):
+            return False
+
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        if callable(checker):
+            return bool(
+                checker(
+                    self._EXEMPLAR_OF_KAUYON_FLAG,
+                    enhancement_id=self._EXEMPLAR_OF_KAUYON_ID,
+                    enhancement_name=self._EXEMPLAR_OF_KAUYON_NAME,
+                )
+            )
+
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(self._EXEMPLAR_OF_KAUYON_FLAG, False)):
+                continue
+            if self._enhancement_bearer_alive(leader):
+                return True
+        return False
+
     def _patient_hunter_round_active_for_unit(self, unit, *, game=None) -> bool:
         if not self.is_kauyon():
             return False
@@ -508,6 +542,8 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             player = getattr(self.army, "player", None) if self.army is not None else None
             game = getattr(player, "game", None)
         battle_round = self._battle_round_from_game(game)
+        if battle_round == 2:
+            return self._unit_has_active_exemplar_of_kauyon(unit)
         return 3 <= battle_round <= 5
 
     def patient_hunter_sustained_hits_value(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
@@ -553,6 +589,115 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             "skill_kinds": {"ballistic"},
             "allow_hit": True,
         }
+
+    def _precision_of_the_patient_hunter_source_for_model(self, model):
+        if model is None:
+            return None
+        unit = getattr(model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None:
+            return None
+        members = self._attached_members(root)
+        if not members:
+            return None
+        model_id = self._entity_id(model)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            has_rule = bool(sr.get(self._PRECISION_OF_THE_PATIENT_HUNTER_FLAG, False))
+            if not has_rule:
+                enh = getattr(member, "enhancement", None)
+                if enh is not None:
+                    enh_id = str(getattr(enh, "id", "") or "").strip()
+                    enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                    has_rule = bool(
+                        enh_id == self._PRECISION_OF_THE_PATIENT_HUNTER_ID
+                        or enh_name == self._PRECISION_OF_THE_PATIENT_HUNTER_NAME
+                    )
+            if not has_rule:
+                continue
+            if not self._enhancement_bearer_alive(member):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                if bearer_id == model_id:
+                    return member
+                continue
+            bearer = self._enhancement_bearer_model(member)
+            if bearer is not None and self._entity_id(bearer) == model_id:
+                return member
+        return None
+
+    def precision_of_the_patient_hunter_hit_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del target_unit, attack_instance, game
+        if not self.is_kauyon():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_tau_empire(attacker_model):
+            return 0, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        source_unit = self._precision_of_the_patient_hunter_source_for_model(attacker_model)
+        if source_unit is None:
+            return 0, ""
+        sr = getattr(source_unit, "special_rules", None)
+        try:
+            bonus = int(sr.get("enhancement_precision_of_the_patient_hunter_hit_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), "Precision of the Patient Hunter"
+
+    def precision_of_the_patient_hunter_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del target_unit, attack_instance
+        if not self.is_kauyon():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_tau_empire(attacker_model):
+            return 0, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        source_unit = self._precision_of_the_patient_hunter_source_for_model(attacker_model)
+        if source_unit is None:
+            return 0, ""
+        sr = getattr(source_unit, "special_rules", None)
+        try:
+            wound_round = int(sr.get("enhancement_precision_of_the_patient_hunter_wound_bonus_from_battle_round", 3) or 3)
+        except Exception:
+            wound_round = 3
+        if self._battle_round_from_game(game) < max(1, int(wound_round)):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_precision_of_the_patient_hunter_wound_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), "Precision of the Patient Hunter"
 
     @staticmethod
     def _attached_root(unit):

@@ -22,6 +22,9 @@ class ForTheGreaterGoodManager:
     _FANATICAL_CONVERT_FLAG = "enhancement_fanatical_convert"
     _FANATICAL_CONVERT_ID = "000009839004"
     _FANATICAL_CONVERT_NAME = "fanatical convert"
+    _THROUGH_UNITY_DEVASTATION_FLAG = "enhancement_through_unity_devastation"
+    _THROUGH_UNITY_DEVASTATION_ID = "000008442005"
+    _THROUGH_UNITY_DEVASTATION_NAME = "through unity, devastation"
 
     def __init__(self, army=None):
         self.army = army
@@ -30,6 +33,7 @@ class ForTheGreaterGoodManager:
         self._spotted_by: dict[str, str] = {}
         self._spotted_markerlight: dict[str, bool] = {}
         self._spotted_coordinated_exploitation: dict[str, int] = {}
+        self._spotted_through_unity_devastation: dict[str, bool] = {}
         self._spotted_forward_observers: dict[str, bool] = {}
 
     def reset_for_phase(self) -> None:
@@ -38,6 +42,7 @@ class ForTheGreaterGoodManager:
         self._spotted_by = {}
         self._spotted_markerlight = {}
         self._spotted_coordinated_exploitation = {}
+        self._spotted_through_unity_devastation = {}
         self._spotted_forward_observers = {}
 
     def on_shooting_phase_start(self, *, game=None, player=None) -> None:
@@ -242,6 +247,42 @@ class ForTheGreaterGoodManager:
                 val = 1
             best = max(best, max(1, val))
         return int(best)
+
+    def _through_unity_devastation_applies(self, observer) -> bool:
+        root = self._attached_root(observer)
+        if root is None:
+            return False
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return False
+
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        if callable(checker):
+            return bool(
+                checker(
+                    self._THROUGH_UNITY_DEVASTATION_FLAG,
+                    enhancement_id=self._THROUGH_UNITY_DEVASTATION_ID,
+                    enhancement_name=self._THROUGH_UNITY_DEVASTATION_NAME,
+                )
+            )
+
+        for leader in leaders:
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            has_rule = bool(sr.get(self._THROUGH_UNITY_DEVASTATION_FLAG))
+            if not has_rule:
+                enh = getattr(leader, "enhancement", None)
+                if enh is not None:
+                    enh_id = str(getattr(enh, "id", "") or "").strip()
+                    enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                    has_rule = bool(
+                        enh_id == self._THROUGH_UNITY_DEVASTATION_ID
+                        or enh_name == self._THROUGH_UNITY_DEVASTATION_NAME
+                    )
+            if has_rule and self._enhancement_bearer_alive(leader):
+                return True
+        return False
 
     def _unit_is_visible_to_unit(self, observer, target, *, game=None) -> bool:
         if observer is None or target is None:
@@ -464,6 +505,8 @@ class ForTheGreaterGoodManager:
         coordinated_sustained = self._coordinated_exploitation_sustained_value(observer)
         if coordinated_sustained > 0:
             self._spotted_coordinated_exploitation[tgt_id] = coordinated_sustained
+        if self._through_unity_devastation_applies(observer):
+            self._spotted_through_unity_devastation[tgt_id] = True
         self._spotted_forward_observers[tgt_id] = self._unit_has_named_ability(observer, "forward observers")
         return True
 
@@ -520,4 +563,6 @@ class ForTheGreaterGoodManager:
         coordinated_sustained = int(self._spotted_coordinated_exploitation.get(tid, 0) or 0)
         if coordinated_sustained > 0:
             out["sustained_hits_value"] = coordinated_sustained
+        if bool(self._spotted_through_unity_devastation.get(tid, False)):
+            out["lethal_hits"] = True
         return out

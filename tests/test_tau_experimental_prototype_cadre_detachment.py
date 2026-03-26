@@ -143,6 +143,46 @@ def _fusion_blades_enhancement() -> Enhancement:
     )
 
 
+def _exemplar_of_the_kauyon_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008442002",
+        name="Exemplar of the Kauyon",
+        faction_id="TAU",
+        detachment="Kauyon",
+        description=(
+            "T'AU EMPIRE model only (excluding Kroot Shaper models). While the bearer is leading a unit, the Patient Hunter "
+            "Detachment rule applies to that unit from the second battle round onwards instead of from the third."
+        ),
+    )
+
+
+def _precision_of_the_patient_hunter_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008442003",
+        name="Precision of the Patient Hunter",
+        faction_id="TAU",
+        detachment="Kauyon",
+        description=(
+            "T'AU EMPIRE model only. Each time the bearer makes a ranged attack, add 1 to the Hit roll. From the third battle "
+            "round onwards, add 1 to the Wound roll as well."
+        ),
+    )
+
+
+def _through_unity_devastation_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008442005",
+        name="Through Unity, Devastation",
+        faction_id="TAU",
+        detachment="Kauyon",
+        description=(
+            "T'AU EMPIRE model only (excluding Kroot Shaper models). While the bearer is leading a unit, each time that unit is "
+            "an Observer unit, until the end of the phase, ranged weapons equipped by models in a Guided unit have the [LETHAL HITS] "
+            "ability while targeting their Spotted unit."
+        ),
+    )
+
+
 def _coordinated_exploitation_enhancement() -> Enhancement:
     return Enhancement(
         id="000008811002",
@@ -636,6 +676,272 @@ def test_patient_hunter_ignore_modifiers_requires_guided_attack():
         wargear_mod.get_roll = old_get_roll
 
     assert hit_result["hit"] is False
+
+
+def test_exemplar_of_the_kauyon_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008442002")
+    assert desc is not None
+    assert desc.name == "Exemplar of the Kauyon"
+    assert desc.effect == "extend_patient_hunter_to_round_two"
+
+
+def test_precision_of_the_patient_hunter_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008442003")
+    assert desc is not None
+    assert desc.name == "Precision of the Patient Hunter"
+    assert desc.effect == "bearer_ranged_hit_bonus_and_round_three_wound_bonus"
+    assert int(desc.effect_params.get("hit_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("wound_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("wound_bonus_from_battle_round", 0) or 0) == 3
+
+
+def test_through_unity_devastation_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008442005")
+    assert desc is not None
+    assert desc.name == "Through Unity, Devastation"
+    assert desc.effect == "grant_ranged_lethal_hits_vs_spotted"
+
+
+def test_exemplar_of_the_kauyon_extends_patient_hunter_sustained_hits_to_round_two():
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=2)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    attacker_unit.attached_leaders = [leader]
+    leader.attached_to = attacker_unit
+    army.add_unit(attacker_unit)
+    army.add_unit(leader)
+
+    enhancement = _exemplar_of_the_kauyon_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 1
+    assert any("Patient Hunter" in str(entry) for entry in hit_result.get("special_effects", []))
+
+
+def test_exemplar_of_the_kauyon_extends_guided_ignore_modifiers_to_round_two():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+    from warhammer40k_ai.units import wargear as wargear_mod
+    from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+
+    army = _build_tau_army("Kauyon")
+    game, player = _configure_tau_shooting_game(army, battle_round=2)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    attacker_unit.attached_leaders = [leader]
+    leader.attached_to = attacker_unit
+    army.add_unit(attacker_unit)
+    army.add_unit(leader)
+    army.add_unit(observer_unit)
+
+    enhancement = _exemplar_of_the_kauyon_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {
+        "_aura_attack_mods": _aura_stub(),
+        "hit_roll_modifiers": [(-1, "Test penalty")],
+        "hit_modifier_choice": CHOICE_IGNORE_NEGATIVE,
+    }
+    old_get_roll = wargear_mod.get_roll
+    wargear_mod.get_roll = lambda _expr: 3
+    try:
+        hit_result = attack_profile._hit_target_with_tracking(
+            target_unit,
+            attacker_model,
+            attack_instance,
+            roll_value=None,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+    finally:
+        wargear_mod.get_roll = old_get_roll
+
+    assert hit_result["hit"] is True
+    assert attack_instance.get("hit_modifier_choice") == CHOICE_IGNORE_NEGATIVE
+
+
+def test_precision_of_the_patient_hunter_adds_hit_bonus_to_bearer_ranged_attacks():
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=2)
+    bearer_unit = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(bearer_unit)
+
+    enhancement = _precision_of_the_patient_hunter_enhancement()
+    bearer_unit.enhancement = enhancement
+    enhancement.apply_to_unit(bearer_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = bearer_unit.models[0]
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert any("Precision of the Patient Hunter" in str(entry) for entry in hit_result.get("modifiers", []))
+
+
+def test_precision_of_the_patient_hunter_adds_wound_bonus_from_round_three():
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=3)
+    bearer_unit = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(bearer_unit)
+
+    enhancement = _precision_of_the_patient_hunter_enhancement()
+    bearer_unit.enhancement = enhancement
+    enhancement.apply_to_unit(bearer_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = bearer_unit.models[0]
+    wound_result = attack_profile._wound_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert wound_result["wound"] is True
+    assert any("Precision of the Patient Hunter" in str(entry) for entry in wound_result.get("modifiers", []))
+
+
+def test_through_unity_devastation_grants_guided_lethal_hits_when_observer_has_bearer():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+
+    army = _build_tau_army("Kauyon")
+    game, player = _configure_tau_shooting_game(army, battle_round=2)
+
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    observer_unit.attached_leaders = [observer_leader]
+    observer_leader.attached_to = observer_unit
+
+    army.add_unit(attacker_unit)
+    army.add_unit(observer_unit)
+    army.add_unit(observer_leader)
+
+    enhancement = _through_unity_devastation_enhancement()
+    observer_leader.enhancement = enhancement
+    enhancement.apply_to_unit(observer_leader)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert attack_instance.get("lethal_hit") is True
+    assert "Lethal Hits" in hit_result.get("special_effects", [])
 
 
 def test_hunters_instincts_adds_hit_bonus_against_targets_below_starting_strength():

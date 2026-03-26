@@ -1684,6 +1684,10 @@ class Enhancement:
         except Exception:
             is_auxiliary_cadre = False
         try:
+            is_kauyon = bool(tau_mgr and tau_mgr.is_kauyon())
+        except Exception:
+            is_kauyon = False
+        try:
             is_awakened_dynasty = bool(ne_mgr and ne_mgr.detachment_matches("Awakened Dynasty"))
         except Exception:
             is_awakened_dynasty = False
@@ -3375,6 +3379,48 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_transponder_lock_module_bearer_model_id"] = bearer_id
+
+        if name == "exemplar of the kauyon" or enh_id == "000008442002":
+            if not is_kauyon:
+                return
+            unit.special_rules["enhancement_exemplar_of_the_kauyon"] = True
+            unit.special_rules["enhancement_exemplar_of_the_kauyon_source"] = "Exemplar of the Kauyon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_exemplar_of_the_kauyon_bearer_model_id"] = bearer_id
+
+        if name == "precision of the patient hunter" or enh_id == "000008442003":
+            if not is_kauyon:
+                return
+            unit.special_rules["enhancement_precision_of_the_patient_hunter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            hit_bonus = _coerce_int(params.get("hit_bonus", 1) or 1, default=1)
+            wound_bonus = _coerce_int(params.get("wound_bonus", 1) or 1, default=1)
+            wound_round = _coerce_int(params.get("wound_bonus_from_battle_round", 3) or 3, default=3)
+            unit.special_rules["enhancement_precision_of_the_patient_hunter_hit_bonus"] = int(max(0, hit_bonus))
+            unit.special_rules["enhancement_precision_of_the_patient_hunter_wound_bonus"] = int(max(0, wound_bonus))
+            unit.special_rules["enhancement_precision_of_the_patient_hunter_wound_bonus_from_battle_round"] = int(
+                max(1, wound_round)
+            )
+            unit.special_rules["enhancement_precision_of_the_patient_hunter_source"] = "Precision of the Patient Hunter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_precision_of_the_patient_hunter_bearer_model_id"] = bearer_id
+
+        if name == "through unity, devastation" or enh_id == "000008442005":
+            if not is_kauyon:
+                return
+            unit.special_rules["enhancement_through_unity_devastation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_through_unity_devastation_lethal_hits"] = bool(
+                params.get("lethal_hits", True)
+            )
+            unit.special_rules["enhancement_through_unity_devastation_source"] = "Through Unity, Devastation"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_through_unity_devastation_bearer_model_id"] = bearer_id
 
         if name == "shroud projector" or enh_id == "000009801004":
             if not is_bridgehead_strike:

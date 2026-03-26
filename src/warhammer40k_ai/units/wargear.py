@@ -11586,6 +11586,25 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Tau Empire: Kauyon (Precision of the Patient Hunter) +1 to hit for the bearer's ranged attacks.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            if tau_mgr is not None and callable(getattr(tau_mgr, "precision_of_the_patient_hunter_hit_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = tau_mgr.precision_of_the_patient_hunter_hit_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if bonus:
+                    source_name = str(source or "Precision of the Patient Hunter").strip() or "Precision of the Patient Hunter"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
         # Orks: Taktikal Brigade (Lissen 'Ere - Shoota Drills) +1 to hit for ranged attacks.
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -18709,6 +18728,28 @@ class WargearProfile:
                 )
                 if wound_bonus:
                     source_name = str(source or "Hunter's Instincts").strip() or "Hunter's Instincts"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Tau Empire: Kauyon (Precision of the Patient Hunter) +1 to wound from round 3 onward.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            tau_mgr = getattr(attacker_army, "tau_empire_detachments", None) if attacker_army is not None else None
+            if tau_mgr is not None and callable(getattr(tau_mgr, "precision_of_the_patient_hunter_wound_bonus", None)):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                wound_bonus, source = tau_mgr.precision_of_the_patient_hunter_wound_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                    game=game,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Precision of the Patient Hunter").strip() or "Precision of the Patient Hunter"
                     dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"
