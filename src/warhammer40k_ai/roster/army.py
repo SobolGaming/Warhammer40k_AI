@@ -3631,6 +3631,8 @@ class Army:
         )
 
     def _queue_prey_selection(self, *, game, battle_round: int) -> None:
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
         if game is None or not bool(getattr(game, "is_authoritative", True)):
             return
         if int(battle_round or 0) != 1:
@@ -3644,6 +3646,19 @@ class Army:
             enemy_units = []
         if not enemy_units:
             return
+        queued_source_ids: set[str] = set()
+        pending_source_ids: set[str] = set()
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "") != "prey_selection":
+                    continue
+                pending_source_id = str(pending_ctx.get("source_unit_id", "") or "").strip()
+                if pending_source_id:
+                    pending_source_ids.add(pending_source_id)
         for unit in list(getattr(self, "units", []) or []):
             if unit is None:
                 continue
@@ -3658,6 +3673,15 @@ class Army:
                 rule = None
             if not rule:
                 continue
+            source_unit_id = str(rule.get("source_unit_id", "") or "").strip() if isinstance(rule, dict) else ""
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if source_unit_id and unit_id and source_unit_id != unit_id:
+                continue
+            dedupe_source_id = source_unit_id or unit_id
+            if dedupe_source_id and dedupe_source_id in pending_source_ids:
+                continue
+            if dedupe_source_id and dedupe_source_id in queued_source_ids:
+                continue
             if getattr(unit, "_prey_selection_prey_ids", None):
                 continue
             req = self._build_prey_selection_request(
@@ -3668,6 +3692,8 @@ class Army:
             )
             if req is not None and hasattr(game, "request_decision"):
                 game.request_decision(req)
+                if dedupe_source_id:
+                    queued_source_ids.add(dedupe_source_id)
 
     def _build_prey_selection_request(
         self,
@@ -3691,13 +3717,32 @@ class Army:
             if single_keyword and single_keyword not in keyword_list:
                 keyword_list.append(single_keyword)
             primary_keyword = keyword_list[0] if keyword_list else ""
+            try:
+                prey_hit_bonus = int(rule.get("hit_bonus", 0) or 0)
+            except Exception:
+                prey_hit_bonus = 0
+            try:
+                prey_wound_bonus = int(rule.get("wound_bonus", 0) or 0)
+            except Exception:
+                prey_wound_bonus = 0
+            prey_source_model_id = str(rule.get("source_model_id", "") or "").strip()
+            if not prey_source_model_id and (prey_hit_bonus or prey_wound_bonus):
+                try:
+                    get_bearer_id = getattr(source_unit, "_get_enhancement_bearer_id", None)
+                    if callable(get_bearer_id):
+                        prey_source_model_id = str(get_bearer_id() or "").strip()
+                except Exception:
+                    prey_source_model_id = ""
             context_extra = {
                 "prey_reroll_hit": bool(rule.get("reroll_hit", False)),
                 "prey_reroll_wound": bool(rule.get("reroll_wound", False)),
+                "prey_hit_bonus": int(prey_hit_bonus),
+                "prey_wound_bonus": int(prey_wound_bonus),
                 "prey_melee_only": bool(rule.get("melee_only", False)),
                 "prey_keyword": primary_keyword,
                 "prey_keywords": list(keyword_list),
                 "prey_repick_on_destroyed": bool(rule.get("repick_on_destroyed", False)),
+                "prey_source_model_id": prey_source_model_id,
             }
         return self._build_quarry_selection_request(
             game=game,

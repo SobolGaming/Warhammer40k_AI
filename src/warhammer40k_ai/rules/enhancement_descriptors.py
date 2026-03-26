@@ -6748,6 +6748,32 @@ _NECRONS_STARSHATTER_ARSENAL_BY_NAME = {
 }
 
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008417003": EnhancementToolDescriptor(
+        enhancement_id="000008417003",
+        name="Chameleonic",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_stealth_and_ranged_benefit_of_cover_to_bearer_unit",
+        effect_params={
+            "grants_stealth": True,
+            "grants_benefit_of_cover_vs_ranged": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008417004": EnhancementToolDescriptor(
+        enhancement_id="000008417004",
+        name="Stalker",
+        timing="start_of_battle",
+        target="enemy_unit",
+        duration="battle",
+        effect="select_enemy_unit_for_bearer_hit_and_wound_bonus",
+        effect_params={
+            "hit_bonus": 1,
+            "wound_bonus": 1,
+            "applies_to_bearer_only": True,
+        },
+    ),
     "000008417005": EnhancementToolDescriptor(
         enhancement_id="000008417005",
         name="Neuronode",

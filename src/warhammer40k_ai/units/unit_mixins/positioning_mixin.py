@@ -10523,6 +10523,13 @@ class PositioningMixin:
         )
         if callable(mechanised_smoke_fn) and bool(mechanised_smoke_fn(self)):
             return True
+        # Tyranids: Vanguard Onslaught (Chameleonic).
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        chameleonic_fn = (
+            getattr(tyr_mgr, "vanguard_onslaught_chameleonic_stealth_applies", None) if tyr_mgr is not None else None
+        )
+        if callable(chameleonic_fn) and bool(chameleonic_fn(self)):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

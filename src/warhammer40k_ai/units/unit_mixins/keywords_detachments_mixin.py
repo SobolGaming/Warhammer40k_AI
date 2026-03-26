@@ -4348,9 +4348,13 @@ class KeywordsDetachmentsMixin:
             - source: ability name
             - reroll_hit: bool
             - reroll_wound: bool
+            - hit_bonus: optional integer modifier vs prey
+            - wound_bonus: optional integer modifier vs prey
             - melee_only: bool
             - keyword: optional keyword bonus (e.g., "LETHAL HITS")
             - repick_on_destroyed: bool
+            - source_unit_id: optional unit id for the actual rule source within an attached unit
+            - source_model_id: optional model id when the prey bonus is bearer-only
         """
         try:
             root = self.get_attached_unit_root()
@@ -4375,6 +4379,28 @@ class KeywordsDetachmentsMixin:
                 if phrase and phrase in text:
                     return True
             return False
+
+        def _prey_rule_base(source_name: str, *, source_unit, repick_on_destroyed: bool) -> dict:
+            rule = {
+                "source": str(source_name or "Prey selection").strip() or "Prey selection",
+                "repick_on_destroyed": bool(repick_on_destroyed),
+            }
+            try:
+                source_id = str(get_entity_id(source_unit) or "").strip()
+            except Exception:
+                source_id = ""
+            if source_id:
+                rule["source_unit_id"] = source_id
+            return rule
+
+        def _enhancement_bearer_id_for_source(source_unit) -> str:
+            try:
+                get_bearer_id = getattr(source_unit, "_get_enhancement_bearer_id", None)
+                if callable(get_bearer_id):
+                    return str(get_bearer_id() or "").strip()
+            except Exception:
+                return ""
+            return ""
 
         def _is_headtaker_model(model) -> bool:
             name = _norm(str(getattr(model, "name", "") or ""))
@@ -4412,15 +4438,18 @@ class KeywordsDetachmentsMixin:
                     "start of the first battle round" in normalized
                     and "select one enemy unit to be this model s prey" in normalized
                 )
-                start_of_battle_opponent_selector = (
+                start_of_battle_selected_enemy_selector = (
                     "start of the battle" in normalized
-                    and "select one unit from your opponent s army" in normalized
+                    and (
+                        "select one unit from your opponent s army" in normalized
+                        or "select one enemy unit" in normalized
+                    )
                 )
                 focused_hunters_selector = (
-                    start_of_battle_opponent_selector
+                    start_of_battle_selected_enemy_selector
                     and "until the end of the battle" in normalized
                 )
-                if not (classic_prey_selector or start_of_battle_opponent_selector):
+                if not (classic_prey_selector or start_of_battle_selected_enemy_selector):
                     continue
 
                 repick_on_destroyed = (
@@ -4438,37 +4467,41 @@ class KeywordsDetachmentsMixin:
                     and _has_phrase(normalized, "targets that unit")
                     and _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll")
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": True,
                         "reroll_wound": False,
                         "melee_only": False,
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
                     break
 
                 # Pattern: start-of-battle chosen enemy, attacks gain [LETHAL HITS] and [PRECISION] vs that unit.
                 if (
-                    start_of_battle_opponent_selector
+                    start_of_battle_selected_enemy_selector
                     and _has_phrase(normalized, "each time a model in this unit makes an attack", "makes an attack")
                     and _has_phrase(normalized, "targets that unit")
                     and "that attack has the lethal hits and precision abilities" in normalized
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": False,
                         "reroll_wound": False,
                         "melee_only": False,
                         "keywords": ["LETHAL HITS", "PRECISION"],
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
                     break
 
                 # Pattern: Headtakers-only split unit gains [DEVASTATING WOUNDS] and [PRECISION] vs quarry.
                 if (
-                    start_of_battle_opponent_selector
+                    start_of_battle_selected_enemy_selector
                     and _root_has_only_headtaker_models()
                     and "devastating wounds" in normalized
                     and "precision" in normalized
@@ -4484,15 +4517,42 @@ class KeywordsDetachmentsMixin:
                         "targeting that quarry",
                     )
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": False,
                         "reroll_wound": False,
                         "melee_only": False,
                         "keywords": ["DEVASTATING WOUNDS", "PRECISION"],
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
+                    break
+
+                # Pattern: start-of-battle chosen enemy, bearer gains +1 to Hit and +1 to Wound vs that enemy.
+                if (
+                    start_of_battle_selected_enemy_selector
+                    and _has_phrase(normalized, "each time the bearer makes an attack", "each time this model makes an attack")
+                    and _has_phrase(normalized, "targets that enemy unit", "targets that unit")
+                    and _has_phrase(normalized, "add 1 to the hit roll")
+                    and _has_phrase(normalized, "add 1 to the wound roll")
+                ):
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    source_model_id = _enhancement_bearer_id_for_source(unit)
+                    if source_model_id:
+                        rule["source_model_id"] = source_model_id
+                    rule.update({
+                        "reroll_hit": False,
+                        "reroll_wound": False,
+                        "hit_bonus": 1,
+                        "wound_bonus": 1,
+                        "melee_only": False,
+                    })
                     break
 
                 # Pattern: melee wound re-roll vs prey (unit-wide).
@@ -4501,14 +4561,16 @@ class KeywordsDetachmentsMixin:
                     and _has_phrase(normalized, "targets its prey", "targets that prey")
                     and _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": False,
                         "reroll_wound": True,
                         "melee_only": True,
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
                     break
 
                 # Pattern: hit + wound re-roll vs prey (no melee restriction).
@@ -4518,14 +4580,16 @@ class KeywordsDetachmentsMixin:
                     and _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll")
                     and _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": True,
                         "reroll_wound": True,
                         "melee_only": False,
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
                     break
 
                 # Pattern: Lethal Hits vs prey (unit-wide).
@@ -4534,15 +4598,17 @@ class KeywordsDetachmentsMixin:
                     and _has_phrase(normalized, "weapons equipped by models in this model s unit")
                     and _has_phrase(normalized, "targeting this model s prey", "targets its prey", "targets that prey")
                 ):
-                    source = str(name or "Prey selection").strip() or "Prey selection"
-                    rule = {
-                        "source": source,
+                    rule = _prey_rule_base(
+                        str(name or "Prey selection"),
+                        source_unit=unit,
+                        repick_on_destroyed=repick_on_destroyed,
+                    )
+                    rule.update({
                         "reroll_hit": False,
                         "reroll_wound": False,
                         "melee_only": False,
                         "keyword": "LETHAL HITS",
-                        "repick_on_destroyed": bool(repick_on_destroyed),
-                    }
+                    })
                     break
             if rule is not None:
                 break

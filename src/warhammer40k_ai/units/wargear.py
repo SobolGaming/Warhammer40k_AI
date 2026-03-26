@@ -22328,6 +22328,34 @@ class WargearProfile:
                     part.strip().lower() for part in existing_source.split(",") if part.strip()
                 }:
                     attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
+        # Tyranids: Vanguard Onslaught (Chameleonic) grants Benefit of Cover to the bearer's unit against ranged attacks.
+        t_unit = getattr(target_model, "parent_unit", None)
+        get_parent_army = getattr(t_unit, "get_parent_army", None) if t_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        tyranids_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        cover_fn = (
+            getattr(tyranids_mgr, "vanguard_onslaught_chameleonic_benefit_of_cover", None)
+            if tyranids_mgr is not None
+            else None
+        )
+        if callable(cover_fn):
+            is_melee_attack = bool(
+                self.parent_wargear is not None and callable(getattr(self.parent_wargear, "is_melee", None))
+                and self.parent_wargear.is_melee()
+            )
+            attack_type = "melee" if is_melee_attack else "ranged"
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            has_cover, source = cover_fn(target_model, attack_type=attack_type, game=game)
+            if has_cover:
+                attack_instance.setdefault("benefit_of_cover", True)
+                source_name = str(source or "Chameleonic").strip() or "Chameleonic"
+                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                if not existing_source:
+                    attack_instance["benefit_of_cover_source"] = source_name
+                elif source_name.lower() not in {
+                    part.strip().lower() for part in existing_source.split(",") if part.strip()
+                }:
+                    attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         # Adeptus Mechanicus: Skitarii Hunter Cohort (Stealth Optimisation) grants cover to SICARIAN
         # targets against ranged attacks from attackers beyond 12".
         t_unit = getattr(target_model, "parent_unit", None)

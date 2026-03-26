@@ -212,6 +212,49 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return True
         return self._attached_unit_has_keyword(root, "VANGUARD INVADER")
 
+    def vanguard_onslaught_chameleonic_stealth_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self.is_vanguard_onslaught():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_tyranids(root):
+            return False
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        if not callable(checker):
+            return False
+        return bool(
+            checker(
+                "enhancement_chameleonic",
+                enhancement_id="000008417003",
+                enhancement_name="Chameleonic",
+            )
+        )
+
+    def vanguard_onslaught_chameleonic_benefit_of_cover(
+        self,
+        target_model,
+        *,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = game
+        if not self.is_vanguard_onslaught():
+            return False, ""
+        if target_model is None:
+            return False, ""
+        if str(attack_type or "").strip().lower() == "melee":
+            return False, ""
+        target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return False, ""
+        if not self.vanguard_onslaught_chameleonic_stealth_applies(target_unit):
+            return False, ""
+        return True, "Chameleonic"
+
     def override_instincts_shoot_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
         if not self.is_synaptic_nexus():
             return False

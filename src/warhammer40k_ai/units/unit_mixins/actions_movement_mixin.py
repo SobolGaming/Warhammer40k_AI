@@ -6178,6 +6178,53 @@ class ActionsMovementMixin:
             return True
         return False
 
+    def _prey_selection_target_bonus(
+        self,
+        *,
+        target=None,
+        attacker_model=None,
+        attack_type: str = "any",
+    ) -> tuple[int, int, str]:
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("any", "melee", "ranged"):
+            atype = "any"
+        prey_ids = getattr(self, "_prey_selection_prey_ids", None)
+        if not prey_ids or target is None:
+            return 0, 0, ""
+        melee_only = bool(getattr(self, "_prey_selection_melee_only", False))
+        if melee_only and atype == "ranged":
+            return 0, 0, ""
+        try:
+            target_id = getattr(target, "_id", None)
+            root_id = getattr(target.get_attached_unit_root(), "_id", None)
+        except Exception:
+            target_id = getattr(target, "_id", None)
+            root_id = None
+        if target_id not in prey_ids and root_id not in prey_ids:
+            return 0, 0, ""
+        source_model_id = str(getattr(self, "_prey_selection_source_model_id", "") or "").strip()
+        attacker_model_id = ""
+        if attacker_model is not None:
+            try:
+                attacker_model_id = str(get_entity_id(attacker_model) or "").strip()
+            except Exception:
+                attacker_model_id = str(
+                    getattr(attacker_model, "id", getattr(attacker_model, "_id", "")) or ""
+                ).strip()
+        if source_model_id:
+            if not attacker_model_id or attacker_model_id != source_model_id:
+                return 0, 0, ""
+        try:
+            hit_bonus = int(getattr(self, "_prey_selection_hit_bonus", 0) or 0)
+        except Exception:
+            hit_bonus = 0
+        try:
+            wound_bonus = int(getattr(self, "_prey_selection_wound_bonus", 0) or 0)
+        except Exception:
+            wound_bonus = 0
+        source = str(getattr(self, "_prey_selection_source", "") or "Prey selection").strip() or "Prey selection"
+        return int(hit_bonus), int(wound_bonus), source
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -6301,6 +6348,18 @@ class ActionsMovementMixin:
                 continue
             mods["hit"] += modifier
             hit_reasons.append(reason)
+
+        prey_hit_bonus, _prey_wound_bonus, prey_source = ActionsMovementMixin._prey_selection_target_bonus(
+            self,
+            target=target,
+            attacker_model=attacker_model,
+            attack_type=atype,
+        )
+        if prey_hit_bonus:
+            reason = f"{int(prey_hit_bonus):+d} to hit from {prey_source} (prey)"
+            if reason not in hit_reasons:
+                mods["hit"] += int(prey_hit_bonus)
+                hit_reasons.append(reason)
 
         choice = ""
         try:
@@ -7570,6 +7629,18 @@ class ActionsMovementMixin:
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
                     crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        _prey_hit_bonus, prey_wound_bonus, prey_source = ActionsMovementMixin._prey_selection_target_bonus(
+            self,
+            target=target,
+            attacker_model=attacker_model,
+            attack_type=atype,
+        )
+        if prey_wound_bonus:
+            reason = f"{int(prey_wound_bonus):+d} to wound from {prey_source} (prey)"
+            if reason not in wound_reasons:
+                mods["wound"] += int(prey_wound_bonus)
+                wound_reasons.append(reason)
 
         choice = ""
         try:
