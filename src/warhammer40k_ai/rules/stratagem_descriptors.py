@@ -381,6 +381,88 @@ _PLAGUE_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CHAMPIONS_OF_CONTAGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010132002": StratagemToolDescriptor(
+        stratagem_id="000010132002",
+        name="Blessings of Filth",
+        timing="shooting_or_fight_phase_on_select",
+        target="death_guard_attached_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="critical_hits_on_5plus",
+        cp_cost=1,
+        effect_params={"critical_hit_threshold": 5},
+    ),
+    "000010132003": StratagemToolDescriptor(
+        stratagem_id="000010132003",
+        name="Malignance Magnified",
+        timing="shooting_or_fight_phase_on_select",
+        target="death_guard_attached_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="reroll_hits_and_wounds_vs_target_below_starting_strength",
+        cp_cost=2,
+        effect_params={
+            "reroll_hit_full": True,
+            "reroll_wound_full": True,
+            "target_condition": "below_starting_strength",
+        },
+    ),
+    "000010132004": StratagemToolDescriptor(
+        stratagem_id="000010132004",
+        name="Grotesque Fortitude",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="death_guard_attached_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="defensive_toughness_bonus",
+        cp_cost=1,
+        effect_params={"toughness_bonus": 2},
+    ),
+    "000010132005": StratagemToolDescriptor(
+        stratagem_id="000010132005",
+        name="Rabid Infusion",
+        timing="fight_phase_start",
+        target="death_guard_unit_with_two_character_models",
+        duration="until_end_of_phase",
+        effect="grant_fights_first",
+        cp_cost=1,
+        effect_params={"required_character_models": 2},
+    ),
+    "000010132006": StratagemToolDescriptor(
+        stratagem_id="000010132006",
+        name="Mobile Vector",
+        timing="your_movement_phase_before_reinforcements_step",
+        target="death_guard_character_unit_not_leading_and_eligible_unattached_bodyguard_within_2_horizontal_5_vertical",
+        duration="immediate",
+        effect="attach_as_leader",
+        cp_cost=1,
+        effect_params={
+            "horizontal_range": 2.0,
+            "vertical_range": 5.0,
+            "requires_unattached_bodyguard": True,
+            "allows_second_leader": False,
+        },
+    ),
+    "000010132007": StratagemToolDescriptor(
+        stratagem_id="000010132007",
+        name="Death's Heads",
+        timing="shooting_phase_on_select_to_shoot",
+        target="biologus_putrifier_unit_not_engaged_not_yet_shot_visible_enemy_non_vehicle_within_8",
+        duration="until_start_of_your_next_turn",
+        effect="apply_all_plagues_without_afflicted",
+        cp_cost=1,
+        range_in=8.0,
+        effect_params={
+            "requires_visibility": True,
+            "enemy_keywords_excluded": ["VEHICLE"],
+            "plagues_applied": ["SKULLSQUIRM", "RATTLEJOINT", "SCABROUS"],
+            "sets_afflicted": False,
+        },
+    ),
+}
+
+_CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_CONTAGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8322,6 +8404,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CHAMPIONS_OF_CONTAGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8643,6 +8728,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
         or _PLAGUE_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

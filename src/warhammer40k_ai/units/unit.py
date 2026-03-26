@@ -1747,6 +1747,30 @@ class Unit(
                             )
             except Exception:
                 pass
+            temp_effect_iter = getattr(self, "iter_active_death_guard_temp_effects", None)
+            if callable(temp_effect_iter):
+                for effect in list(
+                    temp_effect_iter(
+                        effect_type="toughness_bonus",
+                        attack_type="any",
+                        require_target_match=False,
+                    )
+                    or []
+                ):
+                    try:
+                        bonus = int(effect.get("value", effect.get("bonus", 0)) or 0)
+                    except (TypeError, ValueError):
+                        bonus = 0
+                    if not bonus:
+                        continue
+                    source_name = str(effect.get("source", "") or "Death Guard temporary effect").strip() or "Death Guard temporary effect"
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source=f"stratagem:{source_name}",
+                        )
+                    )
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("nurgles_rot_active"):

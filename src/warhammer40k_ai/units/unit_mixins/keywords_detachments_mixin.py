@@ -611,6 +611,17 @@ class KeywordsDetachmentsMixin:
                     return True
         except Exception:
             pass
+        temp_effect_iter = getattr(self, "iter_active_death_guard_temp_effects", None)
+        if callable(temp_effect_iter):
+            for _effect in list(
+                temp_effect_iter(
+                    effect_type="fight_first",
+                    attack_type="any",
+                    require_target_match=False,
+                )
+                or []
+            ):
+                return True
         # Instinctive Defence (Assimilation Swarm): while bearer is within range of a friendly HARVESTER.
         try:
             root = self.get_attached_unit_root()
@@ -12854,6 +12865,124 @@ class KeywordsDetachmentsMixin:
                 weapon_profile=weapon_profile,
                 game_map=game_map,
             ):
+                continue
+            yield dict(entry)
+
+    def _death_guard_temp_effect_root(self):
+        get_root = getattr(self, "get_attached_unit_root", None)
+        return get_root() if callable(get_root) else self
+
+    def _death_guard_temp_effect_army(self):
+        root = self._death_guard_temp_effect_root()
+        get_parent_army = getattr(root, "get_parent_army", None)
+        return get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+
+    def _death_guard_temp_effect_game(self):
+        army = self._death_guard_temp_effect_army()
+        player = getattr(army, "player", None) if army is not None else None
+        return getattr(player, "game", None) if player is not None else None
+
+    def _death_guard_temp_effect_entries(self) -> list[dict]:
+        root = self._death_guard_temp_effect_root()
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return []
+        entries = list(special_rules.get("death_guard_temp_effects", []) or [])
+        normalized = [dict(entry) for entry in entries if isinstance(entry, dict)]
+        normalized.sort(key=lambda entry: str(entry.get("id", "") or ""))
+        return normalized
+
+    def _death_guard_temp_effect_detachment_active(self, detachment_key: str) -> bool:
+        key = str(detachment_key or "").strip().lower()
+        if not key:
+            return True
+        army = self._death_guard_temp_effect_army()
+        mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        checker = getattr(mgr, f"is_{key}", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _death_guard_temp_effect_is_active(self, entry: dict, *, game=None) -> bool:
+        detachment_key = str(entry.get("detachment", "") or "").strip().lower()
+        if detachment_key and not self._death_guard_temp_effect_detachment_active(detachment_key):
+            return False
+
+        expires_mode = str(entry.get("expires_mode", "") or "").strip().lower()
+        if expires_mode not in {"phase", "turn"}:
+            return True
+
+        if game is None:
+            game = self._death_guard_temp_effect_game()
+        if game is None:
+            return False
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(entry.get("expires_phase", "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            return False
+
+        owner_id = str(entry.get("turn_owner_id", "") or "").strip()
+        if owner_id:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if current_owner and current_owner != owner_id:
+                return False
+
+        try:
+            effect_turn = int(entry.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    @staticmethod
+    def _death_guard_temp_effect_matches_attack_type(entry: dict, *, attack_type: str) -> bool:
+        required = str(entry.get("attack_type", "any") or "any").strip().lower()
+        atype = str(attack_type or "any").strip().lower()
+        if atype not in ("melee", "ranged", "any"):
+            atype = "any"
+        if required not in ("melee", "ranged", "any"):
+            required = "any"
+        return required == "any" or atype == "any" or required == atype
+
+    def _death_guard_temp_effect_target_matches(
+        self,
+        entry: dict,
+        *,
+        target=None,
+    ) -> bool:
+        condition = str(entry.get("target_condition", "") or "").strip().lower()
+        if condition != "below_starting_strength":
+            return True
+        if target is None:
+            return False
+        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        below_starting = getattr(target_root, "is_below_starting_strength", None) if target_root is not None else None
+        return bool(below_starting()) if callable(below_starting) else False
+
+    def iter_active_death_guard_temp_effects(
+        self,
+        *,
+        effect_type: str = "",
+        attack_type: str = "any",
+        target=None,
+        require_target_match: bool = True,
+    ):
+        expected = str(effect_type or "").strip().lower()
+        for entry in self._death_guard_temp_effect_entries():
+            effect = str(entry.get("effect", "") or "").strip().lower()
+            if expected and effect != expected:
+                continue
+            if not self._death_guard_temp_effect_is_active(entry, game=self._death_guard_temp_effect_game()):
+                continue
+            if not self._death_guard_temp_effect_matches_attack_type(entry, attack_type=attack_type):
+                continue
+            if require_target_match and not self._death_guard_temp_effect_target_matches(entry, target=target):
                 continue
             yield dict(entry)
 

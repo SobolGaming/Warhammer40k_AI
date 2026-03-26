@@ -640,6 +640,32 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not self.is_champions_of_contagion() or unit is None:
             return []
         keys: list[str] = []
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        owner_id = str(getattr(owner, "id", "") or "")
+
+        target_sr = getattr(unit, "special_rules", None)
+        if isinstance(target_sr, dict) and bool(target_sr.get("deaths_heads_active", False)):
+            effect_owner = str(target_sr.get("deaths_heads_owner", "") or "")
+            effect_active = bool(effect_owner and effect_owner == owner_id)
+            if effect_active and game is not None:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    effect_turn = int(target_sr.get("deaths_heads_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if effect_turn and current_turn and current_turn > effect_turn and current_owner == owner_id:
+                    effect_active = False
+            if effect_active:
+                for plague in list(DEFAULT_PLAGUES or []):
+                    key = str(getattr(plague, "key", "") or "").strip().upper()
+                    if key:
+                        keys.append(key)
 
         if bool(is_afflicted):
             for source_root in list(self._champions_enhancement_sources(flag_key="enhancement_final_ingredient") or []):

@@ -22,6 +22,7 @@ from .stratagems_drukhari import DrukhariStratagemMixin
 from .stratagems_genestealer_cults import GenestealerCultsStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
 from .stratagems_thousand_sons import ThousandSonsStratagemMixin
+from .stratagems_death_guard import DeathGuardStratagemMixin
 from .stratagems_tyranids import TyranidsStratagemMixin
 from .stratagems_space_marines import SpaceMarinesStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
@@ -567,6 +568,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SANCTIFIED KILL ZONE",
     "PLAGUESURGE",
     "LEECHSPORE ERUPTION",
+    "BLESSINGS OF FILTH",
+    "DEATH'S HEADS",
+    "GROTESQUE FORTITUDE",
+    "MALIGNANCE MAGNIFIED",
+    "MOBILE VECTOR",
+    "RABID INFUSION",
     "PRIMED AND READIED",
     "RETURN TO THE SHADOWS",
     "OVERWHELMING GENEROSITY",
@@ -745,6 +752,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
     "PLAGUE OF WOES",
+    "GROTESQUE FORTITUDE",
     "CAVALCADE OF BLADES",
     "OVERWHELMING EXCESS",
     "SHADE PATH",
@@ -1625,6 +1633,7 @@ class StratagemManager(
     GreyKnightsStratagemMixin,
     ChaosKnightsStratagemMixin,
     ChaosDaemonsStratagemMixin,
+    DeathGuardStratagemMixin,
     NecronsStratagemMixin,
     AeldariStratagemMixin,
     DrukhariStratagemMixin,
@@ -6719,6 +6728,7 @@ class StratagemManager(
             self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
         except Exception:
             raise
+        self._clear_deaths_heads_if_expired(player=player, phase=phase)
         try:
             self._queue_plague_legion_phase_start_reactions(player=player, phase=phase)
         except Exception:
@@ -11552,6 +11562,12 @@ class StratagemManager(
             )
         except Exception:
             raise
+        self._queue_death_guard_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name="Shooting phase",
+            event_name="shooting_targets_selected",
+        )
         # Warhost: LIGHTNING-FAST REACTIONS (opponent Shooting phase, after targets selected).
         try:
             s3 = self.get_by_name("LIGHTNING-FAST REACTIONS")
@@ -12831,6 +12847,12 @@ class StratagemManager(
             )
         except Exception:
             raise
+        self._queue_death_guard_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name="Fight phase",
+            event_name="fight_targets_selected",
+        )
         # Warhost: LIGHTNING-FAST REACTIONS (Fight phase)
         try:
             s = self.get_by_name("LIGHTNING-FAST REACTIONS")
@@ -17659,6 +17681,9 @@ class StratagemManager(
         thousand_sons_result = self._use_thousand_sons_rubricae_phalanx_stratagem(s, **kwargs)
         if thousand_sons_result is not None:
             return thousand_sons_result
+        death_guard_result = self._use_death_guard_stratagem(s, **kwargs)
+        if death_guard_result is not None:
+            return death_guard_result
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result
