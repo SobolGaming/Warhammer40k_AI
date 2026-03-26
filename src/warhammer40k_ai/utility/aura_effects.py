@@ -1617,6 +1617,19 @@ def _nurgles_gift(attacker_unit, target_unit, source_unit, *, game_map=None) -> 
             rng = float(get_range_fn(br, source_unit=source_unit, game_map=game_map))
     if not unit_within_range_of_unit(source_unit, target_unit, rng, use_attached_aggregate=True):
         return AuraAttackModifiers()
+    try:
+        from ..rules.nurgles_gift import NurglesGiftManager
+
+        if int(
+            NurglesGiftManager.get_non_contagion_afflicted_toughness_modifier_for_unit(
+                target_unit,
+                game_map=game_map,
+            )
+            or 0
+        ):
+            return AuraAttackModifiers()
+    except Exception:
+        pass
     return AuraAttackModifiers(
         target_toughness_delta=-1,
         target_toughness_reasons=(f"-1T from Nurgle's Gift (Aura) (Contagion Range {rng}\")",),

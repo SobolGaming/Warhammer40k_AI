@@ -2656,6 +2656,32 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             return 0.0
         return float(self._REVERBERANT_RANCIDITY_CONTAGION_BONUS)
 
+    def contagion_range_bonus_for_unit(self, unit, *, game=None, game_map=None) -> float:
+        del game
+        del game_map
+        total_bonus = 0.0
+        total_bonus += float(self.reverberant_rancidity_contagion_range_bonus_for_unit(unit) or 0.0)
+        if unit is None:
+            return float(total_bonus)
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return float(total_bonus)
+        temp_effect_iter = getattr(root, "iter_active_death_guard_temp_effects", None)
+        if callable(temp_effect_iter):
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="contagion_range_bonus",
+                    attack_type="any",
+                    require_target_match=False,
+                )
+                or []
+            ):
+                try:
+                    total_bonus += float(effect.get("value", effect.get("bonus", 0.0)) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+        return float(total_bonus)
+
     def _iter_unique_attached_roots(self):
         if self.army is None:
             return

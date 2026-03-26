@@ -463,6 +463,90 @@ _CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_CONTAGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DEATH_LORDS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010144002": StratagemToolDescriptor(
+        stratagem_id="000010144002",
+        name="Blooming Pestilence",
+        timing="any_phase_start",
+        target="death_guard_terminator_unit",
+        duration="until_end_of_phase",
+        effect="contagion_range_bonus",
+        cp_cost=1,
+        effect_params={"contagion_range_bonus": 3},
+    ),
+    "000010144003": StratagemToolDescriptor(
+        stratagem_id="000010144003",
+        name="Grim Reapers",
+        timing="fight_phase_on_select_to_fight",
+        target="death_guard_terminator_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_hit_rerolls_against_non_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_hit_full": True,
+            "enemy_keywords_excluded": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000010144004": StratagemToolDescriptor(
+        stratagem_id="000010144004",
+        name="Undying Spite",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="death_guard_terminator_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_on_4_plus",
+        cp_cost=1,
+        effect_params={"fight_on_death_threshold": 4},
+    ),
+    "000010144005": StratagemToolDescriptor(
+        stratagem_id="000010144005",
+        name="Signal Pox",
+        timing="command_phase",
+        target="lord_of_virulence_model_and_objective_within_30",
+        duration="until_start_of_your_next_turn",
+        effect="objective_marker_afflicts_enemy_units",
+        cp_cost=1,
+        range_in=30.0,
+        effect_params={
+            "requires_visibility": True,
+            "objective_afflicts_enemy_units": True,
+        },
+    ),
+    "000010144006": StratagemToolDescriptor(
+        stratagem_id="000010144006",
+        name="Mortarion's Teachings",
+        timing="shooting_phase_on_select_to_shoot",
+        target="death_guard_terminator_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_assault_and_heavy",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "keywords": ["ASSAULT", "HEAVY"],
+        },
+    ),
+    "000010144007": StratagemToolDescriptor(
+        stratagem_id="000010144007",
+        name="Sickening Impact",
+        timing="charge_phase_after_charge_move",
+        target="death_guard_terminator_unit_that_ended_charge_move",
+        duration="immediate",
+        effect="charge_end_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "enemy_target": "enemy_unit_within_engagement_range",
+            "roll_count": "models_within_engagement_range_of_selected_enemy",
+            "success_on": 2,
+            "mortal_wounds_per_success": 1,
+            "max_mortal_wounds": 6,
+        },
+    ),
+}
+
+_DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_LORDS_CHOSEN_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8407,6 +8491,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CHAMPIONS_OF_CONTAGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DEATH_LORDS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8729,6 +8816,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
         or _PLAGUE_LEGION_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME.get(key)
+        or _DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

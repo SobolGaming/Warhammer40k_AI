@@ -573,7 +573,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GROTESQUE FORTITUDE",
     "MALIGNANCE MAGNIFIED",
     "MOBILE VECTOR",
+    "MORTARION'S TEACHINGS",
     "RABID INFUSION",
+    "BLOOMING PESTILENCE",
+    "GRIM REAPERS",
+    "SICKENING IMPACT",
+    "SIGNAL POX",
+    "UNDYING SPITE",
     "PRIMED AND READIED",
     "RETURN TO THE SHADOWS",
     "OVERWHELMING GENEROSITY",
@@ -753,6 +759,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BINDING SHADOW",
     "PLAGUE OF WOES",
     "GROTESQUE FORTITUDE",
+    "SICKENING IMPACT",
+    "UNDYING SPITE",
     "CAVALCADE OF BLADES",
     "OVERWHELMING EXCESS",
     "SHADE PATH",
@@ -6729,6 +6737,7 @@ class StratagemManager(
         except Exception:
             raise
         self._clear_deaths_heads_if_expired(player=player, phase=phase)
+        self._clear_signal_pox_if_expired(player=player, phase=phase)
         try:
             self._queue_plague_legion_phase_start_reactions(player=player, phase=phase)
         except Exception:
@@ -9700,6 +9709,7 @@ class StratagemManager(
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
         self._queue_veterans_move_end_reactions(unit=unit, action=action)
+        self._queue_death_guard_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
@@ -23585,6 +23595,12 @@ class StratagemManager(
                     trigger_label = "Trigger: enemy charge declared"
                 elif r.get("event") in ("charge_move_ended", "heroic_intervention"):
                     trigger_label = "Trigger: enemy charge end"
+                elif r.get("event") == "unit_move_ended":
+                    action = str(r.get("action", "") or "").strip().lower()
+                    if action in {"charge", "charge move"}:
+                        trigger_label = "Trigger: charge move end"
+                    else:
+                        trigger_label = "Trigger: move end"
                 elif r.get("event") == "shooting_targets_selected":
                     trigger_label = "Trigger: after targets selected"
                 elif r.get("event") == "blood_surge_triggered":

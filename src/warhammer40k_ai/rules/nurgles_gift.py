@@ -187,10 +187,12 @@ class NurglesGiftManager:
         if source_unit is not None and self.army is not None:
             dg_mgr = getattr(self.army, "death_guard_detachments", None)
             bonus_fn = (
-                getattr(dg_mgr, "reverberant_rancidity_contagion_range_bonus_for_unit", None)
+                getattr(dg_mgr, "contagion_range_bonus_for_unit", None)
                 if dg_mgr is not None
                 else None
             )
+            if bonus_fn is None and dg_mgr is not None:
+                bonus_fn = getattr(dg_mgr, "reverberant_rancidity_contagion_range_bonus_for_unit", None)
             if callable(bonus_fn):
                 detachment_bonus = float(bonus_fn(source_unit, game=game, game_map=game_map) or 0.0)
         return float(base + bonus + self._plaguesurge_bonus_for_current_state() + detachment_bonus)
@@ -315,7 +317,13 @@ class NurglesGiftManager:
         return tuple(dict.fromkeys([key for key in keys if key]))
 
     @staticmethod
-    def get_afflicted_plague_for_unit(unit, *, game=None, game_map=None) -> Optional[NurglesPlague]:
+    def get_afflicted_plague_for_unit(
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        include_contagion_sources: bool = True,
+    ) -> Optional[NurglesPlague]:
         if unit is None:
             return None
         try:
@@ -461,15 +469,29 @@ class NurglesGiftManager:
             except Exception:
                 sources = [u for u in enemy_units if getattr(u, "get_parent_army", lambda: None)() is enemy_army]
 
-            for source in sources:
-                if not mgr._unit_is_valid_contagion_source(source, game=game, game_map=game_map):
+            objective_contagion_range = mgr.get_contagion_range(br, game=game, game_map=game_map)
+            if bool(include_contagion_sources):
+                for source in sources:
+                    if not mgr._unit_is_valid_contagion_source(source, game=game, game_map=game_map):
+                        continue
+                    rng = mgr.get_contagion_range(br, source_unit=source, game=game, game_map=game_map)
+                    if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
+                        return plague
+
+            objectives = list(getattr(game_map, "objectives", []) or [])
+            for obj in objectives:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
                     continue
-                rng = mgr.get_contagion_range(br, source_unit=source, game=game, game_map=game_map)
-                if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
+                if not bool(getattr(loc, "signal_pox_active", False)):
+                    continue
+                if str(getattr(loc, "signal_pox_owner", "") or "") != str(getattr(getattr(enemy_army, "player", None), "id", "") or ""):
+                    continue
+                is_within_objective = getattr(unit, "is_within_objective_range", None)
+                if callable(is_within_objective) and bool(is_within_objective(loc)):
                     return plague
 
             # Virulent Vectorium: Worldblight turns controlled objectives into contagion sources.
-            objectives = list(getattr(game_map, "objectives", []) or [])
             for obj in objectives:
                 loc = getattr(obj, "location", None)
                 if loc is None or getattr(loc, "removed", False):
@@ -484,7 +506,24 @@ class NurglesGiftManager:
                     and getattr(loc, "sticky_controller", None) is not worldblight_owner
                 ):
                     continue
-                if _aura_utils.unit_within_range_of_point_3d(unit, (loc.x, loc.y), rng, use_attached_aggregate=True):
+                if _aura_utils.unit_within_range_of_point_3d(
+                    unit,
+                    (loc.x, loc.y),
+                    objective_contagion_range,
+                    use_attached_aggregate=True,
+                ):
                     return plague
 
         return None
+
+    @staticmethod
+    def get_non_contagion_afflicted_toughness_modifier_for_unit(unit, *, game=None, game_map=None) -> int:
+        plague = NurglesGiftManager.get_afflicted_plague_for_unit(
+            unit,
+            game=game,
+            game_map=game_map,
+            include_contagion_sources=False,
+        )
+        if plague is None:
+            return 0
+        return -1

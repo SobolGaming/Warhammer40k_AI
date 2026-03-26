@@ -1752,6 +1752,68 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
 
+        # Temporary effect hook: UNDYING SPITE (Death Lord's Chosen).
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("death_guard_undying_spite_active"):
+                phase_name = ""
+                current_turn = 0
+                current_owner_id = ""
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        phase_name = ""
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    try:
+                        current_player = getattr(game, "get_current_player", lambda: None)()
+                    except Exception:
+                        current_player = None
+                    current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+                try:
+                    marked_turn = int(sr.get("death_guard_undying_spite_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                marked_owner_id = str(sr.get("death_guard_undying_spite_turn_owner", "") or "").strip()
+                exp = str(sr.get("death_guard_undying_spite_expires_phase", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+                    if not (marked_turn and current_turn and marked_turn != current_turn):
+                        if not (marked_owner_id and current_owner_id and marked_owner_id != current_owner_id):
+                            source = str(sr.get("death_guard_undying_spite_source", "") or "Undying Spite").strip()
+                            source = source or "Undying Spite"
+                            try:
+                                threshold = int(sr.get("death_guard_undying_spite_threshold", 4) or 4)
+                            except Exception:
+                                threshold = 4
+                            return {
+                                "threshold": max(2, min(6, int(threshold))),
+                                "source": source,
+                            }
+                if phase_name and phase_name != "FIGHT_PHASE":
+                    for key in (
+                        "death_guard_undying_spite_active",
+                        "death_guard_undying_spite_threshold",
+                        "death_guard_undying_spite_expires_phase",
+                        "death_guard_undying_spite_source",
+                        "death_guard_undying_spite_turn_owner",
+                        "death_guard_undying_spite_turn",
+                    ):
+                        sr.pop(key, None)
+                    self.special_rules = sr
+        except Exception:
+            pass
+
         # Temporary effect hook: DEATH FRENZY (Tyranids Invasion Fleet).
         try:
             sr = getattr(self, "special_rules", None)
@@ -12956,14 +13018,31 @@ class KeywordsDetachmentsMixin:
         *,
         target=None,
     ) -> bool:
-        condition = str(entry.get("target_condition", "") or "").strip().lower()
-        if condition != "below_starting_strength":
-            return True
         if target is None:
             return False
         target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
-        below_starting = getattr(target_root, "is_below_starting_strength", None) if target_root is not None else None
-        return bool(below_starting()) if callable(below_starting) else False
+        if target_root is None:
+            return False
+
+        condition = str(entry.get("target_condition", "") or "").strip().lower()
+        if condition == "below_starting_strength":
+            below_starting = getattr(target_root, "is_below_starting_strength", None)
+            return bool(below_starting()) if callable(below_starting) else False
+
+        excluded_keywords = [
+            str(keyword or "").strip().upper()
+            for keyword in list(entry.get("exclude_keywords_any", []) or [])
+            if str(keyword or "").strip()
+        ]
+        if excluded_keywords:
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            has_keyword = getattr(target_root, "has_keyword", None)
+            for keyword in excluded_keywords:
+                if callable(has_any_keyword) and bool(has_any_keyword(keyword)):
+                    return False
+                if callable(has_keyword) and bool(has_keyword(keyword)):
+                    return False
+        return True
 
     def iter_active_death_guard_temp_effects(
         self,

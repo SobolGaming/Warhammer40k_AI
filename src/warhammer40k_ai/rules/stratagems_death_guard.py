@@ -4,11 +4,14 @@ import logging
 import re
 from typing import Any
 
+from ..utility import dice as dice_module
 from ..utility.aura_utils import (
     distance_between_models_bases_3d,
     horizontal_distance_between_bases_2d,
+    unit_within_range_of_point_3d,
     vertical_distance_between_bases,
 )
+from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -62,6 +65,11 @@ class DeathGuardStratagemMixin:
     def _is_champions_of_contagion_detachment(self) -> bool:
         mgr = self._dg_detachment_mgr()
         checker = getattr(mgr, "is_champions_of_contagion", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_death_lords_chosen_detachment(self) -> bool:
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "is_death_lords_chosen", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     @staticmethod
@@ -238,6 +246,23 @@ class DeathGuardStratagemMixin:
                 return True
         return False
 
+    def _dg_named_member_unit(self, unit: Any, token: str) -> Any:
+        root = self._dg_root(unit)
+        token_norm = self._dg_normalize_name(token)
+        if root is None or not token_norm:
+            return None
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        members = list(members_fn() or []) if callable(members_fn) else [root]
+        members = sorted(list(members or []), key=self._dg_sort_key)
+        for member in members:
+            name_norm = self._dg_normalize_name(getattr(member, "name", "") or "")
+            if token_norm and token_norm in name_norm:
+                return member
+        root_name = self._dg_normalize_name(getattr(root, "name", "") or "")
+        if token_norm and token_norm in root_name:
+            return root
+        return None
+
     @staticmethod
     def _dg_model_is_alive(model: Any) -> bool:
         if model is None:
@@ -258,6 +283,165 @@ class DeathGuardStratagemMixin:
         alive.sort(key=self._dg_sort_key)
         return alive
 
+    def _dg_attached_unit_has_keyword(self, unit: Any, keyword: str) -> bool:
+        root = self._dg_root(unit)
+        if root is None:
+            return False
+        if self._dg_has_keyword(root, keyword):
+            return True
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        members = list(members_fn() or []) if callable(members_fn) else [root]
+        for member in list(members or []):
+            if self._dg_has_keyword(member, keyword):
+                return True
+        return False
+
+    def _dg_death_lords_chosen_terminator_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        if not self._is_death_lords_chosen_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_attached_unit_has_keyword(root, "TERMINATOR"):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if require_not_shot and not self._dg_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                continue
+            if require_not_fought and not self._dg_unit_not_selected_for_phase_action(root, phase_key="FIGHT_PHASE"):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_signal_pox_objective_candidates(self, source_unit: Any) -> list[Any]:
+        source_member = self._dg_named_member_unit(source_unit, "Lord of Virulence")
+        if source_member is None:
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = self._dg_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            point = (float(getattr(loc, "x", 0.0) or 0.0), float(getattr(loc, "y", 0.0) or 0.0))
+            if not unit_within_range_of_point_3d(
+                source_member,
+                point,
+                30.0,
+                use_attached_aggregate=False,
+            ):
+                continue
+            candidates.append(objective)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_resolve_objective_candidate(self, selected: Any, candidates: list[Any]) -> Any:
+        if selected is None:
+            return None
+        selected_id = str(getattr(selected, "id", "") or get_entity_id(selected) or "")
+        selected_loc = getattr(selected, "location", None)
+        selected_loc_id = str(get_entity_id(selected_loc) or "") if selected_loc is not None else ""
+        for candidate in list(candidates or []):
+            if candidate is selected:
+                return candidate
+            candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+            candidate_loc = getattr(candidate, "location", None)
+            candidate_loc_id = str(get_entity_id(candidate_loc) or "") if candidate_loc is not None else ""
+            if selected_id and candidate_id and selected_id == candidate_id:
+                return candidate
+            if selected_loc_id and candidate_loc_id and selected_loc_id == candidate_loc_id:
+                return candidate
+        return None
+
+    def _dg_sickening_impact_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        root = self._dg_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(within_engagement):
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._dg_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._dg_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._dg_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._dg_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if not bool(within_engagement(root, enemy_root)):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_models_within_engagement_range_of_enemy(self, source_unit: Any, enemy_unit: Any) -> list[Any]:
+        source_root = self._dg_root(source_unit)
+        enemy_root = self._dg_root(enemy_unit)
+        if source_root is None or enemy_root is None:
+            return []
+        source_models = list(self._dg_alive_models(source_root) or [])
+        enemy_models = list(self._dg_alive_models(enemy_root) or [])
+        engaged: list[Any] = []
+        for source_model in list(source_models or []):
+            source_base = getattr(source_model, "model_base", None)
+            if source_base is None:
+                continue
+            for enemy_model in list(enemy_models or []):
+                enemy_base = getattr(enemy_model, "model_base", None)
+                if enemy_base is None:
+                    continue
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(source_base, enemy_base))
+                    vertical = float(vertical_distance_between_bases(source_base, enemy_base))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) + 1e-6 and vertical <= float(ENGAGEMENT_RANGE_VERTICAL) + 1e-6:
+                    engaged.append(source_model)
+                    break
+        engaged.sort(key=self._dg_sort_key)
+        return engaged
+
     def _dg_unit_within_horizontal_vertical_of_unit(
         self,
         unit: Any,
@@ -275,10 +459,16 @@ class DeathGuardStratagemMixin:
         if not source_models or not target_models:
             return False
         for source_model in list(source_models or []):
+            source_base = getattr(source_model, "model_base", None)
+            if source_base is None:
+                continue
             for target_model in list(target_models or []):
+                target_base = getattr(target_model, "model_base", None)
+                if target_base is None:
+                    continue
                 try:
-                    h = float(horizontal_distance_between_bases_2d(source_model, target_model))
-                    v = float(vertical_distance_between_bases(source_model, target_model))
+                    h = float(horizontal_distance_between_bases_2d(source_base, target_base))
+                    v = float(vertical_distance_between_bases(source_base, target_base))
                 except (AttributeError, TypeError, ValueError):
                     continue
                 if h <= float(horizontal) + 1e-6 and v <= float(vertical) + 1e-6:
@@ -474,6 +664,126 @@ class DeathGuardStratagemMixin:
             phase_name=phase_name,
             event_name=event_name,
         )
+        self._queue_death_lords_chosen_undying_spite_reaction(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name=phase_name,
+            event_name=event_name,
+        )
+
+    def _queue_death_lords_chosen_undying_spite_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if not self._is_death_lords_chosen_detachment():
+            return
+        stratagem = self.get_by_name("UNDYING SPITE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_attached_unit_has_keyword(root, "TERMINATOR"):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == event_name
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "UNDYING SPITE"
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_death_guard_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_death_lords_chosen_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"}:
+            return
+        root = self._dg_root(unit)
+        if root is None or not self._dg_owned_by_player(root, self.player):
+            return
+        if root not in self._dg_death_lords_chosen_terminator_candidates():
+            return
+        stratagem = self.get_by_name("SICKENING IMPACT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem, target_unit=root):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = self._dg_sickening_impact_enemy_candidates(root)
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_ended"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "SICKENING IMPACT"
+                and self._dg_root(reaction.get("unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "source_unit": root,
+            "action": str(action or ""),
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["target_enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _clear_deaths_heads_if_expired(self, *, player=None, phase=None) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
@@ -503,19 +813,66 @@ class DeathGuardStratagemMixin:
                     sr.pop(key, None)
                 root.special_rules = sr
 
+    def _clear_signal_pox_if_expired(self, *, player=None, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        owner_id = str(getattr(player, "id", "") or "")
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if phase_key != "COMMAND_PHASE" or not owner_id or game_map is None:
+            return
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if not bool(getattr(loc, "signal_pox_active", False)):
+                continue
+            if str(getattr(loc, "signal_pox_owner", "") or "") != owner_id:
+                continue
+            for key in (
+                "signal_pox_active",
+                "signal_pox_owner",
+                "signal_pox_turn",
+                "signal_pox_source",
+            ):
+                if hasattr(loc, key):
+                    setattr(loc, key, None if key != "signal_pox_active" else False)
+
     def _use_death_guard_stratagem(self, s, **kwargs):
         name_u = str(getattr(s, "name", "") or "").strip().upper()
         if name_u not in {
+            "BLOOMING PESTILENCE",
+            "BLESSINGS OF FILTH",
+            "DEATH'S HEADS",
+            "GRIM REAPERS",
+            "GROTESQUE FORTITUDE",
+            "MALIGNANCE MAGNIFIED",
+            "MORTARION'S TEACHINGS",
+            "MOBILE VECTOR",
+            "RABID INFUSION",
+            "SICKENING IMPACT",
+            "SIGNAL POX",
+            "UNDYING SPITE",
+        }:
+            return None
+
+        champions_name = name_u in {
             "BLESSINGS OF FILTH",
             "DEATH'S HEADS",
             "GROTESQUE FORTITUDE",
             "MALIGNANCE MAGNIFIED",
             "MOBILE VECTOR",
             "RABID INFUSION",
-        }:
-            return None
-
-        if not self._is_champions_of_contagion_detachment():
+        }
+        death_lords_name = name_u in {
+            "BLOOMING PESTILENCE",
+            "GRIM REAPERS",
+            "MORTARION'S TEACHINGS",
+            "SICKENING IMPACT",
+            "SIGNAL POX",
+            "UNDYING SPITE",
+        }
+        if champions_name and not self._is_champions_of_contagion_detachment():
+            return False
+        if death_lords_name and not self._is_death_lords_chosen_detachment():
             return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
@@ -834,6 +1191,301 @@ class DeathGuardStratagemMixin:
             enemy_root.special_rules = sr
             self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
             logger.info("INFO: DEATH'S HEADS: target enemy unit gains all Plague effects until your next turn.")
+            return True
+
+        if name_u == "BLOOMING PESTILENCE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: BLOOMING PESTILENCE: no target unit provided")
+                return False
+            candidates = self._dg_death_lords_chosen_terminator_candidates()
+            if root not in candidates:
+                logger.error("ERROR: BLOOMING PESTILENCE: target must be an eligible DEATH GUARD TERMINATOR unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="death_lords_chosen",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "contagion_range_bonus",
+                        "value": 3,
+                        "source": str(s.name or "Blooming Pestilence"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: BLOOMING PESTILENCE: target unit gains +3\" Contagion Range this phase.")
+            return True
+
+        if name_u == "GRIM REAPERS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: GRIM REAPERS: no target unit provided")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: GRIM REAPERS: wrong phase")
+                return False
+            candidates = self._dg_death_lords_chosen_terminator_candidates(require_not_fought=True)
+            if root not in candidates:
+                logger.error("ERROR: GRIM REAPERS: target must be an eligible TERMINATOR unit that has not fought")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="death_lords_chosen",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "hit_reroll",
+                        "attack_type": "melee",
+                        "reroll_mode": "full",
+                        "exclude_keywords_any": ["MONSTER", "VEHICLE"],
+                        "source": str(s.name or "Grim Reapers"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: GRIM REAPERS: target unit re-rolls melee Hit rolls against non-MONSTER, non-VEHICLE targets this phase.")
+            return True
+
+        if name_u == "SIGNAL POX":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            source_root = self._dg_root(unit)
+            if source_root is None:
+                logger.error("ERROR: SIGNAL POX: no source unit provided")
+                return False
+            if not self._dg_is_death_guard_unit(source_root):
+                logger.error("ERROR: SIGNAL POX: source must be a DEATH GUARD unit")
+                return False
+            if not self._dg_on_battlefield(source_root, require_targetable=True):
+                logger.error("ERROR: SIGNAL POX: source unit must be on the battlefield")
+                return False
+            if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+                logger.error("ERROR: SIGNAL POX: source unit cannot be selected")
+                return False
+            if phase_key != "COMMAND_PHASE":
+                logger.error("ERROR: SIGNAL POX: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: SIGNAL POX: not your turn")
+                return False
+            if not self._dg_unit_contains_named_member(source_root, "Lord of Virulence"):
+                logger.error("ERROR: SIGNAL POX: source must be a Lord of Virulence model")
+                return False
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            objective_candidates = list(kwargs.get("objective_candidates") or [])
+            if not objective_candidates:
+                objective_candidates = self._dg_signal_pox_objective_candidates(source_root)
+            if objective is None and len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            if objective is None:
+                logger.error("ERROR: SIGNAL POX: no objective marker selected")
+                return False
+            selected_objective = self._dg_resolve_objective_candidate(objective, objective_candidates)
+            if selected_objective is None:
+                logger.error("ERROR: SIGNAL POX: selected objective marker is not eligible")
+                return False
+            objective_location = getattr(selected_objective, "location", None)
+            if objective_location is None:
+                logger.error("ERROR: SIGNAL POX: objective marker location unavailable")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=source_root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            objective_location.signal_pox_active = True
+            objective_location.signal_pox_owner = str(getattr(self.player, "id", "") or "")
+            objective_location.signal_pox_turn = int(self._dg_current_turn())
+            objective_location.signal_pox_source = str(s.name or "Signal Pox")
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: SIGNAL POX: selected objective marker Afflicts enemy units within its range until your next turn.")
+            return True
+
+        if name_u == "UNDYING SPITE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            if unit is None or attacking_unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "UNDYING SPITE":
+                        continue
+                    unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                    attacking_unit = attacking_unit or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            attacker_root = self._dg_root(attacking_unit)
+            if root is None:
+                logger.error("ERROR: UNDYING SPITE: no target unit provided")
+                return False
+            if attacker_root is None:
+                logger.error("ERROR: UNDYING SPITE: missing attacking unit")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: UNDYING SPITE: wrong phase")
+                return False
+            if self._dg_owned_by_player(attacker_root, self.player):
+                logger.error("ERROR: UNDYING SPITE: attacking unit must be enemy")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: UNDYING SPITE: target is not currently eligible")
+                return False
+            if root not in self._dg_death_lords_chosen_terminator_candidates():
+                logger.error("ERROR: UNDYING SPITE: target must be an eligible TERMINATOR unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["death_guard_undying_spite_active"] = True
+            sr["death_guard_undying_spite_threshold"] = 4
+            sr["death_guard_undying_spite_expires_phase"] = "FIGHT_PHASE"
+            sr["death_guard_undying_spite_source"] = str(s.name or "UNDYING SPITE")
+            sr["death_guard_undying_spite_turn"] = int(self._dg_current_turn())
+            sr["death_guard_undying_spite_turn_owner"] = str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or "")
+            root.special_rules = sr
+            invalidate = getattr(root, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: UNDYING SPITE: target unit gains melee fight-on-death on 4+ this phase.")
+            return True
+
+        if name_u == "MORTARION'S TEACHINGS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: MORTARION'S TEACHINGS: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: MORTARION'S TEACHINGS: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: MORTARION'S TEACHINGS: not your turn")
+                return False
+            candidates = self._dg_death_lords_chosen_terminator_candidates(require_not_shot=True)
+            if root not in candidates:
+                logger.error("ERROR: MORTARION'S TEACHINGS: target must be an eligible TERMINATOR unit that has not shot")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            source_name = str(s.name or "Mortarion's Teachings")
+            root_id = self._dg_sort_key(root)
+            for model in list(self._dg_alive_models(root) or []):
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                model_id = self._dg_sort_key(model)
+                weapon_names: list[str] = []
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_ranged = getattr(wargear, "is_ranged", None)
+                    if callable(is_ranged) and not bool(is_ranged()):
+                        continue
+                    if not callable(is_ranged):
+                        is_melee = getattr(wargear, "is_melee", None)
+                        if callable(is_melee) and bool(is_melee()):
+                            continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if weapon_name and weapon_name not in weapon_names:
+                        weapon_names.append(weapon_name)
+                for weapon_name in sorted(list(weapon_names or []), key=str.lower):
+                    set_keywords(
+                        key=f"death_guard_death_lords_chosen_mortarions_teachings:{root_id}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["ASSAULT", "HEAVY"],
+                        source=source_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: MORTARION'S TEACHINGS: target unit gains [ASSAULT] and [HEAVY] on ranged weapons this phase.")
+            return True
+
+        if name_u == "SICKENING IMPACT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+            action = str(kwargs.get("action") or "")
+            if unit is None or (enemy_unit is None and not enemy_candidates):
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "SICKENING IMPACT":
+                        continue
+                    unit = unit or reaction.get("source_unit") or reaction.get("unit") or reaction.get("target_unit")
+                    enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+                    if not enemy_candidates:
+                        enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                    if not action:
+                        action = str(reaction.get("action") or "")
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: SICKENING IMPACT: missing source unit")
+                return False
+            if phase_key != "CHARGE_PHASE":
+                logger.error("ERROR: SICKENING IMPACT: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: SICKENING IMPACT: not your turn")
+                return False
+            if root not in self._dg_death_lords_chosen_terminator_candidates():
+                logger.error("ERROR: SICKENING IMPACT: source must be an eligible TERMINATOR unit")
+                return False
+            action_key = str(action or "").strip().lower().replace("_", " ")
+            if action_key not in {"charge", "charge move"}:
+                logger.error("ERROR: SICKENING IMPACT: source unit must have just ended a Charge move")
+                return False
+            if not enemy_candidates:
+                enemy_candidates = self._dg_sickening_impact_enemy_candidates(root)
+            enemy_root = self._dg_root(enemy_unit) if enemy_unit is not None else None
+            if enemy_root is None and len(enemy_candidates) == 1:
+                enemy_root = self._dg_root(enemy_candidates[0])
+            if enemy_root is None:
+                logger.error("ERROR: SICKENING IMPACT: missing enemy unit within Engagement Range")
+                return False
+            if enemy_candidates and enemy_root not in enemy_candidates:
+                logger.error("ERROR: SICKENING IMPACT: selected enemy unit is not eligible")
+                return False
+            engaged_models = self._dg_models_within_engagement_range_of_enemy(root, enemy_root)
+            if not engaged_models:
+                logger.error("ERROR: SICKENING IMPACT: no models in your unit are within Engagement Range of that enemy")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(len(engaged_models))]
+            mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) >= 2))
+            if mortal_wounds > 0:
+                apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
+                if callable(apply_mortals):
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: SICKENING IMPACT: %s rolled %s and dealt %d mortal wound(s) to %s.",
+                getattr(root, "name", "Unit"),
+                list(rolls),
+                int(mortal_wounds),
+                getattr(enemy_root, "name", "Enemy"),
+            )
             return True
 
         return None

@@ -1971,11 +1971,19 @@ class Unit(
                 pass
 
         afflicted_plague_keys: set[str] = set()
+        non_contagion_afflicted_toughness_modifier = 0
         try:
             from ..rules.nurgles_gift import (
                 NurglesGiftManager,
                 PLAGUE_RATTLEJOINT,
                 PLAGUE_SCABROUS,
+            )
+            non_contagion_afflicted_toughness_modifier = int(
+                NurglesGiftManager.get_non_contagion_afflicted_toughness_modifier_for_unit(
+                    self,
+                    game_map=game_map,
+                )
+                or 0
             )
             afflicted_plague_keys = {
                 str(value or "").strip().upper()
@@ -1983,7 +1991,17 @@ class Unit(
                 if str(value or "").strip()
             }
         except Exception:
+            non_contagion_afflicted_toughness_modifier = 0
             afflicted_plague_keys = set()
+
+        if ckey == "toughness" and int(non_contagion_afflicted_toughness_modifier or 0):
+            mods.append(
+                Modifier(
+                    ModifierOp.ADD,
+                    int(non_contagion_afflicted_toughness_modifier),
+                    source="nurgles_gift:afflicted_non_contagion",
+                )
+            )
 
         if afflicted_plague_keys:
             if ckey == "save" and PLAGUE_RATTLEJOINT.key in afflicted_plague_keys:
