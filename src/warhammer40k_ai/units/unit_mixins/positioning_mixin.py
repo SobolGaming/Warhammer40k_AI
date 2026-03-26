@@ -9305,6 +9305,27 @@ class PositioningMixin:
                             found = False
                         elif exp_phase and cur_phase and exp_phase != cur_phase:
                             found = False
+                elif sr.get("death_guard_hidden_amongst_the_dead_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("death_guard_hidden_amongst_the_dead_turn_owner", "") or "")
+                    turn = int(sr.get("death_guard_hidden_amongst_the_dead_turn", 0) or 0)
+                    exp_phase = str(sr.get("death_guard_hidden_amongst_the_dead_expires_phase", "") or "").strip().upper()
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            found = False
+                        elif exp_phase and cur_phase and exp_phase != cur_phase:
+                            found = False
                 elif sr.get("dread_talons_screaming_descent_temp_deep_strike"):
                     found = True
                     try:

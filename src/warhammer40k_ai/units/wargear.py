@@ -7769,6 +7769,48 @@ class WargearProfile:
             except Exception:
                 pass
                 
+            redirected = None
+            target_unit = getattr(target_model, "parent_unit", None)
+            try:
+                target_root = target_unit.get_attached_unit_root() if target_unit is not None else None
+            except Exception:
+                target_root = target_unit
+            try:
+                redirect_fn = getattr(target_root, "_apply_death_guard_shamblerot_shambling_wall_redirect", None)
+                if callable(redirect_fn):
+                    redirected = redirect_fn(
+                        attacker_model=attacker,
+                        attacker_unit=getattr(attacker, "parent_unit", None),
+                        weapon_profile=self,
+                        attack_instance=wound_instance,
+                        game_map=game_map,
+                    )
+            except Exception:
+                redirected = None
+            if redirected is not None:
+                support_unit = redirected.get("support_unit")
+                support_name = getattr(support_unit, "name", "Poxwalkers")
+                destroyed_models = int(redirected.get("destroyed_models", 0) or 0)
+                damage_value = int(redirected.get("damage", 0) or 0)
+                self._record_damage_result(
+                    attack_result,
+                    {
+                        "damage_rolled": int(damage_value),
+                        "damage_applied": 0,
+                        "target_model": getattr(target_model, "name", "Model"),
+                        "excess_damage": 0,
+                        "model_killed": False,
+                        "fnp_saves": 0,
+                        "fnp_rolls": [],
+                        "damage_dice_rolls": [],
+                        "damage_expression": str(damage_value),
+                        "special_effects": [
+                            f"Shambling Wall: redirected into {support_name} ({int(destroyed_models)} model(s) destroyed)"
+                        ],
+                    },
+                )
+                continue
+
             save_result = None
             is_mortal_only = bool(wound_instance.get("mortal_wound", False)) and not bool(
                 wound_instance.get("mortal_wound_in_addition", False)

@@ -18228,7 +18228,16 @@ class GameView:
                 )
             return
 
-        if name_u in ("DRAWN TO DESPAIR", "FONT OF FILTH", "RELENTLESS GRIND", "STINKING MIRE") and (
+        if name_u in (
+            "DRAWN TO DESPAIR",
+            "FONT OF FILTH",
+            "GNAWING HUNGER",
+            "GRIP OF THE WALKING POX",
+            "HIDDEN AMONGST THE DEAD",
+            "RELENTLESS GRIND",
+            "SHOCK AND HORROR",
+            "STINKING MIRE",
+        ) and (
             "unit" not in context and "target_unit" not in context
         ):
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
@@ -18238,6 +18247,8 @@ class GameView:
                 getter_name = {
                     "DRAWN TO DESPAIR": "_dg_death_guard_battlefield_unit_candidates",
                     "FONT OF FILTH": "_dg_mortarions_hammer_vehicle_candidates",
+                    "GNAWING HUNGER": "_dg_shamblerot_poxwalker_candidates",
+                    "HIDDEN AMONGST THE DEAD": "_dg_shamblerot_poxwalker_candidates",
                     "RELENTLESS GRIND": "_dg_mortarions_hammer_vehicle_candidates",
                     "STINKING MIRE": "_dg_mortarions_hammer_vehicle_candidates",
                 }.get(name_u, "")
@@ -18248,6 +18259,14 @@ class GameView:
                             candidates = list(getter(require_not_shot=True) or [])
                         elif name_u == "FONT OF FILTH":
                             candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "HIDDEN AMONGST THE DEAD":
+                            candidates = list(
+                                getter(
+                                    require_in_strategic_reserves=True,
+                                    require_not_attached=True,
+                                )
+                                or []
+                            )
                         elif name_u == "RELENTLESS GRIND":
                             phase_label = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
                             candidates = list(
@@ -18264,7 +18283,11 @@ class GameView:
                 subtitle = {
                     "DRAWN TO DESPAIR": "DEATH GUARD unit that has not shot this phase.",
                     "FONT OF FILTH": "DEATH GUARD VEHICLE unit that has not shot this phase.",
+                    "GNAWING HUNGER": "POXWALKERS unit from your army.",
+                    "GRIP OF THE WALKING POX": "POXWALKERS unit targeted by the attacking enemy unit.",
+                    "HIDDEN AMONGST THE DEAD": "POXWALKERS unit in Strategic Reserves that is not Attached.",
                     "RELENTLESS GRIND": "DEATH GUARD VEHICLE unit that has not moved or charged this phase.",
+                    "SHOCK AND HORROR": "DEATH GUARD unit that just ended a Charge move.",
                     "STINKING MIRE": "DEATH GUARD VEHICLE unit.",
                 }.get(name_u, "Select an eligible DEATH GUARD unit.")
                 self._resolve_unit_selection_dialog(
@@ -18279,6 +18302,128 @@ class GameView:
                     dialog=self.overwatch_shooter_dialog,
                     allow_skip=True,
                 )
+            return
+
+        if name_u == "SHAMBLING WALL":
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_primary = context.get("unit") or context.get("target_unit")
+            attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+            candidates = context.get("candidates") or []
+            support_by_unit = dict(context.get("support_candidates_by_unit") or {})
+
+            def _after_primary(primary_unit):
+                if primary_unit is None:
+                    logger.info("Shambling Wall: no protected unit selected")
+                    return
+                support_candidates = list(support_by_unit.get(str(getattr(primary_unit, "id", "") or get_entity_id(primary_unit) or ""), []) or [])
+                if not support_candidates and callable(getattr(manager, "_dg_shamblerot_shambling_wall_support_candidates", None)):
+                    try:
+                        support_candidates = list(
+                            manager._dg_shamblerot_shambling_wall_support_candidates(primary_unit, attacking_unit) or []
+                        )
+                    except Exception:
+                        support_candidates = []
+                if not support_candidates:
+                    logger.info("Shambling Wall: no support POXWALKERS available")
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=support_candidates,
+                    on_chosen=lambda support: self._finalize_admech_rad_zone_stratagem(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        support,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select support POXWALKERS unit for {name}.",
+                    title=name,
+                    subtitle="Friendly POXWALKERS within 3\" and visible to both units.",
+                    enemy_unit=attacking_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_primary is not None:
+                _after_primary(preset_primary)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_primary,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select protected unit for {name}.",
+                title=name,
+                subtitle="DEATH GUARD unit targeted by the attacking enemy unit.",
+                enemy_unit=attacking_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u == "SMEARED WITH FILTH":
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit") or context.get("destroyed_unit")
+            preset_enemy = context.get("enemy_unit") or context.get("target_enemy_unit")
+            candidates = context.get("candidates") or ([preset_unit] if preset_unit is not None else [])
+            enemy_candidates = context.get("enemy_candidates") or []
+
+            def _after_unit(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Smeared With Filth: no destroyed POXWALKERS unit selected")
+                    return
+                resolved_enemy_candidates = list(enemy_candidates or [])
+                if not resolved_enemy_candidates and callable(getattr(manager, "_dg_shamblerot_smeared_with_filth_enemy_candidates", None)):
+                    try:
+                        resolved_enemy_candidates = list(manager._dg_shamblerot_smeared_with_filth_enemy_candidates(chosen_unit) or [])
+                    except Exception:
+                        resolved_enemy_candidates = []
+                if preset_enemy is not None:
+                    self._finalize_unit_and_enemy_stratagem(player, name, context, chosen_unit, preset_enemy)
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=resolved_enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select enemy unit for {name}.",
+                    title=name,
+                    subtitle="Enemy unit that targeted the destroyed POXWALKERS this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _after_unit(preset_unit)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_unit,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select destroyed unit for {name}.",
+                title=name,
+                subtitle="Destroyed POXWALKERS unit from your army.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
             return
 
         if name_u in ("MORDIAN MINUTE", "PURGING FIRE", "VETERAN SHARPSHOOTERS") and "unit" not in context and "target_unit" not in context:
@@ -19793,6 +19938,31 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_unit_and_enemy_stratagem(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        unit,
+        enemy_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None or enemy_unit is None:
+            logger.info(f"{name}: missing unit or enemy selection")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["enemy_unit"] = enemy_unit
+        ctx["target_enemy_unit"] = enemy_unit
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")

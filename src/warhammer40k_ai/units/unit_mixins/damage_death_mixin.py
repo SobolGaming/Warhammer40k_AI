@@ -2683,6 +2683,205 @@ class DamageDeathMixin:
             redirected += 1
         return int(redirected)
 
+    def _death_guard_shamblerot_shambling_wall_support_target(
+        self,
+        *,
+        attacker_model: Optional['Model'] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        game_map: Optional['Map'] = None,
+    ):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or attacker_model is None or weapon_profile is None:
+            return None
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return None
+        if not bool(special_rules.get("death_guard_shamblerot_shambling_wall_active", False)):
+            return None
+        support_unit_id = str(special_rules.get("death_guard_shamblerot_shambling_wall_support_unit_id", "") or "").strip()
+        if not support_unit_id:
+            return None
+        if attacker_unit is None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return None
+        expected_attacker_id = str(
+            special_rules.get("death_guard_shamblerot_shambling_wall_attacker_unit_id", "") or ""
+        ).strip()
+        if expected_attacker_id and str(get_entity_id(attacker_root) or "") != expected_attacker_id:
+            return None
+
+        game = None
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+
+        expected_phase = str(
+            special_rules.get("death_guard_shamblerot_shambling_wall_expires_phase", "") or ""
+        ).strip().upper()
+        if expected_phase:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            if current_phase and current_phase != expected_phase:
+                return None
+        try:
+            expected_turn = int(special_rules.get("death_guard_shamblerot_shambling_wall_turn", 0) or 0)
+        except Exception:
+            expected_turn = 0
+        if expected_turn and game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != expected_turn:
+                return None
+
+        support_root = None
+        resolver = getattr(game, "_resolve_unit_by_id", None) if game is not None else None
+        if callable(resolver):
+            try:
+                support_root = resolver(support_unit_id)
+            except Exception:
+                support_root = None
+        if support_root is None:
+            for unit in list(getattr(game_map, "units", []) or []):
+                try:
+                    candidate = unit.get_attached_unit_root()
+                except Exception:
+                    candidate = unit
+                if candidate is None:
+                    continue
+                if str(get_entity_id(candidate) or "") == support_unit_id:
+                    support_root = candidate
+                    break
+        try:
+            support_root = support_root.get_attached_unit_root() if support_root is not None else None
+        except Exception:
+            pass
+        if support_root is None or support_root is root:
+            return None
+        try:
+            if not support_root.is_alive():
+                return None
+        except Exception:
+            return None
+        if not bool(getattr(support_root, "deployed", False)):
+            return None
+        if str(getattr(support_root, "reserve_status", "deployed") or "deployed") != "deployed":
+            return None
+        if bool(getattr(support_root, "is_embarked", False)) or bool(getattr(support_root, "embarked_in", None)):
+            return None
+
+        can_target_fn = getattr(attacker_root, "_can_model_shoot_weapon_at_target", None)
+        if not callable(can_target_fn):
+            return None
+        if not bool(can_target_fn(attacker_model, weapon_profile, support_root, game_map)):
+            return None
+
+        can_see = getattr(game_map, "can_model_see_model", None)
+        if not callable(can_see):
+            return None
+        support_models = []
+        get_models = getattr(support_root, "get_attached_unit_models", None)
+        if callable(get_models):
+            support_models = list(get_models() or [])
+        else:
+            support_models = list(getattr(support_root, "models", []) or [])
+        visible_support_models = []
+        for model in list(support_models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                continue
+            if bool(can_see(attacker_model, model)):
+                visible_support_models.append(model)
+        if not visible_support_models:
+            return None
+        return support_root
+
+    def _apply_death_guard_shamblerot_shambling_wall_redirect(
+        self,
+        *,
+        attacker_model: Optional['Model'] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        attack_instance: Optional[dict] = None,
+        game_map: Optional['Map'] = None,
+    ) -> Optional[dict]:
+        if attacker_model is None or weapon_profile is None:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        support_root = root._death_guard_shamblerot_shambling_wall_support_target(
+            attacker_model=attacker_model,
+            attacker_unit=attacker_unit,
+            weapon_profile=weapon_profile,
+            game_map=game_map,
+        )
+        if support_root is None:
+            return None
+        damage_fn = getattr(weapon_profile, "_current_attack_damage_characteristic", None)
+        if not callable(damage_fn):
+            return None
+        damage_value = int(damage_fn(attacker_model, attack_instance or {}) or 0)
+        if damage_value <= 0:
+            return None
+        support_models = []
+        get_models = getattr(support_root, "get_attached_unit_models", None)
+        if callable(get_models):
+            support_models = list(get_models() or [])
+        else:
+            support_models = list(getattr(support_root, "models", []) or [])
+        alive_support_models = []
+        for model in list(support_models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if alive:
+                alive_support_models.append(model)
+        if not alive_support_models:
+            return None
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is not None:
+            support_root._last_destroyed_by_unit = attacker_root
+        support_root._last_destroyed_by_model = attacker_model
+        support_root._last_destroyed_by_weapon_profile = weapon_profile
+
+        destroyed_models = 0
+        for model in list(alive_support_models[: int(damage_value)]):
+            die_fn = getattr(model, "die", None)
+            if not callable(die_fn):
+                continue
+            die_fn(game_map=game_map)
+            destroyed_models += 1
+        if destroyed_models <= 0:
+            return None
+        return {
+            "support_unit": support_root,
+            "damage": int(damage_value),
+            "destroyed_models": int(destroyed_models),
+            "source": "Shambling Wall",
+        }
+
     def _apply_mortal_wounds_to_unit(
         self,
         target_unit: 'Unit',

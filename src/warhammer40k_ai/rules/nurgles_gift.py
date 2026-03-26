@@ -440,6 +440,16 @@ class NurglesGiftManager:
                         if plague is not None:
                             return plague
 
+        if isinstance(sr, dict) and sr.get("death_guard_shamblerot_smeared_with_filth_active"):
+            owner_id = str(sr.get("death_guard_shamblerot_smeared_with_filth_owner", "") or "")
+            source_army = _resolve_source_army(owner_id)
+            if source_army is not None:
+                mgr = getattr(source_army, "nurgles_gift", None)
+                if mgr is not None:
+                    plague = mgr.get_active_plague()
+                    if plague is not None:
+                        return plague
+
         if isinstance(sr, dict) and sr.get("wracked_with_agonies_active"):
             owner_id = str(sr.get("wracked_with_agonies_owner", "") or "")
             source_army = _resolve_source_army(owner_id)

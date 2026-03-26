@@ -577,7 +577,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EYE OF THE SWARM",
     "EYESTINGER STORM",
     "FONT OF FILTH",
+    "GNAWING HUNGER",
+    "GRIP OF THE WALKING POX",
     "GROTESQUE FORTITUDE",
+    "HIDDEN AMONGST THE DEAD",
     "MALIGNANCE MAGNIFIED",
     "MOBILE VECTOR",
     "MORTARION'S TEACHINGS",
@@ -587,8 +590,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOOMING PESTILENCE",
     "GRIM REAPERS",
     "RELENTLESS GRIND",
+    "SHAMBLING WALL",
+    "SHOCK AND HORROR",
     "SICKENING IMPACT",
     "SIGNAL POX",
+    "SMEARED WITH FILTH",
     "STINKING MIRE",
     "UNDYING SPITE",
     "VERMIN CLOUD",
@@ -700,6 +706,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
     "GUIDED DISRUPTION",
+    "GRIP OF THE WALKING POX",
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
@@ -725,6 +732,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE AND FADE",
     "GUERRILLA TACTICS",
     "MURDER-CALL",
+    "SHAMBLING WALL",
+    "SHOCK AND HORROR",
+    "SMEARED WITH FILTH",
     "LIGHTNING-FAST REACTIONS",
     "A DEADLY SNARE",
     "A CEASELESS CAUSE",
@@ -1831,7 +1841,7 @@ class StratagemManager(
         if "BERZERKER'S WRATH" in names:
             add("blood_surge_triggered", self._on_blood_surge_triggered)
 
-        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT"}:
+        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "GRIP OF THE WALKING POX", "SHOCK BOMBARDMENT"}:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
@@ -1911,6 +1921,7 @@ class StratagemManager(
             "HUNTER’S INSTINCTS",
             "A DEADLY PRIZE",
             "RAPTORIAL VIGILANCE",
+            "SHOCK AND HORROR",
             "THUNDEROUS PURSUIT",
             "COILS OF DECEPTION",
             "RELENTLESS TERROR",
@@ -1955,6 +1966,7 @@ class StratagemManager(
             "OVERFLIGHT",
             "ONTO THE NEXT",
             "PINPOINT COUNTER-OFFENSIVE",
+            "SMEARED WITH FILTH",
             "UNBOUND ARROGANCE",
             "TERRIFYING SPECTACLE",
             "DIVINE INTERVENTION",
@@ -2150,6 +2162,7 @@ class StratagemManager(
             "MORTAL THRALLS",
             "STEADFAST DETERMINATION",
             "TO THE FAVOURED THE SPOILS",
+            "SHAMBLING WALL",
             "FESTERING MIASMA",
             "CORRUPTED MUNITIONS",
             "NEVER OUTGUNNED",
@@ -2176,6 +2189,7 @@ class StratagemManager(
             "HEROES\u2019 FALL",
             "MACABRE RESILIENCE",
             "FRENZIED RESILIENCE",
+            "GRIP OF THE WALKING POX",
             "IMMORTAL FURY",
             "WRATH UNDENIABLE",
             "OVERWHELMING EXCESS",
@@ -2334,6 +2348,10 @@ class StratagemManager(
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
             "RELENTLESS GRIND",
+            "GRIP OF THE WALKING POX",
+            "HIDDEN AMONGST THE DEAD",
+            "SHAMBLING WALL",
+            "SMEARED WITH FILTH",
             "STINKING MIRE",
             "FEINT AND THRUST",
             "MOBILE LETHALITY",
@@ -12951,6 +12969,7 @@ class StratagemManager(
                 return
             self._queue_space_marines_bastion_fight_sequence_complete_reactions(unit=unit)
             self._resolve_drukhari_skysplinter_vicious_blades_after_fight(unit=unit)
+            self._resolve_death_guard_fight_sequence_complete(unit=unit)
             # Offer only to the opponent of the unit that just fought
             owner_player = None
             try:
@@ -14517,6 +14536,14 @@ class StratagemManager(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
                 last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_death_guard_unit_destroyed_reactions(
+                unit=unit,
+                last_model=last_model,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
         except Exception:
             raise

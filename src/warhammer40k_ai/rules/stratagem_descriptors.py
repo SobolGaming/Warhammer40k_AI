@@ -717,6 +717,99 @@ _MORTARIONS_HAMMER_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MORTARIONS_HAMMER_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SHAMBLEROT_VECTORIUM_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010140002": StratagemToolDescriptor(
+        stratagem_id="000010140002",
+        name="Grip of the Walking Pox",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="poxwalkers_unit_targeted_by_enemy_attacks",
+        duration="after_attacking_unit_fights",
+        effect="retaliatory_mortal_wounds_per_destroyed_model",
+        cp_cost=1,
+        effect_params={
+            "success_on": 6,
+            "roll_count": "models_destroyed_by_attacking_unit_attacks",
+            "mortal_wounds_per_success": 1,
+            "count_kills_for_curse_if_unit_survives": True,
+        },
+    ),
+    "000010140003": StratagemToolDescriptor(
+        stratagem_id="000010140003",
+        name="Smeared With Filth",
+        timing="fight_phase_on_just_destroyed_poxwalkers",
+        target="destroyed_poxwalkers_unit_and_enemy_that_targeted_it_this_phase",
+        duration="until_end_of_battle",
+        effect="enemy_unit_becomes_afflicted",
+        cp_cost=1,
+        effect_params={
+            "applies_full_afflicted_state": True,
+            "target_destroyed_unit_allowed": True,
+        },
+    ),
+    "000010140004": StratagemToolDescriptor(
+        stratagem_id="000010140004",
+        name="Gnawing Hunger",
+        timing="command_phase",
+        target="poxwalkers_unit",
+        duration="until_end_of_turn",
+        effect="move_bonus_and_melee_attacks_strength_bonus",
+        cp_cost=1,
+        effect_params={
+            "move_bonus": 1,
+            "attack_type": "melee",
+            "attacks_bonus": 1,
+            "strength_bonus": 1,
+        },
+    ),
+    "000010140005": StratagemToolDescriptor(
+        stratagem_id="000010140005",
+        name="Hidden Amongst the Dead",
+        timing="movement_phase_reinforcements_step",
+        target="poxwalkers_unit_in_strategic_reserves_not_attached",
+        duration="until_end_of_phase",
+        effect="temporary_deep_strike",
+        cp_cost=1,
+        effect_params={
+            "grant_deep_strike": True,
+            "requires_in_strategic_reserves": True,
+            "requires_not_attached": True,
+        },
+    ),
+    "000010140006": StratagemToolDescriptor(
+        stratagem_id="000010140006",
+        name="Shock and Horror",
+        timing="charge_phase_after_charge_move",
+        target="death_guard_unit_that_ended_charge_move",
+        duration="immediate",
+        effect="force_battleshock_test_at_minus_1_for_all_enemies_in_engagement_range",
+        cp_cost=1,
+        effect_params={
+            "enemy_target": "all_enemy_units_within_engagement_range",
+            "battle_shock_modifier": -1,
+        },
+    ),
+    "000010140007": StratagemToolDescriptor(
+        stratagem_id="000010140007",
+        name="Shambling Wall",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="death_guard_unit_targeted_by_enemy_attacks_and_nearby_visible_poxwalkers_support",
+        duration="until_end_of_phase",
+        effect="redirect_allocated_attacks_to_support_poxwalkers_model_deaths",
+        cp_cost=1,
+        range_in=3.0,
+        effect_params={
+            "support_target": "friendly_poxwalkers_unit_within_3",
+            "requires_visibility": True,
+            "redirect_uses_damage_characteristic": True,
+            "redirect_requires_support_visible_to_attacking_model": True,
+        },
+    ),
+}
+
+_SHAMBLEROT_VECTORIUM_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SHAMBLEROT_VECTORIUM_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8670,6 +8763,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _MORTARIONS_HAMMER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SHAMBLEROT_VECTORIUM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8995,6 +9091,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _FLYBLOWN_HOST_STRATAGEM_BY_NAME.get(key)
         or _MORTARIONS_HAMMER_STRATAGEM_BY_NAME.get(key)
+        or _SHAMBLEROT_VECTORIUM_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

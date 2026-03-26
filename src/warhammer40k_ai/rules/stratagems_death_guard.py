@@ -11,6 +11,7 @@ from ..utility import dice as dice_module
 from ..utility.aura_utils import (
     distance_between_models_bases_3d,
     horizontal_distance_between_bases_2d,
+    unit_within_range_of_unit,
     unit_within_range_of_point_3d,
     vertical_distance_between_bases,
 )
@@ -83,6 +84,11 @@ class DeathGuardStratagemMixin:
     def _is_mortarions_hammer_detachment(self) -> bool:
         mgr = self._dg_detachment_mgr()
         checker = getattr(mgr, "is_mortarions_hammer", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_shamblerot_vectorium_detachment(self) -> bool:
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "is_shamblerot_vectorium", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     @staticmethod
@@ -324,6 +330,51 @@ class DeathGuardStratagemMixin:
         if token_norm and token_norm in root_name:
             return root
         return None
+
+    def _dg_resolve_unit_by_id(self, unit_id: str) -> Any:
+        target = str(unit_id or "").strip()
+        if not target:
+            return None
+        game = getattr(self, "game", None)
+        resolver = getattr(game, "_resolve_unit_by_id", None) if game is not None else None
+        if callable(resolver):
+            resolved = resolver(target)
+            root = self._dg_root(resolved)
+            if root is not None:
+                return root
+        game_map = getattr(game, "map", None) if game is not None else None
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            if self._dg_sort_key(root) == target:
+                return root
+        for player in list(getattr(game, "players", []) or []):
+            army = getattr(player, "army", None)
+            if army is None and hasattr(player, "get_army"):
+                army = player.get_army()
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._dg_root(unit)
+                if root is None:
+                    continue
+                if self._dg_sort_key(root) == target:
+                    return root
+        return None
+
+    def _dg_unit_is_poxwalkers(self, unit: Any) -> bool:
+        root = self._dg_root(unit)
+        if root is None:
+            return False
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_poxwalkers", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except Exception:
+                pass
+        if self._dg_has_keyword(root, "POXWALKERS"):
+            return True
+        return "poxwalker" in self._dg_normalize_name(getattr(root, "name", "") or "")
 
     @staticmethod
     def _dg_model_is_alive(model: Any) -> bool:
@@ -774,6 +825,198 @@ class DeathGuardStratagemMixin:
                 return True
         return False
 
+    def _dg_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._dg_root(source_unit)
+        target_root = self._dg_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if source_root is target_root:
+            return True
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+        if not callable(can_see):
+            return False
+        source_models = list(self._dg_alive_models(source_root) or [])
+        target_models = list(self._dg_alive_models(target_root) or [])
+        for source_model in list(source_models or []):
+            for target_model in list(target_models or []):
+                if bool(can_see(source_model, target_model)):
+                    return True
+        return False
+
+    def _dg_shamblerot_poxwalker_candidates(
+        self,
+        *,
+        require_on_battlefield: bool = False,
+        require_in_strategic_reserves: bool = False,
+        require_not_attached: bool = False,
+    ) -> list[Any]:
+        if not self._is_shamblerot_vectorium_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_unit_is_poxwalkers(root):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if require_on_battlefield and not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if require_in_strategic_reserves and reserve_status != "strategic_reserves":
+                continue
+            if require_not_attached and self._dg_is_attached_unit(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_shamblerot_shambling_wall_support_candidates(
+        self,
+        protected_unit: Any,
+        attacking_unit: Any,
+    ) -> list[Any]:
+        protected_root = self._dg_root(protected_unit)
+        attacker_root = self._dg_root(attacking_unit)
+        if protected_root is None or attacker_root is None:
+            return []
+        candidates: list[Any] = []
+        for support_root in list(self._dg_shamblerot_poxwalker_candidates(require_on_battlefield=True) or []):
+            if support_root is protected_root:
+                continue
+            if not unit_within_range_of_unit(
+                support_root,
+                protected_root,
+                3.0,
+                use_attached_aggregate=True,
+            ):
+                continue
+            if not self._dg_unit_visible_to_unit(protected_root, support_root):
+                continue
+            if not self._dg_unit_visible_to_unit(attacker_root, support_root):
+                continue
+            candidates.append(support_root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_shamblerot_shambling_wall_candidate_map(
+        self,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> dict[str, list[Any]]:
+        if not self._is_shamblerot_vectorium_detachment():
+            return {}
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return {}
+        candidates_by_unit: dict[str, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            support_candidates = self._dg_shamblerot_shambling_wall_support_candidates(root, attacker_root)
+            if support_candidates:
+                candidates_by_unit[root_id] = support_candidates
+        return {key: candidates_by_unit[key] for key in sorted(candidates_by_unit)}
+
+    def _dg_shamblerot_note_fight_targets_selected(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        attacker_id = self._dg_sort_key(attacker_root)
+        if not attacker_id:
+            return
+        turn = int(self._dg_current_turn() or 0)
+        for unit in list(target_units or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_unit_is_poxwalkers(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            existing = {
+                str(entry or "").strip()
+                for entry in list(sr.get("death_guard_shamblerot_smeared_with_filth_attacker_unit_ids", []) or [])
+                if str(entry or "").strip()
+            }
+            existing.add(attacker_id)
+            sr["death_guard_shamblerot_smeared_with_filth_attacker_unit_ids"] = sorted(existing)
+            sr["death_guard_shamblerot_smeared_with_filth_phase"] = "FIGHT_PHASE"
+            sr["death_guard_shamblerot_smeared_with_filth_turn"] = int(turn)
+            root.special_rules = sr
+
+    def _dg_shamblerot_smeared_with_filth_enemy_candidates(self, unit: Any) -> list[Any]:
+        root = self._dg_root(unit)
+        if root is None:
+            return []
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        if str(sr.get("death_guard_shamblerot_smeared_with_filth_phase", "") or "").strip().upper() != "FIGHT_PHASE":
+            return []
+        try:
+            marked_turn = int(sr.get("death_guard_shamblerot_smeared_with_filth_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        current_turn = int(self._dg_current_turn() or 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for attacker_id in list(sr.get("death_guard_shamblerot_smeared_with_filth_attacker_unit_ids", []) or []):
+            enemy_root = self._dg_resolve_unit_by_id(str(attacker_id or ""))
+            if enemy_root is None:
+                continue
+            enemy_id = self._dg_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._dg_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._dg_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
     def _dg_eyestinger_storm_objective_candidates(self, source_unit: Any) -> list[Any]:
         source_root = self._dg_root(source_unit)
         game_map = getattr(getattr(self, "game", None), "map", None)
@@ -1176,6 +1419,269 @@ class DeathGuardStratagemMixin:
             payload["unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_shamblerot_grip_of_the_walking_pox_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        if self._dg_phase_key(phase_name) != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("GRIP OF THE WALKING POX")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_unit_is_poxwalkers(root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == event_name
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "GRIP OF THE WALKING POX"
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_shamblerot_shambling_wall_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        if self._dg_phase_key(phase_name) != "SHOOTING_PHASE":
+            return
+        stratagem = self.get_by_name("SHAMBLING WALL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_root = self._dg_root(attacking_unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        support_candidates_by_unit = self._dg_shamblerot_shambling_wall_candidate_map(attacker_root, list(target_units or []))
+        if not support_candidates_by_unit:
+            return
+        candidates = [self._dg_resolve_unit_by_id(unit_id) for unit_id in list(support_candidates_by_unit)]
+        candidates = [candidate for candidate in list(candidates or []) if candidate is not None]
+        candidates.sort(key=self._dg_sort_key)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == event_name
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "SHAMBLING WALL"
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "candidates": list(candidates),
+            "support_candidates_by_unit": dict(support_candidates_by_unit),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            support_candidates = list(support_candidates_by_unit.get(self._dg_sort_key(candidates[0]), []) or [])
+            if len(support_candidates) == 1:
+                payload["support_unit"] = support_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_shamblerot_smeared_with_filth_reaction(self, *, unit: Any) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        if self._dg_current_phase_key() != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("SMEARED WITH FILTH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        root = self._dg_root(unit)
+        if root is None or not self._dg_owned_by_player(root, self.player):
+            return
+        if not self._dg_is_death_guard_unit(root) or not self._dg_unit_is_poxwalkers(root):
+            return
+        enemy_candidates = self._dg_shamblerot_smeared_with_filth_enemy_candidates(root)
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_destroyed"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "SMEARED WITH FILTH"
+                and self._dg_root(reaction.get("destroyed_unit") or reaction.get("unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "destroyed_unit": root,
+            "enemy_candidates": list(enemy_candidates),
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["target_enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_death_guard_unit_destroyed_reactions(self, *, unit: Any, **_kwargs) -> None:
+        self._queue_shamblerot_smeared_with_filth_reaction(unit=unit)
+
+    def _resolve_shamblerot_grip_of_the_walking_pox(self, *, unit: Any) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        if self._dg_current_phase_key() != "FIGHT_PHASE":
+            return
+        attacker_root = self._dg_root(unit)
+        if attacker_root is None or self._dg_owned_by_player(attacker_root, self.player):
+            return
+        attacker_id = self._dg_sort_key(attacker_root)
+        if not attacker_id:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        current_turn = int(self._dg_current_turn() or 0)
+        current_phase = self._dg_current_phase_key()
+        seen: set[str] = set()
+        for unit_entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(unit_entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            pending_entries = list(sr.get("death_guard_shamblerot_grip_entries", []) or [])
+            if not pending_entries:
+                continue
+            matched_entries: list[dict] = []
+            kept_entries: list[dict] = []
+            for entry in list(pending_entries or []):
+                if not isinstance(entry, dict):
+                    continue
+                entry_attacker_id = str(entry.get("attacker_unit_id", "") or "").strip()
+                entry_phase = str(entry.get("phase", "") or "").strip().upper()
+                try:
+                    entry_turn = int(entry.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    entry_turn = 0
+                if entry_attacker_id == attacker_id and entry_phase == current_phase and (not entry_turn or entry_turn == current_turn):
+                    matched_entries.append(dict(entry))
+                else:
+                    kept_entries.append(dict(entry))
+            if kept_entries:
+                sr["death_guard_shamblerot_grip_entries"] = kept_entries
+            else:
+                sr.pop("death_guard_shamblerot_grip_entries", None)
+            root.special_rules = sr
+            if not matched_entries:
+                continue
+            is_attacker_alive = getattr(attacker_root, "is_alive", None)
+            if callable(is_attacker_alive) and not bool(is_attacker_alive()):
+                continue
+            game_map = getattr(self.game, "map", None) if self.game is not None else None
+            apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
+            if not callable(apply_mortals):
+                continue
+            for entry in list(matched_entries or []):
+                try:
+                    start_alive_models = int(entry.get("start_alive_models", 0) or 0)
+                except (TypeError, ValueError):
+                    start_alive_models = 0
+                current_alive_models = len(list(self._dg_alive_models(root) or []))
+                destroyed_models = max(0, int(start_alive_models) - int(current_alive_models))
+                if destroyed_models <= 0:
+                    continue
+                mortal_wounds = 0
+                for _ in range(int(destroyed_models)):
+                    if int(dice_module.get_roll("D6") or 0) >= 6:
+                        mortal_wounds += 1
+                if mortal_wounds <= 0:
+                    continue
+                source_alive = getattr(root, "is_alive", None)
+                should_count_for_curse = bool(callable(source_alive) and source_alive())
+                source_sr = getattr(root, "special_rules", None)
+                if not isinstance(source_sr, dict):
+                    source_sr = {}
+                previous_flag = bool(source_sr.get("curse_of_walking_pox_count_eater_plague", False))
+                if should_count_for_curse:
+                    source_sr["curse_of_walking_pox_count_eater_plague"] = True
+                    root.special_rules = source_sr
+                apply_mortals(
+                    attacker_root,
+                    int(mortal_wounds),
+                    game_map=game_map,
+                    attacker_unit=root,
+                    damage_source="death_guard_shamblerot_grip_of_the_walking_pox",
+                )
+                if should_count_for_curse:
+                    refreshed_sr = getattr(root, "special_rules", None)
+                    if not isinstance(refreshed_sr, dict):
+                        refreshed_sr = {}
+                    if previous_flag:
+                        refreshed_sr["curse_of_walking_pox_count_eater_plague"] = True
+                    else:
+                        refreshed_sr.pop("curse_of_walking_pox_count_eater_plague", None)
+                    root.special_rules = refreshed_sr
+
+    def _resolve_death_guard_fight_sequence_complete(self, *, unit: Any) -> None:
+        self._resolve_shamblerot_grip_of_the_walking_pox(unit=unit)
+
     def _queue_death_guard_targets_selected_reactions(
         self,
         *,
@@ -1184,6 +1690,25 @@ class DeathGuardStratagemMixin:
         phase_name: str,
         event_name: str,
     ) -> None:
+        phase_key = self._dg_phase_key(phase_name)
+        if phase_key == "FIGHT_PHASE":
+            self._dg_shamblerot_note_fight_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+            self._queue_shamblerot_grip_of_the_walking_pox_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                event_name=event_name,
+            )
+        if phase_key == "SHOOTING_PHASE":
+            self._queue_shamblerot_shambling_wall_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                event_name=event_name,
+            )
         self._queue_champions_of_contagion_grotesque_reaction(
             attacking_unit=attacking_unit,
             target_units=list(target_units or []),
@@ -1219,6 +1744,82 @@ class DeathGuardStratagemMixin:
 
     def _cleanup_death_guard_phase_end_effects(self, *, phase=None) -> None:
         self._cleanup_mortarions_hammer_phase_end_effects(phase=phase)
+        self._cleanup_shamblerot_vectorium_phase_end_effects(phase=phase)
+
+    def _cleanup_shamblerot_vectorium_phase_end_effects(self, *, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            invalidate_cache = False
+            if phase_key == "MOVEMENT_PHASE":
+                expires_phase = str(
+                    sr.get("death_guard_hidden_amongst_the_dead_expires_phase", "") or ""
+                ).strip().upper()
+                if bool(sr.get("death_guard_hidden_amongst_the_dead_temp_deep_strike", False)) and (
+                    not expires_phase or expires_phase == phase_key
+                ):
+                    for key in (
+                        "death_guard_hidden_amongst_the_dead_temp_deep_strike",
+                        "death_guard_hidden_amongst_the_dead_turn_owner",
+                        "death_guard_hidden_amongst_the_dead_turn",
+                        "death_guard_hidden_amongst_the_dead_expires_phase",
+                        "death_guard_hidden_amongst_the_dead_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+                    invalidate_cache = True
+            if phase_key == "SHOOTING_PHASE":
+                expires_phase = str(
+                    sr.get("death_guard_shamblerot_shambling_wall_expires_phase", "") or ""
+                ).strip().upper()
+                if bool(sr.get("death_guard_shamblerot_shambling_wall_active", False)) and (
+                    not expires_phase or expires_phase == phase_key
+                ):
+                    for key in (
+                        "death_guard_shamblerot_shambling_wall_active",
+                        "death_guard_shamblerot_shambling_wall_support_unit_id",
+                        "death_guard_shamblerot_shambling_wall_attacker_unit_id",
+                        "death_guard_shamblerot_shambling_wall_expires_phase",
+                        "death_guard_shamblerot_shambling_wall_turn_owner",
+                        "death_guard_shamblerot_shambling_wall_turn",
+                        "death_guard_shamblerot_shambling_wall_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if phase_key == "FIGHT_PHASE":
+                for key in (
+                    "death_guard_shamblerot_grip_entries",
+                    "death_guard_shamblerot_smeared_with_filth_attacker_unit_ids",
+                    "death_guard_shamblerot_smeared_with_filth_phase",
+                    "death_guard_shamblerot_smeared_with_filth_turn",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if changed:
+                root.special_rules = sr
+            if invalidate_cache:
+                invalidate = getattr(root, "_invalidate_ability_cache", None)
+                if callable(invalidate):
+                    invalidate()
 
     def _queue_mortarions_hammer_eyestinger_storm_phase_start_reaction(self, *, player=None, phase=None) -> None:
         if not self._is_mortarions_hammer_detachment():
@@ -1576,6 +2177,7 @@ class DeathGuardStratagemMixin:
         if active_player is not self.player:
             return
         self._queue_flyblown_host_enervating_onslaught_reaction(unit=unit, action=action)
+        self._queue_shamblerot_shock_and_horror_reaction(unit=unit, action=action)
         if not self._is_death_lords_chosen_detachment():
             return
         action_key = str(action or "").strip().lower().replace("_", " ")
@@ -1618,6 +2220,57 @@ class DeathGuardStratagemMixin:
             payload["enemy_unit"] = enemy_candidates[0]
             payload["target_enemy_unit"] = enemy_candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_shamblerot_shock_and_horror_reaction(self, *, unit: Any, action: str) -> None:
+        if not self._is_shamblerot_vectorium_detachment():
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"}:
+            return
+        root = self._dg_root(unit)
+        if root is None or not self._dg_owned_by_player(root, self.player):
+            return
+        if not self._dg_is_death_guard_unit(root):
+            return
+        if not self._dg_on_battlefield(root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        stratagem = self.get_by_name("SHOCK AND HORROR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem, target_unit=root):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = [
+            enemy
+            for enemy in list(self._dg_sickening_impact_enemy_candidates(root) or [])
+            if callable(getattr(enemy, "force_battle_shock_test", None))
+        ]
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_ended"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "SHOCK AND HORROR"
+                and self._dg_root(reaction.get("unit")) is root
+            ):
+                return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Charge phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "source_unit": root,
+                "action": str(action or ""),
+                "enemy_candidates": enemy_candidates,
+            },
+            use_timer=False,
+        )
 
     def _queue_flyblown_host_enervating_onslaught_reaction(self, *, unit: Any, action: str) -> None:
         if not self._is_flyblown_host_detachment():
@@ -1752,8 +2405,11 @@ class DeathGuardStratagemMixin:
             "EYE OF THE SWARM",
             "EYESTINGER STORM",
             "FONT OF FILTH",
+            "GNAWING HUNGER",
+            "GRIP OF THE WALKING POX",
             "GRIM REAPERS",
             "GROTESQUE FORTITUDE",
+            "HIDDEN AMONGST THE DEAD",
             "MALIGNANCE MAGNIFIED",
             "MORTARION'S TEACHINGS",
             "MOBILE VECTOR",
@@ -1761,8 +2417,11 @@ class DeathGuardStratagemMixin:
             "NAUSEATING PAROXYSMS",
             "RABID INFUSION",
             "RELENTLESS GRIND",
+            "SHAMBLING WALL",
+            "SHOCK AND HORROR",
             "SICKENING IMPACT",
             "SIGNAL POX",
+            "SMEARED WITH FILTH",
             "STINKING MIRE",
             "UNDYING SPITE",
             "VERMIN CLOUD",
@@ -1801,6 +2460,14 @@ class DeathGuardStratagemMixin:
             "RELENTLESS GRIND",
             "STINKING MIRE",
         }
+        shamblerot_name = name_u in {
+            "GNAWING HUNGER",
+            "GRIP OF THE WALKING POX",
+            "HIDDEN AMONGST THE DEAD",
+            "SHAMBLING WALL",
+            "SHOCK AND HORROR",
+            "SMEARED WITH FILTH",
+        }
         if champions_name and not self._is_champions_of_contagion_detachment():
             return False
         if flyblown_name and not self._is_flyblown_host_detachment():
@@ -1809,10 +2476,103 @@ class DeathGuardStratagemMixin:
             return False
         if mortarions_hammer_name and not self._is_mortarions_hammer_detachment():
             return False
+        if shamblerot_name and not self._is_shamblerot_vectorium_detachment():
+            return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
         phase_key = self._dg_phase_key(phase_name or self._dg_current_phase_key())
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        if name_u == "GNAWING HUNGER":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            candidates = self._dg_shamblerot_poxwalker_candidates()
+            if root is None:
+                logger.error("ERROR: GNAWING HUNGER: no target unit provided")
+                return False
+            if phase_key != "COMMAND_PHASE":
+                logger.error("ERROR: GNAWING HUNGER: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: GNAWING HUNGER: not your turn")
+                return False
+            if root not in candidates:
+                logger.error("ERROR: GNAWING HUNGER: target must be an eligible POXWALKERS unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="shamblerot_vectorium",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "move_bonus",
+                        "value": 1,
+                        "source": str(s.name or "Gnawing Hunger"),
+                        "expires_mode": "turn",
+                        "expires_phase": "",
+                    },
+                    {
+                        "effect": "attacks_bonus",
+                        "attack_type": "melee",
+                        "value": 1,
+                        "source": str(s.name or "Gnawing Hunger"),
+                        "expires_mode": "turn",
+                        "expires_phase": "",
+                    },
+                    {
+                        "effect": "strength_bonus",
+                        "attack_type": "melee",
+                        "value": 1,
+                        "source": str(s.name or "Gnawing Hunger"),
+                        "expires_mode": "turn",
+                        "expires_phase": "",
+                    },
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: GNAWING HUNGER: target POXWALKERS unit gains +1 Move and +1 melee Attacks/Strength until end of turn.")
+            return True
+
+        if name_u == "HIDDEN AMONGST THE DEAD":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            candidates = self._dg_shamblerot_poxwalker_candidates(
+                require_in_strategic_reserves=True,
+                require_not_attached=True,
+            )
+            if root is None:
+                logger.error("ERROR: HIDDEN AMONGST THE DEAD: no target unit provided")
+                return False
+            if phase_key != "MOVEMENT_PHASE":
+                logger.error("ERROR: HIDDEN AMONGST THE DEAD: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: HIDDEN AMONGST THE DEAD: not your turn")
+                return False
+            if root not in candidates:
+                logger.error("ERROR: HIDDEN AMONGST THE DEAD: target must be an eligible POXWALKERS unit in Strategic Reserves that is not Attached")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["death_guard_hidden_amongst_the_dead_temp_deep_strike"] = True
+            sr["death_guard_hidden_amongst_the_dead_turn_owner"] = str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or "")
+            sr["death_guard_hidden_amongst_the_dead_turn"] = int(self._dg_current_turn())
+            sr["death_guard_hidden_amongst_the_dead_expires_phase"] = "MOVEMENT_PHASE"
+            sr["death_guard_hidden_amongst_the_dead_source"] = str(s.name or "HIDDEN AMONGST THE DEAD")
+            root.special_rules = sr
+            invalidate = getattr(root, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: HIDDEN AMONGST THE DEAD: target POXWALKERS unit gains Deep Strike until end of the phase.")
+            return True
 
         if name_u == "BLESSINGS OF FILTH":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -2126,6 +2886,264 @@ class DeathGuardStratagemMixin:
             enemy_root.special_rules = sr
             self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
             logger.info("INFO: DEATH'S HEADS: target enemy unit gains all Plague effects until your next turn.")
+            return True
+
+        if name_u == "GRIP OF THE WALKING POX":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            if unit is None or attacking_unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "GRIP OF THE WALKING POX":
+                        continue
+                    unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                    attacking_unit = attacking_unit or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            attacker_root = self._dg_root(attacking_unit)
+            if root is None:
+                logger.error("ERROR: GRIP OF THE WALKING POX: no target unit provided")
+                return False
+            if attacker_root is None:
+                logger.error("ERROR: GRIP OF THE WALKING POX: missing attacking unit")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: GRIP OF THE WALKING POX: wrong phase")
+                return False
+            if self._dg_owned_by_player(attacker_root, self.player):
+                logger.error("ERROR: GRIP OF THE WALKING POX: attacking unit must be enemy")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: GRIP OF THE WALKING POX: target is not currently eligible")
+                return False
+            if not self._dg_is_death_guard_unit(root) or not self._dg_unit_is_poxwalkers(root):
+                logger.error("ERROR: GRIP OF THE WALKING POX: target must be a friendly POXWALKERS unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            pending_entries = [
+                dict(entry)
+                for entry in list(sr.get("death_guard_shamblerot_grip_entries", []) or [])
+                if isinstance(entry, dict)
+            ]
+            pending_entries.append(
+                {
+                    "attacker_unit_id": self._dg_sort_key(attacker_root),
+                    "start_alive_models": len(list(self._dg_alive_models(root) or [])),
+                    "phase": "FIGHT_PHASE",
+                    "turn": int(self._dg_current_turn()),
+                    "source": str(s.name or "GRIP OF THE WALKING POX"),
+                }
+            )
+            pending_entries.sort(
+                key=lambda entry: (
+                    str(entry.get("attacker_unit_id", "") or ""),
+                    int(entry.get("turn", 0) or 0),
+                )
+            )
+            sr["death_guard_shamblerot_grip_entries"] = pending_entries
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: GRIP OF THE WALKING POX: target unit will retaliate with mortal wounds after the attacker fights.")
+            return True
+
+        if name_u == "SHAMBLING WALL":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            support_unit = kwargs.get("support_unit") or kwargs.get("secondary_unit")
+            support_by_unit = dict(kwargs.get("support_candidates_by_unit") or {})
+            if unit is None or attacking_unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "SHAMBLING WALL":
+                        continue
+                    unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                    attacking_unit = attacking_unit or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                    support_unit = support_unit or reaction.get("support_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not support_by_unit:
+                        support_by_unit = dict(reaction.get("support_candidates_by_unit") or {})
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            attacker_root = self._dg_root(attacking_unit)
+            if root is None:
+                logger.error("ERROR: SHAMBLING WALL: no protected unit provided")
+                return False
+            if attacker_root is None:
+                logger.error("ERROR: SHAMBLING WALL: missing attacking unit")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: SHAMBLING WALL: wrong phase")
+                return False
+            if active_player is self.player:
+                logger.error("ERROR: SHAMBLING WALL: Shooting phase use requires your opponent's turn")
+                return False
+            if self._dg_owned_by_player(attacker_root, self.player):
+                logger.error("ERROR: SHAMBLING WALL: attacking unit must be enemy")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: SHAMBLING WALL: protected unit is not currently eligible")
+                return False
+            if not self._dg_is_death_guard_unit(root) or not self._dg_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: SHAMBLING WALL: protected unit must be an eligible DEATH GUARD unit on the battlefield")
+                return False
+            support_candidates = list(support_by_unit.get(self._dg_sort_key(root), []) or [])
+            if not support_candidates:
+                support_candidates = self._dg_shamblerot_shambling_wall_support_candidates(root, attacker_root)
+            if support_unit is None and len(support_candidates) == 1:
+                support_unit = support_candidates[0]
+            support_root = self._dg_root(support_unit)
+            if support_root is None:
+                logger.error("ERROR: SHAMBLING WALL: no support POXWALKERS unit provided")
+                return False
+            if support_candidates and support_root not in support_candidates:
+                logger.error("ERROR: SHAMBLING WALL: support unit is not currently eligible")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["death_guard_shamblerot_shambling_wall_active"] = True
+            sr["death_guard_shamblerot_shambling_wall_support_unit_id"] = self._dg_sort_key(support_root)
+            sr["death_guard_shamblerot_shambling_wall_attacker_unit_id"] = self._dg_sort_key(attacker_root)
+            sr["death_guard_shamblerot_shambling_wall_expires_phase"] = "SHOOTING_PHASE"
+            sr["death_guard_shamblerot_shambling_wall_turn_owner"] = str(getattr(active_player, "id", "") or "")
+            sr["death_guard_shamblerot_shambling_wall_turn"] = int(self._dg_current_turn())
+            sr["death_guard_shamblerot_shambling_wall_source"] = str(s.name or "SHAMBLING WALL")
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: SHAMBLING WALL: attacks allocated to the protected unit can be redirected into support POXWALKERS this phase.")
+            return True
+
+        if name_u == "SHOCK AND HORROR":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            action = str(kwargs.get("action") or "")
+            if unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "SHOCK AND HORROR":
+                        continue
+                    unit = unit or reaction.get("source_unit") or reaction.get("unit") or reaction.get("target_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not action:
+                        action = str(reaction.get("action") or "")
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: SHOCK AND HORROR: missing source unit")
+                return False
+            if phase_key != "CHARGE_PHASE":
+                logger.error("ERROR: SHOCK AND HORROR: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: SHOCK AND HORROR: not your turn")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: SHOCK AND HORROR: source unit is not currently eligible")
+                return False
+            if not self._dg_is_death_guard_unit(root):
+                logger.error("ERROR: SHOCK AND HORROR: source must be a DEATH GUARD unit")
+                return False
+            action_key = str(action or "").strip().lower().replace("_", " ")
+            if action_key not in {"charge", "charge move"}:
+                logger.error("ERROR: SHOCK AND HORROR: source unit must have just ended a Charge move")
+                return False
+            enemy_candidates = [
+                enemy
+                for enemy in list(kwargs.get("enemy_candidates") or self._dg_sickening_impact_enemy_candidates(root) or [])
+                if callable(getattr(enemy, "force_battle_shock_test", None))
+            ]
+            if not enemy_candidates:
+                logger.error("ERROR: SHOCK AND HORROR: no eligible enemy units within Engagement Range")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            for enemy_root in list(enemy_candidates or []):
+                force_test = getattr(enemy_root, "force_battle_shock_test", None)
+                if not callable(force_test):
+                    continue
+                force_test(
+                    int(self._dg_current_turn() or 1),
+                    modifier=-1,
+                    source=str(s.name or "SHOCK AND HORROR"),
+                )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: SHOCK AND HORROR: enemy units within Engagement Range take Battle-shock tests at -1.")
+            return True
+
+        if name_u == "SMEARED WITH FILTH":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+            if unit is None or (enemy_unit is None and not enemy_candidates):
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "SMEARED WITH FILTH":
+                        continue
+                    unit = unit or reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                    enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+                    if not enemy_candidates:
+                        enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: SMEARED WITH FILTH: no destroyed unit provided")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: SMEARED WITH FILTH: wrong phase")
+                return False
+            if not self._dg_is_death_guard_unit(root) or not self._dg_unit_is_poxwalkers(root):
+                logger.error("ERROR: SMEARED WITH FILTH: target must be a friendly POXWALKERS unit")
+                return False
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and bool(is_alive()):
+                logger.error("ERROR: SMEARED WITH FILTH: target unit must have been just destroyed")
+                return False
+            if not enemy_candidates:
+                enemy_candidates = self._dg_shamblerot_smeared_with_filth_enemy_candidates(root)
+            enemy_root = self._dg_root(enemy_unit) if enemy_unit is not None else None
+            if enemy_root is None and len(enemy_candidates) == 1:
+                enemy_root = self._dg_root(enemy_candidates[0])
+            if enemy_root is None:
+                logger.error("ERROR: SMEARED WITH FILTH: missing enemy unit selection")
+                return False
+            if enemy_candidates and enemy_root not in enemy_candidates:
+                logger.error("ERROR: SMEARED WITH FILTH: selected enemy unit is not eligible")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["death_guard_shamblerot_smeared_with_filth_active"] = True
+            sr["death_guard_shamblerot_smeared_with_filth_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["death_guard_shamblerot_smeared_with_filth_source"] = str(s.name or "SMEARED WITH FILTH")
+            enemy_root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: SMEARED WITH FILTH: selected enemy unit becomes Afflicted until end of battle.")
             return True
 
         if name_u == "DRAWN TO DESPAIR":
