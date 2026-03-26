@@ -810,6 +810,101 @@ _SHAMBLEROT_VECTORIUM_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SHAMBLEROT_VECTORIUM_STRATAGEM_DESCRIPTORS.values()
 }
 
+_TALLYBAND_SUMMONERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010136002": StratagemToolDescriptor(
+        stratagem_id="000010136002",
+        name="Persistent Pests",
+        timing="any_phase_on_just_destroyed_nurglings",
+        target="destroyed_friendly_nurglings_unit",
+        duration="immediate",
+        effect="replace_destroyed_unit_in_strategic_reserves_at_starting_strength",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["PLAGUE LEGIONS", "NURGLINGS"],
+            "target_destroyed_unit_allowed": True,
+            "reserve_status": "strategic_reserves",
+        },
+    ),
+    "000010136003": StratagemToolDescriptor(
+        stratagem_id="000010136003",
+        name="Clutching Corruption",
+        timing="fight_phase_on_select_to_fight",
+        target="death_guard_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_full_hit_rerolls_vs_enemies_engaged_with_friendly_plague_legions",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_hit_full": True,
+            "target_condition": "engaged_with_friendly_plague_legions",
+        },
+    ),
+    "000010136004": StratagemToolDescriptor(
+        stratagem_id="000010136004",
+        name="All Is Rot",
+        timing="shooting_phase_on_select_to_shoot",
+        target="engaged_friendly_plague_legions_unit",
+        duration="until_end_of_phase",
+        effect="ignore_own_engagement_for_ranged_targeting_with_post_shoot_self_mortals_per_damage_in_engagement",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["PLAGUE LEGIONS"],
+            "ignore_own_engagement_for_targeting": True,
+            "self_mortal_wounds_roll": "D6",
+            "self_mortal_wounds_on": 5,
+            "self_mortal_trigger": "per_wound_lost_by_enemy_while_in_engagement_range",
+        },
+    ),
+    "000010136005": StratagemToolDescriptor(
+        stratagem_id="000010136005",
+        name="Fleshy Avalanche",
+        timing="movement_or_charge_phase",
+        target="plague_legions_monster_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_horizontally_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["PLAGUE LEGIONS", "MONSTER"],
+            "movement_phase_move_types": ["move", "advance"],
+            "charge_phase_move_types": ["charge"],
+        },
+    ),
+    "000010136006": StratagemToolDescriptor(
+        stratagem_id="000010136006",
+        name="Avatars of Decay",
+        timing="shooting_phase",
+        target="friendly_plague_legions_unit",
+        duration="until_end_of_phase",
+        effect="afflict_enemies_within_6_of_target_unit",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_any": ["PLAGUE LEGIONS"],
+            "affliction_range": 6.0,
+            "applies_full_afflicted_state": True,
+        },
+    ),
+    "000010136007": StratagemToolDescriptor(
+        stratagem_id="000010136007",
+        name="Mireslick",
+        timing="opponent_movement_phase_on_enemy_selected_to_fall_back",
+        target="plague_legions_unit_within_engagement_range_of_enemy_falling_back",
+        duration="until_end_of_phase",
+        effect="enemy_fall_back_requires_leadership_test_or_remain_stationary",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["PLAGUE LEGIONS"],
+            "enemy_keywords_excluded": ["MONSTER", "VEHICLE"],
+            "leadership_test_on_fall_back": True,
+            "failed_test_result": "remain_stationary",
+        },
+    ),
+}
+
+_TALLYBAND_SUMMONERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TALLYBAND_SUMMONERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8766,6 +8861,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SHAMBLEROT_VECTORIUM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _TALLYBAND_SUMMONERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9092,6 +9190,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _FLYBLOWN_HOST_STRATAGEM_BY_NAME.get(key)
         or _MORTARIONS_HAMMER_STRATAGEM_BY_NAME.get(key)
         or _SHAMBLEROT_VECTORIUM_STRATAGEM_BY_NAME.get(key)
+        or _TALLYBAND_SUMMONERS_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

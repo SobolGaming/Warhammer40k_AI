@@ -18229,11 +18229,17 @@ class GameView:
             return
 
         if name_u in (
+            "ALL IS ROT",
+            "AVATARS OF DECAY",
+            "CLUTCHING CORRUPTION",
             "DRAWN TO DESPAIR",
+            "FLESHY AVALANCHE",
             "FONT OF FILTH",
             "GNAWING HUNGER",
             "GRIP OF THE WALKING POX",
             "HIDDEN AMONGST THE DEAD",
+            "MIRESLICK",
+            "PERSISTENT PESTS",
             "RELENTLESS GRIND",
             "SHOCK AND HORROR",
             "STINKING MIRE",
@@ -18245,10 +18251,15 @@ class GameView:
 
                 candidates = context.get("candidates") or []
                 getter_name = {
+                    "ALL IS ROT": "_dg_tallyband_plague_legions_candidates",
+                    "AVATARS OF DECAY": "_dg_tallyband_plague_legions_candidates",
+                    "CLUTCHING CORRUPTION": "_dg_death_guard_battlefield_unit_candidates",
                     "DRAWN TO DESPAIR": "_dg_death_guard_battlefield_unit_candidates",
+                    "FLESHY AVALANCHE": "_dg_tallyband_plague_legions_candidates",
                     "FONT OF FILTH": "_dg_mortarions_hammer_vehicle_candidates",
                     "GNAWING HUNGER": "_dg_shamblerot_poxwalker_candidates",
                     "HIDDEN AMONGST THE DEAD": "_dg_shamblerot_poxwalker_candidates",
+                    "MIRESLICK": "_dg_tallyband_mireslick_candidates",
                     "RELENTLESS GRIND": "_dg_mortarions_hammer_vehicle_candidates",
                     "STINKING MIRE": "_dg_mortarions_hammer_vehicle_candidates",
                 }.get(name_u, "")
@@ -18257,8 +18268,24 @@ class GameView:
                     try:
                         if name_u == "DRAWN TO DESPAIR":
                             candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "ALL IS ROT":
+                            candidates = list(getter(require_engaged=True) or [])
+                        elif name_u == "AVATARS OF DECAY":
+                            candidates = list(getter() or [])
+                        elif name_u == "CLUTCHING CORRUPTION":
+                            candidates = list(getter(require_not_fought=True) or [])
                         elif name_u == "FONT OF FILTH":
                             candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "FLESHY AVALANCHE":
+                            phase_label = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
+                            candidates = list(
+                                getter(
+                                    require_monster=True,
+                                    require_not_selected_to_move=phase_label == "movement phase",
+                                    require_not_selected_to_charge=phase_label == "charge phase",
+                                )
+                                or []
+                            )
                         elif name_u == "HIDDEN AMONGST THE DEAD":
                             candidates = list(
                                 getter(
@@ -18267,6 +18294,9 @@ class GameView:
                                 )
                                 or []
                             )
+                        elif name_u == "MIRESLICK":
+                            enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+                            candidates = list(getter(enemy_unit) or []) if enemy_unit is not None else []
                         elif name_u == "RELENTLESS GRIND":
                             phase_label = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
                             candidates = list(
@@ -18280,20 +18310,43 @@ class GameView:
                             candidates = list(getter() or [])
                     except Exception:
                         candidates = []
+                if not candidates and name_u == "PERSISTENT PESTS":
+                    destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+                    if destroyed_unit is not None:
+                        candidates = [destroyed_unit]
                 subtitle = {
+                    "ALL IS ROT": "Engaged PLAGUE LEGIONS unit.",
+                    "AVATARS OF DECAY": "PLAGUE LEGIONS unit.",
+                    "CLUTCHING CORRUPTION": "DEATH GUARD unit that has not fought this phase.",
                     "DRAWN TO DESPAIR": "DEATH GUARD unit that has not shot this phase.",
+                    "FLESHY AVALANCHE": "PLAGUE LEGIONS MONSTER unit that has not moved or charged this phase.",
                     "FONT OF FILTH": "DEATH GUARD VEHICLE unit that has not shot this phase.",
                     "GNAWING HUNGER": "POXWALKERS unit from your army.",
                     "GRIP OF THE WALKING POX": "POXWALKERS unit targeted by the attacking enemy unit.",
                     "HIDDEN AMONGST THE DEAD": "POXWALKERS unit in Strategic Reserves that is not Attached.",
+                    "MIRESLICK": "PLAGUE LEGIONS unit in Engagement Range of the enemy Falling Back unit.",
+                    "PERSISTENT PESTS": "Destroyed NURGLINGS unit from your army.",
                     "RELENTLESS GRIND": "DEATH GUARD VEHICLE unit that has not moved or charged this phase.",
                     "SHOCK AND HORROR": "DEATH GUARD unit that just ended a Charge move.",
                     "STINKING MIRE": "DEATH GUARD VEHICLE unit.",
                 }.get(name_u, "Select an eligible DEATH GUARD unit.")
+                on_chosen = (
+                    (
+                        lambda unit: self._finalize_unit_and_enemy_stratagem(
+                            player,
+                            name,
+                            context,
+                            unit,
+                            context.get("enemy_unit") or context.get("target_enemy_unit"),
+                        )
+                    )
+                    if name_u == "MIRESLICK"
+                    else (lambda unit: self._finalize_generic_stratagem(player, name, context, unit))
+                )
                 self._resolve_unit_selection_dialog(
                     player=player,
                     candidates=candidates,
-                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    on_chosen=on_chosen,
                     decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
                     prompt=f"Select {name} unit.",
                     title=name,

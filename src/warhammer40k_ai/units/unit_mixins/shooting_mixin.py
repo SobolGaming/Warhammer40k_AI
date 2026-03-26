@@ -151,13 +151,14 @@ class ShootingMixin:
             ficklefire_active = bool(self._is_ficklefire_active())
         except Exception:
             ficklefire_active = False
+        all_is_rot_active = self._death_guard_all_is_rot_active()
 
         # BGNT hit modifier snapshot:
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
         # apply -1 to Hit (unless Pistols). Snapshot this now so casualties later don't change it mid-activation.
         try:
             bgnt_locked_at_selection = bool((self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase() and self._is_locked_in_combat(game_map))
-            if ficklefire_active:
+            if ficklefire_active or all_is_rot_active:
                 bgnt_locked_at_selection = False
             setattr(self, "_bgnt_locked_at_target_selection", bgnt_locked_at_selection)
         except Exception:
@@ -172,7 +173,7 @@ class ShootingMixin:
             is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
             # Determine if this unit is engaged with any enemy
             engaged = self._is_locked_in_combat(game_map)
-            if engaged and ficklefire_active:
+            if engaged and (ficklefire_active or all_is_rot_active):
                 engaged = False
 
             # Build per-model "has pistol decl" and "has other decl"
@@ -301,6 +302,8 @@ class ShootingMixin:
         hit_models_by_target_weapon: dict = {}
         hit_models_by_target_psychic: dict = {}
         attack_tracker = {}
+        damage_by_target = {}
+        damage_by_target_while_engaged = {}
         touched_targets = []
         try:
             seen_targets = set()
@@ -422,6 +425,8 @@ class ShootingMixin:
             "hit_models_by_target_weapon": hit_models_by_target_weapon,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
+            "damage_by_target": damage_by_target,
+            "damage_by_target_while_engaged": damage_by_target_while_engaged,
         }
         sorrowsyphon_triggered = False
         sorrowsyphon_note_fn = None
@@ -480,6 +485,10 @@ class ShootingMixin:
                 successful_attacks += weapon_attacks
                 continue
             try:
+                within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+                target_was_within_attacker_engagement = bool(
+                    target_unit is not None and callable(within_engagement) and within_engagement(self, target_unit)
+                )
                 # Validate this declaration
                 validation = self._validate_shooting_declaration(
                     weapon_profile,
@@ -506,6 +515,7 @@ class ShootingMixin:
                     attack_context=attack_context,
                     linked_fire_origin_unit=linked_fire_origin_unit,
                     linked_fire_mode=linked_fire_mode,
+                    target_was_within_attacker_engagement=target_was_within_attacker_engagement,
                 )
                 successful_attacks += weapon_attacks
                 if (
@@ -597,6 +607,8 @@ class ShootingMixin:
                     killing_models_by_target=dict(killing_models_by_target),
                     hit_models_by_target_weapon=dict(hit_models_by_target_weapon),
                     hit_models_by_target_psychic=dict(hit_models_by_target_psychic),
+                    damage_by_target=dict(damage_by_target),
+                    damage_by_target_while_engaged=dict(damage_by_target_while_engaged),
                 )
         except Exception:
             pass
@@ -645,6 +657,44 @@ class ShootingMixin:
             pass
 
         return successful_attacks > 0
+
+    def _death_guard_all_is_rot_active(self) -> bool:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        iterator = getattr(root, "iter_active_death_guard_temp_effects", None)
+        if not callable(iterator):
+            return False
+        return any(
+            iterator(
+                effect_type="all_is_rot",
+                attack_type="any",
+                require_target_match=False,
+            )
+        )
+
+    def _death_guard_target_locked_only_by_shooter(self, target_unit, game_map) -> bool:
+        if target_unit is None or game_map is None:
+            return False
+        shooter_root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        shooter_root_id = str(get_entity_id(shooter_root) or "")
+        enemy_units = list(game_map.get_enemy_units(target_unit) or [])
+        seen_enemy_roots: set[str] = set()
+        for enemy in enemy_units:
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+            if enemy_root is None:
+                continue
+            enemy_root_id = str(get_entity_id(enemy_root) or "")
+            if enemy_root_id and enemy_root_id in seen_enemy_roots:
+                continue
+            if enemy_root_id:
+                seen_enemy_roots.add(enemy_root_id)
+            if not game_map.is_within_engagement_range(enemy_root, target_unit):
+                continue
+            if shooter_root is not None and enemy_root is shooter_root:
+                continue
+            if shooter_root_id and enemy_root_id == shooter_root_id:
+                continue
+            return False
+        return True
 
     @staticmethod
     def _droneport_norm(text: object) -> str:
@@ -1124,6 +1174,10 @@ class ShootingMixin:
         for target_unit in units_in_aoe:
             if not getattr(target_unit, "is_alive", lambda: False)():
                 continue
+            within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+            target_was_within_attacker_engagement = bool(
+                target_unit is not None and callable(within_engagement) and within_engagement(self, target_unit)
+            )
             successful_attacks += self._execute_weapon_attacks(
                 weapon_profile,
                 target_unit,
@@ -1136,6 +1190,7 @@ class ShootingMixin:
                 attack_context=attack_context,
                 skip_one_shot=True,
                 skip_target_checks=True,
+                target_was_within_attacker_engagement=target_was_within_attacker_engagement,
             )
             if attack_context is not None:
                 self._resolve_pending_attack_mortal_wounds(attack_context, target_unit, game_map=game_map)
@@ -1289,12 +1344,16 @@ class ShootingMixin:
                 ficklefire_active = bool(self._is_ficklefire_active())
         except Exception:
             ficklefire_active = False
+        all_is_rot_active = self._death_guard_all_is_rot_active()
         fortification_only = False
         if target_locked:
             try:
                 fortification_only = bool(target_unit.is_only_within_enemy_fortifications(game_map, enemy_unit=self))
             except Exception:
                 fortification_only = False
+        if target_locked and not fortification_only and all_is_rot_active:
+            if self._death_guard_target_locked_only_by_shooter(target_unit, game_map):
+                target_locked = False
         if target_locked and not fortification_only and ficklefire_active:
             engaged_with_other = False
             try:
@@ -1325,7 +1384,7 @@ class ShootingMixin:
                 target_locked = False
         if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
-            if ficklefire_active:
+            if ficklefire_active or all_is_rot_active:
                 shooter_in_er_of_target = False
             if self.weapon_profile_counts_as_pistol(weapon_profile, model=model):
                 if not shooter_in_er_of_target:
@@ -1356,7 +1415,10 @@ class ShootingMixin:
                     continue
                 get_friendly_root = getattr(friendly, "get_attached_unit_root", None)
                 friendly_root = get_friendly_root() if callable(get_friendly_root) else friendly
-                if ficklefire_active:
+                if all_is_rot_active:
+                    if shooter_root is not None and friendly_root is shooter_root:
+                        continue
+                elif ficklefire_active:
                     if shooter_root is not None and friendly_root is shooter_root:
                         continue
                 else:
@@ -1834,6 +1896,8 @@ class ShootingMixin:
 
     def _can_shoot_while_engaged(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if model can shoot while engaged with other units"""
+        if self._death_guard_all_is_rot_active():
+            return True
         # Check if unit is in engagement range
         is_engaged = any(game_map.is_within_engagement_range(self, enemy)
                         for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
@@ -1916,6 +1980,7 @@ class ShootingMixin:
         linked_fire_mode=None,
         skip_one_shot: bool = False,
         skip_target_checks: bool = False,
+        target_was_within_attacker_engagement: bool = False,
     ) -> int:
         """Execute attacks with a specific weapon profile
 
@@ -2055,6 +2120,24 @@ class ShootingMixin:
                             kill_map.setdefault(target_unit, set()).add(model)
                         except Exception:
                             pass
+                    try:
+                        damage = int(getattr(attack_result, "total_damage_dealt", 0) or 0)
+                    except Exception:
+                        damage = 0
+                    if damage > 0 and isinstance(attack_context, dict):
+                        damage_map = attack_context.get("damage_by_target")
+                        if not isinstance(damage_map, dict):
+                            damage_map = {}
+                            attack_context["damage_by_target"] = damage_map
+                        damage_map[target_unit] = int(damage_map.get(target_unit, 0) or 0) + damage
+                        if bool(target_was_within_attacker_engagement):
+                            engaged_damage_map = attack_context.get("damage_by_target_while_engaged")
+                            if not isinstance(engaged_damage_map, dict):
+                                engaged_damage_map = {}
+                                attack_context["damage_by_target_while_engaged"] = engaged_damage_map
+                            engaged_damage_map[target_unit] = (
+                                int(engaged_damage_map.get(target_unit, 0) or 0) + damage
+                            )
                 if attack_tracker is not None and target_unit is not None:
                     try:
                         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit

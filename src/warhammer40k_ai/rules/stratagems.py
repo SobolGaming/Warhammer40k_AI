@@ -1859,6 +1859,7 @@ class StratagemManager(
             "CARRY FORTH THE FAITHFUL",
             "SEIZE THE PRIZE",
             "FEEDING FRENZY",
+            "MIRESLICK",
         }:
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
@@ -1966,6 +1967,7 @@ class StratagemManager(
             "OVERFLIGHT",
             "ONTO THE NEXT",
             "PINPOINT COUNTER-OFFENSIVE",
+            "PERSISTENT PESTS",
             "SMEARED WITH FILTH",
             "UNBOUND ARROGANCE",
             "TERRIFYING SPECTACLE",
@@ -2083,6 +2085,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
         if "REAVERS' REACTION" in names or "REAVERS’ REACTION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_renegade_warband)
+        if "ALL IS ROT" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_death_guard)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -2347,6 +2351,7 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
+            "FLESHY AVALANCHE",
             "RELENTLESS GRIND",
             "GRIP OF THE WALKING POX",
             "HIDDEN AMONGST THE DEAD",
@@ -9708,6 +9713,7 @@ class StratagemManager(
         self._queue_orks_move_started_reactions(unit=unit, action=action)
         self._queue_hurons_marauders_move_started_reactions(unit=unit, action=action)
         self._queue_soulforged_move_start_reactions(unit=unit, action=action)
+        self._queue_death_guard_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -10672,6 +10678,17 @@ class StratagemManager(
             )
         except Exception:
             raise
+
+    def _on_unit_shooting_resolved_death_guard(
+        self,
+        attacker_unit=None,
+        damage_by_target_while_engaged=None,
+        **_kwargs,
+    ):
+        self._resolve_death_guard_shooting_resolved(
+            attacker_unit=attacker_unit,
+            damage_by_target_while_engaged=damage_by_target_while_engaged,
+        )
 
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:

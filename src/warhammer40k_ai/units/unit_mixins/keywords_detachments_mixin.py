@@ -13074,6 +13074,42 @@ class KeywordsDetachmentsMixin:
                     break
             if not in_enemy_zone:
                 return False
+        if target_condition == "engaged_with_friendly_plague_legions":
+            if target_root is None:
+                return False
+            army = self._death_guard_temp_effect_army()
+            game = self._death_guard_temp_effect_game()
+            game_map = getattr(game, "map", None) if game is not None else None
+            if army is None or game_map is None:
+                return False
+            seen_friendly_roots: set[str] = set()
+            for friendly in list(getattr(army, "units", []) or []):
+                if friendly is None:
+                    continue
+                get_root = getattr(friendly, "get_attached_unit_root", None)
+                friendly_root = get_root() if callable(get_root) else friendly
+                if friendly_root is None:
+                    continue
+                friendly_root_id = str(get_entity_id(friendly_root) or "")
+                if friendly_root_id and friendly_root_id in seen_friendly_roots:
+                    continue
+                if friendly_root_id:
+                    seen_friendly_roots.add(friendly_root_id)
+                if not getattr(friendly_root, "has_any_keyword", lambda *_args, **_kwargs: False)("PLAGUE LEGIONS"):
+                    continue
+                if not bool(getattr(friendly_root, "deployed", False)):
+                    continue
+                if bool(getattr(friendly_root, "is_embarked", False)) or bool(getattr(friendly_root, "embarked_in", None)):
+                    continue
+                in_reserves = getattr(friendly_root, "is_in_reserves", None)
+                if callable(in_reserves) and bool(in_reserves()):
+                    continue
+                is_alive = getattr(friendly_root, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                if game_map.is_within_engagement_range(friendly_root, target_root):
+                    return True
+            return False
 
         excluded_keywords = [
             str(keyword or "").strip().upper()

@@ -91,6 +91,11 @@ class DeathGuardStratagemMixin:
         checker = getattr(mgr, "is_shamblerot_vectorium", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tallyband_summoners_detachment(self) -> bool:
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "is_tallyband_summoners", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _dg_has_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -376,6 +381,28 @@ class DeathGuardStratagemMixin:
             return True
         return "poxwalker" in self._dg_normalize_name(getattr(root, "name", "") or "")
 
+    def _dg_unit_is_plague_legions(self, unit: Any) -> bool:
+        root = self._dg_root(unit)
+        if root is None:
+            return False
+        if not self._dg_owned_by_player(root, self.player):
+            return False
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_plague_legions", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._dg_has_keyword(root, "PLAGUE LEGIONS")
+
+    def _dg_unit_is_nurglings(self, unit: Any) -> bool:
+        root = self._dg_root(unit)
+        if root is None:
+            return False
+        if not self._dg_unit_is_plague_legions(root):
+            return False
+        if self._dg_has_keyword(root, "NURGLINGS"):
+            return True
+        return "nurgling" in self._dg_normalize_name(getattr(root, "name", "") or "")
+
     @staticmethod
     def _dg_model_is_alive(model: Any) -> bool:
         if model is None:
@@ -494,6 +521,7 @@ class DeathGuardStratagemMixin:
         self,
         *,
         require_not_shot: bool = False,
+        require_not_fought: bool = False,
     ) -> list[Any]:
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -518,6 +546,8 @@ class DeathGuardStratagemMixin:
                 continue
             if require_not_shot and not self._dg_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
                 continue
+            if require_not_fought and not self._dg_unit_not_selected_for_phase_action(root, phase_key="FIGHT_PHASE"):
+                continue
             candidates.append(root)
         candidates.sort(key=self._dg_sort_key)
         return candidates
@@ -540,6 +570,66 @@ class DeathGuardStratagemMixin:
             if require_not_selected_to_charge and self._dg_selected_to_charge_this_phase(root):
                 continue
             candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_tallyband_plague_legions_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_engaged: bool = False,
+        require_monster: bool = False,
+        require_not_selected_to_move: bool = False,
+        require_not_selected_to_charge: bool = False,
+    ) -> list[Any]:
+        if not self._is_tallyband_summoners_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_unit_is_plague_legions(root):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if require_not_shot and not self._dg_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                continue
+            if require_engaged and not self._dg_is_unit_engaged(root):
+                continue
+            if require_monster and not self._dg_attached_unit_has_keyword(root, "MONSTER"):
+                continue
+            if require_not_selected_to_move and self._dg_selected_to_move_this_phase(root):
+                continue
+            if require_not_selected_to_charge and self._dg_selected_to_charge_this_phase(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_tallyband_mireslick_candidates(self, enemy_unit: Any) -> list[Any]:
+        enemy_root = self._dg_root(enemy_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if enemy_root is None or not callable(within_engagement):
+            return []
+        candidates: list[Any] = []
+        for source_root in list(self._dg_tallyband_plague_legions_candidates(require_engaged=True) or []):
+            if not bool(within_engagement(source_root, enemy_root)):
+                continue
+            candidates.append(source_root)
         candidates.sort(key=self._dg_sort_key)
         return candidates
 
@@ -1573,8 +1663,211 @@ class DeathGuardStratagemMixin:
             payload["target_enemy_unit"] = enemy_candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_tallyband_persistent_pests_reaction(self, *, unit: Any) -> None:
+        if not self._is_tallyband_summoners_detachment():
+            return
+        stratagem = self.get_by_name("PERSISTENT PESTS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        root = self._dg_root(unit)
+        if root is None or not self._dg_owned_by_player(root, self.player):
+            return
+        if not self._dg_unit_is_nurglings(root):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_destroyed"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "PERSISTENT PESTS"
+                and self._dg_root(reaction.get("destroyed_unit") or reaction.get("unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": str(getattr(getattr(self.game, "phase", None), "name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "destroyed_unit": root,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_tallyband_mireslick_reaction(self, *, unit: Any, action: str) -> None:
+        if not self._is_tallyband_summoners_detachment():
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        if self._dg_current_phase_key() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("MIRESLICK")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        enemy_root = self._dg_root(unit)
+        if enemy_root is None or self._dg_owned_by_player(enemy_root, self.player):
+            return
+        if self._dg_attached_unit_has_keyword(enemy_root, "MONSTER") or self._dg_attached_unit_has_keyword(enemy_root, "VEHICLE"):
+            return
+        candidates = self._dg_tallyband_mireslick_candidates(enemy_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "unit_move_started"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "MIRESLICK"
+                and self._dg_root(reaction.get("enemy_unit")) is enemy_root
+            ):
+                return
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "target_enemy_unit": enemy_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_death_guard_unit_destroyed_reactions(self, *, unit: Any, **_kwargs) -> None:
         self._queue_shamblerot_smeared_with_filth_reaction(unit=unit)
+        self._queue_tallyband_persistent_pests_reaction(unit=unit)
+
+    def _queue_death_guard_move_start_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_tallyband_mireslick_reaction(unit=unit, action=action)
+
+    def _resolve_tallyband_all_is_rot_shooting_resolved(
+        self,
+        *,
+        attacker_unit: Any,
+        damage_by_target_while_engaged: dict[Any, int] | None,
+    ) -> None:
+        if not self._is_tallyband_summoners_detachment():
+            return
+        attacker_root = self._dg_root(attacker_unit)
+        if attacker_root is None or not self._dg_owned_by_player(attacker_root, self.player):
+            return
+        temp_effect_iter = getattr(attacker_root, "iter_active_death_guard_temp_effects", None)
+        if not callable(temp_effect_iter):
+            return
+        if not any(
+            temp_effect_iter(
+                effect_type="all_is_rot",
+                attack_type="any",
+                require_target_match=False,
+            )
+        ):
+            return
+        damage_map = damage_by_target_while_engaged if isinstance(damage_by_target_while_engaged, dict) else {}
+        if not damage_map:
+            return
+        total_rolls = 0
+        for target in sorted(list(damage_map), key=self._dg_sort_key):
+            target_root = self._dg_root(target)
+            if target_root is None or self._dg_owned_by_player(target_root, self.player):
+                continue
+            try:
+                total_rolls += max(0, int(damage_map.get(target, 0) or 0))
+            except (TypeError, ValueError):
+                continue
+        if total_rolls <= 0:
+            return
+        mortal_wounds = 0
+        for _ in range(int(total_rolls)):
+            if int(dice_module.get_roll("D6") or 0) >= 5:
+                mortal_wounds += 1
+        if mortal_wounds <= 0:
+            return
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        apply_mortals = getattr(attacker_root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortals):
+            return
+        apply_mortals(
+            attacker_root,
+            int(mortal_wounds),
+            game_map=game_map,
+            attacker_unit=attacker_root,
+            damage_source="death_guard_tallyband_all_is_rot",
+        )
+        logger.info(
+            "INFO: ALL IS ROT: %s suffers %d mortal wound(s) after inflicting wounds in Engagement Range.",
+            getattr(attacker_root, "name", "Unit"),
+            int(mortal_wounds),
+        )
+
+    def _resolve_death_guard_shooting_resolved(
+        self,
+        *,
+        attacker_unit: Any,
+        damage_by_target_while_engaged: dict[Any, int] | None,
+    ) -> None:
+        self._resolve_tallyband_all_is_rot_shooting_resolved(
+            attacker_unit=attacker_unit,
+            damage_by_target_while_engaged=damage_by_target_while_engaged,
+        )
+
+    def _dg_spawn_tallyband_persistent_pests_unit(self, destroyed_unit: Any, *, game=None) -> Any:
+        root = self._dg_root(destroyed_unit)
+        if root is None:
+            return None
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return None
+        datasheet = getattr(root, "_datasheet", None)
+        if datasheet is None:
+            return None
+        try:
+            quantity = int(getattr(root, "starting_model_count", 0) or 0)
+        except (TypeError, ValueError):
+            quantity = 0
+        if quantity <= 0:
+            current_models = list(getattr(root, "models", []) or [])
+            lost_models = list(getattr(root, "models_lost", []) or [])
+            quantity = max(1, len(current_models) + len(lost_models))
+        from ..units.unit import Unit as UnitClass
+
+        try:
+            new_unit = UnitClass(datasheet, quantity=int(quantity))
+        except TypeError:
+            new_unit = UnitClass(datasheet)
+        new_unit.spawned_in_battle = True
+        new_unit.starting_model_count = int(quantity)
+        set_parent = getattr(new_unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(army)
+        else:
+            new_unit.parent_army = army
+        set_reserve = getattr(new_unit, "set_reserve_status", None)
+        if callable(set_reserve):
+            set_reserve("strategic_reserves")
+        else:
+            new_unit.reserve_status = "strategic_reserves"
+        mark_midgame = getattr(new_unit, "mark_entered_reserves_midgame", None)
+        if callable(mark_midgame):
+            mark_midgame(game=game)
+        new_unit.deployed = True
+        new_unit.reserve_turn_deployed = None
+        new_unit.arrived_from_reserves_this_turn = False
+        army.add_unit(new_unit)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is not None and hasattr(game_map, "units") and new_unit in game_map.units:
+            game_map.units.remove(new_unit)
+        if game is not None and hasattr(game, "rebuild_entity_registry"):
+            game.rebuild_entity_registry()
+        return new_unit
 
     def _resolve_shamblerot_grip_of_the_walking_pox(self, *, unit: Any) -> None:
         if not self._is_shamblerot_vectorium_detachment():
@@ -1745,6 +2038,7 @@ class DeathGuardStratagemMixin:
     def _cleanup_death_guard_phase_end_effects(self, *, phase=None) -> None:
         self._cleanup_mortarions_hammer_phase_end_effects(phase=phase)
         self._cleanup_shamblerot_vectorium_phase_end_effects(phase=phase)
+        self._cleanup_tallyband_summoners_phase_end_effects(phase=phase)
 
     def _cleanup_shamblerot_vectorium_phase_end_effects(self, *, phase=None) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2347,6 +2641,49 @@ class DeathGuardStratagemMixin:
                     sr.pop(key, None)
                 root.special_rules = sr
 
+    def _cleanup_tallyband_summoners_phase_end_effects(self, *, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            expires_phase = str(
+                sr.get("death_guard_tallyband_fleshy_avalanche_expires_phase", "") or ""
+            ).strip().upper()
+            if not bool(sr.get("death_guard_tallyband_fleshy_avalanche_active", False)):
+                continue
+            if expires_phase and expires_phase != phase_key:
+                continue
+            self._dg_remove_phase_move_types(
+                sr,
+                "bearer_unit_phase_move_terrain_only_types",
+                "death_guard_tallyband_fleshy_avalanche_added_phase_move_terrain_only_types",
+            )
+            for key in (
+                "death_guard_tallyband_fleshy_avalanche_active",
+                "death_guard_tallyband_fleshy_avalanche_expires_phase",
+                "death_guard_tallyband_fleshy_avalanche_turn_owner",
+                "death_guard_tallyband_fleshy_avalanche_turn",
+                "death_guard_tallyband_fleshy_avalanche_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
     def _clear_signal_pox_if_expired(self, *, player=None, phase=None) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
         owner_id = str(getattr(player, "id", "") or "")
@@ -2404,17 +2741,20 @@ class DeathGuardStratagemMixin:
             "ENERVATING ONSLAUGHT",
             "EYE OF THE SWARM",
             "EYESTINGER STORM",
+            "FLESHY AVALANCHE",
             "FONT OF FILTH",
             "GNAWING HUNGER",
             "GRIP OF THE WALKING POX",
             "GRIM REAPERS",
             "GROTESQUE FORTITUDE",
             "HIDDEN AMONGST THE DEAD",
+            "MIRESLICK",
             "MALIGNANCE MAGNIFIED",
             "MORTARION'S TEACHINGS",
             "MOBILE VECTOR",
             "MYPHITIC INVIGORATION",
             "NAUSEATING PAROXYSMS",
+            "PERSISTENT PESTS",
             "RABID INFUSION",
             "RELENTLESS GRIND",
             "SHAMBLING WALL",
@@ -2425,6 +2765,9 @@ class DeathGuardStratagemMixin:
             "STINKING MIRE",
             "UNDYING SPITE",
             "VERMIN CLOUD",
+            "ALL IS ROT",
+            "AVATARS OF DECAY",
+            "CLUTCHING CORRUPTION",
         }:
             return None
 
@@ -2468,6 +2811,14 @@ class DeathGuardStratagemMixin:
             "SHOCK AND HORROR",
             "SMEARED WITH FILTH",
         }
+        tallyband_name = name_u in {
+            "ALL IS ROT",
+            "AVATARS OF DECAY",
+            "CLUTCHING CORRUPTION",
+            "FLESHY AVALANCHE",
+            "MIRESLICK",
+            "PERSISTENT PESTS",
+        }
         if champions_name and not self._is_champions_of_contagion_detachment():
             return False
         if flyblown_name and not self._is_flyblown_host_detachment():
@@ -2477,6 +2828,8 @@ class DeathGuardStratagemMixin:
         if mortarions_hammer_name and not self._is_mortarions_hammer_detachment():
             return False
         if shamblerot_name and not self._is_shamblerot_vectorium_detachment():
+            return False
+        if tallyband_name and not self._is_tallyband_summoners_detachment():
             return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
@@ -2886,6 +3239,261 @@ class DeathGuardStratagemMixin:
             enemy_root.special_rules = sr
             self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
             logger.info("INFO: DEATH'S HEADS: target enemy unit gains all Plague effects until your next turn.")
+            return True
+
+        if name_u == "ALL IS ROT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: ALL IS ROT: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: ALL IS ROT: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: ALL IS ROT: not your turn")
+                return False
+            candidates = self._dg_tallyband_plague_legions_candidates(require_engaged=True)
+            if root not in candidates:
+                logger.error("ERROR: ALL IS ROT: target must be an eligible engaged PLAGUE LEGIONS unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="tallyband_summoners",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "all_is_rot",
+                        "source": str(s.name or "All is Rot"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: ALL IS ROT: target PLAGUE LEGIONS unit ignores its own Engagement Range when selecting ranged targets this phase and risks mortal wounds for each wound it inflicts in Engagement Range."
+            )
+            return True
+
+        if name_u == "AVATARS OF DECAY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: AVATARS OF DECAY: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: AVATARS OF DECAY: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: AVATARS OF DECAY: not your turn")
+                return False
+            candidates = self._dg_tallyband_plague_legions_candidates()
+            if root not in candidates:
+                logger.error("ERROR: AVATARS OF DECAY: target must be an eligible PLAGUE LEGIONS unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="tallyband_summoners",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "afflict_aura",
+                        "range": 6.0,
+                        "source": str(s.name or "Avatars of Decay"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: AVATARS OF DECAY: enemy units within 6\" of the target PLAGUE LEGIONS unit are Afflicted this phase.")
+            return True
+
+        if name_u == "CLUTCHING CORRUPTION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: CLUTCHING CORRUPTION: no target unit provided")
+                return False
+            if phase_key != "FIGHT_PHASE":
+                logger.error("ERROR: CLUTCHING CORRUPTION: wrong phase")
+                return False
+            candidates = self._dg_death_guard_battlefield_unit_candidates(require_not_fought=True)
+            if root not in candidates:
+                logger.error("ERROR: CLUTCHING CORRUPTION: target must be an eligible DEATH GUARD unit that has not fought")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="tallyband_summoners",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "hit_reroll",
+                        "attack_type": "melee",
+                        "reroll_mode": "full",
+                        "target_condition": "engaged_with_friendly_plague_legions",
+                        "source": str(s.name or "Clutching Corruption"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: CLUTCHING CORRUPTION: target DEATH GUARD unit re-rolls melee Hit rolls against enemies engaged with friendly PLAGUE LEGIONS this phase.")
+            return True
+
+        if name_u == "FLESHY AVALANCHE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: FLESHY AVALANCHE: no target unit provided")
+                return False
+            if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                logger.error("ERROR: FLESHY AVALANCHE: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: FLESHY AVALANCHE: not your turn")
+                return False
+            candidates = self._dg_tallyband_plague_legions_candidates(
+                require_monster=True,
+                require_not_selected_to_move=phase_key == "MOVEMENT_PHASE",
+                require_not_selected_to_charge=phase_key == "CHARGE_PHASE",
+            )
+            if root not in candidates:
+                logger.error("ERROR: FLESHY AVALANCHE: target must be an eligible PLAGUE LEGIONS MONSTER unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            move_types = {"move", "advance"} if phase_key == "MOVEMENT_PHASE" else {"charge"}
+            self._dg_merge_phase_move_types(
+                sr,
+                "bearer_unit_phase_move_terrain_only_types",
+                "death_guard_tallyband_fleshy_avalanche_added_phase_move_terrain_only_types",
+                set(move_types),
+            )
+            sr["death_guard_tallyband_fleshy_avalanche_active"] = True
+            sr["death_guard_tallyband_fleshy_avalanche_expires_phase"] = phase_key
+            sr["death_guard_tallyband_fleshy_avalanche_source"] = str(s.name or "FLESHY AVALANCHE")
+            owner_id = str(getattr(self.player, "id", "") or "")
+            if owner_id:
+                sr["death_guard_tallyband_fleshy_avalanche_turn_owner"] = owner_id
+            turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            if turn:
+                sr["death_guard_tallyband_fleshy_avalanche_turn"] = turn
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: FLESHY AVALANCHE: %s can move horizontally through terrain features this phase.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        if name_u == "MIRESLICK":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            if unit is None or enemy_unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "MIRESLICK":
+                        continue
+                    unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                    enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            enemy_root = self._dg_root(enemy_unit)
+            if enemy_root is None:
+                logger.error("ERROR: MIRESLICK: missing enemy unit selected to Fall Back")
+                return False
+            if phase_key != "MOVEMENT_PHASE":
+                logger.error("ERROR: MIRESLICK: wrong phase")
+                return False
+            if active_player is self.player:
+                logger.error("ERROR: MIRESLICK: Movement phase use requires your opponent's turn")
+                return False
+            if self._dg_owned_by_player(enemy_root, self.player):
+                logger.error("ERROR: MIRESLICK: enemy unit must be controlled by your opponent")
+                return False
+            if self._dg_attached_unit_has_keyword(enemy_root, "MONSTER") or self._dg_attached_unit_has_keyword(enemy_root, "VEHICLE"):
+                logger.error("ERROR: MIRESLICK: enemy unit cannot be a MONSTER or VEHICLE")
+                return False
+            if not candidates:
+                candidates = self._dg_tallyband_mireslick_candidates(enemy_root)
+            root = self._dg_root(unit)
+            if root is None and len(candidates) == 1:
+                root = candidates[0]
+            if root is None or root not in candidates:
+                logger.error("ERROR: MIRESLICK: target must be an eligible PLAGUE LEGIONS unit within Engagement Range of the enemy")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="tallyband_summoners",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "fall_back_leadership_lock",
+                        "source": str(s.name or "Mireslick"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: MIRESLICK: enemy units within Engagement Range of the target PLAGUE LEGIONS unit must pass Leadership tests to Fall Back this phase.")
+            return True
+
+        if name_u == "PERSISTENT PESTS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "PERSISTENT PESTS":
+                        continue
+                    unit = reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: PERSISTENT PESTS: no destroyed unit provided")
+                return False
+            if not self._dg_owned_by_player(root, self.player):
+                logger.error("ERROR: PERSISTENT PESTS: target must be a friendly unit")
+                return False
+            if not self._dg_unit_is_nurglings(root):
+                logger.error("ERROR: PERSISTENT PESTS: target must be a friendly NURGLINGS unit")
+                return False
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and bool(is_alive()):
+                logger.error("ERROR: PERSISTENT PESTS: target unit must have been just destroyed")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            replacement = self._dg_spawn_tallyband_persistent_pests_unit(root, game=self.game)
+            if replacement is None:
+                logger.error("ERROR: PERSISTENT PESTS: failed to create replacement unit")
+                return False
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: PERSISTENT PESTS: added a new %s unit to Strategic Reserves at Starting Strength.",
+                getattr(replacement, "name", "Nurglings"),
+            )
             return True
 
         if name_u == "GRIP OF THE WALKING POX":

@@ -16446,6 +16446,22 @@ class ActionsMovementMixin:
                         continue
                     if enemy_root_id:
                         seen_fallback_test_roots.add(enemy_root_id)
+                    iter_temp_effects = getattr(enemy_root, "iter_active_death_guard_temp_effects", None)
+                    if callable(iter_temp_effects):
+                        effect_entries = list(
+                            iter_temp_effects(
+                                effect_type="fall_back_leadership_lock",
+                                attack_type="any",
+                                require_target_match=False,
+                            )
+                            or []
+                        )
+                        if effect_entries and game_map.is_within_engagement_range(self, enemy_root):
+                            fallback_test_sources.append(enemy_root)
+                            entry = effect_entries[0]
+                            source_name = str(entry.get("source", "") or "").strip()
+                            source_labels.append(source_name or "Mireslick")
+                            continue
                     try:
                         members = list(enemy_root.get_attached_unit_members() or [])
                     except Exception:

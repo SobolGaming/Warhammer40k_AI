@@ -20007,10 +20007,15 @@ def _stratagem_support(
         "FUELLED BY FAITH": "Any phase reaction after an ADEPTUS ASTARTES unit is allocated a mortal wound: that unit gains Feel No Pain 5+ against mortal wounds until end of phase.",
         "RELENTLESS MOMENTUM": "Fight phase: selected ADEPTUS ASTARTES unit that has not fought and is within Engagement Range gains fight eligibility out to 3\" until end of phase.",
         "VOICE OF DEVOTION": "Your Command phase: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit chooses one Zealous Litany as a unit-specific override until end of battle round.",
+        "ALL IS ROT": "Your Shooting phase: selected engaged PLAGUE LEGIONS unit ignores its own Engagement Range when selecting ranged targets this phase, and after it finishes making attacks it suffers 1 mortal wound for each 5+ rolled per wound it inflicted on enemy units that were within its Engagement Range.",
+        "AVATARS OF DECAY": "Your Shooting phase: selected PLAGUE LEGIONS unit makes enemy units within 6\" count as Afflicted until end of phase, including the non-contagion Afflicted Toughness penalty and active Plague effects.",
         "BLESSINGS OF FILTH": "Shooting/Fight phase: selected DEATH GUARD Attached unit that has not been selected to act scores Critical Hits on unmodified 5+ until end of phase.",
+        "CLUTCHING CORRUPTION": "Fight phase: selected DEATH GUARD unit that has not fought re-rolls melee Hit rolls against enemy units within Engagement Range of one or more friendly PLAGUE LEGIONS units until end of phase.",
         "DEATH'S HEADS": "Shooting phase: selected BIOLOGUS PUTRIFIER unit that has not shot and is not engaged marks one visible enemy non-VEHICLE within 8\" so it suffers all three Plague debuffs until your next turn, without becoming Afflicted.",
+        "FLESHY AVALANCHE": "Your Movement phase or Charge phase: selected PLAGUE LEGIONS MONSTER unit that has not been selected to move/charge can move horizontally through terrain features for Normal, Advance, or Charge moves this phase.",
         "GROTESQUE FORTITUDE": "Opponent Shooting phase or either Fight phase defensive reaction after enemy targets are selected: targeted DEATH GUARD Attached unit gains +2 Toughness until end of phase.",
         "MALIGNANCE MAGNIFIED": "Shooting/Fight phase: selected DEATH GUARD Attached unit that has not been selected to act re-rolls Hit and Wound rolls against targets below Starting Strength until end of phase.",
+        "MIRESLICK": "Opponent Movement phase reaction when an eligible enemy unit is selected to Fall Back: selected PLAGUE LEGIONS unit within Engagement Range makes enemy units within its Engagement Range take Leadership tests to Fall Back this phase, remaining stationary on a failure.",
         "MOBILE VECTOR": "Your Movement phase before Reinforcements: unattached DEATH GUARD CHARACTER within 2\" horizontal and 5\" vertical of an eligible unattached friendly DEATH GUARD bodyguard unit can attach to it as a Leader.",
         "RABID INFUSION": "Start of Fight phase: selected DEATH GUARD unit that includes two Character models gains Fights First until end of phase.",
         "BLOOMING PESTILENCE": "Start of any phase: selected DEATH GUARD TERMINATOR unit gains +3\" Contagion Range until end of phase.",
@@ -20026,6 +20031,7 @@ def _stratagem_support(
         "SHOCK AND HORROR": "Your Charge phase, just after a DEATH GUARD unit ends a Charge move: each enemy unit within Engagement Range must take a Battle-shock test at -1.",
         "SMEARED WITH FILTH": "Fight phase reaction when your POXWALKERS unit is just destroyed: select one enemy unit that targeted it this phase; that enemy unit becomes Afflicted until end of battle.",
         "PLAGUESURGE": "Command phase: your DEATH GUARD WARLORD on battlefield gains +3\" Contagion Range until the start of your next Command phase.",
+        "PERSISTENT PESTS": "Any phase reaction when your NURGLINGS unit is just destroyed: add a new identical NURGLINGS unit to Strategic Reserves at Starting Strength with full wounds remaining.",
         "LEECHSPORE ERUPTION": "Command phase: wounded DEATH GUARD model rolls D6s equal to wounds lost; on each 5+ deal 1 mortal to an enemy within 3\" and heal 1 (both capped at 6).",
         "OVERWHELMING GENEROSITY": "Start of Shooting phase: mark one visible enemy unit; DEATH GUARD units can re-roll attack-count dice when making ranged attacks that target it this phase.",
         "CREEPING BLIGHT": "Shooting phase: selected DEATH GUARD INFANTRY unit (not yet selected to shoot) re-rolls ranged Hit and Wound rolls vs Afflicted targets this phase.",
@@ -20473,6 +20479,16 @@ def _stratagem_support(
             "Your Shooting phase: selected ADEPTUS ASTARTES PSYKER unit that has not yet been selected to shoot gains [LETHAL HITS] on ranged weapons until end of phase, and Divination also grants [IGNORES COVER].",
             name_u,
         )
+
+    if stratagem_id in {
+        "000010136002",
+        "000010136003",
+        "000010136004",
+        "000010136005",
+        "000010136006",
+        "000010136007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
 
     if stratagem_id == "000008775003":
         return (

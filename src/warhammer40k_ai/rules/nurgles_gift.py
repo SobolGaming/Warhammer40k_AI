@@ -525,6 +525,46 @@ class NurglesGiftManager:
                 sources = [u for u in enemy_units if getattr(u, "get_parent_army", lambda: None)() is enemy_army]
 
             objective_contagion_range = mgr.get_contagion_range(br, game=game, game_map=game_map)
+            for source in sources:
+                if source is None:
+                    continue
+                source_root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+                if source_root is None:
+                    continue
+                if not bool(getattr(source_root, "deployed", False)):
+                    continue
+                is_alive = getattr(source_root, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                if bool(getattr(source_root, "is_embarked", False)) or bool(getattr(source_root, "embarked_in", None)):
+                    continue
+                in_reserves = getattr(source_root, "is_in_reserves", None)
+                if callable(in_reserves) and bool(in_reserves()):
+                    continue
+                iter_temp_effects = getattr(source_root, "iter_active_death_guard_temp_effects", None)
+                if not callable(iter_temp_effects):
+                    continue
+                for entry in list(
+                    iter_temp_effects(
+                        effect_type="afflict_aura",
+                        attack_type="any",
+                        require_target_match=False,
+                    )
+                    or []
+                ):
+                    try:
+                        aura_range = float(entry.get("range", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        aura_range = 0.0
+                    if aura_range <= 0.0:
+                        continue
+                    if _aura_utils.unit_within_range_of_unit(
+                        source_root,
+                        unit,
+                        aura_range,
+                        use_attached_aggregate=True,
+                    ):
+                        return plague
             if bool(include_contagion_sources):
                 for source in sources:
                     if not mgr._unit_is_valid_contagion_source(source, game=game, game_map=game_map):
