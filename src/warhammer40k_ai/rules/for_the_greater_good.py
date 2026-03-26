@@ -19,6 +19,9 @@ class ForTheGreaterGoodManager:
     _COORDINATED_EXPLOITATION_ID = "000008811002"
     _COORDINATED_EXPLOITATION_NAME = "coordinated exploitation"
     _COORDINATED_EXPLOITATION_VALUE_KEY = "enhancement_coordinated_exploitation_sustained_hits_value"
+    _FANATICAL_CONVERT_FLAG = "enhancement_fanatical_convert"
+    _FANATICAL_CONVERT_ID = "000009839004"
+    _FANATICAL_CONVERT_NAME = "fanatical convert"
 
     def __init__(self, army=None):
         self.army = army
@@ -146,6 +149,17 @@ class ForTheGreaterGoodManager:
             return False
         if self._unit_has_named_ability(unit, "for the greater good"):
             return True
+        root = self._attached_root(unit)
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None) if root is not None else None
+        if callable(checker):
+            if bool(
+                checker(
+                    self._FANATICAL_CONVERT_FLAG,
+                    enhancement_id=self._FANATICAL_CONVERT_ID,
+                    enhancement_name=self._FANATICAL_CONVERT_NAME,
+                )
+            ):
+                return True
         try:
             if unit.has_any_keyword("T'AU EMPIRE"):
                 return True

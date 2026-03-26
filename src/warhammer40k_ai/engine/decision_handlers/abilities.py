@@ -7062,6 +7062,33 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if unit_id not in allowed_ids:
                 return ("Student of Kauyon selection includes an ineligible unit.",)
         return ()
+    if ability == "admired_leader":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Admired Leader source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_auxiliary_cadre", lambda: False)()):
+            return ("Admired Leader requires a T'au Empire Auxiliary Cadre army.",)
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        if len(selected_ids) != 1:
+            return ("Admired Leader requires selecting exactly one eligible unit.",)
+
+        selectable = list(getattr(mgr, "admired_leader_selectable_units")(source_unit, game=game) or [])
+        allowed_ids = {str(get_entity_id(unit) or "") for unit in selectable}
+        if selected_ids[0] not in allowed_ids:
+            return ("Admired Leader selection includes an ineligible unit.",)
+        return ()
     if ability == "desperate_for_redemption":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -17101,6 +17128,47 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Student of Kauyon: {source_name} selected none.",
             )
         return selected_roots
+    if ability == "admired_leader":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        target_id = str(selected_vals[0] or "").strip() if selected_vals else ""
+        if not target_id:
+            return None
+
+        selectable_units = list(getattr(mgr, "admired_leader_selectable_units")(source_unit, game=game) or [])
+        selectable_by_id = {str(get_entity_id(unit) or ""): unit for unit in selectable_units}
+        target_root = selectable_by_id.get(target_id)
+        if target_root is None:
+            return None
+        applied_root = getattr(mgr, "apply_admired_leader_selection")(source_unit, target_root, game=game)
+        if applied_root is None:
+            return None
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        target_name = str(getattr(applied_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"Admired Leader: {source_name} selected {target_name}; that unit gains +1 Leadership and +1 OC while not Battle-shocked until your next Command phase.",
+        )
+        return applied_root
     if ability == "righteous_purpose":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

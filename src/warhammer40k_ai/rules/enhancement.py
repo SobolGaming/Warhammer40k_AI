@@ -3299,6 +3299,48 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_student_of_kauyon_bearer_model_id"] = bearer_id
 
+        if name == "admired leader" or enh_id == "000009839003":
+            if not is_auxiliary_cadre:
+                return
+            unit.special_rules["enhancement_admired_leader"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            selection_range = _coerce_float(params.get("selection_range", 12.0) or 12.0, default=12.0)
+            leadership_bonus = _coerce_int(params.get("leadership_bonus", 1) or 1, default=1)
+            oc_bonus = _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1)
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("target_keywords_any", ("KROOT", "VESPID STINGWINGS")) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["KROOT", "VESPID STINGWINGS"]
+            unit.special_rules["enhancement_admired_leader_selection_range"] = float(max(0.0, selection_range))
+            unit.special_rules["enhancement_admired_leader_leadership_bonus"] = int(max(0, leadership_bonus))
+            unit.special_rules["enhancement_admired_leader_objective_control_bonus"] = int(max(0, oc_bonus))
+            unit.special_rules["enhancement_admired_leader_requires_not_battle_shocked_for_objective_control"] = bool(
+                params.get("requires_not_battle_shocked_for_objective_control", True)
+            )
+            unit.special_rules["enhancement_admired_leader_target_keywords_any"] = list(dict.fromkeys(target_keywords))
+            unit.special_rules["enhancement_admired_leader_source"] = "Admired Leader"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_admired_leader_bearer_model_id"] = bearer_id
+
+        if name == "fanatical convert" or enh_id == "000009839004":
+            if not is_auxiliary_cadre:
+                return
+            unit.special_rules["enhancement_fanatical_convert"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_fanatical_convert_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_fanatical_convert_source"] = "Fanatical Convert"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fanatical_convert_bearer_model_id"] = bearer_id
+
         if name == "transponder lock module" or enh_id == "000009839005":
             if not is_auxiliary_cadre:
                 return

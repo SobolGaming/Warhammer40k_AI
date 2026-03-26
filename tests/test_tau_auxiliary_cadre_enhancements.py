@@ -9,6 +9,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -117,6 +118,13 @@ def _place_unit(game: Game, unit: Unit, x: float, y: float) -> None:
         raise AssertionError(f"Failed to place unit {getattr(unit, 'name', 'Unit')}")
 
 
+def _attach_leader(leader: Unit, bodyguard: Unit) -> None:
+    leader.can_be_attached_to = [str(getattr(bodyguard, "name", "") or "Bodyguard Unit")]
+    leader.can_be_attached_to_names = [str(getattr(bodyguard, "name", "") or "Bodyguard Unit")]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+
 def _model_positions_for(unit: Unit, position: tuple[float, float, float]) -> list[dict]:
     model_id = str(get_entity_id(unit.models[0]) or "")
     return [
@@ -129,6 +137,257 @@ def _model_positions_for(unit: Unit, position: tuple[float, float, float]) -> li
 
 
 class TestTauAuxiliaryCadreEnhancements(unittest.TestCase):
+    def test_admired_leader_descriptor_registered(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000009839003")
+        self.assertIsNotNone(desc)
+        self.assertEqual(str(getattr(desc, "name", "") or ""), "Admired Leader")
+        self.assertEqual(
+            str(getattr(desc, "effect", "") or ""),
+            "select_friendly_auxiliary_unit_for_leadership_and_objective_control_bonus",
+        )
+
+    def test_admired_leader_sets_expected_special_rules(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        tau_army.add_unit(shaper)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839003",
+            enhancement_name="Admired Leader",
+        )
+        sr = dict(getattr(shaper, "special_rules", {}) or {})
+        self.assertTrue(bool(sr.get("enhancement_admired_leader", False)))
+        self.assertEqual(float(sr.get("enhancement_admired_leader_selection_range", 0.0) or 0.0), 12.0)
+        self.assertEqual(int(sr.get("enhancement_admired_leader_leadership_bonus", 0) or 0), 1)
+        self.assertEqual(int(sr.get("enhancement_admired_leader_objective_control_bonus", 0) or 0), 1)
+
+    def test_admired_leader_queues_nearby_kroot_and_vespid_targets(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        nearby_kroot = _make_unit(
+            "Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        nearby_vespid = _make_unit(
+            "Vespid Stingwings",
+            keywords=["INFANTRY", "VESPID STINGWINGS"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        far_kroot = _make_unit(
+            "Far Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        non_aux = _make_unit(
+            "Fire Warriors",
+            keywords=["INFANTRY"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        for unit in (shaper, nearby_kroot, nearby_vespid, far_kroot, non_aux):
+            tau_army.add_unit(unit)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839003",
+            enhancement_name="Admired Leader",
+        )
+        _place_unit(game, shaper, 20.0, 20.0)
+        _place_unit(game, nearby_kroot, 26.0, 20.0)
+        _place_unit(game, nearby_vespid, 28.0, 20.0)
+        _place_unit(game, far_kroot, 40.0, 20.0)
+        _place_unit(game, non_aux, 25.0, 25.0)
+        game.rebuild_entity_registry()
+
+        tau_army.tau_empire_detachments.on_command_phase_start(game=game, player=tau_army.player)
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "admired_leader"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        options = list(getattr(request, "options", []) or [])
+        selected_sets = {
+            tuple(
+                str(v or "")
+                for v in list((dict(getattr(opt, "payload", {}) or {}).get("selected_unit_ids") or []))
+            )
+            for opt in options
+        }
+        self.assertIn((str(nearby_kroot.id),), selected_sets)
+        self.assertIn((str(nearby_vespid.id),), selected_sets)
+        self.assertNotIn((str(far_kroot.id),), selected_sets)
+        self.assertNotIn((str(non_aux.id),), selected_sets)
+
+    def test_admired_leader_selected_unit_gains_bonuses_until_next_command_phase(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        carnivores = _make_unit(
+            "Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        tau_army.add_unit(shaper)
+        tau_army.add_unit(carnivores)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839003",
+            enhancement_name="Admired Leader",
+        )
+        _place_unit(game, shaper, 20.0, 20.0)
+        _place_unit(game, carnivores, 26.0, 20.0)
+        game.rebuild_entity_registry()
+
+        tau_army.tau_empire_detachments.on_command_phase_start(game=game, player=tau_army.player)
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "admired_leader"
+        )
+        option = next(
+            opt
+            for opt in list(getattr(request, "options", []) or [])
+            if str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "")) == str(carnivores.id)
+        )
+
+        self.assertEqual(carnivores.models[0].leadership, 7)
+        self.assertEqual(carnivores.objective_control, 1)
+
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            option_id=str(option.option_id),
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertTrue(bool(getattr(apply_result, "ok", False)))
+
+        self.assertEqual(carnivores.models[0].leadership, 6)
+        self.assertEqual(carnivores.objective_control, 2)
+        source_sr = dict(getattr(shaper, "special_rules", {}) or {})
+        self.assertTrue(bool(source_sr.get("enhancement_admired_leader_resolved", False)))
+        self.assertEqual(str(source_sr.get("enhancement_admired_leader_selected_unit_id", "") or ""), str(carnivores.id))
+
+        battle_shock = BattleShockEffect(current_turn=game.turn)
+        battle_shock.apply_effect(carnivores)
+        carnivores.status_effects.append(battle_shock)
+        self.assertEqual(carnivores.objective_control, 0)
+
+        game.turn = 2
+        tau_army.tau_empire_detachments.on_command_phase_start(game=game, player=tau_army.player)
+        self.assertEqual(carnivores.models[0].leadership, 7)
+
+    def test_admired_leader_rejects_ineligible_selection(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        ineligible = _make_unit(
+            "Fire Warriors",
+            keywords=["INFANTRY"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        tau_army.add_unit(shaper)
+        tau_army.add_unit(ineligible)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839003",
+            enhancement_name="Admired Leader",
+        )
+        _place_unit(game, shaper, 20.0, 20.0)
+        _place_unit(game, ineligible, 24.0, 20.0)
+        game.rebuild_entity_registry()
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Admired Leader: select one friendly KROOT or Vespid Stingwings unit within 12\" of the bearer.",
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            options=[
+                DecisionOption.create(
+                    "Invalid target",
+                    payload={"target_unit_id": str(ineligible.id), "selected_unit_ids": [str(ineligible.id)]},
+                )
+            ],
+            context={
+                "ability": "admired_leader",
+                "ability_name": "Admired Leader",
+                "source_unit_id": str(shaper.id),
+                "unit_id": str(shaper.id),
+                "optional": False,
+                "max_selections": 1,
+            },
+        )
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            option_id=str(request.options[0].option_id),
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertFalse(bool(getattr(apply_result, "ok", False)))
+        self.assertTrue(any("ineligible" in str(err).lower() for err in list(getattr(apply_result, "errors", []) or [])))
+
+    def test_fanatical_convert_descriptor_registered(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000009839004")
+        self.assertIsNotNone(desc)
+        self.assertEqual(str(getattr(desc, "name", "") or ""), "Fanatical Convert")
+        self.assertEqual(
+            str(getattr(desc, "effect", "") or ""),
+            "grant_for_the_greater_good_to_bearer_unit",
+        )
+
+    def test_fanatical_convert_grants_for_the_greater_good_to_bearer_unit(self):
+        game, tau_army, _enemy_army = _build_game()
+        leader = _make_unit(
+            "Kroot Flesh Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["KROOT"],
+        )
+        carnivores = _make_unit(
+            "Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["KROOT"],
+        )
+        _attach_leader(leader, carnivores)
+        tau_army.add_unit(leader)
+        tau_army.add_unit(carnivores)
+        game.rebuild_entity_registry()
+
+        mgr = tau_army.for_the_greater_good
+        self.assertFalse(mgr._unit_has_ftgg(carnivores))
+
+        _apply_enhancement(
+            leader,
+            enhancement_id="000009839004",
+            enhancement_name="Fanatical Convert",
+        )
+
+        self.assertTrue(mgr._unit_has_ftgg(carnivores))
+
     def test_student_of_kauyon_descriptor_registered(self):
         desc = get_enhancement_tool_descriptor(enhancement_id="000009839002")
         self.assertIsNotNone(desc)

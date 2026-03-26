@@ -887,6 +887,36 @@ class Unit(
             except Exception:
                 pass
 
+            try:
+                sr = getattr(self, "special_rules", None)
+                entries = list(sr.get("enhancement_admired_leader_effect_entries", []) or []) if isinstance(sr, dict) else []
+                if entries:
+                    root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                    battle_shocked = bool(root.is_battle_shocked()) if hasattr(root, "is_battle_shocked") else False
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            oc_bonus = int(entry.get("objective_control_bonus", 0) or 0)
+                        except Exception:
+                            oc_bonus = 0
+                        if oc_bonus <= 0:
+                            continue
+                        if bool(entry.get("requires_not_battle_shocked_for_objective_control", True)) and battle_shocked:
+                            continue
+                        source_name = str(entry.get("source_name", "") or "Admired Leader").strip() or "Admired Leader"
+                        source_unit_id = str(entry.get("source_unit_id", "") or "").strip()
+                        source_key = source_unit_id if source_unit_id else source_name.lower().replace(" ", "_")
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(oc_bonus),
+                                source=f"enhancement:admired_leader:{source_key}",
+                            )
+                        )
+            except Exception:
+                pass
+
             # Strategic Conqueror (Mont'ka): +1 OC while within range of the selected objective marker
             # and the bearer is on the battlefield.
             try:
@@ -1928,6 +1958,30 @@ class Unit(
                 if _enhancement_bearer_is_leading("enhancement_pledge_of_dark_glory"):
                     # Leadership is better at lower values, so +1 improvement is a -1 modifier.
                     mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:pledge_of_dark_glory"))
+            except Exception:
+                pass
+            try:
+                sr = getattr(self, "special_rules", None)
+                entries = list(sr.get("enhancement_admired_leader_effect_entries", []) or []) if isinstance(sr, dict) else []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    try:
+                        leadership_bonus = int(entry.get("leadership_bonus", 0) or 0)
+                    except Exception:
+                        leadership_bonus = 0
+                    if leadership_bonus <= 0:
+                        continue
+                    source_name = str(entry.get("source_name", "") or "Admired Leader").strip() or "Admired Leader"
+                    source_unit_id = str(entry.get("source_unit_id", "") or "").strip()
+                    source_key = source_unit_id if source_unit_id else source_name.lower().replace(" ", "_")
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            -int(leadership_bonus),
+                            source=f"enhancement:admired_leader:{source_key}",
+                        )
+                    )
             except Exception:
                 pass
             try:

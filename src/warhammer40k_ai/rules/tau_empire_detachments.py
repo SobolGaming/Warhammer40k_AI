@@ -27,6 +27,22 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
     _STUDENT_OF_KAUYON_SELECTED_UNIT_IDS_KEY = "enhancement_student_of_kauyon_selected_unit_ids"
     _STUDENT_OF_KAUYON_MAX_UNITS_KEY = "enhancement_student_of_kauyon_max_units"
     _STUDENT_OF_KAUYON_RESOLVED_KEY = "enhancement_student_of_kauyon_resolved"
+    _ADMIRED_LEADER_FLAG = "enhancement_admired_leader"
+    _ADMIRED_LEADER_ID = "000009839003"
+    _ADMIRED_LEADER_NAME = "admired leader"
+    _ADMIRED_LEADER_SELECTED_UNIT_ID_KEY = "enhancement_admired_leader_selected_unit_id"
+    _ADMIRED_LEADER_SELECTION_RANGE_KEY = "enhancement_admired_leader_selection_range"
+    _ADMIRED_LEADER_LEADERSHIP_BONUS_KEY = "enhancement_admired_leader_leadership_bonus"
+    _ADMIRED_LEADER_OC_BONUS_KEY = "enhancement_admired_leader_objective_control_bonus"
+    _ADMIRED_LEADER_REQUIRES_NOT_BATTLE_SHOCKED_OC_KEY = (
+        "enhancement_admired_leader_requires_not_battle_shocked_for_objective_control"
+    )
+    _ADMIRED_LEADER_TARGET_KEYWORDS_KEY = "enhancement_admired_leader_target_keywords_any"
+    _ADMIRED_LEADER_RESOLVED_KEY = "enhancement_admired_leader_resolved"
+    _ADMIRED_LEADER_EFFECT_ENTRIES_KEY = "enhancement_admired_leader_effect_entries"
+    _FANATICAL_CONVERT_FLAG = "enhancement_fanatical_convert"
+    _FANATICAL_CONVERT_ID = "000009839004"
+    _FANATICAL_CONVERT_NAME = "fanatical convert"
 
     def is_experimental_prototype_cadre(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -115,6 +131,43 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         return bool(
             self._unit_is_kroot_carnivores(root)
             or self._unit_is_kroot_farstalkers(root)
+        )
+
+    def _unit_is_admired_leader_target(self, unit, *, source_unit=None, game=None) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self._unit_is_kroot_or_vespid(root):
+            return False
+        if source_unit is None:
+            return True
+        if not self._unit_is_on_battlefield(source_unit):
+            return False
+        bearer_model = self._enhancement_bearer_model(source_unit)
+        if bearer_model is None:
+            return False
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            selection_range = float(sr.get(self._ADMIRED_LEADER_SELECTION_RANGE_KEY, 12.0) or 12.0)
+        except Exception:
+            selection_range = 12.0
+        if selection_range <= 0.0:
+            return False
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        return bool(
+            model_within_range_of_unit(
+                bearer_model,
+                root,
+                float(selection_range),
+                use_attached_aggregate=True,
+            )
         )
 
     def _model_is_tau_empire(self, model) -> bool:
@@ -513,6 +566,15 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         return unit
 
     @staticmethod
+    def _attached_members(unit) -> list:
+        root = unit
+        get_members = getattr(root, "get_attached_unit_members", None) if root is not None else None
+        members = list(get_members() or []) if callable(get_members) else ([root] if root is not None else [])
+        if not members and root is not None:
+            members = [root]
+        return members
+
+    @staticmethod
     def _has_attached_leaders(unit) -> bool:
         if unit is None:
             return False
@@ -819,6 +881,244 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
                     "unit_id": source_unit_id,
                     "optional": True,
                     "max_selections": int(max_units),
+                },
+            )
+            if callable(request_fn):
+                request_fn(request)
+
+    def _unit_has_admired_leader(self, unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get(self._ADMIRED_LEADER_FLAG)):
+            return True
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        return bool(enh_id == self._ADMIRED_LEADER_ID or enh_name == self._ADMIRED_LEADER_NAME)
+
+    def _iter_admired_leader_sources(self) -> list:
+        army = self.army
+        if army is None:
+            return []
+        unique_by_id = {}
+        for unit in list(getattr(army, "units", []) or []):
+            if not self._unit_has_admired_leader(unit):
+                continue
+            unit_id = self._entity_id(unit)
+            if not unit_id or unit_id in unique_by_id:
+                continue
+            unique_by_id[unit_id] = unit
+        return [unique_by_id[k] for k in sorted(unique_by_id.keys())]
+
+    def admired_leader_selectable_units(self, source_unit, *, game=None) -> list:
+        if not self.is_auxiliary_cadre():
+            return []
+        if source_unit is None:
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return []
+        if not self._unit_has_admired_leader(source_unit):
+            return []
+        if not self._enhancement_bearer_alive(source_unit):
+            return []
+        if not self._unit_is_on_battlefield(source_unit):
+            return []
+
+        selectable = []
+        for root in self._iter_unique_army_roots():
+            if not self._unit_is_admired_leader_target(root, source_unit=source_unit, game=game):
+                continue
+            selectable.append(root)
+        return selectable
+
+    def _clear_admired_leader_effects(self, *, source_unit_id: str = "") -> None:
+        source_key = str(source_unit_id or "").strip()
+        for root in self._iter_unique_army_roots():
+            for member in self._attached_members(root):
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict):
+                    continue
+                entries = list(sr_member.get(self._ADMIRED_LEADER_EFFECT_ENTRIES_KEY, []) or [])
+                if not entries:
+                    continue
+                kept = []
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        changed = True
+                        continue
+                    entry_source = str(entry.get("source_unit_id", "") or "").strip()
+                    if source_key and entry_source != source_key:
+                        kept.append(entry)
+                        continue
+                    changed = True
+                if not changed:
+                    continue
+                if kept:
+                    sr_member[self._ADMIRED_LEADER_EFFECT_ENTRIES_KEY] = kept
+                else:
+                    sr_member.pop(self._ADMIRED_LEADER_EFFECT_ENTRIES_KEY, None)
+                member.special_rules = sr_member
+
+        for source_unit in self._iter_admired_leader_sources():
+            source_id = self._entity_id(source_unit)
+            if source_key and source_id != source_key:
+                continue
+            sr_source = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr_source, dict):
+                continue
+            sr_source.pop(self._ADMIRED_LEADER_SELECTED_UNIT_ID_KEY, None)
+            sr_source[self._ADMIRED_LEADER_RESOLVED_KEY] = False
+            source_unit.special_rules = sr_source
+
+    def apply_admired_leader_selection(self, source_unit, target_unit, *, game=None) -> object | None:
+        if source_unit is None or target_unit is None:
+            return None
+        selectable_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self.admired_leader_selectable_units(source_unit, game=game) or [])
+            if self._entity_id(unit)
+        }
+        target_root = self._attached_root(target_unit)
+        target_id = self._entity_id(target_root)
+        if not target_id or target_id not in selectable_by_id:
+            return None
+        target_root = selectable_by_id[target_id]
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        try:
+            leadership_bonus = int(source_sr.get(self._ADMIRED_LEADER_LEADERSHIP_BONUS_KEY, 1) or 1)
+        except Exception:
+            leadership_bonus = 1
+        try:
+            oc_bonus = int(source_sr.get(self._ADMIRED_LEADER_OC_BONUS_KEY, 1) or 1)
+        except Exception:
+            oc_bonus = 1
+        requires_not_battle_shocked = bool(
+            source_sr.get(self._ADMIRED_LEADER_REQUIRES_NOT_BATTLE_SHOCKED_OC_KEY, True)
+        )
+        source_id = self._entity_id(source_unit)
+        source_name = str(source_sr.get("enhancement_admired_leader_source", "") or "Admired Leader").strip() or "Admired Leader"
+        if source_id:
+            self._clear_admired_leader_effects(source_unit_id=source_id)
+
+        for member in self._attached_members(target_root):
+            sr_member = getattr(member, "special_rules", None)
+            if not isinstance(sr_member, dict):
+                sr_member = {}
+            entries = list(sr_member.get(self._ADMIRED_LEADER_EFFECT_ENTRIES_KEY, []) or [])
+            entries = [
+                entry
+                for entry in entries
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("source_unit_id", "") or "").strip() == source_id
+                )
+            ]
+            entries.append(
+                {
+                    "source_unit_id": source_id,
+                    "source_name": source_name,
+                    "leadership_bonus": int(max(0, leadership_bonus)),
+                    "objective_control_bonus": int(max(0, oc_bonus)),
+                    "requires_not_battle_shocked_for_objective_control": bool(requires_not_battle_shocked),
+                }
+            )
+            sr_member[self._ADMIRED_LEADER_EFFECT_ENTRIES_KEY] = entries
+            member.special_rules = sr_member
+
+        source_sr[self._ADMIRED_LEADER_SELECTED_UNIT_ID_KEY] = target_id
+        source_sr[self._ADMIRED_LEADER_RESOLVED_KEY] = True
+        source_unit.special_rules = source_sr
+        return target_root
+
+    def _queue_admired_leader_selection_requests(self, *, game=None) -> None:
+        if not self.is_auxiliary_cadre():
+            return
+        army = self.army
+        player = getattr(army, "player", None) if army is not None else None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        request_fn = getattr(game, "request_decision", None)
+        for source_unit in self._iter_admired_leader_sources():
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if bool(sr.get(self._ADMIRED_LEADER_RESOLVED_KEY)):
+                continue
+            source_unit_id = self._entity_id(source_unit)
+            if not source_unit_id:
+                continue
+
+            duplicate = False
+            if queue is not None and hasattr(queue, "list"):
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pending_ctx.get("ability", "") or "") != "admired_leader":
+                        continue
+                    if str(pending_ctx.get("source_unit_id", "") or "") != source_unit_id:
+                        continue
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+
+            selectable = self.admired_leader_selectable_units(source_unit, game=game)
+            if not selectable:
+                sr[self._ADMIRED_LEADER_RESOLVED_KEY] = True
+                source_unit.special_rules = sr
+                continue
+
+            options = []
+            candidate_ids = []
+            for target in selectable:
+                target_id = self._entity_id(target)
+                if not target_id:
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": target_id,
+                            "selected_unit_ids": [target_id],
+                        },
+                    )
+                )
+
+            if not options:
+                sr[self._ADMIRED_LEADER_RESOLVED_KEY] = True
+                source_unit.special_rules = sr
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Admired Leader: select one friendly KROOT or Vespid Stingwings unit within 12\" of the bearer.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "admired_leader",
+                    "ability_name": "Admired Leader",
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "optional": False,
+                    "max_selections": 1,
+                    "candidate_unit_ids": list(candidate_ids),
                 },
             )
             if callable(request_fn):
@@ -1242,6 +1542,14 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
     def on_prebattle_rules_start(self, *, game=None) -> None:
         self._queue_student_of_kauyon_selection_requests(game=game)
         self._queue_strike_swiftly_selection_requests(game=game)
+
+    def on_command_phase_start(self, *, game=None, player=None) -> None:
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None or player is not owner:
+            return
+        if self.is_auxiliary_cadre():
+            self._clear_admired_leader_effects()
+            self._queue_admired_leader_selection_requests(game=game)
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if int(battle_round or 0) != 1:

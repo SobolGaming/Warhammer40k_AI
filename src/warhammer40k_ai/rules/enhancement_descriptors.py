@@ -1314,6 +1314,30 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
 }
 
 _TAU_AUXILIARY_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009839003": EnhancementToolDescriptor(
+        enhancement_id="000009839003",
+        name="Admired Leader",
+        timing="command_phase_start",
+        target="one_friendly_kroot_or_vespid_stingwings_unit_within_range",
+        duration="until_your_next_command_phase",
+        effect="select_friendly_auxiliary_unit_for_leadership_and_objective_control_bonus",
+        effect_params={
+            "selection_range": 12.0,
+            "target_keywords_any": ("KROOT", "VESPID STINGWINGS"),
+            "leadership_bonus": 1,
+            "objective_control_bonus": 1,
+            "requires_not_battle_shocked_for_objective_control": True,
+        },
+    ),
+    "000009839004": EnhancementToolDescriptor(
+        enhancement_id="000009839004",
+        name="Fanatical Convert",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_for_the_greater_good_to_bearer_unit",
+        effect_params={"requires_bearer_alive": True},
+    ),
     "000009839002": EnhancementToolDescriptor(
         enhancement_id="000009839002",
         name="Student of Kauyon",
