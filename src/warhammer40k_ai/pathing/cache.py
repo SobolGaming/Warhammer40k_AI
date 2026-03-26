@@ -16,6 +16,7 @@ class StaticMeshCacheKey:
     movement_profile_signature: str
     footprint_class: str
     base_clearance_bucket: str
+    prefer_constrained: bool
 
 
 @dataclass(frozen=True, eq=False)
@@ -35,6 +36,7 @@ def build_static_mesh_cache_key(
     *,
     footprint_class: str,
     base_clearance_bucket: str,
+    prefer_constrained: bool,
 ) -> StaticMeshCacheKey:
     return StaticMeshCacheKey(
         terrain_revision=str(world_snapshot.terrain_revision),
@@ -42,6 +44,7 @@ def build_static_mesh_cache_key(
         movement_profile_signature=str(world_snapshot.movement_profile_signature),
         footprint_class=str(footprint_class),
         base_clearance_bucket=str(base_clearance_bucket),
+        prefer_constrained=bool(prefer_constrained),
     )
 
 

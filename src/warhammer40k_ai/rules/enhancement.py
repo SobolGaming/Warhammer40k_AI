@@ -1872,6 +1872,10 @@ class Enhancement:
             is_assimilation_swarm = bool(tyr_mgr and tyr_mgr.is_assimilation_swarm())
         except Exception:
             is_assimilation_swarm = False
+        try:
+            is_crusher_stampede = bool(tyr_mgr and tyr_mgr.is_crusher_stampede())
+        except Exception:
+            is_crusher_stampede = False
 
         bearer = None
         bearer_id = ""
@@ -9454,6 +9458,74 @@ class Enhancement:
         if name == "synaptic linchpin" or enh_id == "000008348004":
             unit.special_rules["enhancement_synaptic_linchpin"] = True
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "ominous presence" or enh_id == "000008404002":
+            if not is_crusher_stampede:
+                return
+            unit.special_rules["enhancement_ominous_presence"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_ominous_presence_objective_control_bonus"] = int(
+                max(0, _coerce_int(params.get("objective_control_bonus", 3) or 3, default=3))
+            )
+            unit.special_rules["enhancement_ominous_presence_source"] = (
+                str(getattr(desc, "name", "") or "Ominous Presence").strip() or "Ominous Presence"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "enraged reserves" or enh_id == "000008404003":
+            if not is_crusher_stampede:
+                return
+            unit.special_rules["enhancement_enraged_reserves"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_enraged_reserves_threshold"] = int(
+                max(2, min(6, _coerce_int(params.get("success_on", 3) or 3, default=3)))
+            )
+            unit.special_rules["enhancement_enraged_reserves_source"] = (
+                str(getattr(desc, "name", "") or "Enraged Reserves").strip() or "Enraged Reserves"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "null nodules" or enh_id == "000008404004":
+            if not is_crusher_stampede:
+                return
+            unit.special_rules["enhancement_null_nodules"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_null_nodules_fnp_value"] = int(
+                max(0, _coerce_int(params.get("feel_no_pain", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_null_nodules_condition"] = (
+                str(params.get("condition", "against psychic attacks") or "against psychic attacks").strip()
+                or "against psychic attacks"
+            )
+            unit.special_rules["enhancement_null_nodules_once_per_battle_key"] = (
+                str(params.get("once_per_battle_key", "null_nodules") or "null_nodules").strip().lower()
+                or "null_nodules"
+            )
+            unit.special_rules["enhancement_null_nodules_source"] = (
+                str(getattr(desc, "name", "") or "Null Nodules").strip() or "Null Nodules"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "monstrous nemesis" or enh_id == "000008404005":
+            if not is_crusher_stampede:
+                return
+            unit.special_rules["enhancement_monstrous_nemesis"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_monstrous_nemesis_wound_bonus"] = int(
+                max(0, _coerce_int(params.get("wound_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_monstrous_nemesis_source"] = (
+                str(getattr(desc, "name", "") or "Monstrous Nemesis").strip() or "Monstrous Nemesis"
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

@@ -19518,6 +19518,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010654005": "Spiritsliver: bearer melee weapons gain +1 Strength and +1 Attacks.",
         "000008412002": "Regenerating Monstrosity: while resolving Feed the Swarm, the bearer's unit can be regenerated up to twice per phase instead of once.",
         "000008412004": "Biophagic Flow (Aura): while a friendly Harvester model is within 12\" of the bearer, that Harvester's Feed the Swarm regeneration range is 9\" instead of 6\".",
+        "000008404002": "Ominous Presence: bearer gains +3 Objective Control.",
+        "000008404003": "Enraged Reserves: in the Fight phase, if the bearer is destroyed by a melee attack and has not fought this phase, roll D6; on 3+ the bearer fights after the attacking unit finishes.",
+        "000008404004": "Null Nodules: once per battle, when a psychic attack is allocated to the bearer, optional activation grants the bearer Feel No Pain 5+ against psychic attacks until end of phase.",
+        "000008404005": "Monstrous Nemesis: bearer melee attacks gain +1 to wound against MONSTER and VEHICLE units.",
         "000010078002": "Icon of War: BLOOD LEGIONS within 6\" gain Blessings of Khorne; with Might of Khorne active, may re-roll Battle-shock tests.",
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
         "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",
@@ -20089,6 +20093,11 @@ def _stratagem_support(
         "RECLAIM BIOMASS": "Any phase, when a TYRANIDS unit is destroyed before the last model is removed: selected HARVESTER within 6\" immediately regenerates another friendly TYRANIDS unit within 6\" using Feed the Swarm and excludes the just-destroyed unit.",
         "SECURE BIOMASS": "Fight phase: selected TYRANIDS unit that has not fought gains [LETHAL HITS] on melee weapons until end of phase, and selected HARVESTER units also score critical hits on unmodified 5+.",
         "TYRANNOFORMED": "Command phase: selected HARVESTER within range of a controlled objective makes that objective sticky until the opponent controls it at the start or end of a turn.",
+        "CORROSIVE VISCERA": "Opponent's Shooting phase or the Fight phase reaction before removal: selected just-destroyed non-FLY TYRANIDS MONSTER model with Deadly Demise auto-triggers Deadly Demise immediately.",
+        "MASSIVE IMPACT": "Your Charge phase reaction after a TYRANIDS MONSTER ends a Charge move: select one enemy unit within Engagement Range of a selected model in that unit and roll 6D6, inflicting 1 mortal wound for each 4+.",
+        "RAMPAGING MONSTROSITIES": "Fight phase: selected TYRANIDS MONSTER unit that has not fought gains full melee Hit re-rolls until end of phase.",
+        "SAVAGE ROAR": "Fight phase defensive reaction after enemy targets are selected: selected TYRANIDS MONSTER unit forces the attacking enemy unit to take a Battle-shock test, then that attacker suffers -1 to hit against it this phase and also -1 to wound if the test is failed.",
+        "SWARM-GUIDED SALVOES": "Shooting phase: selected TYRANIDS MONSTER unit that has not shot gains [IGNORES COVER] on ranged weapons and can ignore Ballistic Skill, Weapon Skill, and Hit roll modifiers for ranged attacks until end of phase.",
         "REACTIVE IMPACT DAMPENERS": "Shooting/Fight phase reaction after enemy targets are selected: selected T'AU EMPIRE BATTLESUIT unit imposes -1 to wound while attacker Strength is greater than target Toughness until end of phase.",
         "RED RAMPAGE": "Fight phase: selected ADEPTUS ASTARTES unit that has not yet been selected to fight chooses [LANCE] or [LETHAL HITS] for melee weapons, or becomes Battle-shocked to gain both until end of phase.",
         "EXPERIMENTAL WEAPONRY": "Shooting phase: selected T'AU EMPIRE unit not yet selected to shoot can re-roll attack-count dice for its weapons until end of phase.",
@@ -20371,6 +20380,25 @@ def _stratagem_support(
         if stratagem_id in notes_by_id:
             return notes_by_id[stratagem_id]
         return notes.get(name_u, default)
+
+    if stratagem_id in {
+        "000008422002",
+        "000008422003",
+        "000008422004",
+        "000008422005",
+        "000008422006",
+        "000008422007",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
+    if name_u in {
+        "CORROSIVE VISCERA",
+        "MASSIVE IMPACT",
+        "RAMPAGING MONSTROSITIES",
+        "SAVAGE ROAR",
+        "SWARM-GUIDED SALVOES",
+        "UNTRAMMELLED FEROCITY",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
 
     # Some stratagem names are reused across detachments and require detachment-specific notes.
     if name_u == "SPITEFUL DEMISE":

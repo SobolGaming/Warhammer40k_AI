@@ -5839,7 +5839,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             if self.current_scout_player != player:
                 if self.current_scout_player is not None:  # Not the first unit
 
-                    clear_enemy_model_cache(id(self.game_view.game.map))
+                    clear_enemy_model_cache(self.game_view.game.map)
                     logger.info(f"Scout phase player switched to {player.name} - cleared enemy model cache")
                 self.current_scout_player = player
 

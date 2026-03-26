@@ -1,6 +1,7 @@
 from math import sqrt, atan2, pi, cos, sin, acos
 from typing import Tuple, List, Optional
 import heapq
+from itertools import count
 import numpy as np
 from ..utility.constants import (
     MM_TO_INCHES,
@@ -53,6 +54,17 @@ _enemy_model_big_cache = {}  # Cache for non-aircraft MONSTER/VEHICLE shapes by 
 _enemy_aircraft_model_cache = {}  # Cache for enemy AIRCRAFT model shapes by (game_map_id, army_identity)
 _enemy_engagement_buffer_cache = {}  # Cache for buffered non-aircraft enemy shapes by (game_map_id, army_identity)
 _enemy_aircraft_engagement_buffer_cache = {}  # Cache for buffered aircraft shapes by (game_map_id, army_identity)
+_game_map_cache_key_counter = count(1)
+
+
+def game_map_cache_key(game_map: object) -> int:
+    """Return a stable per-map cache token that cannot collide via Python id reuse."""
+    cache_key = getattr(game_map, "_collision_cache_key", None)
+    if isinstance(cache_key, int) and cache_key > 0:
+        return cache_key
+    next_key = int(next(_game_map_cache_key_counter))
+    setattr(game_map, "_collision_cache_key", next_key)
+    return next_key
 
 
 def clear_collision_caches():
@@ -68,8 +80,8 @@ def clear_collision_caches():
     logger.debug("Cleared collision detection caches")
 
 
-def clear_enemy_model_cache(game_map_id: int = None):
-    """Clear enemy model cache for a specific game map or all maps."""
+def clear_enemy_model_cache(game_map_id: object = None):
+    """Clear enemy model cache for a specific game map/cache token or all maps."""
     global _enemy_model_cache, _enemy_model_big_cache, _enemy_aircraft_model_cache
     global _enemy_engagement_buffer_cache, _enemy_aircraft_engagement_buffer_cache
     if game_map_id is None:
@@ -80,22 +92,23 @@ def clear_enemy_model_cache(game_map_id: int = None):
         _enemy_aircraft_engagement_buffer_cache.clear()
         logger.debug("Cleared all enemy model caches")
     else:
-        keys_to_remove = [key for key in _enemy_model_cache.keys() if key[0] == game_map_id]
+        cache_key = int(game_map_id) if isinstance(game_map_id, int) else game_map_cache_key(game_map_id)
+        keys_to_remove = [key for key in _enemy_model_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_model_cache[key]
-        keys_to_remove = [key for key in _enemy_model_big_cache.keys() if key[0] == game_map_id]
+        keys_to_remove = [key for key in _enemy_model_big_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_model_big_cache[key]
-        keys_to_remove = [key for key in _enemy_aircraft_model_cache.keys() if key[0] == game_map_id]
+        keys_to_remove = [key for key in _enemy_aircraft_model_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_aircraft_model_cache[key]
-        keys_to_remove = [key for key in _enemy_engagement_buffer_cache.keys() if key[0] == game_map_id]
+        keys_to_remove = [key for key in _enemy_engagement_buffer_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_engagement_buffer_cache[key]
-        keys_to_remove = [key for key in _enemy_aircraft_engagement_buffer_cache.keys() if key[0] == game_map_id]
+        keys_to_remove = [key for key in _enemy_aircraft_engagement_buffer_cache.keys() if key[0] == cache_key]
         for key in keys_to_remove:
             del _enemy_aircraft_engagement_buffer_cache[key]
-        logger.debug("Cleared enemy model cache for game map %s", game_map_id)
+        logger.debug("Cleared enemy model cache for game map %s", cache_key)
 
 
 def _eligible_emplacement_platform_polygons(game_map: 'Map', moving_model: 'Model' = None) -> dict[str, object]:
@@ -627,7 +640,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # Get terrain blocking polygons with caching and spatial filtering
     unit_keywords = tuple(sorted(moving_unit.keywords)) if hasattr(moving_unit, 'keywords') else ()
     climbable_range = get_freely_climbable_range(moving_unit, movement_type)
-    terrain_cache_key = (id(game_map), unit_keywords, climbable_range, movement_type)
+    map_cache_key = game_map_cache_key(game_map)
+    terrain_cache_key = (map_cache_key, unit_keywords, climbable_range, movement_type)
     if terrain_cache_key in _terrain_cache:
         all_blocking_terrain = _terrain_cache[terrain_cache_key]
     else:
@@ -643,7 +657,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     blocking_terrain = [poly for poly in all_blocking_terrain if is_within_search_area(poly)]
 
     # Get enemy models with caching and spatial filtering (split aircraft vs non-aircraft)
-    enemy_cache_key = (id(game_map), _unit_army_identity_key(moving_unit))
+    enemy_cache_key = (map_cache_key, _unit_army_identity_key(moving_unit))
     if enemy_cache_key in _enemy_model_cache:
         all_enemy_shapes = _enemy_model_cache[enemy_cache_key]
         all_enemy_big_shapes = _enemy_model_big_cache.get(enemy_cache_key, [])

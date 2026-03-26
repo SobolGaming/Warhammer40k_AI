@@ -235,6 +235,224 @@ class DamageDeathMixin:
             return True
         return False
 
+    def _maybe_activate_null_nodules(
+        self,
+        *,
+        target_model: Optional[Model],
+        attacker_model: Optional[Model] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        game_map: Optional['Map'] = None,
+        phase_name: str = "",
+    ) -> bool:
+        if target_model is None:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if target_model not in list(root.get_attached_unit_models() or []):
+                return False
+        except Exception:
+            pass
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        spec_fn = getattr(tyr_mgr, "crusher_null_nodules_spec", None) if tyr_mgr is not None else None
+        spec = spec_fn(target_model, unit=root) if callable(spec_fn) else None
+        if not isinstance(spec, dict):
+            return False
+
+        ability_key = str(spec.get("ability_key", "") or "null_nodules").strip().lower()
+        if not ability_key:
+            ability_key = "null_nodules"
+        if getattr(target_model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+            return False
+
+        try:
+            fnp_value = int(spec.get("fnp_value", 0) or 0)
+        except (TypeError, ValueError):
+            fnp_value = 0
+        if fnp_value <= 0:
+            return False
+        ability_name = str(spec.get("source", "") or "Null Nodules").strip() or "Null Nodules"
+        condition = str(spec.get("condition", "") or "against psychic attacks").strip() or "against psychic attacks"
+
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return False
+        game = getattr(player, "game", None)
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if not current_phase:
+            current_phase = str(phase_name or "").strip().upper()
+        if not current_phase:
+            current_phase = "ANY_PHASE"
+
+        phase_label = str(phase_name or "").strip()
+        if not phase_label:
+            phase_map = {
+                "COMMAND_PHASE": "Command phase",
+                "MOVEMENT_PHASE": "Movement phase",
+                "SHOOTING_PHASE": "Shooting phase",
+                "CHARGE_PHASE": "Charge phase",
+                "FIGHT_PHASE": "Fight phase",
+            }
+            phase_label = phase_map.get(current_phase, current_phase.replace("_", " ").title())
+
+        unit_id = ""
+        model_id = ""
+        attacker_unit_id = ""
+        attacker_model_id = ""
+        weapon_name = ""
+        try:
+            unit_id = str(get_entity_id(root) or "")
+        except Exception:
+            unit_id = ""
+        try:
+            model_id = str(get_entity_id(target_model) or "")
+        except Exception:
+            model_id = ""
+        try:
+            if attacker_unit is None and attacker_model is not None:
+                attacker_unit = getattr(attacker_model, "parent_unit", None)
+            attacker_unit_root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            attacker_unit_id = str(get_entity_id(attacker_unit_root) or "") if attacker_unit_root is not None else ""
+        except Exception:
+            attacker_unit_id = ""
+        try:
+            attacker_model_id = str(get_entity_id(attacker_model) or "") if attacker_model is not None else ""
+        except Exception:
+            attacker_model_id = ""
+        try:
+            weapon_name = str(
+                getattr(getattr(weapon_profile, "parent_wargear", None), "name", "")
+                or getattr(weapon_profile, "name", "")
+                or ""
+            )
+        except Exception:
+            weapon_name = ""
+
+        context = {
+            "ability": "null_nodules",
+            "ability_name": ability_name,
+            "unit_id": unit_id,
+            "model_id": model_id,
+            "ability_key": ability_key,
+            "fnp_value": int(fnp_value),
+            "condition": condition,
+            "phase_name": phase_label,
+            "attacker_unit_id": attacker_unit_id,
+            "attacker_model_id": attacker_model_id,
+            "weapon_name": weapon_name,
+        }
+
+        provider = getattr(game_map, "unit_psychic_attack_fnp_provider", None) if game_map is not None else None
+
+        use_now = False
+        if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
+            if game is not None:
+                from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                from ...engine.decisions import DecisionOption, DecisionRequest
+
+                request = DecisionRequest.create(
+                    DECISION_CONFIRM_YES_NO,
+                    ability_name,
+                    player_id=getattr(player, "id", None),
+                    options=[
+                        DecisionOption.create("Use", payload={"choice": True}),
+                        DecisionOption.create("Skip", payload={"choice": False}),
+                    ],
+                    context=context,
+                )
+                request_fn = getattr(game, "request_decision", None)
+                if callable(request_fn):
+                    request_fn(request)
+            decision = provider(
+                player=player,
+                unit=root,
+                target_model=target_model,
+                attacker_model=attacker_model,
+                weapon_profile=weapon_profile,
+                ability_name=ability_name,
+                ability_key=ability_key,
+                fnp_value=int(fnp_value),
+                condition=condition,
+                phase_name=phase_label,
+            )
+            use_now = str(decision or "").strip().lower() in ("use", "yes", "true")
+        elif game is not None:
+            from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+            from ...engine.decisions import DecisionOption, DecisionRequest
+            from ...utility.decision_utils import resolve_or_reuse_decision_value
+
+            request = DecisionRequest.create(
+                DECISION_CONFIRM_YES_NO,
+                ability_name,
+                player_id=getattr(player, "id", None),
+                options=[
+                    DecisionOption.create("Use", payload={"choice": True}),
+                    DecisionOption.create("Skip", payload={"choice": False}),
+                ],
+                context=context,
+            )
+            request_fn = getattr(game, "request_decision", None)
+            if callable(request_fn):
+                request_fn(request)
+            should_use_fn = getattr(player, "_should_use_optional_ability", None)
+            if callable(should_use_fn):
+                use_now = bool(should_use_fn("NULL_NODULES", context))
+            option_id = None
+            for opt in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if bool(payload.get("choice", False)) == use_now:
+                    option_id = opt.option_id
+                    break
+            if option_id:
+                _value, apply_result = resolve_or_reuse_decision_value(
+                    game,
+                    request,
+                    option_id,
+                    player_id=getattr(player, "id", None),
+                )
+                if apply_result is None or not getattr(apply_result, "ok", False):
+                    use_now = False
+        if not use_now:
+            return False
+
+        set_temporary_fnp = getattr(target_model, "set_temporary_fnp", None)
+        if callable(set_temporary_fnp):
+            set_temporary_fnp(
+                key=f"{ability_key}:{model_id or get_entity_id(target_model)}",
+                value=int(fnp_value),
+                source=ability_name,
+                condition=condition,
+                expires_phase=current_phase,
+            )
+        mark_used = getattr(target_model, "mark_used_once_per_battle", None)
+        if callable(mark_used):
+            mark_used(ability_key, ability_name=ability_name, source="enhancement")
+        try:
+            from ...utility.event_bus import append_action
+
+            append_action(
+                player,
+                f"{getattr(target_model, 'name', 'Model')}: {ability_name} grants Feel No Pain {int(fnp_value)}+ {condition} until end of phase.",
+            )
+        except Exception:
+            pass
+        return True
+
     @staticmethod
     def _unit_contains_warlord(unit: Optional['Unit']) -> bool:
         if unit is None:
@@ -2124,6 +2342,10 @@ class DamageDeathMixin:
         except Exception:
             vengeful_auto_trigger = False
         try:
+            corrosive_auto_trigger = bool(getattr(dying_model, "_corrosive_viscera_auto_trigger_once", False))
+        except Exception:
+            corrosive_auto_trigger = False
+        try:
             army = self.get_parent_army()
         except Exception:
             army = None
@@ -2144,6 +2366,7 @@ class DamageDeathMixin:
             or putrid_auto_trigger
             or sanctified_auto_trigger
             or vengeful_auto_trigger
+            or corrosive_auto_trigger
             or emotionless_auto_trigger
         )
         if deceptors_auto_trigger:
@@ -2164,6 +2387,11 @@ class DamageDeathMixin:
         if vengeful_auto_trigger:
             try:
                 setattr(dying_model, "_vengeful_animus_auto_trigger_once", False)
+            except Exception:
+                pass
+        if corrosive_auto_trigger:
+            try:
+                setattr(dying_model, "_corrosive_viscera_auto_trigger_once", False)
             except Exception:
                 pass
 
@@ -2187,6 +2415,8 @@ class DamageDeathMixin:
                 logger.info("Deadly Demise auto-triggered (Sanctified Immolation).")
             elif vengeful_auto_trigger:
                 logger.info("Deadly Demise auto-triggered (Vengeful Animus).")
+            elif corrosive_auto_trigger:
+                logger.info("Deadly Demise auto-triggered (Corrosive Viscera).")
             elif emotionless_auto_trigger:
                 logger.info(f"Deadly Demise auto-triggered ({str(emotionless_source or 'Emotionless Clarity')}).")
             elif deceptors_auto_trigger:

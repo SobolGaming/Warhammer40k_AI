@@ -1,9 +1,16 @@
+import os
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class _DummyPlayer:
@@ -183,6 +190,89 @@ def _make_real_unit(name: str, *, keywords=None, faction_keywords=None, objectiv
             objective_control=objective_control,
         )
     )
+
+
+def _make_profile(
+    *,
+    is_melee: bool,
+    strength: str = "4",
+    skill: str = "4+",
+    description: str = "",
+) -> WargearProfile:
+    weapon_name = "Monstrous Talons" if is_melee else "Warp Blast"
+    parent = SimpleNamespace(
+        name=weapon_name,
+        is_melee=lambda: bool(is_melee),
+        is_ranged=lambda: not bool(is_melee),
+    )
+    return WargearProfile(
+        "Profile",
+        wargear_data={
+            "range": "Melee" if is_melee else "24",
+            "A": "1",
+            "BS_WS": skill,
+            "S": strength,
+            "AP": "0",
+            "D": "1",
+            "description": description,
+        },
+        parent_wargear=parent,
+    )
+
+
+def _aura_stub():
+    return SimpleNamespace(
+        hit=0,
+        wound=0,
+        reroll_hit_ones=False,
+        reroll_wound_ones=False,
+        reroll_hit_reasons=(),
+        reroll_wound_reasons=(),
+        target_toughness_delta=0,
+        target_toughness_reasons=(),
+    )
+
+
+def _apply_crusher_enhancement(unit: Unit, *, enhancement_id: str, name: str, description: str = "") -> Enhancement:
+    enhancement = Enhancement(
+        id=str(enhancement_id),
+        name=name,
+        faction_id="TYR",
+        detachment="Crusher Stampede",
+        points=25,
+        description=description,
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+    return enhancement
+
+
+def _seed_support_maps():
+    import scripts.generate_ability_support_matrix as gsm
+
+    abilities = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Abilities.json"))
+    detachment_abilities = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Detachment_abilities.json"))
+    gsm.DETACHMENT_ABILITY_IDS = {
+        str(row.get("id", "") or "").strip()
+        for row in detachment_abilities
+        if str(row.get("id", "") or "").strip()
+    }
+    gsm._seed_ability_support_maps(abilities, detachment_abilities)
+    return gsm
+
+
+def _build_game(*, tyr_control=PlayerControl.REMOTE, enemy_control=PlayerControl.REMOTE):
+    tyr_army = Army("Tyranids", "Crusher Stampede")
+    tyr_army.faction_id = "TYR"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    tyr_player = Player("Tyranids", tyr_control, army=tyr_army)
+    enemy_player = Player("Enemy", enemy_control, army=enemy_army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[tyr_player, enemy_player])
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.current_player_index = 1
+    return game, tyr_player, enemy_player
 
 
 class TestCrusherStampedeEnragedBehemoths(unittest.TestCase):
@@ -382,3 +472,273 @@ def test_enraged_behemoths_objective_control_bonus_at_starting_strength():
 
     monster.apply_status_effect(BattleShockEffect(current_turn=1))
     assert int(monster_model.objective_control) == 0
+
+
+def test_crusher_stampede_enhancement_descriptors_registered():
+    expected = {
+        "000008404002": ("Ominous Presence", "objective_control_bonus"),
+        "000008404003": ("Enraged Reserves", "melee_fight_on_death_after_attacks"),
+        "000008404004": ("Null Nodules", "conditional_feel_no_pain"),
+        "000008404005": ("Monstrous Nemesis", "melee_wound_bonus"),
+    }
+    for enhancement_id, (name, effect) in expected.items():
+        descriptor = get_enhancement_tool_descriptor(enhancement_id=enhancement_id)
+        assert descriptor is not None
+        assert str(descriptor.name or "") == name
+        assert str(descriptor.effect or "") == effect
+
+
+def test_ominous_presence_adds_bearer_objective_control():
+    army = Army("Tyranids", "Crusher Stampede")
+    army.faction_id = "TYR"
+    bearer_unit = _make_real_unit(
+        "Hive Tyrant",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+        objective_control=2,
+    )
+    army.add_unit(bearer_unit)
+    _apply_crusher_enhancement(
+        bearer_unit,
+        enhancement_id="000008404002",
+        name="Ominous Presence",
+    )
+
+    bearer = bearer_unit.models[0]
+    assert int(bearer.objective_control) == 7
+
+    bearer.wounds = max(1, int(bearer._base_wounds) - 1)
+    assert bool(bearer_unit.is_below_starting_strength()) is True
+    assert int(bearer.objective_control) == 5
+
+
+def test_monstrous_nemesis_adds_melee_wound_bonus_only_against_monsters_and_vehicles():
+    tyr_army = Army("Tyranids", "Crusher Stampede")
+    tyr_army.faction_id = "TYR"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    bearer_unit = _make_real_unit(
+        "Hive Tyrant",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    vehicle_target = _make_real_unit(
+        "Enemy Tank",
+        keywords=["VEHICLE"],
+        faction_keywords=["ENEMY"],
+    )
+    infantry_target = _make_real_unit(
+        "Enemy Infantry",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    tyr_army.add_unit(bearer_unit)
+    enemy_army.add_unit(vehicle_target)
+    enemy_army.add_unit(infantry_target)
+    _apply_crusher_enhancement(
+        bearer_unit,
+        enhancement_id="000008404005",
+        name="Monstrous Nemesis",
+    )
+
+    profile = _make_profile(is_melee=True, strength="5")
+    attacker = bearer_unit.models[0]
+
+    wound_vs_vehicle = profile._wound_target_with_tracking(
+        vehicle_target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=5,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    wound_vs_infantry = profile._wound_target_with_tracking(
+        infantry_target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=5,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert bool(wound_vs_vehicle.get("wound")) is True
+    assert any("Monstrous Nemesis" in str(reason or "") for reason in list(wound_vs_vehicle.get("modifiers") or []))
+    assert bool(wound_vs_infantry.get("wound")) is False
+    assert not any("Monstrous Nemesis" in str(reason or "") for reason in list(wound_vs_infantry.get("modifiers") or []))
+
+
+def test_enraged_reserves_grants_bearer_fight_on_death_rule():
+    army = Army("Tyranids", "Crusher Stampede")
+    army.faction_id = "TYR"
+    bearer_unit = _make_real_unit(
+        "Screamer-Killer",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    army.add_unit(bearer_unit)
+    _apply_crusher_enhancement(
+        bearer_unit,
+        enhancement_id="000008404003",
+        name="Enraged Reserves",
+    )
+
+    rule = bearer_unit.get_melee_fight_on_death_after_attacks_rule(model=bearer_unit.models[0])
+    assert rule is not None
+    assert int(rule.get("threshold", 0) or 0) == 3
+    assert str(rule.get("source", "") or "") == "Enraged Reserves"
+
+
+def test_null_nodules_is_not_a_static_fnp_before_activation():
+    army = Army("Tyranids", "Crusher Stampede")
+    army.faction_id = "TYR"
+    bearer_unit = _make_real_unit(
+        "Neurotyrant",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    army.add_unit(bearer_unit)
+    _apply_crusher_enhancement(
+        bearer_unit,
+        enhancement_id="000008404004",
+        name="Null Nodules",
+    )
+
+    assert list(bearer_unit.has_feel_no_pain(target_model=bearer_unit.models[0]) or []) == []
+
+
+def test_null_nodules_can_be_skipped_then_used_on_later_psychic_attack():
+    game, tyr_player, enemy_player = _build_game()
+    target_unit = _make_real_unit(
+        "Neurotyrant",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    attacker_unit = _make_real_unit(
+        "Enemy Psyker",
+        keywords=["INFANTRY", "PSYKER"],
+        faction_keywords=["ENEMY"],
+    )
+
+    tyr_player.army.add_unit(target_unit)
+    enemy_player.army.add_unit(attacker_unit)
+    game.map.units = [target_unit, attacker_unit]
+    game.rebuild_entity_registry()
+
+    _apply_crusher_enhancement(
+        target_unit,
+        enhancement_id="000008404004",
+        name="Null Nodules",
+    )
+
+    profile = _make_profile(is_melee=False, description="[PSYCHIC]")
+    target_model = target_unit.models[0]
+    attacker_model = attacker_unit.models[0]
+
+    tyr_player.set_next_optional_decision("NULL_NODULES", False)
+    first = profile._apply_damage_with_tracking(
+        target_model,
+        attacker_model,
+        1,
+        False,
+        attack_instance={},
+        game_map=game.map,
+    )
+    assert int(first.get("damage_applied", 0) or 0) == 1
+    assert int(target_model.wounds or 0) == int(target_model._base_wounds) - 1
+    assert not target_model.has_used_once_per_battle("null_nodules")
+
+    tyr_player.set_next_optional_decision("NULL_NODULES", True)
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=5):
+        second = profile._apply_damage_with_tracking(
+            target_model,
+            attacker_model,
+            1,
+            False,
+            attack_instance={},
+            game_map=game.map,
+        )
+
+    assert int(second.get("fnp_saves", 0) or 0) == 1
+    assert int(second.get("damage_applied", 0) or 0) == 0
+    assert int(target_model.wounds or 0) == int(target_model._base_wounds) - 1
+    assert target_model.has_used_once_per_battle("null_nodules")
+
+
+def test_null_nodules_local_provider_consumes_queued_confirmation():
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+
+    game, tyr_player, enemy_player = _build_game(tyr_control=PlayerControl.LOCAL)
+    target_unit = _make_real_unit(
+        "Neurotyrant",
+        keywords=["MONSTER", "CHARACTER"],
+        faction_keywords=["TYRANIDS"],
+    )
+    attacker_unit = _make_real_unit(
+        "Enemy Psyker",
+        keywords=["INFANTRY", "PSYKER"],
+        faction_keywords=["ENEMY"],
+    )
+
+    tyr_player.army.add_unit(target_unit)
+    enemy_player.army.add_unit(attacker_unit)
+    game.map.units = [target_unit, attacker_unit]
+    game.rebuild_entity_registry()
+
+    _apply_crusher_enhancement(
+        target_unit,
+        enhancement_id="000008404004",
+        name="Null Nodules",
+    )
+
+    seen = {"pending": 0}
+
+    def _provider(**_kwargs):
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "context", {}).get("ability", "") or "") == "null_nodules"
+        ]
+        assert pending
+        req = pending[0]
+        seen["pending"] = len(pending)
+        option_id = next(
+            opt.option_id
+            for opt in list(getattr(req, "options", []) or [])
+            if bool(getattr(opt, "payload", {}).get("choice", False))
+        )
+        _, apply_result = resolve_decision_value(game, req, option_id, player_id=getattr(tyr_player, "id", None))
+        assert apply_result is not None and getattr(apply_result, "ok", False)
+        return "use"
+
+    game.map.unit_psychic_attack_fnp_provider = _provider
+    profile = _make_profile(is_melee=False, description="[PSYCHIC]")
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=5):
+        result = profile._apply_damage_with_tracking(
+            target_unit.models[0],
+            attacker_unit.models[0],
+            1,
+            False,
+            attack_instance={},
+            game_map=game.map,
+        )
+
+    assert int(result.get("damage_applied", 0) or 0) == 0
+    assert int(seen["pending"] or 0) == 1
+    assert list(game.decision_queue.list() or []) == []
+    assert target_unit.models[0].has_used_once_per_battle("null_nodules")
+
+
+def test_crusher_enhancement_support_matrix_entries_are_supported():
+    gsm = _seed_support_maps()
+    expected = {
+        "000008404002": ("Ominous Presence", "+3 objective control"),
+        "000008404003": ("Enraged Reserves", "fights after the attacking unit finishes"),
+        "000008404004": ("Null Nodules", "feel no pain 5+"),
+        "000008404005": ("Monstrous Nemesis", "+1 to wound"),
+    }
+    for enhancement_id, (name, note_fragment) in expected.items():
+        status, notes = gsm._enhancement_support(name, enhancement_id, "")
+        assert status == "Supported"
+        assert note_fragment.lower() in str(notes or "").lower()

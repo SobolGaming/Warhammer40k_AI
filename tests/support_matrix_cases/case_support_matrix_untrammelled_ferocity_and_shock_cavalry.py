@@ -1,16 +1,16 @@
 import os
 
 
-def test_support_matrix_marks_untrammelled_ferocity_and_shock_cavalry_implemented():
+def test_support_matrix_marks_untrammelled_ferocity_supported_and_shock_cavalry_implemented():
     import scripts.generate_ability_support_matrix as gsm
 
     stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
     expected = {
-        "000008422005": "excluding titanic",
-        "000010270003": "thunderwolf cavalry",
+        "000008422005": ("Supported", "excluding titanic"),
+        "000010270003": ("Implemented", "thunderwolf cavalry"),
     }
 
-    for stratagem_id, note_anchor in expected.items():
+    for stratagem_id, (expected_status, note_anchor) in expected.items():
         row = next(
             item
             for item in stratagems
@@ -22,5 +22,5 @@ def test_support_matrix_marks_untrammelled_ferocity_and_shock_cavalry_implemente
             detachment_name=str(row.get("detachment", "") or ""),
             stratagem_id=str(stratagem_id),
         )
-        assert status == "Implemented"
+        assert status == expected_status
         assert str(note_anchor).lower() in str(notes or "").lower()

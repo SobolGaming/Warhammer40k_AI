@@ -798,6 +798,167 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_crusher_monster_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+            if not is_monster:
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(
+                getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)
+            ):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_rampaging_monstrosities_candidates(self) -> list[Any]:
+        return self._tyr_crusher_monster_candidates(require_not_fought=True)
+
+    def _tyr_swarm_guided_salvoes_candidates(self) -> list[Any]:
+        return self._tyr_crusher_monster_candidates(require_not_shot=True)
+
+    def _tyr_savage_roar_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return []
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+            if not is_monster:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_massive_impact_source_models(self, source_unit: Any) -> list[Any]:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return []
+        root = self._tyr_root(source_unit)
+        if root is None:
+            return []
+        if not self._tyr_owned_by_player(root, self.player):
+            return []
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._is_tyranids_unit(root):
+            return []
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            return []
+        if not bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for model in list(models or []):
+            if model is None:
+                continue
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in seen:
+                continue
+            if model_id:
+                seen.add(model_id)
+            if not self._tyr_massive_impact_enemy_candidates(model):
+                continue
+            out.append(model)
+        out.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return out
+
+    def _tyr_massive_impact_enemy_candidates(self, source_model: Any) -> list[Any]:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return []
+        if source_model is None:
+            return []
+        source_unit = getattr(source_model, "parent_unit", None)
+        source_root = self._tyr_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or game_map is None:
+            return []
+        if not self._tyr_on_battlefield(source_root, require_targetable=True):
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy_unit in list(get_enemy_units(source_root) or []):
+            enemy_root = self._tyr_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            if self._tyr_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._tyr_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            try:
+                if not bool(model_within_engagement_range_of_unit(source_model, enemy_root)):
+                    continue
+            except Exception:
+                continue
+            enemy_id = self._tyr_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            out.append(enemy_root)
+        return sorted(out, key=self._tyr_sort_key)
+
     def _tyr_override_instincts_candidates(self) -> list[Any]:
         if not self._is_tyranids_synaptic_nexus_detachment():
             return []
@@ -1341,6 +1502,184 @@ class TyranidsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_tyranids_crusher_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None:
+            return
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"}:
+            return
+        root = self._tyr_root(unit)
+        if root is None or not self._tyr_owned_by_player(root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("MASSIVE IMPACT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        source_model_candidates = self._tyr_massive_impact_source_models(root)
+        if not source_model_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if self._tyr_root(reaction.get("unit")) is root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "source_unit": root,
+            "action": str(action or ""),
+            "source_model_candidates": source_model_candidates,
+        }
+        if len(source_model_candidates) == 1:
+            source_model = source_model_candidates[0]
+            enemy_candidates = self._tyr_massive_impact_enemy_candidates(source_model)
+            payload["model"] = source_model
+            payload["target_model"] = source_model
+            payload["source_model"] = source_model
+            payload["enemy_candidates"] = enemy_candidates
+            if len(enemy_candidates) == 1:
+                payload["enemy_unit"] = enemy_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_tyranids_crusher_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SAVAGE ROAR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_savage_roar_candidates(attacking_unit=attacker_root, target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tyranids_crusher_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if unit is None or model is None:
+            return
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return
+        root = self._tyr_root(unit)
+        if root is None or not self._tyr_owned_by_player(root, self.player):
+            return
+        if not self._is_tyranids_unit(root):
+            return
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            return
+        if self._tyr_has_keyword(root, "FLY") or self._tyr_has_keyword(model, "FLY"):
+            return
+        try:
+            has_deadly, _dd = root.has_deadly_demise()
+        except Exception:
+            has_deadly = False
+        if not has_deadly:
+            return
+        phase_key = str(getattr(self, "_current_phase_name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        game = getattr(self, "game", None)
+        if phase_key == "SHOOTING_PHASE":
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                return
+        model_alive_attr = getattr(model, "is_alive", None)
+        model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+        if model_alive:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("CORROSIVE VISCERA")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        destroyed_model_id = str(get_entity_id(model) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == destroyed_model_id:
+                return
+        phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_id": destroyed_model_id,
+            "unit": root,
+            "target_unit": root,
+            "model": model,
+            "target_model": model,
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _queue_tyranids_vanguard_onslaught_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_tyranids_vanguard_onslaught_detachment():
             return
@@ -1434,7 +1773,8 @@ class TyranidsStratagemMixin:
     def _cleanup_tyranids_crusher_stampede_phase_end_effects(self, *, phase: Any = None) -> None:
         if not self._is_tyranids_crusher_stampede_detachment():
             return
-        if str(getattr(phase, "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "FIGHT_PHASE", "SHOOTING_PHASE"}:
             return
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -1453,62 +1793,83 @@ class TyranidsStratagemMixin:
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            exp = str(sr.get("tyranids_untrammelled_ferocity_expires_phase", "") or "").strip().upper()
-            if sr.get("tyranids_untrammelled_ferocity_active") is not True:
-                continue
-            if exp and exp != "MOVEMENT_PHASE":
-                continue
+            if phase_key == "MOVEMENT_PHASE":
+                exp = str(sr.get("tyranids_untrammelled_ferocity_expires_phase", "") or "").strip().upper()
+                if sr.get("tyranids_untrammelled_ferocity_active") is True and (not exp or exp == "MOVEMENT_PHASE"):
+                    for key, added_key in (
+                        ("bearer_unit_phase_move_types", "tyranids_untrammelled_ferocity_added_phase_move_types"),
+                        (
+                            "bearer_unit_phase_move_block_titanic_types",
+                            "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
+                        ),
+                        (
+                            "bearer_unit_phase_move_engagement_types",
+                            "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
+                        ),
+                    ):
+                        added = set(sr.get(added_key) or [])
+                        if not added:
+                            continue
+                        current = list(sr.get(key) or [])
+                        kept = [item for item in current if item not in added]
+                        if kept:
+                            sr[key] = kept
+                        else:
+                            sr.pop(key, None)
 
-            for key, added_key in (
-                ("bearer_unit_phase_move_types", "tyranids_untrammelled_ferocity_added_phase_move_types"),
-                (
-                    "bearer_unit_phase_move_block_titanic_types",
-                    "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
-                ),
-                (
-                    "bearer_unit_phase_move_engagement_types",
-                    "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
-                ),
-            ):
-                added = set(sr.get(added_key) or [])
-                if not added:
-                    continue
-                current = list(sr.get(key) or [])
-                kept = [item for item in current if item not in added]
-                if kept:
-                    sr[key] = kept
-                else:
-                    sr.pop(key, None)
+                    if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_height_present", False)):
+                        sr["titanic_stride_tall_terrain_height"] = float(
+                            sr.get("tyranids_untrammelled_ferocity_prev_stride_height_value", 4.0) or 4.0
+                        )
+                    else:
+                        sr.pop("titanic_stride_tall_terrain_height", None)
 
-            if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_height_present", False)):
-                sr["titanic_stride_tall_terrain_height"] = float(
-                    sr.get("tyranids_untrammelled_ferocity_prev_stride_height_value", 4.0) or 4.0
-                )
-            else:
-                sr.pop("titanic_stride_tall_terrain_height", None)
+                    if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_source_present", False)):
+                        sr["titanic_stride_source"] = str(
+                            sr.get("tyranids_untrammelled_ferocity_prev_stride_source_value", "") or ""
+                        )
+                    else:
+                        sr.pop("titanic_stride_source", None)
 
-            if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_source_present", False)):
-                sr["titanic_stride_source"] = str(
-                    sr.get("tyranids_untrammelled_ferocity_prev_stride_source_value", "") or ""
-                )
-            else:
-                sr.pop("titanic_stride_source", None)
+                    for key in (
+                        "tyranids_untrammelled_ferocity_active",
+                        "tyranids_untrammelled_ferocity_expires_phase",
+                        "tyranids_untrammelled_ferocity_turn_owner",
+                        "tyranids_untrammelled_ferocity_turn",
+                        "tyranids_untrammelled_ferocity_source",
+                        "tyranids_untrammelled_ferocity_added_phase_move_types",
+                        "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
+                        "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
+                        "tyranids_untrammelled_ferocity_prev_stride_height_present",
+                        "tyranids_untrammelled_ferocity_prev_stride_height_value",
+                        "tyranids_untrammelled_ferocity_prev_stride_source_present",
+                        "tyranids_untrammelled_ferocity_prev_stride_source_value",
+                    ):
+                        sr.pop(key, None)
 
-            for key in (
-                "tyranids_untrammelled_ferocity_active",
-                "tyranids_untrammelled_ferocity_expires_phase",
-                "tyranids_untrammelled_ferocity_turn_owner",
-                "tyranids_untrammelled_ferocity_turn",
-                "tyranids_untrammelled_ferocity_source",
-                "tyranids_untrammelled_ferocity_added_phase_move_types",
-                "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
-                "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
-                "tyranids_untrammelled_ferocity_prev_stride_height_present",
-                "tyranids_untrammelled_ferocity_prev_stride_height_value",
-                "tyranids_untrammelled_ferocity_prev_stride_source_present",
-                "tyranids_untrammelled_ferocity_prev_stride_source_value",
-            ):
-                sr.pop(key, None)
+            if phase_key == "FIGHT_PHASE":
+                exp = str(sr.get("tyranids_rampaging_monstrosities_expires_phase", "") or "").strip().upper()
+                if sr.get("tyranids_rampaging_monstrosities_active") is True and (not exp or exp == "FIGHT_PHASE"):
+                    for key in (
+                        "tyranids_rampaging_monstrosities_active",
+                        "tyranids_rampaging_monstrosities_expires_phase",
+                        "tyranids_rampaging_monstrosities_turn_owner",
+                        "tyranids_rampaging_monstrosities_turn",
+                        "tyranids_rampaging_monstrosities_source",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_key == "SHOOTING_PHASE":
+                exp = str(sr.get("tyranids_swarm_guided_salvoes_expires_phase", "") or "").strip().upper()
+                if sr.get("tyranids_swarm_guided_salvoes_active") is True and (not exp or exp == "SHOOTING_PHASE"):
+                    for key in (
+                        "tyranids_swarm_guided_salvoes_active",
+                        "tyranids_swarm_guided_salvoes_expires_phase",
+                        "tyranids_swarm_guided_salvoes_turn_owner",
+                        "tyranids_swarm_guided_salvoes_turn",
+                        "tyranids_swarm_guided_salvoes_source",
+                    ):
+                        sr.pop(key, None)
             root.special_rules = sr
 
     def _use_tyranids_invasion_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -1548,6 +1909,16 @@ class TyranidsStratagemMixin:
             if name_u == "OVERRIDE INSTINCTS":
                 return self._use_tyranids_override_instincts(stratagem, **kwargs)
         if self._is_tyranids_crusher_stampede_detachment():
+            if name_u == "CORROSIVE VISCERA":
+                return self._use_tyranids_corrosive_viscera(stratagem, **kwargs)
+            if name_u == "MASSIVE IMPACT":
+                return self._use_tyranids_massive_impact(stratagem, **kwargs)
+            if name_u == "RAMPAGING MONSTROSITIES":
+                return self._use_tyranids_rampaging_monstrosities(stratagem, **kwargs)
+            if name_u == "SAVAGE ROAR":
+                return self._use_tyranids_savage_roar(stratagem, **kwargs)
+            if name_u == "SWARM-GUIDED SALVOES":
+                return self._use_tyranids_swarm_guided_salvoes(stratagem, **kwargs)
             if name_u == "UNTRAMMELLED FEROCITY":
                 return self._use_tyranids_untrammelled_ferocity(stratagem, **kwargs)
         return None
@@ -2670,6 +3041,540 @@ class TyranidsStratagemMixin:
         self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: OVERRIDE INSTINCTS: %s can shoot and charge this turn after Falling Back.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_corrosive_viscera(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        model = kwargs.get("destroyed_model") or kwargs.get("model") or kwargs.get("target_model")
+        if unit is None or model is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CORROSIVE VISCERA":
+                    continue
+                unit = unit or reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                model = model or reaction.get("destroyed_model") or reaction.get("model") or reaction.get("target_model")
+                if not kwargs.get("phase_name") and reaction.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None or model is None:
+            logger.error("ERROR: CORROSIVE VISCERA: missing destroyed model context")
+            return False
+
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: CORROSIVE VISCERA: target unit is not yours")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: CORROSIVE VISCERA: target must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: CORROSIVE VISCERA: target must be a MONSTER unit")
+            return False
+        if self._tyr_has_keyword(root, "FLY") or self._tyr_has_keyword(model, "FLY"):
+            logger.error("ERROR: CORROSIVE VISCERA: target model cannot have FLY")
+            return False
+        try:
+            has_deadly, _dd = root.has_deadly_demise()
+        except Exception:
+            has_deadly = False
+        if not has_deadly:
+            logger.error("ERROR: CORROSIVE VISCERA: target does not have Deadly Demise")
+            return False
+        model_alive_attr = getattr(model, "is_alive", None)
+        model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+        if model_alive:
+            logger.error("ERROR: CORROSIVE VISCERA: target model is not destroyed")
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CORROSIVE VISCERA: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: CORROSIVE VISCERA: not opponent's Shooting phase")
+            return False
+
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            logger.error("ERROR: CORROSIVE VISCERA: map context unavailable")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            target_model=model,
+            model=model,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: CORROSIVE VISCERA: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        setattr(model, "_corrosive_viscera_auto_trigger_once", True)
+        setattr(model, "_skip_deadly_demise_once", True)
+        trigger_fn = getattr(root, "trigger_deadly_demise_manually", None)
+        if callable(trigger_fn):
+            trigger_fn(model, game_map)
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CORROSIVE VISCERA: %s automatically triggers Deadly Demise.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_massive_impact(self, stratagem: Any, **kwargs) -> bool:
+        source_unit = kwargs.get("source_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        source_model = kwargs.get("source_model") or kwargs.get("model") or kwargs.get("target_model")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        source_model_candidates = list(kwargs.get("source_model_candidates") or [])
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        action = str(kwargs.get("action") or "")
+
+        if source_unit is None or source_model is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "MASSIVE IMPACT":
+                    continue
+                source_unit = source_unit or reaction.get("source_unit") or reaction.get("unit") or reaction.get("target_unit")
+                source_model = source_model or reaction.get("source_model") or reaction.get("model") or reaction.get("target_model")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+                if not source_model_candidates:
+                    source_model_candidates = list(reaction.get("source_model_candidates") or [])
+                if not enemy_candidates:
+                    enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                if not action:
+                    action = str(reaction.get("action") or "")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(source_unit)
+        if root is None:
+            logger.error("ERROR: MASSIVE IMPACT: missing source unit")
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "charge phase":
+            logger.error("ERROR: MASSIVE IMPACT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MASSIVE IMPACT: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: MASSIVE IMPACT: source unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: MASSIVE IMPACT: source unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: MASSIVE IMPACT: source unit must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: MASSIVE IMPACT: source unit must be a MONSTER unit")
+            return False
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"", "charge", "charge move"} and not bool(
+            getattr(getattr(root, "round_state", None), "charged_this_round", False)
+        ):
+            logger.error("ERROR: MASSIVE IMPACT: source model must have ended a Charge move")
+            return False
+
+        if not source_model_candidates:
+            source_model_candidates = self._tyr_massive_impact_source_models(root)
+        if source_model is None and len(source_model_candidates) == 1:
+            source_model = source_model_candidates[0]
+        if source_model is None:
+            logger.error("ERROR: MASSIVE IMPACT: missing source model")
+            return False
+        if source_model_candidates and source_model not in source_model_candidates:
+            logger.error("ERROR: MASSIVE IMPACT: selected source model is not eligible")
+            return False
+        model_alive_attr = getattr(source_model, "is_alive", None)
+        model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+        if not model_alive:
+            logger.error("ERROR: MASSIVE IMPACT: source model must be alive")
+            return False
+
+        if not enemy_candidates:
+            enemy_candidates = self._tyr_massive_impact_enemy_candidates(source_model)
+        enemy_root = self._tyr_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = self._tyr_root(enemy_candidates[0])
+        if enemy_root is None:
+            logger.error("ERROR: MASSIVE IMPACT: missing enemy unit within Engagement Range")
+            return False
+        if enemy_candidates and not self._tyr_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: MASSIVE IMPACT: selected enemy is not within Engagement Range of the source model")
+            return False
+        if self._tyr_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: MASSIVE IMPACT: selected enemy unit is not enemy")
+            return False
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: MASSIVE IMPACT: selected enemy unit must be on the battlefield")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            target_model=source_model,
+            model=source_model,
+            enemy_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: MASSIVE IMPACT: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        mortal_wounds = sum(1 for roll in rolls if int(roll or 0) >= 4)
+        if mortal_wounds > 0:
+            apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                try:
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+                except TypeError:
+                    apply_mortals(target_unit=enemy_root, amount=int(mortal_wounds), game_map=getattr(self.game, "map", None))
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MASSIVE IMPACT: %s rolled six D6 %s and dealt %d mortal wound(s) to %s.",
+            getattr(root, "name", "Unit"),
+            list(rolls),
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_tyranids_rampaging_monstrosities(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: wrong phase")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: target unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: target must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: target must be a MONSTER unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: target has already been selected to fight this phase")
+            return False
+        eligible = candidates or self._tyr_rampaging_monstrosities_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: RAMPAGING MONSTROSITIES: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_rampaging_monstrosities_active"] = True
+        sr["tyranids_rampaging_monstrosities_expires_phase"] = "FIGHT_PHASE"
+        sr["tyranids_rampaging_monstrosities_source"] = str(
+            getattr(stratagem, "name", "") or "RAMPAGING MONSTROSITIES"
+        )
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id:
+            sr["tyranids_rampaging_monstrosities_turn_owner"] = owner_id
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if turn:
+            sr["tyranids_rampaging_monstrosities_turn"] = turn
+        root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RAMPAGING MONSTROSITIES: %s can re-roll melee Hit rolls this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_savage_roar(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SAVAGE ROAR":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(target_unit)
+        attacker_root = self._tyr_root(attacking_unit)
+        if root is None:
+            logger.error("ERROR: SAVAGE ROAR: no target unit provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: SAVAGE ROAR: missing attacking unit context")
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: SAVAGE ROAR: wrong phase")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SAVAGE ROAR: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SAVAGE ROAR: target unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: SAVAGE ROAR: target must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: SAVAGE ROAR: target must be a MONSTER unit")
+            return False
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: SAVAGE ROAR: attacker must be an enemy unit")
+            return False
+        eligible = candidates or self._tyr_savage_roar_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SAVAGE ROAR: target must be one of the attacking unit's selected targets")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Fight phase",
+        ):
+            logger.error("ERROR: SAVAGE ROAR: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SAVAGE ROAR").strip() or "SAVAGE ROAR"
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        was_battle_shocked = False
+        is_battle_shocked = getattr(attacker_root, "is_battle_shocked", None)
+        if callable(is_battle_shocked):
+            was_battle_shocked = bool(is_battle_shocked())
+
+        result: dict[str, Any] = {"captured": False, "passed": None}
+        event_system = getattr(self.game, "event_system", None) if self.game is not None else None
+        event_group = f"tyranids_crusher_savage_roar:{self._tyr_sort_key(attacker_root)}:{current_turn}"
+
+        def _capture_battle_shock_result(unit: Any = None, passed: Any = None, **_event_kwargs: Any) -> None:
+            if self._tyr_root(unit) is not attacker_root:
+                return
+            result["captured"] = True
+            result["passed"] = bool(passed)
+
+        if event_system is not None and callable(getattr(event_system, "subscribe", None)):
+            event_system.subscribe("battle_shock_test_resolved", _capture_battle_shock_result, group=event_group)
+        try:
+            force_test = getattr(attacker_root, "force_battle_shock_test", None)
+            if callable(force_test):
+                force_test(current_turn, source=source_name)
+            else:
+                take_test = getattr(attacker_root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(current_turn)
+        finally:
+            if event_system is not None and callable(getattr(event_system, "unsubscribe_group", None)):
+                event_system.unsubscribe_group(event_group)
+            elif event_system is not None and callable(getattr(event_system, "unsubscribe", None)):
+                event_system.unsubscribe("battle_shock_test_resolved", _capture_battle_shock_result)
+
+        failed_test = False
+        if result["captured"] is True and result["passed"] is False:
+            failed_test = True
+        elif hasattr(attacker_root, "_last_leadership_test_passed"):
+            failed_test = not bool(getattr(attacker_root, "_last_leadership_test_passed", True))
+        elif callable(is_battle_shocked):
+            failed_test = (not was_battle_shocked) and bool(is_battle_shocked())
+
+        attacker_key_fn = getattr(self, "_attacker_unit_key", None)
+        attacker_key = attacker_key_fn(attacker_root) if callable(attacker_key_fn) else self._tyr_sort_key(attacker_root)
+        entry = {
+            "value": 1,
+            "attack_type": "melee",
+            "attacker_key": attacker_key,
+            "expires_phase": "FIGHT_PHASE",
+            "source": source_name,
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_hit_mods", dict(entry))
+            if failed_test:
+                append_defensive_effect(root, "defensive_wound_mods", dict(entry))
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            hit_mods = list(sr.get("defensive_hit_mods", []) or [])
+            hit_mods.append(dict(entry))
+            sr["defensive_hit_mods"] = hit_mods
+            if failed_test:
+                wound_mods = list(sr.get("defensive_wound_mods", []) or [])
+                wound_mods.append(dict(entry))
+                sr["defensive_wound_mods"] = wound_mods
+            root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SAVAGE ROAR: %s suffers -1 to hit%s against %s this phase.",
+            getattr(attacker_root, "name", "Enemy"),
+            " and -1 to wound" if failed_test else "",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_swarm_guided_salvoes(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: SWARM-GUIDED SALVOES: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SWARM-GUIDED SALVOES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SWARM-GUIDED SALVOES: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: target unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: target must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: SWARM-GUIDED SALVOES: target must be a MONSTER unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "shot_this_phase", False) or getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: target has already been selected to shoot this phase")
+            return False
+        eligible = candidates or self._tyr_swarm_guided_salvoes_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: SWARM-GUIDED SALVOES: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SWARM-GUIDED SALVOES").strip() or "SWARM-GUIDED SALVOES"
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model_index, model in enumerate(list(models or [])):
+            if model is None:
+                continue
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or model_index)
+            for wargear_index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                key_base = f"tyranids_swarm_guided_salvoes:{model_id}:{wargear_index}:{weapon_name}".lower()
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=key_base,
+                        weapon_name=weapon_name,
+                        keywords=["IGNORES COVER"],
+                        source=source_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_swarm_guided_salvoes_active"] = True
+        sr["tyranids_swarm_guided_salvoes_expires_phase"] = "SHOOTING_PHASE"
+        sr["tyranids_swarm_guided_salvoes_source"] = source_name
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id:
+            sr["tyranids_swarm_guided_salvoes_turn_owner"] = owner_id
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if turn:
+            sr["tyranids_swarm_guided_salvoes_turn"] = turn
+        root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SWARM-GUIDED SALVOES: %s gains [IGNORES COVER] on ranged weapons and ignores Ballistic Skill and Hit roll modifiers this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

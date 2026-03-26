@@ -1624,5 +1624,5 @@ def load_game_snapshot(snapshot: dict) -> Game:
             player.stratagems.refresh_available()
 
     game.refresh_rule_subscribers()
-    clear_enemy_model_cache(id(game.map))
+    clear_enemy_model_cache(game.map)
     return game

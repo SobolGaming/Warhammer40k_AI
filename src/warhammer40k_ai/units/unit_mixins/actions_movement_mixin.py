@@ -6421,6 +6421,16 @@ class ActionsMovementMixin:
                     elif mode == "ones":
                         reroll_hit_values.add(1)
                         reroll_hit_reasons.append(f"{source}: re-roll Hit rolls of 1")
+            if isinstance(sr, dict) and bool(sr.get("tyranids_rampaging_monstrosities_active", False)):
+                expires_phase = str(sr.get("tyranids_rampaging_monstrosities_expires_phase", "") or "").strip().upper()
+                current_phase = self._current_phase_name_for_rules()
+                if not expires_phase or not current_phase or expires_phase == current_phase:
+                    source = (
+                        str(sr.get("tyranids_rampaging_monstrosities_source", "") or "Rampaging Monstrosities").strip()
+                        or "Rampaging Monstrosities"
+                    )
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (melee)")
 
         # Angelic Inheritors: Carmine Wrath (character units) re-roll Hit rolls of 1.
         try:

@@ -191,6 +191,34 @@ def test_phase_c_different_radii_same_bucket_do_not_share_incorrect_mesh() -> No
     assert large_area < small_area
 
 
+def test_phase_c_cache_separates_prefer_constrained_variants() -> None:
+    clear_static_mesh_cache()
+    game_map = Map(24, 24)
+    moving = _make_unit("CacheConstraint", x=2.0, y=2.0)
+    movement_profile = build_movement_profile(moving, MovementType.MOVE)
+    snapshot = build_world_snapshot(game_map, movement_profile)
+    cache = get_static_mesh_cache()
+
+    graph_constrained = build_surface_graph_static(
+        snapshot,
+        movement_profile,
+        base_radius=0.4,
+        footprint_class="disk",
+        prefer_constrained=True,
+    )
+    graph_fallback = build_surface_graph_static(
+        snapshot,
+        movement_profile,
+        base_radius=0.4,
+        footprint_class="disk",
+        prefer_constrained=False,
+    )
+
+    assert cache.size() == 2
+    assert graph_constrained.surface_meshes[0][1].triangulation_backend != ""
+    assert graph_fallback.surface_meshes[0][1].triangulation_backend == "shapely_triangulate_fallback"
+
+
 def test_phase_c_dynamic_overlay_applied_at_query_time() -> None:
     game_map = Map(22, 22)
     mover = _make_unit("Mover", x=2.0, y=10.0)

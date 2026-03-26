@@ -454,6 +454,7 @@ def build_surface_graph_static(
         world_snapshot,
         footprint_class=footprint_class,
         base_clearance_bucket=clearance_bucket_for_radius(base_radius),
+        prefer_constrained=bool(prefer_constrained),
     )
     cache = get_static_mesh_cache()
     if use_cache:

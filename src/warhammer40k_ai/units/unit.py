@@ -1028,6 +1028,22 @@ class Unit(
                                 source=f"detachment:{source_name}",
                             )
                         )
+                ominous_bonus_fn = (
+                    getattr(tyr_mgr, "crusher_ominous_presence_objective_control_bonus", None)
+                    if tyr_mgr is not None
+                    else None
+                )
+                if callable(ominous_bonus_fn):
+                    bonus, source = ominous_bonus_fn(model, unit=self)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Ominous Presence").strip() or "Ominous Presence"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"enhancement:{source_name}",
+                            )
+                        )
             except Exception:
                 pass
 
