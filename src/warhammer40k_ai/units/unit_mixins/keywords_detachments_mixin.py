@@ -13030,10 +13030,50 @@ class KeywordsDetachmentsMixin:
         if target is not None and target_root is None:
             return False
 
-        condition = str(entry.get("target_condition", "") or "").strip().lower()
-        if condition == "below_starting_strength":
+        target_condition = str(entry.get("target_condition", "") or "").strip().lower()
+        if target_condition == "below_starting_strength":
             below_starting = getattr(target_root, "is_below_starting_strength", None)
-            return bool(below_starting()) if callable(below_starting) else False
+            if not (bool(below_starting()) if callable(below_starting) else False):
+                return False
+        if target_condition == "opponent_deployment_zone":
+            game = self._death_guard_temp_effect_game()
+            in_zone = getattr(game, "is_position_in_deployment_zone", None) if game is not None else None
+            if not callable(in_zone) or target_root is None:
+                return False
+            army = self._death_guard_temp_effect_army()
+            player = getattr(army, "player", None) if army is not None else None
+            enemy_player_id = ""
+            if game is not None and player is not None:
+                for other_player in list(getattr(game, "players", []) or []):
+                    if other_player is None or other_player is player:
+                        continue
+                    enemy_player_id = str(getattr(other_player, "id", "") or "")
+                    if enemy_player_id:
+                        break
+            if not enemy_player_id:
+                return False
+            get_models = getattr(target_root, "get_attached_unit_models", None)
+            if callable(get_models):
+                target_models = list(get_models() or [])
+            else:
+                target_models = list(getattr(target_root, "models", []) or [])
+            in_enemy_zone = False
+            for target_model in target_models:
+                alive_attr = getattr(target_model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                get_location = getattr(target_model, "get_location", None)
+                if not callable(get_location):
+                    continue
+                position = get_location()
+                if not position or len(position) < 2:
+                    continue
+                if in_zone(float(position[0]), float(position[1]), enemy_player_id):
+                    in_enemy_zone = True
+                    break
+            if not in_enemy_zone:
+                return False
 
         excluded_keywords = [
             str(keyword or "").strip().upper()
@@ -13049,6 +13089,13 @@ class KeywordsDetachmentsMixin:
                 if callable(has_keyword) and bool(has_keyword(keyword)):
                     return False
         extra_condition = str(entry.get("condition", "") or "").strip().lower()
+        if extra_condition == "target_visible":
+            los_check = getattr(self, "_attacking_unit_has_any_los_to_target_unit", None)
+            if not callable(los_check) or target_root is None:
+                return False
+            game = self._death_guard_temp_effect_game()
+            game_map = getattr(game, "map", None) if game is not None else None
+            return bool(los_check(target_root, game_map))
         if extra_condition == "within_half_range":
             if model is None or weapon_profile is None or target_root is None:
                 return False

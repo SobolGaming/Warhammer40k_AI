@@ -330,6 +330,7 @@ Movement:
 - summon_the_cult_marker_relocation_dialog: PICK_POINT {marker_id + point | skip} (context `ability="summon_the_cult_marker_relocation"`, `ability_name="Summon the Cult"`, `owner_player_id`, `enemy_unit_id`, `threatened_marker_ids[]`, `source_model_ids[]`, `optional=true`)
 - cult_infiltration_marker_relocation_dialog: PICK_POINT {marker_id + point | skip} (context `ability="cult_infiltration_marker_relocation"`, `ability_name="Cult Infiltration"`, `owner_player_id`, `source_unit_id`, `source_member_unit_id`, `model_id`, `phase_key`, `optional=true`)
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
+- terrain_feature_select_dialog: PICK_TERRAIN_FEATURE {terrain_id} (context `ability="blighted_land"`)
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
 - stasis_bomb_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="stasis_bomb"`, `unit_id`, `ability_name`, `spec.source_model_ids_by_target`, `spec.once_per_turn_army`, `spec.once_per_battle_per_model`)
 - bomb_squigs_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="bomb_squigs"`, `unit_id`, `ability_name`, `spec.max_uses`, `spec.remaining_uses`)
@@ -603,7 +604,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE {zone | skip} (context `ability="impossible_eclipse"`, `unit_id`, `ability_name`)
-- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"` | `ability="corrupting_taint"` | `ability="corrupt_realspace"` | `ability="extinction_order"` | `ability="no_retreat"`)
+- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"` | `ability="corrupting_taint"` | `ability="corrupt_realspace"` | `ability="extinction_order"` | `ability="eyestinger_storm"` | `ability="no_retreat"`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - daemon_primarch_slaanesh_dialog: CHOOSE_DAEMON_PRIMARCH_SLAANESH {choice_id} (context `unit_id`, `opponent_player_id`, `battle_round`, `expires_round`)

@@ -622,6 +622,101 @@ _FLYBLOWN_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _FLYBLOWN_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_MORTARIONS_HAMMER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010128002": StratagemToolDescriptor(
+        stratagem_id="000010128002",
+        name="Blighted Land",
+        timing="end_of_your_movement_phase",
+        target="death_guard_vehicle_unit_and_visible_terrain_feature_within_24",
+        duration="until_start_of_your_next_turn",
+        effect="terrain_feature_afflicts_enemy_units_within_3",
+        cp_cost=2,
+        range_in=24.0,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "requires_visibility": True,
+            "terrain_affliction_range": 3.0,
+        },
+    ),
+    "000010128003": StratagemToolDescriptor(
+        stratagem_id="000010128003",
+        name="Relentless Grind",
+        timing="movement_or_charge_phase",
+        target="death_guard_vehicle_unit_not_yet_selected_to_move_or_charge",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "movement_phase_move_types": ["move", "advance"],
+            "charge_phase_move_types": ["charge"],
+        },
+    ),
+    "000010128004": StratagemToolDescriptor(
+        stratagem_id="000010128004",
+        name="Drawn to Despair",
+        timing="shooting_phase_on_select_to_shoot",
+        target="death_guard_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_full_hit_rerolls_vs_visible_non_aircraft_in_opponent_deployment_zone",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_hit_full": True,
+            "requires_visibility": True,
+            "target_condition": "opponent_deployment_zone",
+            "enemy_keywords_excluded": ["AIRCRAFT"],
+        },
+    ),
+    "000010128005": StratagemToolDescriptor(
+        stratagem_id="000010128005",
+        name="Font of Filth",
+        timing="shooting_phase_on_select_to_shoot",
+        target="death_guard_vehicle_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_assault",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "attack_type": "ranged",
+            "keywords": ["ASSAULT"],
+        },
+    ),
+    "000010128006": StratagemToolDescriptor(
+        stratagem_id="000010128006",
+        name="Eyestinger Storm",
+        timing="opponent_command_phase_start",
+        target="death_guard_vehicle_unit_and_visible_objective_marker",
+        duration="immediate",
+        effect="afflicted_enemies_within_objective_take_battleshock_and_ignore_other_tests",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "requires_visibility": True,
+            "requires_afflicted_targets": True,
+            "suppress_other_battle_shock_tests_phase": "COMMAND_PHASE",
+        },
+    ),
+    "000010128007": StratagemToolDescriptor(
+        stratagem_id="000010128007",
+        name="Stinking Mire",
+        timing="opponent_charge_phase_start",
+        target="death_guard_vehicle_unit",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_penalty_non_cumulative",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "charge_roll_modifier": -2,
+            "non_cumulative_with_other_negative_charge_modifiers": True,
+        },
+    ),
+}
+
+_MORTARIONS_HAMMER_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MORTARIONS_HAMMER_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -8572,6 +8667,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _FLYBLOWN_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _MORTARIONS_HAMMER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -8896,6 +8994,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CHAMPIONS_OF_CONTAGION_STRATAGEM_BY_NAME.get(key)
         or _DEATH_LORDS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _FLYBLOWN_HOST_STRATAGEM_BY_NAME.get(key)
+        or _MORTARIONS_HAMMER_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

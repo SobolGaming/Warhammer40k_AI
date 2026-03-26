@@ -102,6 +102,13 @@ def _fallback_entity_lookup(game: object, entity_id: str, *, kind: str) -> Optio
                 return objective
         return None
 
+    if kind == "terrain":
+        game_map = getattr(game, "map", None)
+        for terrain_feature in list(getattr(game_map, "terrain_features", []) or []):
+            if _matches_entity_id(terrain_feature, entity_id):
+                return terrain_feature
+        return None
+
     return None
 
 
@@ -160,6 +167,10 @@ def get_objective(game: object, objective_id: str) -> Optional[object]:
     return get_entity(game, objective_id, kind="objective")
 
 
+def get_terrain(game: object, terrain_id: str) -> Optional[object]:
+    return get_entity(game, terrain_id, kind="terrain")
+
+
 def resolve_unit(game: object, value: object) -> Optional[object]:
     return resolve_entity(game, value, kind="unit")
 
@@ -174,6 +185,10 @@ def resolve_wargear(game: object, value: object) -> Optional[object]:
 
 def resolve_objective(game: object, value: object) -> Optional[object]:
     return resolve_entity(game, value, kind="objective")
+
+
+def resolve_terrain(game: object, value: object) -> Optional[object]:
+    return resolve_entity(game, value, kind="terrain")
 
 
 def coerce_entity_id(value: object) -> str:

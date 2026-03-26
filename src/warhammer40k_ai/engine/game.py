@@ -14634,6 +14634,7 @@ class Game(
                 or "IMPERIALIS OF THE ETERNAL CRUSADE" in norm_source
                 or "BLAZING EARTH" in norm_source
                 or "SIEGECRAFT" in norm_source
+                or "STINKING MIRE" in norm_source
             ):
                 has_non_cumulative_negative = True
                 break

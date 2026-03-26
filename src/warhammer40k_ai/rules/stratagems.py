@@ -568,11 +568,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SANCTIFIED KILL ZONE",
     "PLAGUESURGE",
     "LEECHSPORE ERUPTION",
+    "BLIGHTED LAND",
     "BLESSINGS OF FILTH",
     "DEATH'S HEADS",
     "DRONING HORROR",
+    "DRAWN TO DESPAIR",
     "ENERVATING ONSLAUGHT",
     "EYE OF THE SWARM",
+    "EYESTINGER STORM",
+    "FONT OF FILTH",
     "GROTESQUE FORTITUDE",
     "MALIGNANCE MAGNIFIED",
     "MOBILE VECTOR",
@@ -582,8 +586,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RABID INFUSION",
     "BLOOMING PESTILENCE",
     "GRIM REAPERS",
+    "RELENTLESS GRIND",
     "SICKENING IMPACT",
     "SIGNAL POX",
+    "STINKING MIRE",
     "UNDYING SPITE",
     "VERMIN CLOUD",
     "PRIMED AND READIED",
@@ -764,10 +770,13 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
     "PLAGUE OF WOES",
+    "BLIGHTED LAND",
+    "EYESTINGER STORM",
     "GROTESQUE FORTITUDE",
     "ENERVATING ONSLAUGHT",
     "MYPHITIC INVIGORATION",
     "SICKENING IMPACT",
+    "STINKING MIRE",
     "UNDYING SPITE",
     "CAVALCADE OF BLADES",
     "OVERWHELMING EXCESS",
@@ -2290,6 +2299,7 @@ class StratagemManager(
             "MERCILESS PURSUIT",
             "PICK THEM OFF",
             "ENCIRCLING SURGE",
+            "BLIGHTED LAND",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2323,6 +2333,8 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "CRUCIBLE OF BATTLE",
             "ONSLAUGHT OF FIRE",
+            "RELENTLESS GRIND",
+            "STINKING MIRE",
             "FEINT AND THRUST",
             "MOBILE LETHALITY",
             "STRIKE FROM THE SHADOWS",
@@ -6750,6 +6762,7 @@ class StratagemManager(
             raise
         self._clear_deaths_heads_if_expired(player=player, phase=phase)
         self._clear_signal_pox_if_expired(player=player, phase=phase)
+        self._clear_blighted_land_if_expired(player=player, phase=phase)
         try:
             self._queue_plague_legion_phase_start_reactions(player=player, phase=phase)
         except Exception:
@@ -7763,6 +7776,11 @@ class StratagemManager(
             self._queue_dread_talons_phase_end_reactions(player=player, phase=phase)
             self._queue_hurons_marauders_phase_end_reactions(player=player, phase=phase)
             self._queue_renegade_raiders_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_death_guard_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_death_guard_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:

@@ -11,6 +11,7 @@ from ..decision_kinds import (
     DECISION_MOVE_UNIT,
     DECISION_PICK_OBJECTIVE,
     DECISION_PICK_POINT,
+    DECISION_PICK_TERRAIN_FEATURE,
     DECISION_RESOLVE_COHERENCY,
     DECISION_SELECT_FLOOR,
     DECISION_SELECT_MOVEMENT_ACTION,
@@ -29,6 +30,7 @@ from ._helpers import (
     find_option,
     get_model,
     get_objective,
+    get_terrain,
     get_unit,
     is_skip_choice,
     validate_model_positions,
@@ -3567,6 +3569,39 @@ def _apply_pick_objective(game: object, request: DecisionRequest, result: Decisi
     return get_objective(game, str(objective_id or ""))
 
 
+def _validate_pick_terrain_feature(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = dict(result.payload or {})
+    terrain_id = payload.get("terrain_id")
+    if not terrain_id:
+        opt = find_option(request, result.option_id)
+        opt_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+        terrain_id = opt_payload.get("terrain_id")
+    if not terrain_id:
+        return ("Terrain feature selection requires terrain_id.",)
+    if get_terrain(game, str(terrain_id or "")) is None:
+        return ("Terrain feature not found.",)
+    return ()
+
+
+def _apply_pick_terrain_feature(game: object, request: DecisionRequest, result: DecisionResult) -> None:
+    if is_skip_choice(request, result):
+        return None
+    payload = dict(result.payload or {})
+    terrain_id = payload.get("terrain_id")
+    if not terrain_id:
+        opt = find_option(request, result.option_id)
+        opt_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+        terrain_id = opt_payload.get("terrain_id")
+    if not terrain_id:
+        return None
+    return get_terrain(game, str(terrain_id or ""))
+
+
 def _validate_select_floor(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -3620,4 +3655,9 @@ register_decision_handler(DECISION_EMBARK, validate=_validate_embark, apply=_app
 register_decision_handler(DECISION_DISEMBARK, validate=_validate_disembark, apply=_apply_disembark)
 register_decision_handler(DECISION_PICK_POINT, validate=_validate_pick_point, apply=_apply_pick_point)
 register_decision_handler(DECISION_PICK_OBJECTIVE, validate=_validate_pick_objective, apply=_apply_pick_objective)
+register_decision_handler(
+    DECISION_PICK_TERRAIN_FEATURE,
+    validate=_validate_pick_terrain_feature,
+    apply=_apply_pick_terrain_feature,
+)
 register_decision_handler(DECISION_SELECT_FLOOR, validate=_validate_select_floor, apply=_apply_select_floor)

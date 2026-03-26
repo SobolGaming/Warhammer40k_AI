@@ -1439,6 +1439,79 @@ class GameView:
             )
         self._request_corrupt_realspace_objective = _request_corrupt_realspace_objective
 
+        def _request_eyestinger_storm_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select a visible objective marker.",
+                title="Eyestinger Storm",
+                header="Select an objective marker to sting.",
+                subtitle="Each Afflicted enemy unit within range takes a Battle-shock test.",
+                context={"ability": "eyestinger_storm"},
+                allow_skip=True,
+            )
+
+        self._request_eyestinger_storm_objective = _request_eyestinger_storm_objective
+
+        def _request_blighted_land_terrain(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_TERRAIN_FEATURE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            terrain_features = list(candidates or [])
+            if not terrain_features:
+                on_chosen(None)
+                return
+            options = []
+            for idx, terrain_feature in enumerate(terrain_features):
+                terrain_type = getattr(getattr(terrain_feature, "terrain_type", None), "name", "") or ""
+                label = terrain_type.replace("_", " ").title() if terrain_type else f"Terrain {idx + 1}"
+                bbox = getattr(terrain_feature, "bounding_box", None)
+                if isinstance(bbox, dict):
+                    try:
+                        min_bounds = bbox.get("min", (0.0, 0.0, 0.0))
+                        max_bounds = bbox.get("max", (0.0, 0.0, 0.0))
+                        center_x = (float(min_bounds[0]) + float(max_bounds[0])) / 2.0
+                        center_y = (float(min_bounds[1]) + float(max_bounds[1])) / 2.0
+                        label = f"{label} ({center_x:.1f}, {center_y:.1f})"
+                    except Exception:
+                        pass
+                options.append(DecisionOption.create(label, payload={"terrain_id": get_entity_id(terrain_feature)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_TERRAIN_FEATURE,
+                prompt="Select a visible terrain feature within 24\".",
+                title="Blighted Land",
+                header="Select a terrain feature to corrupt.",
+                subtitle="Enemy units within 3\" become Afflicted until your next turn.",
+                context={"ability": "blighted_land"},
+                allow_skip=True,
+            )
+
+        self._request_blighted_land_terrain = _request_blighted_land_terrain
+
         def _request_realm_of_chaos_units(
             player,
             game,
@@ -18053,6 +18126,161 @@ class GameView:
             )
             return
 
+        if name_u == "EYESTINGER STORM" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_eyestinger_storm_objective", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Eyestinger Storm: no unit selected")
+                    return
+                try:
+                    objective_candidates = list(manager._dg_eyestinger_storm_objective_candidates(chosen_unit) or [])
+                except Exception:
+                    objective_candidates = []
+                self._request_eyestinger_storm_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_eyestinger_storm(player, name, context, chosen_unit, objective),
+                )
+
+            if unit is not None:
+                _pick_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_dg_mortarions_hammer_vehicle_candidates"):
+                    try:
+                        candidates = list(manager._dg_mortarions_hammer_vehicle_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Eyestinger Storm vehicle.",
+                    title="Eyestinger Storm",
+                    subtitle="DEATH GUARD VEHICLE with a visible objective marker.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "BLIGHTED LAND" and "terrain_feature" not in context and "terrain" not in context:
+            if not callable(getattr(self, "_request_blighted_land_terrain", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_terrain(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Blighted Land: no unit selected")
+                    return
+                try:
+                    terrain_candidates = list(manager._dg_blighted_land_terrain_candidates(chosen_unit) or [])
+                except Exception:
+                    terrain_candidates = []
+                self._request_blighted_land_terrain(
+                    player,
+                    self.game,
+                    terrain_candidates,
+                    lambda terrain_feature: self._finalize_blighted_land(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        terrain_feature,
+                    ),
+                )
+
+            if unit is not None:
+                _pick_terrain(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_dg_mortarions_hammer_vehicle_candidates"):
+                    try:
+                        candidates = list(manager._dg_mortarions_hammer_vehicle_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_terrain,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Blighted Land vehicle.",
+                    title="Blighted Land",
+                    subtitle="DEATH GUARD VEHICLE with visible terrain within 24\".",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u in ("DRAWN TO DESPAIR", "FONT OF FILTH", "RELENTLESS GRIND", "STINKING MIRE") and (
+            "unit" not in context and "target_unit" not in context
+        ):
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                getter_name = {
+                    "DRAWN TO DESPAIR": "_dg_death_guard_battlefield_unit_candidates",
+                    "FONT OF FILTH": "_dg_mortarions_hammer_vehicle_candidates",
+                    "RELENTLESS GRIND": "_dg_mortarions_hammer_vehicle_candidates",
+                    "STINKING MIRE": "_dg_mortarions_hammer_vehicle_candidates",
+                }.get(name_u, "")
+                getter = getattr(manager, getter_name, None)
+                if not candidates and callable(getter):
+                    try:
+                        if name_u == "DRAWN TO DESPAIR":
+                            candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "FONT OF FILTH":
+                            candidates = list(getter(require_not_shot=True) or [])
+                        elif name_u == "RELENTLESS GRIND":
+                            phase_label = str(context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
+                            candidates = list(
+                                getter(
+                                    require_not_selected_to_move=phase_label == "movement phase",
+                                    require_not_selected_to_charge=phase_label == "charge phase",
+                                )
+                                or []
+                            )
+                        else:
+                            candidates = list(getter() or [])
+                    except Exception:
+                        candidates = []
+                subtitle = {
+                    "DRAWN TO DESPAIR": "DEATH GUARD unit that has not shot this phase.",
+                    "FONT OF FILTH": "DEATH GUARD VEHICLE unit that has not shot this phase.",
+                    "RELENTLESS GRIND": "DEATH GUARD VEHICLE unit that has not moved or charged this phase.",
+                    "STINKING MIRE": "DEATH GUARD VEHICLE unit.",
+                }.get(name_u, "Select an eligible DEATH GUARD unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u in ("MORDIAN MINUTE", "PURGING FIRE", "VETERAN SHARPSHOOTERS") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -19720,6 +19948,47 @@ class GameView:
         ctx["unit"] = unit
         ctx["target_unit"] = unit
         ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_eyestinger_storm(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Eyestinger Storm: no unit selected")
+            return
+        if objective is None:
+            logger.info("Eyestinger Storm: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_blighted_land(self, player, name: str, context: Dict[str, Any], unit, terrain_feature) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Blighted Land: no unit selected")
+            return
+        if terrain_feature is None:
+            logger.info("Blighted Land: no terrain feature selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["terrain_feature"] = terrain_feature
+        ctx["terrain"] = terrain_feature
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")

@@ -12650,6 +12650,40 @@ class ActionsMovementMixin:
                     ).strip() or "Imperialis of the Eternal Crusade"
                 if best_penalty > 0:
                     modifiers.append((-int(abs(best_penalty)), f"{best_source}: charge roll modifier"))
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("death_guard_mortarions_hammer_stinking_mire_active"):
+            active = True
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            expires_phase = str(
+                sr.get("death_guard_mortarions_hammer_stinking_mire_expires_phase", "") or ""
+            ).strip().upper()
+            phase_name = (
+                str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if game is not None
+                else ""
+            )
+            if expires_phase and phase_name and expires_phase != phase_name:
+                active = False
+            if active:
+                try:
+                    penalty = int(
+                        sr.get("death_guard_mortarions_hammer_stinking_mire_charge_modifier", 2) or 2
+                    )
+                except Exception:
+                    penalty = 2
+                if penalty > 0:
+                    source = str(
+                        sr.get("death_guard_mortarions_hammer_stinking_mire_source", "")
+                        or "STINKING MIRE"
+                    ).strip() or "STINKING MIRE"
+                    modifiers.append((-int(abs(penalty)), f"{source}: charge roll modifier"))
         return modifiers
 
     def register_wargear_charge_keyword_hit(

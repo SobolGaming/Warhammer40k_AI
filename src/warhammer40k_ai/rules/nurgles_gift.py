@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_NURGLES_GIFT, army_has_ability_id
@@ -317,6 +318,50 @@ class NurglesGiftManager:
         return tuple(dict.fromkeys([key for key in keys if key]))
 
     @staticmethod
+    def unit_within_range_of_terrain_feature(unit, terrain_feature, range_in: float) -> bool:
+        if unit is None or terrain_feature is None:
+            return False
+        footprint = getattr(terrain_feature, "footprint", None)
+        bbox = getattr(terrain_feature, "bounding_box", None)
+        if footprint is None or not isinstance(bbox, dict):
+            return False
+        try:
+            min_z = float(bbox.get("min", (0.0, 0.0, 0.0))[2])
+            max_z = float(bbox.get("max", (0.0, 0.0, 0.0))[2])
+        except (IndexError, TypeError, ValueError):
+            min_z = 0.0
+            max_z = 0.0
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(unit, "models", []) or [])
+        max_range = float(range_in or 0.0)
+        for model in models:
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            get_shape = getattr(base, "get_base_shape", None)
+            get_z_bounds = getattr(base, "volume_z_bounds", None)
+            if not callable(get_shape) or not callable(get_z_bounds):
+                continue
+            base_shape = get_shape()
+            model_z0, model_z1 = get_z_bounds()
+            horizontal = float(base_shape.distance(footprint))
+            vertical = 0.0
+            if float(model_z1) < min_z:
+                vertical = float(min_z - float(model_z1))
+            elif float(model_z0) > max_z:
+                vertical = float(float(model_z0) - max_z)
+            if math.hypot(horizontal, vertical) <= max_range + 1e-6:
+                return True
+        return False
+
+    @staticmethod
     def get_afflicted_plague_for_unit(
         unit,
         *,
@@ -489,6 +534,19 @@ class NurglesGiftManager:
                     continue
                 is_within_objective = getattr(unit, "is_within_objective_range", None)
                 if callable(is_within_objective) and bool(is_within_objective(loc)):
+                    return plague
+
+            for terrain_feature in list(getattr(game_map, "terrain_features", []) or []):
+                if terrain_feature is None:
+                    continue
+                if not bool(getattr(terrain_feature, "blighted_land_active", False)):
+                    continue
+                if (
+                    str(getattr(terrain_feature, "blighted_land_owner", "") or "")
+                    != str(getattr(getattr(enemy_army, "player", None), "id", "") or "")
+                ):
+                    continue
+                if NurglesGiftManager.unit_within_range_of_terrain_feature(unit, terrain_feature, 3.0):
                     return plague
 
             # Virulent Vectorium: Worldblight turns controlled objectives into contagion sources.

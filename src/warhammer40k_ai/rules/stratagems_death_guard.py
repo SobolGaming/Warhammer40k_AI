@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
+from types import SimpleNamespace
 from typing import Any
+
+from shapely.geometry import Point
 
 from ..utility import dice as dice_module
 from ..utility.aura_utils import (
@@ -75,6 +78,11 @@ class DeathGuardStratagemMixin:
     def _is_flyblown_host_detachment(self) -> bool:
         mgr = self._dg_detachment_mgr()
         checker = getattr(mgr, "is_flyblown_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_mortarions_hammer_detachment(self) -> bool:
+        mgr = self._dg_detachment_mgr()
+        checker = getattr(mgr, "is_mortarions_hammer", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     @staticmethod
@@ -170,6 +178,19 @@ class DeathGuardStratagemMixin:
             return not bool(getattr(round_state, "fought_this_phase", False))
         return True
 
+    @staticmethod
+    def _dg_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
+    @staticmethod
+    def _dg_selected_to_charge_this_phase(unit: Any) -> bool:
+        return bool(getattr(getattr(unit, "round_state", None), "attempted_charge_this_round", False))
+
     def _dg_effective_cp_cost(self, stratagem, *, target_unit=None) -> int:
         cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         if hasattr(self.player, "apply_stratagem_cp_cost"):
@@ -181,6 +202,42 @@ class DeathGuardStratagemMixin:
         if dequeue:
             self._dequeue_reaction_by_name(stratagem.name)
         self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+
+    @staticmethod
+    def _dg_merge_phase_move_types(
+        special_rules: dict[str, Any],
+        rule_key: str,
+        added_key: str,
+        values: set[str],
+    ) -> None:
+        current = set(special_rules.get(rule_key) or [])
+        added = sorted([move_type for move_type in values if move_type not in current])
+        merged = sorted(current.union(set(values)))
+        if merged:
+            special_rules[rule_key] = merged
+        else:
+            special_rules.pop(rule_key, None)
+        if added:
+            special_rules[added_key] = added
+        else:
+            special_rules.pop(added_key, None)
+
+    @staticmethod
+    def _dg_remove_phase_move_types(
+        special_rules: dict[str, Any],
+        rule_key: str,
+        added_key: str,
+    ) -> None:
+        added = set(special_rules.get(added_key) or [])
+        if not added:
+            return
+        current = list(special_rules.get(rule_key) or [])
+        kept = [item for item in current if item not in added]
+        if kept:
+            special_rules[rule_key] = kept
+        else:
+            special_rules.pop(rule_key, None)
+        special_rules.pop(added_key, None)
 
     def _dg_append_temp_effect(self, unit: Any, effect: dict) -> None:
         root = self._dg_root(unit)
@@ -382,6 +439,59 @@ class DeathGuardStratagemMixin:
         candidates.sort(key=self._dg_sort_key)
         return candidates
 
+    def _dg_death_guard_battlefield_unit_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+    ) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for entry in list(getattr(army, "units", []) or []):
+            root = self._dg_root(entry)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._dg_is_death_guard_unit(root):
+                continue
+            if not self._dg_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if require_not_shot and not self._dg_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_mortarions_hammer_vehicle_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_selected_to_move: bool = False,
+        require_not_selected_to_charge: bool = False,
+    ) -> list[Any]:
+        if not self._is_mortarions_hammer_detachment():
+            return []
+        candidates: list[Any] = []
+        for root in self._dg_death_guard_battlefield_unit_candidates(require_not_shot=require_not_shot):
+            if not self._dg_attached_unit_has_keyword(root, "VEHICLE"):
+                continue
+            if require_not_selected_to_move and self._dg_selected_to_move_this_phase(root):
+                continue
+            if require_not_selected_to_charge and self._dg_selected_to_charge_this_phase(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
     def _dg_engagement_enemy_candidates(
         self,
         source_unit: Any,
@@ -547,6 +657,193 @@ class DeathGuardStratagemMixin:
         candidates.sort(key=self._dg_sort_key)
         return candidates
 
+    def _dg_unit_within_player_deployment_zone(self, unit: Any, player_id: str, *, game=None) -> bool:
+        root = self._dg_root(unit)
+        if root is None or not player_id:
+            return False
+        if game is None:
+            game = getattr(getattr(self.player, "game", None), "game", None)
+        if game is None:
+            game = getattr(self.player, "game", None)
+        in_zone = getattr(game, "is_position_in_deployment_zone", None) if game is not None else None
+        if not callable(in_zone):
+            return False
+        for model in list(self._dg_alive_models(root) or []):
+            location = getattr(model, "get_location", None)
+            if not callable(location):
+                continue
+            pos = location()
+            if not pos or len(pos) < 2:
+                continue
+            if in_zone(float(pos[0]), float(pos[1]), str(player_id)):
+                return True
+        return False
+
+    def _dg_opponent_player_id(self) -> str:
+        game = getattr(self, "game", None)
+        if game is None:
+            return ""
+        for other_player in list(getattr(game, "players", []) or []):
+            if other_player is None or other_player is self.player:
+                continue
+            return str(getattr(other_player, "id", "") or "")
+        return ""
+
+    @staticmethod
+    def _dg_build_proxy_model(shape: Any, *, min_z: float, max_z: float) -> Any:
+        class _ProxyBase:
+            def __init__(self, footprint, *, z0: float, z1: float):
+                self._footprint = footprint
+                self._z0 = float(z0)
+                self._z1 = float(max(z1, z0 + 0.01))
+
+            def get_base_shape(self):
+                return self._footprint
+
+            def volume_z_bounds(self):
+                return (float(self._z0), float(self._z1))
+
+        return SimpleNamespace(
+            model_base=_ProxyBase(shape, z0=min_z, z1=max_z),
+            parent_unit=SimpleNamespace(is_aircraft=False, is_towering=False),
+            is_alive=True,
+        )
+
+    def _dg_model_can_see_proxy_model(
+        self,
+        shooter_model: Any,
+        target_proxy_model: Any,
+        *,
+        ignore_terrain: Any = None,
+    ) -> bool:
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if shooter_model is None or target_proxy_model is None or game_map is None:
+            return False
+        sample_points = getattr(game_map, "_sample_model_points_3d", None)
+        blocked = getattr(game_map, "_segment_blocked_by_terrain_feature", None)
+        if not callable(sample_points) or not callable(blocked):
+            return False
+        shooter_points = list(sample_points(shooter_model, perimeter_points=8, z_levels=3) or [])
+        target_points = list(sample_points(target_proxy_model, perimeter_points=8, z_levels=3) or [])
+        if not shooter_points or not target_points:
+            return False
+        for shooter_point in shooter_points:
+            for target_point in target_points:
+                is_blocked = False
+                for terrain in list(getattr(game_map, "terrain_features", []) or []):
+                    if terrain is None or terrain is ignore_terrain:
+                        continue
+                    try:
+                        if bool(blocked(shooter_point, target_point, terrain, shooter_model, target_proxy_model)):
+                            is_blocked = True
+                            break
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                if not is_blocked:
+                    return True
+        return False
+
+    def _dg_unit_visible_to_point(self, source_unit: Any, point: tuple[float, float], *, z: float = 0.0) -> bool:
+        source_root = self._dg_root(source_unit)
+        if source_root is None:
+            return False
+        proxy_shape = Point(float(point[0]), float(point[1])).buffer(0.05)
+        proxy_model = self._dg_build_proxy_model(proxy_shape, min_z=float(z), max_z=float(z) + 0.05)
+        for model in list(self._dg_alive_models(source_root) or []):
+            if self._dg_model_can_see_proxy_model(model, proxy_model):
+                return True
+        return False
+
+    def _dg_unit_visible_to_terrain_feature(self, source_unit: Any, terrain_feature: Any) -> bool:
+        source_root = self._dg_root(source_unit)
+        footprint = getattr(terrain_feature, "footprint", None) if terrain_feature is not None else None
+        bbox = getattr(terrain_feature, "bounding_box", None) if terrain_feature is not None else None
+        if source_root is None or footprint is None or not isinstance(bbox, dict):
+            return False
+        min_bounds = bbox.get("min", (0.0, 0.0, 0.0))
+        max_bounds = bbox.get("max", (0.0, 0.0, 0.0))
+        try:
+            min_z = float(min_bounds[2])
+            max_z = float(max_bounds[2])
+        except (IndexError, TypeError, ValueError):
+            min_z = 0.0
+            max_z = 0.05
+        proxy_model = self._dg_build_proxy_model(footprint, min_z=min_z, max_z=max_z)
+        for model in list(self._dg_alive_models(source_root) or []):
+            if self._dg_model_can_see_proxy_model(model, proxy_model, ignore_terrain=terrain_feature):
+                return True
+        return False
+
+    def _dg_eyestinger_storm_objective_candidates(self, source_unit: Any) -> list[Any]:
+        source_root = self._dg_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or game_map is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = self._dg_sort_key(objective)
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            point = (float(getattr(loc, "x", 0.0) or 0.0), float(getattr(loc, "y", 0.0) or 0.0))
+            if not self._dg_unit_visible_to_point(source_root, point, z=float(getattr(loc, "z", 0.0) or 0.0)):
+                continue
+            if not self._dg_afflicted_enemy_units_within_objective(objective):
+                continue
+            candidates.append(objective)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_blighted_land_terrain_candidates(self, source_unit: Any) -> list[Any]:
+        source_root = self._dg_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or game_map is None:
+            return []
+        from .nurgles_gift import NurglesGiftManager
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for terrain_feature in list(getattr(game_map, "terrain_features", []) or []):
+            if terrain_feature is None:
+                continue
+            terrain_id = self._dg_sort_key(terrain_feature)
+            if terrain_id and terrain_id in seen:
+                continue
+            if terrain_id:
+                seen.add(terrain_id)
+            if not bool(
+                NurglesGiftManager.unit_within_range_of_terrain_feature(
+                    source_root,
+                    terrain_feature,
+                    24.0,
+                )
+            ):
+                continue
+            if not self._dg_unit_visible_to_terrain_feature(source_root, terrain_feature):
+                continue
+            candidates.append(terrain_feature)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
+
+    def _dg_resolve_terrain_candidate(self, selected: Any, candidates: list[Any]) -> Any:
+        if selected is None:
+            return None
+        selected_id = str(getattr(selected, "id", "") or get_entity_id(selected) or "")
+        for candidate in list(candidates or []):
+            if candidate is selected:
+                return candidate
+            candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+            if selected_id and candidate_id and selected_id == candidate_id:
+                return candidate
+        return None
+
     def _dg_resolve_objective_candidate(self, selected: Any, candidates: list[Any]) -> Any:
         if selected is None:
             return None
@@ -564,6 +861,55 @@ class DeathGuardStratagemMixin:
             if selected_loc_id and candidate_loc_id and selected_loc_id == candidate_loc_id:
                 return candidate
         return None
+
+    def _dg_afflicted_enemy_units_within_objective(self, objective: Any) -> list[Any]:
+        objective_location = getattr(objective, "location", None)
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if objective_location is None or game_map is None:
+            return []
+        from .nurgles_gift import NurglesGiftManager
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for other_player in list(getattr(game, "players", []) or []):
+            if other_player is None or other_player is self.player:
+                continue
+            army = getattr(other_player, "army", None)
+            if army is None and hasattr(other_player, "get_army"):
+                army = other_player.get_army()
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._dg_root(unit)
+                if root is None:
+                    continue
+                root_id = self._dg_sort_key(root)
+                if root_id and root_id in seen:
+                    continue
+                if root_id:
+                    seen.add(root_id)
+                if not self._dg_on_battlefield(root, require_targetable=False):
+                    continue
+                if NurglesGiftManager.get_afflicted_plague_for_unit(root, game=game, game_map=game_map) is None:
+                    continue
+                is_within_objective = getattr(root, "is_within_objective_range", None)
+                if callable(is_within_objective):
+                    if not bool(is_within_objective(objective_location)):
+                        continue
+                elif not unit_within_range_of_point_3d(
+                    root,
+                    (
+                        float(getattr(objective_location, "x", 0.0) or 0.0),
+                        float(getattr(objective_location, "y", 0.0) or 0.0),
+                    ),
+                    float(getattr(objective_location, "control_radius", 0.0) or 0.0),
+                    use_attached_aggregate=True,
+                ):
+                    continue
+                candidates.append(root)
+        candidates.sort(key=self._dg_sort_key)
+        return candidates
 
     def _dg_sickening_impact_enemy_candidates(self, source_unit: Any) -> list[Any]:
         root = self._dg_root(source_unit)
@@ -859,9 +1205,202 @@ class DeathGuardStratagemMixin:
 
     def _queue_death_guard_phase_start_reactions(self, *, player=None, phase=None) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key != "FIGHT_PHASE":
+        if phase_key == "COMMAND_PHASE":
+            self._queue_mortarions_hammer_eyestinger_storm_phase_start_reaction(player=player, phase=phase)
             return
-        self._queue_flyblown_host_nauseating_paroxysms_phase_start_reaction(player=player, phase=phase)
+        if phase_key == "CHARGE_PHASE":
+            self._queue_mortarions_hammer_stinking_mire_phase_start_reaction(player=player, phase=phase)
+            return
+        if phase_key == "FIGHT_PHASE":
+            self._queue_flyblown_host_nauseating_paroxysms_phase_start_reaction(player=player, phase=phase)
+
+    def _queue_death_guard_phase_end_reactions(self, *, player=None, phase=None) -> None:
+        self._queue_mortarions_hammer_blighted_land_phase_end_reaction(player=player, phase=phase)
+
+    def _cleanup_death_guard_phase_end_effects(self, *, phase=None) -> None:
+        self._cleanup_mortarions_hammer_phase_end_effects(phase=phase)
+
+    def _queue_mortarions_hammer_eyestinger_storm_phase_start_reaction(self, *, player=None, phase=None) -> None:
+        if not self._is_mortarions_hammer_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("EYESTINGER STORM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = [
+            unit
+            for unit in self._dg_mortarions_hammer_vehicle_candidates()
+            if self._dg_eyestinger_storm_objective_candidates(unit)
+        ]
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "phase_start"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "EYESTINGER STORM"
+                and str(reaction.get("phase_name", "") or "").strip().upper() == "COMMAND PHASE"
+            ):
+                return
+        payload = {
+            "event": "phase_start",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_mortarions_hammer_stinking_mire_phase_start_reaction(self, *, player=None, phase=None) -> None:
+        if not self._is_mortarions_hammer_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "CHARGE_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("STINKING MIRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._dg_mortarions_hammer_vehicle_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "phase_start"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "STINKING MIRE"
+                and str(reaction.get("phase_name", "") or "").strip().upper() == "CHARGE PHASE"
+            ):
+                return
+        payload = {
+            "event": "phase_start",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_mortarions_hammer_blighted_land_phase_end_reaction(self, *, player=None, phase=None) -> None:
+        if not self._is_mortarions_hammer_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        if player is not self.player:
+            return
+        stratagem = self.get_by_name("BLIGHTED LAND")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._dg_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = [
+            unit
+            for unit in self._dg_mortarions_hammer_vehicle_candidates()
+            if self._dg_blighted_land_terrain_candidates(unit)
+        ]
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "phase_end"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "BLIGHTED LAND"
+                and str(reaction.get("phase_name", "") or "").strip().upper() == "MOVEMENT PHASE"
+            ):
+                return
+        payload = {
+            "event": "phase_end",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_mortarions_hammer_phase_end_effects(self, *, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._dg_root(unit)
+            if root is None:
+                continue
+            root_id = self._dg_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_key in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                expires_phase = str(
+                    sr.get("death_guard_mortarions_hammer_relentless_grind_expires_phase", "") or ""
+                ).strip().upper()
+                if sr.get("death_guard_mortarions_hammer_relentless_grind_active") is True and (
+                    not expires_phase or expires_phase == phase_key
+                ):
+                    self._dg_remove_phase_move_types(
+                        sr,
+                        "bearer_unit_phase_move_terrain_only_types",
+                        "death_guard_mortarions_hammer_relentless_grind_added_phase_move_terrain_only_types",
+                    )
+                    for key in (
+                        "death_guard_mortarions_hammer_relentless_grind_active",
+                        "death_guard_mortarions_hammer_relentless_grind_expires_phase",
+                        "death_guard_mortarions_hammer_relentless_grind_turn_owner",
+                        "death_guard_mortarions_hammer_relentless_grind_turn",
+                        "death_guard_mortarions_hammer_relentless_grind_source",
+                        "death_guard_mortarions_hammer_relentless_grind_added_phase_move_terrain_only_types",
+                    ):
+                        sr.pop(key, None)
+            if phase_key == "CHARGE_PHASE":
+                expires_phase = str(
+                    sr.get("death_guard_mortarions_hammer_stinking_mire_expires_phase", "") or ""
+                ).strip().upper()
+                if sr.get("death_guard_mortarions_hammer_stinking_mire_active") is True and (
+                    not expires_phase or expires_phase == phase_key
+                ):
+                    for key in (
+                        "death_guard_mortarions_hammer_stinking_mire_active",
+                        "death_guard_mortarions_hammer_stinking_mire_charge_modifier",
+                        "death_guard_mortarions_hammer_stinking_mire_expires_phase",
+                        "death_guard_mortarions_hammer_stinking_mire_turn_owner",
+                        "death_guard_mortarions_hammer_stinking_mire_turn",
+                        "death_guard_mortarions_hammer_stinking_mire_source",
+                    ):
+                        sr.pop(key, None)
+            root.special_rules = sr
 
     def _queue_flyblown_host_nauseating_paroxysms_phase_start_reaction(self, *, player=None, phase=None) -> None:
         if not self._is_flyblown_host_detachment():
@@ -1178,15 +1717,41 @@ class DeathGuardStratagemMixin:
                 if hasattr(loc, key):
                     setattr(loc, key, None if key != "signal_pox_active" else False)
 
+    def _clear_blighted_land_if_expired(self, *, player=None, phase=None) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        owner_id = str(getattr(player, "id", "") or "")
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if phase_key != "COMMAND_PHASE" or not owner_id or game_map is None:
+            return
+        for terrain_feature in list(getattr(game_map, "terrain_features", []) or []):
+            if terrain_feature is None:
+                continue
+            if not bool(getattr(terrain_feature, "blighted_land_active", False)):
+                continue
+            if str(getattr(terrain_feature, "blighted_land_owner", "") or "") != owner_id:
+                continue
+            for attr in (
+                "blighted_land_active",
+                "blighted_land_owner",
+                "blighted_land_turn",
+                "blighted_land_source",
+            ):
+                if hasattr(terrain_feature, attr):
+                    delattr(terrain_feature, attr)
+
     def _use_death_guard_stratagem(self, s, **kwargs):
         name_u = str(getattr(s, "name", "") or "").strip().upper()
         if name_u not in {
+            "BLIGHTED LAND",
             "BLOOMING PESTILENCE",
             "BLESSINGS OF FILTH",
             "DEATH'S HEADS",
             "DRONING HORROR",
+            "DRAWN TO DESPAIR",
             "ENERVATING ONSLAUGHT",
             "EYE OF THE SWARM",
+            "EYESTINGER STORM",
+            "FONT OF FILTH",
             "GRIM REAPERS",
             "GROTESQUE FORTITUDE",
             "MALIGNANCE MAGNIFIED",
@@ -1195,8 +1760,10 @@ class DeathGuardStratagemMixin:
             "MYPHITIC INVIGORATION",
             "NAUSEATING PAROXYSMS",
             "RABID INFUSION",
+            "RELENTLESS GRIND",
             "SICKENING IMPACT",
             "SIGNAL POX",
+            "STINKING MIRE",
             "UNDYING SPITE",
             "VERMIN CLOUD",
         }:
@@ -1226,11 +1793,21 @@ class DeathGuardStratagemMixin:
             "SIGNAL POX",
             "UNDYING SPITE",
         }
+        mortarions_hammer_name = name_u in {
+            "BLIGHTED LAND",
+            "DRAWN TO DESPAIR",
+            "EYESTINGER STORM",
+            "FONT OF FILTH",
+            "RELENTLESS GRIND",
+            "STINKING MIRE",
+        }
         if champions_name and not self._is_champions_of_contagion_detachment():
             return False
         if flyblown_name and not self._is_flyblown_host_detachment():
             return False
         if death_lords_name and not self._is_death_lords_chosen_detachment():
+            return False
+        if mortarions_hammer_name and not self._is_mortarions_hammer_detachment():
             return False
 
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
@@ -1549,6 +2126,308 @@ class DeathGuardStratagemMixin:
             enemy_root.special_rules = sr
             self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
             logger.info("INFO: DEATH'S HEADS: target enemy unit gains all Plague effects until your next turn.")
+            return True
+
+        if name_u == "DRAWN TO DESPAIR":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: DRAWN TO DESPAIR: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: DRAWN TO DESPAIR: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: DRAWN TO DESPAIR: not your turn")
+                return False
+            candidates = self._dg_death_guard_battlefield_unit_candidates(require_not_shot=True)
+            if root not in candidates:
+                logger.error("ERROR: DRAWN TO DESPAIR: target must be an eligible DEATH GUARD unit that has not shot")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            self._dg_apply_temp_effects(
+                root,
+                detachment="mortarions_hammer",
+                phase_key=phase_key,
+                effects=[
+                    {
+                        "effect": "hit_reroll",
+                        "attack_type": "ranged",
+                        "reroll_mode": "full",
+                        "target_condition": "opponent_deployment_zone",
+                        "condition": "target_visible",
+                        "exclude_keywords_any": ["AIRCRAFT"],
+                        "source": str(s.name or "Drawn to Despair"),
+                    }
+                ],
+            )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: DRAWN TO DESPAIR: target unit re-rolls ranged Hit rolls against visible non-AIRCRAFT units in the opponent deployment zone this phase."
+            )
+            return True
+
+        if name_u == "FONT OF FILTH":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: FONT OF FILTH: no target unit provided")
+                return False
+            if phase_key != "SHOOTING_PHASE":
+                logger.error("ERROR: FONT OF FILTH: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: FONT OF FILTH: not your turn")
+                return False
+            candidates = self._dg_mortarions_hammer_vehicle_candidates(require_not_shot=True)
+            if root not in candidates:
+                logger.error("ERROR: FONT OF FILTH: target must be an eligible DEATH GUARD VEHICLE unit that has not shot")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            source_name = str(s.name or "Font of Filth")
+            root_id = self._dg_sort_key(root)
+            for model in list(self._dg_alive_models(root) or []):
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                model_id = self._dg_sort_key(model)
+                weapon_names: list[str] = []
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_ranged = getattr(wargear, "is_ranged", None)
+                    if callable(is_ranged) and not bool(is_ranged()):
+                        continue
+                    if not callable(is_ranged):
+                        is_melee = getattr(wargear, "is_melee", None)
+                        if callable(is_melee) and bool(is_melee()):
+                            continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if weapon_name and weapon_name not in weapon_names:
+                        weapon_names.append(weapon_name)
+                for weapon_name in sorted(list(weapon_names or []), key=str.lower):
+                    set_keywords(
+                        key=f"death_guard_mortarions_hammer_font_of_filth:{root_id}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=["ASSAULT"],
+                        source=source_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: FONT OF FILTH: target unit gains [ASSAULT] on ranged weapons this phase.")
+            return True
+
+        if name_u == "RELENTLESS GRIND":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: RELENTLESS GRIND: no target unit provided")
+                return False
+            if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                logger.error("ERROR: RELENTLESS GRIND: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: RELENTLESS GRIND: not your turn")
+                return False
+            candidates = self._dg_mortarions_hammer_vehicle_candidates(
+                require_not_selected_to_move=phase_key == "MOVEMENT_PHASE",
+                require_not_selected_to_charge=phase_key == "CHARGE_PHASE",
+            )
+            if root not in candidates:
+                logger.error("ERROR: RELENTLESS GRIND: target must be an eligible DEATH GUARD VEHICLE unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            move_types = {"move", "advance"} if phase_key == "MOVEMENT_PHASE" else {"charge"}
+            self._dg_merge_phase_move_types(
+                sr,
+                "bearer_unit_phase_move_terrain_only_types",
+                "death_guard_mortarions_hammer_relentless_grind_added_phase_move_terrain_only_types",
+                set(move_types),
+            )
+            sr["death_guard_mortarions_hammer_relentless_grind_active"] = True
+            sr["death_guard_mortarions_hammer_relentless_grind_expires_phase"] = phase_key
+            sr["death_guard_mortarions_hammer_relentless_grind_source"] = str(s.name or "RELENTLESS GRIND")
+            owner_id = str(getattr(self.player, "id", "") or "")
+            if owner_id:
+                sr["death_guard_mortarions_hammer_relentless_grind_turn_owner"] = owner_id
+            turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            if turn:
+                sr["death_guard_mortarions_hammer_relentless_grind_turn"] = turn
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info(
+                "INFO: RELENTLESS GRIND: %s can move horizontally through terrain features this phase.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        if name_u == "BLIGHTED LAND":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: BLIGHTED LAND: no target unit provided")
+                return False
+            if phase_key != "MOVEMENT_PHASE":
+                logger.error("ERROR: BLIGHTED LAND: wrong phase")
+                return False
+            if active_player is not self.player:
+                logger.error("ERROR: BLIGHTED LAND: not your turn")
+                return False
+            candidates = self._dg_mortarions_hammer_vehicle_candidates()
+            if root not in candidates:
+                logger.error("ERROR: BLIGHTED LAND: target must be an eligible DEATH GUARD VEHICLE unit")
+                return False
+            terrain_feature = (
+                kwargs.get("terrain_feature")
+                or kwargs.get("target_terrain_feature")
+                or kwargs.get("terrain")
+            )
+            terrain_candidates = list(kwargs.get("terrain_candidates") or [])
+            if not terrain_candidates:
+                terrain_candidates = self._dg_blighted_land_terrain_candidates(root)
+            if terrain_feature is None and len(terrain_candidates) == 1:
+                terrain_feature = terrain_candidates[0]
+            selected_terrain = self._dg_resolve_terrain_candidate(terrain_feature, terrain_candidates)
+            if selected_terrain is None:
+                logger.error("ERROR: BLIGHTED LAND: selected terrain feature is not eligible")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            selected_terrain.blighted_land_active = True
+            selected_terrain.blighted_land_owner = str(getattr(self.player, "id", "") or "")
+            selected_terrain.blighted_land_turn = int(self._dg_current_turn())
+            selected_terrain.blighted_land_source = str(s.name or "Blighted Land")
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: BLIGHTED LAND: selected terrain feature Afflicts enemy units within 3\" until your next turn.")
+            return True
+
+        if name_u == "EYESTINGER STORM":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "EYESTINGER STORM":
+                        continue
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: EYESTINGER STORM: no target unit provided")
+                return False
+            if phase_key != "COMMAND_PHASE":
+                logger.error("ERROR: EYESTINGER STORM: wrong phase")
+                return False
+            if active_player is self.player:
+                logger.error("ERROR: EYESTINGER STORM: Command phase use requires your opponent's turn")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: EYESTINGER STORM: target is not currently eligible")
+                return False
+            if root not in self._dg_mortarions_hammer_vehicle_candidates():
+                logger.error("ERROR: EYESTINGER STORM: target must be an eligible DEATH GUARD VEHICLE unit")
+                return False
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            objective_candidates = list(kwargs.get("objective_candidates") or [])
+            if not objective_candidates:
+                objective_candidates = self._dg_eyestinger_storm_objective_candidates(root)
+            if objective is None and len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            if objective is None:
+                logger.error("ERROR: EYESTINGER STORM: no objective marker selected")
+                return False
+            selected_objective = self._dg_resolve_objective_candidate(objective, objective_candidates)
+            if selected_objective is None:
+                logger.error("ERROR: EYESTINGER STORM: selected objective marker is not eligible")
+                return False
+            affected_enemies = self._dg_afflicted_enemy_units_within_objective(selected_objective)
+            if not affected_enemies:
+                logger.error("ERROR: EYESTINGER STORM: no Afflicted enemy units are within range of the selected objective marker")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            current_turn = max(1, int(self._dg_current_turn() or 1))
+            source_name = str(s.name or "EYESTINGER STORM")
+            for enemy_root in list(affected_enemies or []):
+                enemy_sr = getattr(enemy_root, "special_rules", None)
+                if not isinstance(enemy_sr, dict):
+                    enemy_sr = {}
+                enemy_sr["battle_shock_suppress_other_tests_phase"] = "COMMAND_PHASE"
+                enemy_sr["battle_shock_suppress_other_tests_source"] = source_name
+                enemy_sr["battle_shock_allow_suppressed_test"] = True
+                enemy_root.special_rules = enemy_sr
+                take_test = getattr(enemy_root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(current_turn)
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: EYESTINGER STORM: affected Afflicted enemy units within the selected objective marker's range take Battle-shock tests.")
+            return True
+
+        if name_u == "STINKING MIRE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if unit is None:
+                for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "STINKING MIRE":
+                        continue
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                    if not candidates:
+                        candidates = list(reaction.get("candidates") or [])
+                    if not kwargs.get("phase_name"):
+                        kwargs["phase_name"] = reaction.get("phase_name")
+                    break
+            if unit is None and len(candidates) == 1:
+                unit = candidates[0]
+            root = self._dg_root(unit)
+            if root is None:
+                logger.error("ERROR: STINKING MIRE: no target unit provided")
+                return False
+            if phase_key != "CHARGE_PHASE":
+                logger.error("ERROR: STINKING MIRE: wrong phase")
+                return False
+            if active_player is self.player:
+                logger.error("ERROR: STINKING MIRE: Charge phase use requires your opponent's turn")
+                return False
+            if candidates and root not in candidates:
+                logger.error("ERROR: STINKING MIRE: target is not currently eligible")
+                return False
+            if root not in self._dg_mortarions_hammer_vehicle_candidates():
+                logger.error("ERROR: STINKING MIRE: target must be an eligible DEATH GUARD VEHICLE unit")
+                return False
+            eff_cost = self._dg_effective_cp_cost(s, target_unit=root)
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["death_guard_mortarions_hammer_stinking_mire_active"] = True
+            sr["death_guard_mortarions_hammer_stinking_mire_charge_modifier"] = 2
+            sr["death_guard_mortarions_hammer_stinking_mire_expires_phase"] = "CHARGE_PHASE"
+            sr["death_guard_mortarions_hammer_stinking_mire_source"] = str(s.name or "STINKING MIRE")
+            sr["death_guard_mortarions_hammer_stinking_mire_turn_owner"] = str(
+                getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""
+            )
+            sr["death_guard_mortarions_hammer_stinking_mire_turn"] = int(self._dg_current_turn())
+            root.special_rules = sr
+            self._dg_finalize_use(s, dequeue=bool(kwargs.get("dequeue")))
+            logger.info("INFO: STINKING MIRE: enemy units suffer -2 to Charge rolls when charging the target unit this phase.")
             return True
 
         if name_u == "DRONING HORROR":

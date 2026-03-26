@@ -36,6 +36,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `DISEMBARK` — Disembark unit from transport.
 - `PICK_POINT` — Choose a point on the battlefield.
 - `PICK_OBJECTIVE` — Choose an objective marker.
+- `PICK_TERRAIN_FEATURE` — Choose a terrain feature.
 - `SELECT_FLOOR` — Choose a floor/level for placement.
 
 ## Shooting & Ranged Attacks
