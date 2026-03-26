@@ -325,7 +325,7 @@ def test_metalophagic_infection_queues_and_applies_afflicted_bonus():
     assert getattr(source, "_last_metalophagic", None) == (target, 2)
 
 
-def test_spore_laced_shock_waves_marks_and_applies_mortals():
+def test_spore_laced_shock_waves_applies_once_and_does_not_repeat_on_later_turns():
     game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
     ability = {
         "name": "Spore-laced Shock Waves",
@@ -407,6 +407,14 @@ def test_spore_laced_shock_waves_marks_and_applies_mortals():
     assert len(applied) == 2
     assert {u for u, _amt in applied} == {target, nearby}
     assert {amt for _u, amt in applied} == {2}
+    special_rules = getattr(source, "special_rules", {}) or {}
+    assert "spore_laced_shock_waves_pending_entries" not in special_rules
+    assert "spore_laced_shock_waves_owner" not in special_rules
+    assert "spore_laced_shock_waves_turn" not in special_rules
+
+    game.turn = 3
+    game._on_unit_shooting_resolved_spore_laced_shock_waves(attacker_unit=source)
+    assert len(applied) == 2
 
 
 def test_blistering_fusillade_applies_strength_and_ap_vs_afflicted():
