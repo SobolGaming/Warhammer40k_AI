@@ -4111,7 +4111,12 @@ class StateAttachmentMixin:
             bodyguard_id = None
         if not bodyguard_id:
             return False
-        attach_allowed = bool(bodyguard_id in allowed or self._can_attach_via_attached_unit_rule(bodyguard))
+        murdermind_attach_allowed = bool(self._murdermind_can_attach_to(bodyguard))
+        attach_allowed = bool(
+            bodyguard_id in allowed
+            or self._can_attach_via_attached_unit_rule(bodyguard)
+            or murdermind_attach_allowed
+        )
         if not attach_allowed:
             return False
 

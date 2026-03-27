@@ -7155,6 +7155,69 @@ _NECRONS_CANOPTEK_COURT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_CANOPTEK_COURT_DESCRIPTORS.values()
 }
 
+_NECRONS_CURSED_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010668002": EnhancementToolDescriptor(
+        enhancement_id="000010668002",
+        name="Destroyer Ankh",
+        timing="passive",
+        target="bearer_and_bearer_unit",
+        duration="constant",
+        effect="bearer_keyword_and_bearer_unit_move_bonus_with_bearer_melee_attacks_bonus",
+        effect_params={
+            "granted_keyword": "DESTROYER CULT",
+            "movement_bonus": 2,
+            "bearer_melee_attacks_bonus": 2,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010668003": EnhancementToolDescriptor(
+        enhancement_id="000010668003",
+        name="Murdermind",
+        timing="passive_and_declare_battle_formations",
+        target="bearer_and_destroyer_cult_bodyguard_unit",
+        duration="constant",
+        effect="bearer_keyword_move_bonus_and_attach_to_destroyer_cult_unit",
+        effect_params={
+            "granted_keyword": "DESTROYER CULT",
+            "bearer_move_bonus": 3,
+            "attachment_override_required_keyword": "DESTROYER CULT",
+            "attachment_override_exclude_keywords_any": ["CHARACTER"],
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010668004": EnhancementToolDescriptor(
+        enhancement_id="000010668004",
+        name="Mark of the Nekrosor",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_hit_roll_bonus",
+        effect_params={
+            "hit_roll_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010668005": EnhancementToolDescriptor(
+        enhancement_id="000010668005",
+        name="Cursed Circlet",
+        timing="after_enemy_unit_finishes_shooting",
+        target="bearer_unit",
+        duration="instant_repeatable",
+        effect="post_enemy_shooting_destroyed_models_surge_move",
+        effect_params={
+            "range_roll": "D6",
+            "allow_engagement_range": True,
+            "closest_enemy_exclude_keywords_any": ["AIRCRAFT"],
+            "requires_not_battle_shocked": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_NECRONS_CURSED_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_CURSED_LEGION_DESCRIPTORS.values()
+}
+
 _NECRONS_CRYPTEK_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010664002": EnhancementToolDescriptor(
         enhancement_id="000010664002",
@@ -8517,6 +8580,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_CANOPTEK_COURT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_CURSED_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_CRYPTEK_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8710,6 +8776,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_ANNIHILATION_LEGION_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_CANOPTEK_COURT_BY_NAME.get(key)
+        or _NECRONS_CURSED_LEGION_BY_NAME.get(key)
         or _NECRONS_CRYPTEK_CONCLAVE_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)

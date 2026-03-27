@@ -15804,6 +15804,105 @@ class GameShootingFightHandlersMixin:
             if callable(activate_fn):
                 activate_fn(unit, game=self, player=player)
 
+    def _on_shooting_targets_selected_cursed_circlet(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        managers: list[object] = []
+        seen: set[int] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            record_fn = getattr(mgr, "cursed_circlet_record_targets_selected", None) if mgr is not None else None
+            if not callable(record_fn):
+                continue
+            mgr_key = id(mgr)
+            if mgr_key in seen:
+                continue
+            seen.add(mgr_key)
+            managers.append(mgr)
+        for mgr in managers:
+            record_fn = getattr(mgr, "cursed_circlet_record_targets_selected", None)
+            if callable(record_fn):
+                record_fn(attacker_root, list(target_units or []), game=self)
+
+    def _on_unit_shooting_resolved_cursed_circlet(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+
+        requests: list[dict] = []
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "necrons_detachments", None)
+            build_fn = getattr(mgr, "cursed_circlet_reactive_move_requests", None) if mgr is not None else None
+            if not callable(build_fn):
+                continue
+            requests.extend(list(build_fn(attacker_root, game=self) or []))
+        if not requests:
+            return
+
+        from ...utility.dice import get_roll
+
+        try:
+            from ...utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+
+        for request_data in list(requests or []):
+            unit = request_data.get("unit")
+            player = request_data.get("player")
+            if unit is None or player is None:
+                continue
+            source_name = str(request_data.get("source_name", "Cursed Circlet") or "Cursed Circlet").strip() or "Cursed Circlet"
+            range_roll = str(request_data.get("range_roll", "D6") or "D6").strip().upper() or "D6"
+            max_distance = int(get_roll(range_roll) or 0)
+            if callable(append_dice):
+                append_dice(player, f"{source_name}: {max_distance}")
+            if max_distance <= 0:
+                continue
+            self._queue_reactive_move_movement_decision(
+                player=player,
+                unit=unit,
+                max_distance=int(max_distance),
+                kind="cursed_circlet",
+                movement_type="reactive",
+                reactive_movement_type="cursed_circlet",
+                source=source_name,
+                moving_unit=attacker_root,
+                attacker_unit=attacker_root,
+                range_value=int(max_distance),
+                allow_engagement_range=bool(request_data.get("allow_engagement_range", True)),
+                extra_context={
+                    "cursed_circlet_closest_enemy_exclude_keywords_any": list(
+                        request_data.get("closest_enemy_exclude_keywords_any", ("AIRCRAFT",)) or ("AIRCRAFT",)
+                    ),
+                },
+            )
+
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

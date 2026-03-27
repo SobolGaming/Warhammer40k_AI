@@ -118,6 +118,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self._cold_fervour_turn_key: tuple[int, str] | None = None
         self._cold_fervour_activated_turn_key: tuple[int, str] | None = None
         self._cold_fervour_target_snapshots_by_attacker: dict[str, dict[str, tuple[object, bool, bool]]] = {}
+        self._cursed_circlet_target_snapshots_by_attacker: dict[str, dict[str, tuple[object, int]]] = {}
         self.hyperphasing_last_resolved_phase_key: str = ""
         self.worthy_foes_target_unit_id: str = ""
         self.worthy_foes_target_name: str = ""
@@ -754,6 +755,192 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return False
         self._cold_fervour_activated_turn_key = self._cold_fervour_turn_key_for_game(game)
         return True
+
+    @staticmethod
+    def _unit_alive_model_count(unit) -> int:
+        return sum(1 for model in NecronsDetachmentManager._iter_unit_models(unit) if NecronsDetachmentManager._model_is_alive(model))
+
+    @staticmethod
+    def _unit_is_battle_shocked(unit) -> bool:
+        root = NecronsDetachmentManager._unit_root(unit)
+        if root is None:
+            return False
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked):
+            return bool(is_battle_shocked())
+        return bool(getattr(root, "battle_shocked", False))
+
+    def _active_cursed_circlet_source_for_unit(self, unit) -> dict | None:
+        if not self.is_cursed_legion():
+            return None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return None
+        for member, special_rules in self._attached_member_special_rules_with_flag(root, "enhancement_cursed_circlet"):
+            if not self._enhancement_bearer_is_alive_for_member(member, special_rules):
+                continue
+            source_name = str(
+                special_rules.get("enhancement_cursed_circlet_source", "Cursed Circlet") or "Cursed Circlet"
+            ).strip() or "Cursed Circlet"
+            range_roll = str(special_rules.get("enhancement_cursed_circlet_range_roll", "D6") or "D6").strip().upper()
+            exclude_keywords_any = [
+                str(value or "").strip().upper()
+                for value in list(
+                    special_rules.get("enhancement_cursed_circlet_closest_enemy_exclude_keywords_any", ("AIRCRAFT",))
+                    or ("AIRCRAFT",)
+                )
+                if str(value or "").strip()
+            ]
+            return {
+                "member": member,
+                "source_name": source_name,
+                "range_roll": range_roll or "D6",
+                "allow_engagement_range": bool(
+                    special_rules.get("enhancement_cursed_circlet_allow_engagement_range", True)
+                ),
+                "requires_not_battle_shocked": bool(
+                    special_rules.get("enhancement_cursed_circlet_requires_not_battle_shocked", True)
+                ),
+                "closest_enemy_exclude_keywords_any": exclude_keywords_any or ["AIRCRAFT"],
+            }
+        return None
+
+    def _cursed_circlet_has_eligible_enemy(
+        self,
+        unit,
+        *,
+        game=None,
+        exclude_keywords_any: tuple[str, ...] | list[str] | None = None,
+    ) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        own_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        excluded = tuple(str(value or "").strip().upper() for value in list(exclude_keywords_any or ()) if str(value or "").strip())
+        seen: set[str] = set()
+        for other in list(getattr(game_map, "units", []) or []):
+            other_root = self._unit_root(other)
+            if other_root is None:
+                continue
+            other_id = str(get_entity_id(other_root) or id(other_root))
+            if other_id in seen:
+                continue
+            seen.add(other_id)
+            if other_root is root:
+                continue
+            other_get_parent_army = getattr(other_root, "get_parent_army", None)
+            other_army = (
+                other_get_parent_army() if callable(other_get_parent_army) else getattr(other_root, "parent_army", None)
+            )
+            if own_army is not None and other_army is own_army:
+                continue
+            if self._unit_alive_model_count(other_root) <= 0:
+                continue
+            if excluded and self._unit_contains_any_keyword(other_root, excluded):
+                continue
+            return True
+        return False
+
+    def cursed_circlet_record_targets_selected(self, attacking_unit, target_units, *, game=None) -> None:
+        if not self.is_cursed_legion():
+            return
+        attacker_root = self._unit_root(attacking_unit)
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or id(attacker_root))
+        attacker_get_parent_army = getattr(attacker_root, "get_parent_army", None)
+        attacker_army = (
+            attacker_get_parent_army()
+            if callable(attacker_get_parent_army)
+            else getattr(attacker_root, "parent_army", None)
+        )
+        snapshots = dict(self._cursed_circlet_target_snapshots_by_attacker.get(attacker_id, {}) or {})
+        for target in list(target_units or []):
+            target_root = self._unit_root(target)
+            if target_root is None:
+                continue
+            target_get_parent_army = getattr(target_root, "get_parent_army", None)
+            target_army = target_get_parent_army() if callable(target_get_parent_army) else getattr(target_root, "parent_army", None)
+            if attacker_army is not None and target_army is attacker_army:
+                continue
+            if self._active_cursed_circlet_source_for_unit(target_root) is None:
+                continue
+            alive_model_count = int(self._unit_alive_model_count(target_root) or 0)
+            if alive_model_count <= 0:
+                continue
+            target_id = str(get_entity_id(target_root) or id(target_root))
+            snapshots[target_id] = (target_root, alive_model_count)
+        if snapshots:
+            self._cursed_circlet_target_snapshots_by_attacker[attacker_id] = snapshots
+        else:
+            self._cursed_circlet_target_snapshots_by_attacker.pop(attacker_id, None)
+
+    def cursed_circlet_reactive_move_requests(self, attacker_unit, *, game=None) -> list[dict]:
+        if not self.is_cursed_legion():
+            return []
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None:
+            return []
+        attacker_id = str(get_entity_id(attacker_root) or id(attacker_root))
+        snapshots = dict(self._cursed_circlet_target_snapshots_by_attacker.pop(attacker_id, {}) or {})
+        if not snapshots:
+            return []
+        attacker_get_parent_army = getattr(attacker_root, "get_parent_army", None)
+        attacker_army = (
+            attacker_get_parent_army()
+            if callable(attacker_get_parent_army)
+            else getattr(attacker_root, "parent_army", None)
+        )
+        requests: list[dict] = []
+        for target_id in sorted(snapshots):
+            entry = snapshots.get(target_id)
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                continue
+            target_root, before_count = entry
+            if target_root is None:
+                continue
+            after_count = int(self._unit_alive_model_count(target_root) or 0)
+            if after_count >= int(before_count or 0):
+                continue
+            source_data = self._active_cursed_circlet_source_for_unit(target_root)
+            if source_data is None:
+                continue
+            if bool(source_data.get("requires_not_battle_shocked", True)) and self._unit_is_battle_shocked(target_root):
+                continue
+            target_get_parent_army = getattr(target_root, "get_parent_army", None)
+            target_army = target_get_parent_army() if callable(target_get_parent_army) else getattr(target_root, "parent_army", None)
+            if target_army is None or target_army is attacker_army:
+                continue
+            if not self._cursed_circlet_has_eligible_enemy(
+                target_root,
+                game=game,
+                exclude_keywords_any=source_data.get("closest_enemy_exclude_keywords_any", ("AIRCRAFT",)),
+            ):
+                continue
+            player = getattr(target_army, "player", None)
+            if player is None:
+                continue
+            requests.append(
+                {
+                    "player": player,
+                    "unit": target_root,
+                    "attacker_unit": attacker_root,
+                    "source_name": str(source_data.get("source_name", "Cursed Circlet") or "Cursed Circlet"),
+                    "range_roll": str(source_data.get("range_roll", "D6") or "D6").strip().upper() or "D6",
+                    "allow_engagement_range": bool(source_data.get("allow_engagement_range", True)),
+                    "closest_enemy_exclude_keywords_any": list(
+                        source_data.get("closest_enemy_exclude_keywords_any", ("AIRCRAFT",)) or ("AIRCRAFT",)
+                    ),
+                }
+            )
+        return requests
 
     def _iter_unique_army_roots(self) -> list:
         if self.army is None:

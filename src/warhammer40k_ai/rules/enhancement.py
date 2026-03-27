@@ -65,6 +65,31 @@ def _set_bearer_model_wounds_characteristic(model, desired_base: int) -> bool:
     return True
 
 
+def _grant_enhancement_bearer_keyword(unit, bearer, keyword: str) -> bool:
+    if unit is None or bearer is None:
+        return False
+    token = str(keyword or "").strip().upper()
+    if not token:
+        return False
+    existing = [str(value or "").strip() for value in list(getattr(bearer, "keywords", []) or []) if str(value or "").strip()]
+    existing_lower = {value.lower() for value in existing}
+    changed = False
+    if token.lower() not in existing_lower:
+        existing.append(token)
+        bearer.keywords = list(existing)
+        changed = True
+    invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+    if callable(invalidate_cache):
+        invalidate_cache()
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    root = get_root() if callable(get_root) else unit
+    if root is not None and root is not unit:
+        root_invalidate_cache = getattr(root, "_invalidate_ability_cache", None)
+        if callable(root_invalidate_cache):
+            root_invalidate_cache()
+    return changed
+
+
 def _current_unit_wounds(unit) -> int:
     total = 0
     for model in list(getattr(unit, "models", []) or []):
@@ -1853,6 +1878,9 @@ class Enhancement:
         is_canoptek_court = bool(
             ne_mgr and getattr(ne_mgr, "is_canoptek_court", lambda: False)()
         )
+        is_cursed_legion = bool(
+            ne_mgr and getattr(ne_mgr, "is_cursed_legion", lambda: False)()
+        )
         is_cryptek_conclave = bool(
             ne_mgr and getattr(ne_mgr, "is_cryptek_conclave", lambda: False)()
         )
@@ -2399,6 +2427,126 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_gravitic_bolas_bearer_model_id"] = bearer_id
+
+        if name == "destroyer ankh" or enh_id == "000010668002":
+            if not is_cursed_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Destroyer Ankh").strip() or "Destroyer Ankh"
+            melee_attacks_bonus = int(max(0, _coerce_int(params.get("bearer_melee_attacks_bonus", 2) or 2, default=2)))
+            unit.special_rules["enhancement_destroyer_ankh"] = True
+            unit.special_rules["enhancement_destroyer_ankh_source"] = source_name
+            unit.special_rules["enhancement_destroyer_ankh_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(melee_attacks_bonus)
+            if bearer is not None:
+                _grant_enhancement_bearer_keyword(
+                    unit,
+                    bearer,
+                    str(params.get("granted_keyword", "DESTROYER CULT") or "DESTROYER CULT"),
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_destroyer_ankh_bearer_model_id"] = bearer_id
+
+        if name == "murdermind" or enh_id == "000010668003":
+            if not is_cursed_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Murdermind").strip() or "Murdermind"
+            move_bonus = int(max(0, _coerce_int(params.get("bearer_move_bonus", 3) or 3, default=3)))
+            unit.special_rules["enhancement_murdermind"] = True
+            unit.special_rules["enhancement_murdermind_source"] = source_name
+            unit.special_rules["enhancement_murdermind_bearer_move_bonus"] = int(move_bonus)
+            unit.special_rules["enhancement_murdermind_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_murdermind_attach_required_keyword"] = str(
+                params.get("attachment_override_required_keyword", "DESTROYER CULT") or "DESTROYER CULT"
+            ).strip().upper()
+            unit.special_rules["enhancement_murdermind_attach_exclude_keywords_any"] = [
+                str(value or "").strip().upper()
+                for value in list(params.get("attachment_override_exclude_keywords_any", ("CHARACTER",)) or ())
+                if str(value or "").strip()
+            ]
+            if bearer is not None:
+                _grant_enhancement_bearer_keyword(
+                    unit,
+                    bearer,
+                    str(params.get("granted_keyword", "DESTROYER CULT") or "DESTROYER CULT"),
+                )
+                if move_bonus > 0:
+                    effects = getattr(bearer, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        bearer._temporary_effects = effects
+                    effects["enhancement_murdermind_move_bonus"] = {
+                        "movement_bonus": int(move_bonus),
+                        "movement_bonus_source": source_name,
+                    }
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_murdermind_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "mark of the nekrosor" or enh_id == "000010668004":
+            if not is_cursed_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Mark of the Nekrosor").strip() or "Mark of the Nekrosor"
+            hit_bonus = int(max(0, _coerce_int(params.get("hit_roll_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_mark_of_the_nekrosor"] = True
+            unit.special_rules["enhancement_mark_of_the_nekrosor_source"] = source_name
+            unit.special_rules["enhancement_mark_of_the_nekrosor_hit_bonus"] = int(hit_bonus)
+            if hit_bonus:
+                _append_enhancement_bearer_unit_attack_roll_modifier_rule(
+                    unit,
+                    attack_type="any",
+                    roll="hit",
+                    modifier=int(hit_bonus),
+                    source=source_name,
+                    source_model_id=bearer_id,
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mark_of_the_nekrosor_bearer_model_id"] = bearer_id
+
+        if name == "cursed circlet" or enh_id == "000010668005":
+            if not is_cursed_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Cursed Circlet").strip() or "Cursed Circlet"
+            unit.special_rules["enhancement_cursed_circlet"] = True
+            unit.special_rules["enhancement_cursed_circlet_source"] = source_name
+            unit.special_rules["enhancement_cursed_circlet_range_roll"] = str(
+                params.get("range_roll", "D6") or "D6"
+            ).strip().upper()
+            unit.special_rules["enhancement_cursed_circlet_allow_engagement_range"] = bool(
+                params.get("allow_engagement_range", True)
+            )
+            unit.special_rules["enhancement_cursed_circlet_requires_not_battle_shocked"] = bool(
+                params.get("requires_not_battle_shocked", True)
+            )
+            unit.special_rules["enhancement_cursed_circlet_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_cursed_circlet_closest_enemy_exclude_keywords_any"] = [
+                str(value or "").strip().upper()
+                for value in list(params.get("closest_enemy_exclude_keywords_any", ("AIRCRAFT",)) or ())
+                if str(value or "").strip()
+            ]
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_cursed_circlet_bearer_model_id"] = bearer_id
 
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:

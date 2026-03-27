@@ -1737,6 +1737,59 @@ class PositioningMixin:
             return False
         return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="FLASH GITZ")
 
+    def _murdermind_is_bearer(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_murdermind")):
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        get_parent_army = getattr(self, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(self, "parent_army", None)
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        is_cursed_legion = getattr(mgr, "is_cursed_legion", None) if mgr is not None else None
+        return bool(callable(is_cursed_legion) and is_cursed_legion())
+
+    def _murdermind_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_murdermind")):
+            return False
+        required_keyword = str(
+            sr.get("enhancement_murdermind_attach_required_keyword", "DESTROYER CULT") or "DESTROYER CULT"
+        ).strip().upper()
+        if not required_keyword:
+            return False
+        bodyguard_has_keyword = getattr(bodyguard, "has_any_keyword", None)
+        if not callable(bodyguard_has_keyword) or not bool(bodyguard_has_keyword(required_keyword)):
+            return False
+        excluded_keywords = {
+            str(value or "").strip().upper()
+            for value in list(sr.get("enhancement_murdermind_attach_exclude_keywords_any", ()) or ())
+            if str(value or "").strip()
+        }
+        for keyword in excluded_keywords:
+            if bool(bodyguard_has_keyword(keyword)):
+                return False
+        for leader in list(getattr(bodyguard, "attached_leaders", []) or []):
+            if leader is None or leader is self:
+                continue
+            leader_has_keyword = getattr(leader, "has_any_keyword", None)
+            if not callable(leader_has_keyword):
+                return False
+            if not bool(leader_has_keyword(required_keyword)):
+                return False
+        return True
+
+    def _murdermind_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._murdermind_is_bearer():
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_murdermind"):
+            return False
+        return self._murdermind_bodyguard_allowed(bodyguard)
+
     def _skwad_leader_is_leading_kommandos(self) -> bool:
         if not bool(getattr(self, "is_attached_leader", False)):
             return False

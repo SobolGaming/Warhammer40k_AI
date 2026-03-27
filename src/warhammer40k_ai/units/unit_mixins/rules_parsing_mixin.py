@@ -3502,6 +3502,17 @@ class RulesParsingMixin:
                             val = None
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            source_rules = getattr(u, "special_rules", None)
+                            if (
+                                isinstance(source_rules, dict)
+                                and bool(source_rules.get("enhancement_destroyer_ankh"))
+                                and bool(source_rules.get("enhancement_destroyer_ankh_requires_bearer_alive", True))
+                            ):
+                                alive_check = getattr(u, "_enhancement_bearer_model_is_alive", None)
+                                if callable(alive_check) and not bool(
+                                    alive_check(flag_key="enhancement_destroyer_ankh")
+                                ):
+                                    continue
                             if waaagh_active_clause:
                                 waaagh_movement_bonus_entries.append(
                                     {
