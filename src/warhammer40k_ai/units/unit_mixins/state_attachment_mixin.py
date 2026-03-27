@@ -4079,6 +4079,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Synaptic Tyrant (Warrior Bioform Onslaught): Neurotyrant bearer can attach to Tyranid Warriors.
+        try:
+            if self._synaptic_tyrant_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bray Lord (Warpmeld Pact): bearer can attach to Tzaangors.
         try:
             if self._bray_lord_can_attach_to(bodyguard):

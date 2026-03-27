@@ -1048,6 +1048,119 @@ def _append_enhancement_bearer_unit_attack_roll_modifier_rule(
     )
 
 
+def _append_enhancement_target_hit_penalty_rule(
+    unit,
+    *,
+    target_scope: str,
+    attack_type: str,
+    penalty: int,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    penalty_value = abs(int(penalty or 0))
+    if penalty_value == 0:
+        return
+    entry = {
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "attack_type": _normalize_enhancement_local_passive_attack_type(attack_type),
+        "modifier": penalty_value,
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_target_hit_penalty_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            int(value.get("modifier", 0) or 0),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+            int(value.get("modifier", 0) or 0),
+        ),
+    )
+
+
+def _append_enhancement_bearer_unit_target_hit_penalty_rule(
+    unit,
+    *,
+    attack_type: str,
+    penalty: int,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_target_hit_penalty_rule(
+        unit,
+        target_scope="bearer_unit",
+        attack_type=attack_type,
+        penalty=penalty,
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
+def _append_enhancement_charge_after_advance_rule(
+    unit,
+    *,
+    target_scope: str,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    entry = {
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_charge_after_advance_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+        ),
+    )
+
+
+def _append_enhancement_bearer_unit_charge_after_advance_rule(
+    unit,
+    *,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_charge_after_advance_rule(
+        unit,
+        target_scope="bearer_unit",
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
 def _append_enhancement_fall_back_shoot_rule(
     unit,
     *,
@@ -1947,6 +2060,10 @@ class Enhancement:
             is_synaptic_nexus = bool(tyr_mgr and tyr_mgr.is_synaptic_nexus())
         except Exception:
             is_synaptic_nexus = False
+        try:
+            is_warrior_bioform_onslaught = bool(tyr_mgr and tyr_mgr.is_warrior_bioform_onslaught())
+        except Exception:
+            is_warrior_bioform_onslaught = False
         try:
             is_unending_swarm = bool(tyr_mgr and tyr_mgr.is_unending_swarm())
         except Exception:
@@ -10315,6 +10432,109 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_dirgeheart_of_kharis_bearer_model_id"] = bearer_id
+
+        if name == "synaptic tyrant" or enh_id == "000009737002":
+            if not is_warrior_bioform_onslaught:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Synaptic Tyrant").strip() or "Synaptic Tyrant"
+            attach_names = [
+                str(value).strip()
+                for value in list(
+                    params.get(
+                        "attachment_override_unit_names_any",
+                        (
+                            "Tyranid Warriors with Ranged Bio-weapons",
+                            "Tyranid Warriors with Melee Bio-weapons",
+                        ),
+                    )
+                    or ()
+                )
+                if str(value or "").strip()
+            ]
+            unit.special_rules["enhancement_synaptic_tyrant"] = True
+            unit.special_rules["enhancement_synaptic_tyrant_source"] = source_name
+            unit.special_rules["enhancement_synaptic_tyrant_attach_unit_names"] = list(attach_names)
+            allowed_names = [
+                str(value).strip()
+                for value in list(getattr(unit, "can_be_attached_to_names", []) or [])
+                if str(value or "").strip()
+            ]
+            allowed_name_set = {str(value).casefold() for value in allowed_names}
+            for attach_name in attach_names:
+                if attach_name.casefold() in allowed_name_set:
+                    continue
+                allowed_names.append(attach_name)
+                allowed_name_set.add(attach_name.casefold())
+            unit.can_be_attached_to_names = list(allowed_names)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_synaptic_tyrant_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "ocular adaptation" or enh_id == "000009737003":
+            if not is_warrior_bioform_onslaught:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Ocular Adaptation").strip() or "Ocular Adaptation"
+            hit_bonus = int(max(0, _coerce_int(params.get("hit_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_ocular_adaptation"] = True
+            unit.special_rules["enhancement_ocular_adaptation_source"] = source_name
+            unit.special_rules["enhancement_ocular_adaptation_hit_bonus"] = int(hit_bonus)
+            if hit_bonus:
+                _append_enhancement_bearer_unit_attack_roll_modifier_rule(
+                    unit,
+                    attack_type="any",
+                    roll="hit",
+                    modifier=int(hit_bonus),
+                    source=source_name,
+                    source_model_id=bearer_id,
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ocular_adaptation_bearer_model_id"] = bearer_id
+
+        if name == "sensory assimilation" or enh_id == "000009737004":
+            if not is_warrior_bioform_onslaught:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Sensory Assimilation").strip() or "Sensory Assimilation"
+            penalty = int(max(0, _coerce_int(params.get("target_hit_roll_penalty", 1) or 1, default=1)))
+            unit.special_rules["enhancement_sensory_assimilation"] = True
+            unit.special_rules["enhancement_sensory_assimilation_source"] = source_name
+            unit.special_rules["enhancement_sensory_assimilation_target_hit_roll_penalty"] = int(penalty)
+            if penalty:
+                _append_enhancement_bearer_unit_target_hit_penalty_rule(
+                    unit,
+                    attack_type="any",
+                    penalty=int(penalty),
+                    source=source_name,
+                    source_model_id=bearer_id,
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sensory_assimilation_bearer_model_id"] = bearer_id
+
+        if name == "elevated might" or enh_id == "000009737005":
+            if not is_warrior_bioform_onslaught:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Elevated Might").strip() or "Elevated Might"
+            unit.special_rules["enhancement_elevated_might"] = True
+            unit.special_rules["enhancement_elevated_might_source"] = source_name
+            _append_enhancement_bearer_unit_charge_after_advance_rule(
+                unit,
+                source=source_name,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_elevated_might_bearer_model_id"] = bearer_id
 
         if name == "relentless hunger" or enh_id == "000008408002":
             if not is_unending_swarm:

@@ -649,6 +649,32 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_synaptic_tyrant(self) -> bool:
+        """True if this unit has the Synaptic Tyrant enhancement."""
+        cache_key = "synaptic_tyrant"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_synaptic_tyrant"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "synaptic tyrant" or enh_id == "000009737002":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -1543,6 +1569,72 @@ class PositioningMixin:
         if not self._catechism_of_divine_penitence_is_bearer():
             return False
         return self._catechism_of_divine_penitence_bodyguard_allowed(bodyguard)
+
+    def _synaptic_tyrant_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        configured_names: list[str] = []
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                configured_names = [
+                    self._normalize_attached_unit_name(v)
+                    for v in list(sr.get("enhancement_synaptic_tyrant_attach_unit_names", ()) or ())
+                    if str(v or "").strip()
+                ]
+        except Exception:
+            configured_names = []
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        if name in set(configured_names):
+            return True
+        if "tyranid warriors" in name:
+            return True
+        try:
+            if bool(bodyguard.has_any_keyword("TYRANID WARRIORS")):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _synaptic_tyrant_is_bearer(self) -> bool:
+        if not self.has_synaptic_tyrant():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        if tyr_mgr is None:
+            return False
+        try:
+            if not tyr_mgr.is_warrior_bioform_onslaught():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(self.has_any_keyword("NEUROTYRANT")):
+                return True
+        except Exception:
+            pass
+        try:
+            name = self._normalize_attached_unit_name(getattr(self, "name", ""))
+        except Exception:
+            name = ""
+        return name == "neurotyrant"
+
+    def _synaptic_tyrant_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._synaptic_tyrant_is_bearer():
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_synaptic_tyrant"):
+            return False
+        return self._synaptic_tyrant_bodyguard_allowed(bodyguard)
 
     def _enhancement_bearer_model_is_alive(self, *, flag_key: str) -> bool:
         sr = getattr(self, "special_rules", None)

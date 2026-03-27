@@ -7245,6 +7245,54 @@ _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.values()
 }
 
+_TYRANIDS_WARRIOR_BIOFORM_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009737002": EnhancementToolDescriptor(
+        enhancement_id="000009737002",
+        name="Synaptic Tyrant",
+        timing="passive_and_declare_battle_formations_attachment_override",
+        target="bearer",
+        duration="battle_setup",
+        effect="attachment_override",
+        effect_params={
+            "attachment_override_unit_names_any": (
+                "Tyranid Warriors with Ranged Bio-weapons",
+                "Tyranid Warriors with Melee Bio-weapons",
+            ),
+        },
+    ),
+    "000009737003": EnhancementToolDescriptor(
+        enhancement_id="000009737003",
+        name="Ocular Adaptation",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="hit_roll_bonus",
+        effect_params={"hit_bonus": 1},
+    ),
+    "000009737004": EnhancementToolDescriptor(
+        enhancement_id="000009737004",
+        name="Sensory Assimilation",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="target_hit_roll_penalty",
+        effect_params={"target_hit_roll_penalty": 1},
+    ),
+    "000009737005": EnhancementToolDescriptor(
+        enhancement_id="000009737005",
+        name="Elevated Might",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="charge_after_advance",
+        effect_params={"charge_after_advance": True},
+    ),
+}
+
+_TYRANIDS_WARRIOR_BIOFORM_ONSLAUGHT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_WARRIOR_BIOFORM_ONSLAUGHT_DESCRIPTORS.values()
+}
+
 _TYRANIDS_UNENDING_SWARM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008408002": EnhancementToolDescriptor(
         enhancement_id="000008408002",
@@ -8309,6 +8357,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TYRANIDS_WARRIOR_BIOFORM_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_UNENDING_SWARM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8488,6 +8539,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
         or _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME.get(key)
+        or _TYRANIDS_WARRIOR_BIOFORM_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_UNENDING_SWARM_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_CRUSHER_STAMPEDE_BY_NAME.get(key)

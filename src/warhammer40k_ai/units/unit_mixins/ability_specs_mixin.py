@@ -15379,6 +15379,41 @@ class AbilitySpecsMixin:
                     penalty += int(val)
                     reasons.append(f"-{val} to hit from {src}")
 
+        iterator = getattr(root, "_iter_active_attached_enhancement_local_passive_rules", None)
+        if callable(iterator):
+            model_matcher = getattr(root, "_enhancement_local_passive_model_matches_source", None)
+            for source_unit, rule in iterator("enhancement_target_hit_penalty_rules"):
+                target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+                if target_scope == "bearer":
+                    if target_model is None or not callable(model_matcher):
+                        continue
+                    if not bool(model_matcher(target_model, source_unit, rule)):
+                        continue
+                elif target_scope != "bearer_unit":
+                    continue
+                rule_attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+                if rule_attack_type not in ("any", "melee", "ranged"):
+                    rule_attack_type = "any"
+                if atype != "any" and rule_attack_type not in ("any", atype):
+                    continue
+                try:
+                    val = abs(int(rule.get("modifier", 0) or 0))
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                src = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
+                source_model_id = str(rule.get("source_model_id", "") or "").strip()
+                key = (
+                    f"enhancement_target_hit:{target_scope}:{rule_attack_type}:"
+                    f"{src.lower()}:{source_model_id}:{int(val)}"
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                penalty += int(val)
+                reasons.append(f"-{int(val)} to hit from {src}")
+
         def _match_entries(entries, scope_key: str) -> None:
             nonlocal penalty
             for name, desc in entries:

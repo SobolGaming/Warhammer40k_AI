@@ -6178,6 +6178,17 @@ class ActionsMovementMixin:
             return True
         return False
 
+    def _enhancement_unit_can_charge_after_advance(self) -> bool:
+        iterator = getattr(self, "_iter_active_attached_enhancement_local_passive_rules", None)
+        if not callable(iterator):
+            return False
+        for _source_unit, rule in iterator("enhancement_charge_after_advance_rules"):
+            target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+            if target_scope != "bearer_unit":
+                continue
+            return True
+        return False
+
     def _prey_selection_target_bonus(
         self,
         *,
@@ -18646,6 +18657,12 @@ class ActionsMovementMixin:
                 turn_key="serpents_brood_striking_stride_turn",
                 expires_phase_key="serpents_brood_striking_stride_expires_phase",
             ):
+                return True
+        except Exception:
+            pass
+        try:
+            enhancement_charge_after_advance_fn = getattr(self, "_enhancement_unit_can_charge_after_advance", None)
+            if callable(enhancement_charge_after_advance_fn) and enhancement_charge_after_advance_fn():
                 return True
         except Exception:
             pass
