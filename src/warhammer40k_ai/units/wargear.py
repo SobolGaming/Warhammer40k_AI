@@ -3460,6 +3460,17 @@ class WargearProfile:
                 )
                 if temp_ap_bonus:
                     ap_val -= int(temp_ap_bonus)
+        try:
+            sr = self._unit_special_rules(attacker)
+            psychic_ap_bonus = int(sr.get("enhancement_bearer_psychic_ap_bonus", 0) or 0)
+            if (
+                psychic_ap_bonus
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self._is_psychic_attack(attacker)
+            ):
+                ap_val -= int(psychic_ap_bonus)
+        except Exception:
+            pass
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         army = get_parent_army() if callable(get_parent_army) else None
@@ -17219,8 +17230,12 @@ class WargearProfile:
                 and self._is_psychic_attack(attacker)
             ):
                 strength = strength + psychic_bonus
+                source_name = (
+                    str(sr.get("enhancement_bearer_psychic_strength_bonus_source", "") or "Eldritch Vortex of E'taph").strip()
+                    or "Eldritch Vortex of E'taph"
+                )
                 wound_result.setdefault("modifiers", []).append(
-                    f"+{psychic_bonus}S from Eldritch Vortex of E'taph"
+                    f"+{psychic_bonus}S from {source_name}"
                 )
         try:
             if isinstance(strength, int):

@@ -1943,6 +1943,10 @@ class Enhancement:
             is_subterranean_assault = bool(tyr_mgr and tyr_mgr.is_subterranean_assault())
         except Exception:
             is_subterranean_assault = False
+        try:
+            is_synaptic_nexus = bool(tyr_mgr and tyr_mgr.is_synaptic_nexus())
+        except Exception:
+            is_synaptic_nexus = False
 
         bearer = None
         bearer_id = ""
@@ -10220,6 +10224,93 @@ class Enhancement:
             invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
             if callable(invalidate_cache):
                 invalidate_cache()
+
+        if name == "power of the hive mind" or enh_id == "000008421002":
+            if not is_synaptic_nexus:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Power of the Hive Mind").strip() or "Power of the Hive Mind"
+            psychic_strength_bonus = int(max(0, _coerce_int(params.get("psychic_strength_bonus", 1) or 1, default=1)))
+            psychic_ap_bonus = int(max(0, _coerce_int(params.get("psychic_ap_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_power_of_the_hive_mind"] = True
+            unit.special_rules["enhancement_power_of_the_hive_mind_source"] = source_name
+            if psychic_strength_bonus:
+                unit.special_rules["enhancement_bearer_psychic_strength_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_psychic_strength_bonus", 0) or 0
+                ) + int(psychic_strength_bonus)
+                unit.special_rules["enhancement_bearer_psychic_strength_bonus_source"] = source_name
+            if psychic_ap_bonus:
+                unit.special_rules["enhancement_bearer_psychic_ap_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_psychic_ap_bonus", 0) or 0
+                ) + int(psychic_ap_bonus)
+                unit.special_rules["enhancement_bearer_psychic_ap_bonus_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_power_of_the_hive_mind_bearer_model_id"] = bearer_id
+
+        if name == "psychostatic disruption" or enh_id == "000008421003":
+            if not is_synaptic_nexus:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = (
+                str(getattr(desc, "name", "") or "Psychostatic Disruption").strip() or "Psychostatic Disruption"
+            )
+            min_enemy_distance = float(
+                max(
+                    0.0,
+                    _coerce_float(
+                        params.get("min_enemy_distance", getattr(desc, "range_in", 12.0)) or 12.0,
+                        default=12.0,
+                    ),
+                )
+            )
+            success_on = int(min(6, max(2, _coerce_int(params.get("success_on", 4) or 4, default=4))))
+            raw_trigger_rounds = list(params.get("trigger_rounds", (1, 2)) or (1, 2))
+            trigger_rounds: list[int] = []
+            for round_value in raw_trigger_rounds:
+                resolved_round = int(max(1, _coerce_int(round_value, default=0)))
+                if resolved_round not in trigger_rounds:
+                    trigger_rounds.append(resolved_round)
+            once_key = str(
+                params.get("once_per_battle_key", "psychostatic_disruption") or "psychostatic_disruption"
+            ).strip().lower()
+            if not once_key:
+                once_key = "psychostatic_disruption"
+            unit.special_rules["enhancement_psychostatic_disruption"] = True
+            unit.special_rules["enhancement_psychostatic_disruption_source"] = source_name
+            unit.special_rules["enhancement_psychostatic_disruption_min_enemy_distance"] = float(min_enemy_distance)
+            unit.special_rules["enhancement_psychostatic_disruption_success_on"] = int(success_on)
+            unit.special_rules["enhancement_psychostatic_disruption_trigger_rounds"] = list(trigger_rounds or [1, 2])
+            unit.special_rules["enhancement_psychostatic_disruption_once_key"] = once_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_psychostatic_disruption_bearer_model_id"] = bearer_id
+
+        if name in ("the dirgeheart of kharis aura", "the dirgeheart of kharis (aura)") or enh_id == "000008421005":
+            if not is_synaptic_nexus:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = (
+                str(getattr(desc, "name", "") or "The Dirgeheart of Kharis (Aura)").strip()
+                or "The Dirgeheart of Kharis (Aura)"
+            )
+            aura_range = float(
+                max(
+                    0.0,
+                    _coerce_float(params.get("range", getattr(desc, "range_in", 9.0)) or 9.0, default=9.0),
+                )
+            )
+            leadership_penalty = int(max(0, _coerce_int(params.get("leadership_penalty", 1) or 1, default=1)))
+            unit.special_rules["enhancement_dirgeheart_of_kharis_aura"] = True
+            unit.special_rules["enhancement_dirgeheart_of_kharis_aura_source"] = source_name
+            unit.special_rules["enhancement_dirgeheart_of_kharis_aura_range"] = float(aura_range)
+            unit.special_rules["enhancement_dirgeheart_of_kharis_aura_penalty"] = int(leadership_penalty)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dirgeheart_of_kharis_bearer_model_id"] = bearer_id
 
         if name == "ominous presence" or enh_id == "000008404002":
             if not is_crusher_stampede:

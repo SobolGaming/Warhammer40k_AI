@@ -7183,6 +7183,68 @@ _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_SUBTERRANEAN_ASSAULT_DESCRIPTORS.values()
 }
 
+_TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008421002": EnhancementToolDescriptor(
+        enhancement_id="000008421002",
+        name="Power of the Hive Mind",
+        timing="passive",
+        target="bearer_psychic_weapons",
+        duration="constant",
+        effect="bearer_psychic_strength_and_ap_bonus",
+        effect_params={
+            "psychic_strength_bonus": 1,
+            "psychic_ap_bonus": 1,
+            "bearer_only": True,
+        },
+    ),
+    "000008421003": EnhancementToolDescriptor(
+        enhancement_id="000008421003",
+        name="Psychostatic Disruption",
+        timing="passive_and_on_enemy_strategic_reserves_declare_optional",
+        target="enemy_units_arriving_from_reserves_within_range_and_enemy_strategic_reserves_arrival",
+        duration="constant_and_once_per_battle_instant",
+        effect="reserves_denial_aura_and_once_per_battle_strategic_reserves_arrival_cancel",
+        range_in=12.0,
+        once_per_battle=True,
+        effect_params={
+            "min_enemy_distance": 12.0,
+            "trigger_rounds": (1, 2),
+            "roll": "D6",
+            "success_on": 4,
+            "once_per_battle_key": "psychostatic_disruption",
+            "bearer_only": True,
+            "optional": True,
+        },
+    ),
+    "000008421004": EnhancementToolDescriptor(
+        enhancement_id="000008421004",
+        name="Synaptic Control",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_incoming_damage_modifier",
+        effect_params={
+            "damage_modifier": -1,
+            "minimum_damage": 1,
+            "bearer_only": True,
+        },
+    ),
+    "000008421005": EnhancementToolDescriptor(
+        enhancement_id="000008421005",
+        name="The Dirgeheart of Kharis (Aura)",
+        timing="passive_aura",
+        target="enemy_units_within_range_of_bearer",
+        duration="constant",
+        effect="enemy_leadership_characteristic_penalty_aura",
+        range_in=9.0,
+        effect_params={"range": 9.0, "leadership_penalty": 1, "bearer_only": True},
+    ),
+}
+
+_TYRANIDS_SYNAPTIC_NEXUS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.values()
+}
+
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008417003": EnhancementToolDescriptor(
         enhancement_id="000008417003",
@@ -8187,6 +8249,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TYRANIDS_SUBTERRANEAN_ASSAULT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8362,6 +8427,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
+        or _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_CRUSHER_STAMPEDE_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)

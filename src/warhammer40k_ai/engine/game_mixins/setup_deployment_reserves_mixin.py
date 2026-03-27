@@ -192,6 +192,17 @@ class GameSetupDeploymentReservesMixin:
                 if str(value or "").strip()
             }
             allow_skip = str(selected_unit_id or "") not in must_ids
+            if self._unit_is_in_strategic_reserves(selected_unit):
+                request_obj = self._queue_psychostatic_disruption_request(
+                    selected_unit,
+                    arrival_allow_skip=allow_skip,
+                )
+                if request_obj is not None:
+                    return {
+                        "selected_unit_id": selected_unit_id,
+                        "pass_selected": False,
+                        "payload": dict(payload or {}),
+                    }
             request_obj = self._build_reserves_arrival_request(selected_unit, allow_skip=allow_skip)
             if request_obj is not None:
                 self.request_decision(request_obj)
@@ -210,6 +221,349 @@ class GameSetupDeploymentReservesMixin:
                 pass_selected=pass_selected,
             )
         return None
+
+    @staticmethod
+    def _unit_is_in_strategic_reserves(unit) -> bool:
+        if unit is None:
+            return False
+        is_strategic = getattr(unit, "is_in_strategic_reserves", None)
+        if callable(is_strategic):
+            try:
+                return bool(is_strategic())
+            except Exception:
+                return False
+        return str(getattr(unit, "reserve_status", "") or "").strip().lower() == "strategic_reserves"
+
+    def _resolve_reinforcements_unit_by_id(self, unit_id: str):
+        text = str(unit_id or "").strip()
+        if not text:
+            return None
+        resolver = getattr(self, "_resolve_unit_by_id", None)
+        if callable(resolver):
+            unit = resolver(text)
+            if unit is not None:
+                return unit
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = getattr(player, "army", None)
+            if army is None:
+                get_army = getattr(player, "get_army", None)
+                army = get_army() if callable(get_army) else None
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                unit_entity_id = str(get_entity_id(unit) or "").strip()
+                unit_local_id = str(getattr(unit, "id", getattr(unit, "_id", "")) or "").strip()
+                if text in {unit_entity_id, unit_local_id}:
+                    return unit
+        return None
+
+    @staticmethod
+    def _psychostatic_bearer_model_for_member(member, sr: dict):
+        if member is None or not isinstance(sr, dict):
+            return None
+        bearer_id = str(
+            sr.get("enhancement_psychostatic_disruption_bearer_model_id", "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        for model in list(getattr(member, "models", []) or []):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            try:
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                is_alive = False
+            if not is_alive:
+                continue
+            model_entity_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            if bearer_id and bearer_id not in {model_entity_id, model_local_id}:
+                continue
+            return model
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                alive_attr = getattr(bearer, "is_alive", True)
+                try:
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    is_alive = False
+                if is_alive:
+                    return bearer
+        return None
+
+    def _psychostatic_disruption_candidate_entries(self, arriving_unit) -> list[dict]:
+        if arriving_unit is None or not self._unit_is_in_strategic_reserves(arriving_unit):
+            return []
+        if not bool(getattr(self, "reinforcements_step_active", False)):
+            return []
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return []
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round not in (1, 2):
+            return []
+        parent_army = arriving_unit.get_parent_army() if hasattr(arriving_unit, "get_parent_army") else None
+        player = getattr(parent_army, "player", None) if parent_army is not None else None
+        if player is None:
+            return []
+        get_enemy_units = getattr(self, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        entries: list[dict] = []
+        for enemy in list(get_enemy_units(player) or []):
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+            except Exception:
+                root = enemy
+            if root is None:
+                continue
+            root_alive_attr = getattr(root, "is_alive", True)
+            try:
+                root_is_alive = bool(root_alive_attr() if callable(root_alive_attr) else root_alive_attr)
+            except Exception:
+                root_is_alive = False
+            if not root_is_alive:
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            if str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower() != "deployed":
+                continue
+            if getattr(root, "embarked_in", None) is not None or bool(getattr(root, "is_embarked", False)):
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_psychostatic_disruption")):
+                    continue
+                bearer_model = self._psychostatic_bearer_model_for_member(member, sr)
+                if bearer_model is None:
+                    continue
+                once_key = str(
+                    sr.get("enhancement_psychostatic_disruption_once_key", "") or "psychostatic_disruption"
+                ).strip().lower()
+                if not once_key:
+                    once_key = "psychostatic_disruption"
+                has_used = getattr(member, "has_used_unit_once_per_battle", None)
+                if callable(has_used) and bool(has_used(once_key)):
+                    continue
+                trigger_rounds = {
+                    int(value or 0)
+                    for value in list(sr.get("enhancement_psychostatic_disruption_trigger_rounds", [1, 2]) or [1, 2])
+                    if int(value or 0) > 0
+                }
+                if trigger_rounds and battle_round not in trigger_rounds:
+                    continue
+                try:
+                    success_on = int(sr.get("enhancement_psychostatic_disruption_success_on", 4) or 4)
+                except Exception:
+                    success_on = 4
+                source_name = (
+                    str(sr.get("enhancement_psychostatic_disruption_source", "") or "Psychostatic Disruption").strip()
+                    or "Psychostatic Disruption"
+                )
+                root_player = getattr(getattr(root, "get_parent_army", lambda: None)(), "player", None)
+                member_id = str(get_entity_id(member) or getattr(member, "id", getattr(member, "_id", "")) or "").strip()
+                root_id = str(get_entity_id(root) or getattr(root, "id", getattr(root, "_id", "")) or "").strip()
+                if not member_id:
+                    member_id = root_id
+                label = str(getattr(member, "name", "") or getattr(root, "name", "") or source_name).strip() or source_name
+                entries.append(
+                    {
+                        "source_member_unit_id": member_id,
+                        "source_unit_id": root_id or member_id,
+                        "player_id": str(getattr(root_player, "id", "") or "").strip(),
+                        "label": label,
+                        "source_name": source_name,
+                        "success_on": int(min(6, max(2, success_on))),
+                        "once_key": once_key,
+                    }
+                )
+        entries.sort(
+            key=lambda item: (
+                str(item.get("player_id", "") or ""),
+                str(item.get("source_member_unit_id", "") or ""),
+                str(item.get("source_unit_id", "") or ""),
+            )
+        )
+        return entries
+
+    def _pending_psychostatic_disruption_request(self, arriving_unit_id: str):
+        target_id = str(arriving_unit_id or "").strip()
+        if not target_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "").strip() != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "psychostatic_disruption":
+                continue
+            if str(ctx.get("arriving_unit_id", "") or "").strip() != target_id:
+                continue
+            return request
+        return None
+
+    def _queue_psychostatic_disruption_request(self, arriving_unit, *, arrival_allow_skip: bool):
+        if arriving_unit is None:
+            return None
+        arriving_unit_id = str(get_entity_id(arriving_unit) or "").strip()
+        if not arriving_unit_id:
+            return None
+        pending = self._pending_psychostatic_disruption_request(arriving_unit_id)
+        if pending is not None:
+            return pending
+        candidates = list(self._psychostatic_disruption_candidate_entries(arriving_unit) or [])
+        if not candidates:
+            return None
+        from ..decisions import DecisionOption, DecisionRequest
+
+        player_id = str(candidates[0].get("player_id", "") or "").strip()
+        if not player_id:
+            return None
+        options = [DecisionOption.create("None", payload={"action": "skip", "arriving_unit_id": arriving_unit_id})]
+        allowed_source_unit_ids: list[str] = []
+        for candidate in list(candidates or []):
+            source_member_unit_id = str(candidate.get("source_member_unit_id", "") or "").strip()
+            source_unit_id = str(candidate.get("source_unit_id", "") or "").strip()
+            if not source_member_unit_id:
+                continue
+            allowed_source_unit_ids.append(source_member_unit_id)
+            label = str(candidate.get("label", "") or "Source unit").strip() or "Source unit"
+            source_name = str(candidate.get("source_name", "") or "Psychostatic Disruption").strip() or "Psychostatic Disruption"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "action": "use",
+                        "choice_key": source_member_unit_id,
+                        "source_member_unit_id": source_member_unit_id,
+                        "source_unit_id": source_unit_id or source_member_unit_id,
+                        "arriving_unit_id": arriving_unit_id,
+                        "source_name": source_name,
+                    },
+                )
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Psychostatic Disruption: select a bearer to try to deny {getattr(arriving_unit, 'name', 'Unit')}, or None.",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "psychostatic_disruption",
+                "ability_name": "Psychostatic Disruption",
+                "phase_name": "MOVEMENT_PHASE",
+                "phase_step": "REINFORCEMENTS",
+                "arriving_unit_id": arriving_unit_id,
+                "arrival_allow_skip": bool(arrival_allow_skip),
+                "allowed_source_unit_ids": list(allowed_source_unit_ids),
+                "battle_round": int(getattr(self, "turn", 0) or 0),
+            },
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_reinforcements_arrival_request_after_interrupt(self, arriving_unit, *, allow_skip: bool) -> bool:
+        if arriving_unit is None:
+            self._queue_movement_phase_reinforcements_selection(player=self.get_current_player())
+            return False
+        request_obj = self._build_reserves_arrival_request(arriving_unit, allow_skip=allow_skip)
+        if request_obj is None:
+            self._queue_movement_phase_reinforcements_selection(player=self.get_current_player())
+            return False
+        self.request_decision(request_obj)
+        return True
+
+    def _apply_psychostatic_disruption_choice(
+        self,
+        *,
+        arriving_unit_id: str,
+        source_member_unit_id: str = "",
+        source_unit_id: str = "",
+        allow_skip: bool = True,
+        skipped: bool = False,
+    ) -> dict:
+        arriving_unit = self._resolve_reinforcements_unit_by_id(arriving_unit_id)
+        if arriving_unit is None:
+            self._queue_movement_phase_reinforcements_selection(player=self.get_current_player())
+            return {"used": False, "prevented": False, "queued_arrival_request": False}
+        if skipped or not str(source_member_unit_id or "").strip():
+            queued = self._queue_reinforcements_arrival_request_after_interrupt(arriving_unit, allow_skip=allow_skip)
+            return {
+                "used": False,
+                "prevented": False,
+                "queued_arrival_request": bool(queued),
+                "arriving_unit_name": str(getattr(arriving_unit, "name", "Unit") or "Unit"),
+            }
+
+        source_member = self._resolve_reinforcements_unit_by_id(source_member_unit_id)
+        if source_member is None and source_unit_id:
+            source_member = self._resolve_reinforcements_unit_by_id(source_unit_id)
+        sr = getattr(source_member, "special_rules", None) if source_member is not None else None
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_psychostatic_disruption")):
+            queued = self._queue_reinforcements_arrival_request_after_interrupt(arriving_unit, allow_skip=allow_skip)
+            return {
+                "used": False,
+                "prevented": False,
+                "queued_arrival_request": bool(queued),
+                "arriving_unit_name": str(getattr(arriving_unit, "name", "Unit") or "Unit"),
+            }
+
+        once_key = str(sr.get("enhancement_psychostatic_disruption_once_key", "") or "psychostatic_disruption").strip().lower()
+        if not once_key:
+            once_key = "psychostatic_disruption"
+        mark_used = getattr(source_member, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used(
+                once_key,
+                ability_name=str(sr.get("enhancement_psychostatic_disruption_source", "") or "Psychostatic Disruption"),
+            )
+        try:
+            success_on = int(sr.get("enhancement_psychostatic_disruption_success_on", 4) or 4)
+        except Exception:
+            success_on = 4
+        success_on = int(min(6, max(2, success_on)))
+        from ...utility.dice import get_roll
+
+        roll = int(get_roll("D6", game=self) or 0)
+        prevented = int(roll) >= int(success_on)
+        if prevented:
+            self._mark_reinforcements_step_unit_skipped(arriving_unit_id)
+            self._queue_movement_phase_reinforcements_selection(player=self.get_current_player())
+        else:
+            self._queue_reinforcements_arrival_request_after_interrupt(arriving_unit, allow_skip=allow_skip)
+        return {
+            "used": True,
+            "prevented": bool(prevented),
+            "roll": int(roll),
+            "success_on": int(success_on),
+            "queued_arrival_request": not bool(prevented),
+            "arriving_unit_name": str(getattr(arriving_unit, "name", "Unit") or "Unit"),
+            "source_unit_name": str(getattr(source_member, "name", "Unit") or "Unit"),
+            "source_name": str(
+                sr.get("enhancement_psychostatic_disruption_source", "") or "Psychostatic Disruption"
+            ).strip()
+            or "Psychostatic Disruption",
+        }
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -1136,6 +1490,34 @@ class GameSetupDeploymentReservesMixin:
                 {
                     "range": float(min_enemy_distance),
                     "horizontal_only": bool(horizontal_only),
+                    "source": source_name,
+                    "source_model_id": resolved_bearer_id,
+                }
+            )
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_psychostatic_disruption", False))):
+                continue
+            try:
+                min_enemy_distance = float(
+                    sr.get("enhancement_psychostatic_disruption_min_enemy_distance", 12.0) or 12.0
+                )
+            except (TypeError, ValueError):
+                min_enemy_distance = 12.0
+            if min_enemy_distance <= 0.0:
+                continue
+            source_name = (
+                str(sr.get("enhancement_psychostatic_disruption_source", "") or "Psychostatic Disruption").strip()
+                or "Psychostatic Disruption"
+            )
+            bearer_model = self._psychostatic_bearer_model_for_member(member, sr)
+            if bearer_model is None:
+                continue
+            resolved_bearer_id = str(get_entity_id(bearer_model) or "").strip()
+            ranges.append(
+                {
+                    "range": float(min_enemy_distance),
+                    "horizontal_only": False,
                     "source": source_name,
                     "source_model_id": resolved_bearer_id,
                 }

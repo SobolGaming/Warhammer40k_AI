@@ -5847,6 +5847,35 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in available:
             return ("Selected Synaptic Imperative has already been used or is not available.",)
         return ()
+    if ability == "psychostatic_disruption":
+        payload = _option_payload(request, result)
+        arriving_unit = resolve_unit(game, payload.get("arriving_unit_id") or ctx.get("arriving_unit_id"))
+        if arriving_unit is None:
+            return ("Psychostatic Disruption arriving unit was not found.",)
+        if is_skip_choice(request, result):
+            return ()
+        source_member_unit_id = str(
+            payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or ""
+        ).strip()
+        if not source_member_unit_id:
+            return ("Psychostatic Disruption selection requires a source unit.",)
+        allowed_source_unit_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_source_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if allowed_source_unit_ids and source_member_unit_id not in allowed_source_unit_ids:
+            return ("Selected Psychostatic Disruption bearer is not in this request's candidate list.",)
+        candidates_fn = getattr(game, "_psychostatic_disruption_candidate_entries", None)
+        candidates = list(candidates_fn(arriving_unit) or []) if callable(candidates_fn) else []
+        current_source_ids = {
+            str(item.get("source_member_unit_id", "") or "").strip()
+            for item in list(candidates or [])
+            if str(item.get("source_member_unit_id", "") or "").strip()
+        }
+        if source_member_unit_id not in current_source_ids:
+            return ("Selected Psychostatic Disruption bearer can no longer use this ability.",)
+        return ()
     if ability == "grim_resolve_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -13830,6 +13859,60 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: {label} (Battle Round {battle_round}).",
             )
         return applied
+    if ability == "psychostatic_disruption":
+        payload = _option_payload(request, result)
+        apply_fn = getattr(game, "_apply_psychostatic_disruption_choice", None)
+        if not callable(apply_fn):
+            return None
+        outcome = apply_fn(
+            arriving_unit_id=str(payload.get("arriving_unit_id") or ctx.get("arriving_unit_id") or ""),
+            source_member_unit_id=str(
+                payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or ""
+            ),
+            source_unit_id=str(payload.get("source_unit_id") or ctx.get("source_unit_id") or ""),
+            allow_skip=bool(ctx.get("arrival_allow_skip", True)),
+            skipped=bool(is_skip_choice(request, result)),
+        )
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Psychostatic Disruption").strip() or "Psychostatic Disruption"
+        arriving_unit_name = str((outcome or {}).get("arriving_unit_name", "") or "Unit").strip() or "Unit"
+        if bool(is_skip_choice(request, result)):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no bearer selected; {arriving_unit_name} may continue arriving.",
+            )
+            return outcome
+        if not isinstance(outcome, dict) or not bool(outcome.get("used", False)):
+            return outcome
+        try:
+            from ...utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+        roll = int((outcome or {}).get("roll", 0) or 0)
+        success_on = int((outcome or {}).get("success_on", 4) or 4)
+        source_unit_name = str((outcome or {}).get("source_unit_name", "") or _option_label(request, result) or "Unit").strip() or "Unit"
+        if append_dice is not None and player is not None and roll > 0:
+            append_dice(player, f"{ability_name}: {roll}")
+        if bool(outcome.get("prevented", False)):
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {source_unit_name} rolled {roll} (needed {success_on}+) against {arriving_unit_name} "
+                    f"and prevented that unit from arriving this turn."
+                ),
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {source_unit_name} rolled {roll} (needed {success_on}+); "
+                    f"{arriving_unit_name} may continue arriving."
+                ),
+            )
+        return outcome
     if ability == "martial_mastery":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
