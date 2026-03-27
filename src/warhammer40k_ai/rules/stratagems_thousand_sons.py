@@ -5,6 +5,7 @@ import math
 from typing import Any, Optional
 
 from .thousand_sons_detachments import GRAND_COVEN_BY_KEY
+from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,16 @@ class ThousandSonsStratagemMixin:
     def _is_thousand_sons_hexwarp_thrallband_detachment(self) -> bool:
         mgr = self._ts_detachment_mgr()
         checker = getattr(mgr, "is_hexwarp_thrallband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_thousand_sons_warpforged_cabal_detachment(self) -> bool:
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "is_warpforged_cabal", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_thousand_sons_warpmeld_pact_detachment(self) -> bool:
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "is_warpmeld_pact", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _ts_phase_key_for_game(self) -> str:
@@ -171,6 +182,38 @@ class ThousandSonsStratagemMixin:
             if self._ts_model_has_keyword(model, "PSYKER"):
                 return True
         return False
+
+    def _is_thousand_sons_vehicle_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None or not self._is_thousand_sons_unit(root):
+            return False
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_thousand_sons_vehicle", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._ts_has_any_keyword(root, "VEHICLE")
+
+    def _is_character_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        return self._ts_has_any_keyword(root, "CHARACTER") or bool(getattr(root, "is_character", False))
+
+    def _is_tzaangors_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_tzaangors", None) if mgr is not None else None
+        return bool(checker(root)) if callable(checker) else False
+
+    def _is_tzeentch_mutant_infantry_or_mounted_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_tzeentch_mutant_infantry_or_mounted", None) if mgr is not None else None
+        return bool(checker(root)) if callable(checker) else False
 
     def _ts_model_is_psyker(self, model: Any, *, unit: Any = None) -> bool:
         if model is None:
@@ -1206,6 +1249,149 @@ class ThousandSonsStratagemMixin:
             for root in self._ts_hexwarp_psyker_candidates(require_not_shot=True)
             if self._ts_hexwarp_unit_wholly_within_flow(root)
         ]
+
+    def _ts_warpforged_vehicle_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_fell_back: bool = False,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_vehicle_unit(root):
+                continue
+            if require_not_shot and self._ts_has_shot_this_phase(root):
+                continue
+            if require_fell_back and not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpforged_supporting_psyker_candidates(self, unit: Any, *, distance: float = 6.0) -> list[Any]:
+        root = self._ts_root(unit)
+        if root is None:
+            return []
+        out: list[Any] = []
+        for candidate in self._ts_army_roots():
+            if candidate is None or candidate is root:
+                continue
+            if not self._ts_on_battlefield(candidate, require_targetable=False):
+                continue
+            if not self._is_thousand_sons_unit(candidate) or not self._is_psyker_unit(candidate):
+                continue
+            if not self._ts_owned_by_player(candidate, self.player):
+                continue
+            if not self._ts_unit_within_distance_of_unit(root, candidate, distance=float(distance)):
+                continue
+            out.append(candidate)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpforged_malevolent_animus_candidates(self) -> list[Any]:
+        return [
+            root
+            for root in self._ts_warpforged_vehicle_candidates()
+            if self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0)
+        ]
+
+    def _ts_warpforged_ensorcelled_infusion_candidates(self) -> list[Any]:
+        return [
+            root
+            for root in self._ts_warpforged_vehicle_candidates(require_not_shot=True)
+            if self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0)
+        ]
+
+    def _ts_warpforged_cyberspirit_machinations_candidates(self) -> list[Any]:
+        return [
+            root
+            for root in self._ts_warpforged_vehicle_candidates(require_fell_back=True)
+            if self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0)
+        ]
+
+    def _ts_warpforged_mutate_landscape_objective_candidates(self, unit: Any) -> list[Any]:
+        root = self._ts_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not bool(is_within(location)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
+
+    def _ts_warpforged_mutate_landscape_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+                continue
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_warpforged_mutate_landscape_objective_candidates(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpforged_warpflame_gargoyles_candidates(self, *, charging_unit: Any = None) -> list[Any]:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return []
+        enemy_root = self._ts_root(charging_unit)
+        if enemy_root is None or self._ts_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        out: list[Any] = []
+        game_map = self._ts_game_map()
+        for root in self._ts_warpforged_vehicle_candidates():
+            if game_map is None:
+                continue
+            try:
+                engaged = bool(game_map.is_within_engagement_range(root, enemy_root))
+            except (AttributeError, TypeError, ValueError):
+                engaged = False
+            if not engaged:
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
 
     def _ts_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
         root = self._ts_root(unit)
@@ -2260,6 +2446,241 @@ class ThousandSonsStratagemMixin:
             elif phase_key == "FIGHT_PHASE":
                 self._ts_clear_ability_cache(root, "fell_back_and_shoot", "melee_fight_on_death_after_attacks:")
 
+    def _cleanup_thousand_sons_warpforged_phase_start_effects(self, *, player: Any, phase: Any) -> None:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        if player is not self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "COMMAND_PHASE":
+            return
+        mgr = self._ts_detachment_mgr()
+        clear_fn = getattr(mgr, "clear_warpforged_malevolent_animus", None) if mgr is not None else None
+        if not callable(clear_fn):
+            return
+        for root in self._ts_army_roots():
+            if clear_fn(root):
+                self._ts_clear_ability_cache(root, "move_advance_charge_modifier_ignore_rule")
+
+    def _queue_thousand_sons_warpforged_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        if player is not self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "COMMAND_PHASE":
+            return
+
+        def _queue(name: str, candidates: list[Any]) -> None:
+            stratagem = getattr(self, "get_by_name", lambda _name: None)(name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if not candidates or self._ts_reaction_exists("phase_start", stratagem.name):
+                return
+            if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Command phase"):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Command phase",
+                "phase_name": "Command phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            queue_reaction = getattr(self, "_queue_reaction", None)
+            if callable(queue_reaction):
+                queue_reaction(payload, use_timer=False)
+
+        _queue("MUTATE LANDSCAPE", self._ts_warpforged_mutate_landscape_candidates())
+        _queue("MALEVOLENT ANIMUS", self._ts_warpforged_malevolent_animus_candidates())
+
+    def _queue_thousand_sons_warpforged_fall_back_reactions(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower().replace(" ", "_") not in {"fall_back", "fallback"}:
+            return
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+        root = self._ts_root(unit)
+        if root is None or not self._ts_owned_by_player(root, self.player):
+            return
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return
+        if not self._ts_unit_in_candidates(root, self._ts_warpforged_cyberspirit_machinations_candidates()):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("CYBERSPIRIT MACHINATIONS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ts_reaction_exists("unit_move_ended", stratagem.name):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "action": "fall_back",
+            "candidates": [root],
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_thousand_sons_warpforged_charge_reactions(self, *, charging_unit: Any, action: str) -> None:
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"charge", "charge_move"}:
+            return
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+        enemy_root = self._ts_root(charging_unit)
+        if enemy_root is None or self._ts_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return
+        candidates = self._ts_warpforged_warpflame_gargoyles_candidates(charging_unit=enemy_root)
+        if not candidates:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("WARPFLAME GARGOYLES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ts_reaction_exists("unit_move_ended", stratagem.name, enemy_unit=enemy_root):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Charge phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": "charge",
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _process_thousand_sons_warpforged_mutate_landscape_move_end(self, *, unit: Any, action: Any) -> None:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        enemy_root = self._ts_root(unit)
+        if enemy_root is None or self._ts_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return
+        action_key = self._ts_normalize_move_action(action)
+        if action_key not in {"normal_move", "advance", "fall_back", "charge"}:
+            return
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if not owner_id:
+            return
+        game_map = self._ts_game_map()
+        apply_mortal_wounds = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+        is_within = getattr(enemy_root, "is_within_objective_range", None)
+        if game_map is None or not callable(apply_mortal_wounds) or not callable(is_within):
+            return
+
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            mutate_sources = getattr(location, "thousand_sons_warpforged_mutate_landscape_sources", None)
+            if not isinstance(mutate_sources, dict) or owner_id not in mutate_sources:
+                continue
+            if (
+                getattr(location, "controlling_player", None) is not self.player
+                and getattr(location, "sticky_controller", None) is not self.player
+            ):
+                continue
+            if not bool(is_within(location)):
+                continue
+            trigger_roll = int(dice_module.get_roll("D6") or 0)
+            if trigger_roll < 4:
+                continue
+            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            if mortal_wounds <= 0:
+                continue
+            apply_mortal_wounds(enemy_root, int(mortal_wounds), game_map=game_map)
+            logger.info(
+                "INFO: MUTATE LANDSCAPE: %s triggered on %s and dealt %d mortal wound(s).",
+                getattr(objective, "name", getattr(objective, "id", "Objective")),
+                getattr(enemy_root, "name", "Enemy"),
+                int(mortal_wounds),
+            )
+
+    def _cleanup_thousand_sons_warpforged_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_thousand_sons_warpforged_cabal_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        cleanup_keys_by_phase = {
+            "SHOOTING_PHASE": (
+                "thousand_sons_ensorcelled_infusion_active",
+                "thousand_sons_ensorcelled_infusion_owner",
+                "thousand_sons_ensorcelled_infusion_turn",
+                "thousand_sons_ensorcelled_infusion_expires_phase",
+                "thousand_sons_ensorcelled_infusion_source",
+            ),
+            "FIGHT_PHASE": (
+                "thousand_sons_cyberspirit_machinations_shoot_active",
+                "thousand_sons_cyberspirit_machinations_charge_active",
+                "thousand_sons_cyberspirit_machinations_turn_owner",
+                "thousand_sons_cyberspirit_machinations_turn",
+                "thousand_sons_cyberspirit_machinations_source",
+            ),
+        }
+        cleanup_keys = cleanup_keys_by_phase.get(phase_key)
+        if cleanup_keys is None:
+            return
+        for root in self._ts_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in cleanup_keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if not changed:
+                continue
+            root.special_rules = sr
+            if phase_key == "FIGHT_PHASE":
+                self._ts_clear_ability_cache(root, "fell_back_and_shoot")
+
     def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         _ = player
         game = getattr(self, "game", None)
@@ -2433,6 +2854,17 @@ class ThousandSonsStratagemMixin:
                 return self._use_thousand_sons_egotistical_power(stratagem, **kwargs)
             if name_u == "PSYCHIC DOMINION":
                 return self._use_thousand_sons_psychic_dominion(stratagem, **kwargs)
+        if self._is_thousand_sons_warpforged_cabal_detachment():
+            if name_u == "MUTATE LANDSCAPE":
+                return self._use_thousand_sons_mutate_landscape(stratagem, **kwargs)
+            if name_u == "MALEVOLENT ANIMUS":
+                return self._use_thousand_sons_malevolent_animus(stratagem, **kwargs)
+            if name_u == "CYBERSPIRIT MACHINATIONS":
+                return self._use_thousand_sons_cyberspirit_machinations(stratagem, **kwargs)
+            if name_u == "ENSORCELLED INFUSION":
+                return self._use_thousand_sons_ensorcelled_infusion(stratagem, **kwargs)
+            if name_u == "WARPFLAME GARGOYLES":
+                return self._use_thousand_sons_warpflame_gargoyles(stratagem, **kwargs)
         if self._is_thousand_sons_hexwarp_thrallband_detachment():
             if name_u == "WARDING HEX":
                 return self._use_thousand_sons_warding_hex(stratagem, **kwargs)
@@ -2447,6 +2879,362 @@ class ThousandSonsStratagemMixin:
             if name_u == "KALEIDOSCOPIC TEMPEST":
                 return self._use_thousand_sons_kaleidoscopic_tempest(stratagem, **kwargs)
         return None
+
+    def _use_thousand_sons_mutate_landscape(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or (objective is None and not objective_candidates):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: MUTATE LANDSCAPE: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: MUTATE LANDSCAPE: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: MUTATE LANDSCAPE: target must be a THOUSAND SONS PSYKER unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: MUTATE LANDSCAPE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MUTATE LANDSCAPE: not your turn")
+            return False
+        eligible = candidates or self._ts_warpforged_mutate_landscape_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: MUTATE LANDSCAPE: selected unit is not currently eligible")
+            return False
+        if not objective_candidates:
+            objective_candidates = self._ts_warpforged_mutate_landscape_objective_candidates(root)
+        if objective is None and objective_candidates:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: MUTATE LANDSCAPE: no controlled objective marker is in range")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: MUTATE LANDSCAPE: selected objective is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: MUTATE LANDSCAPE: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        location = getattr(objective, "location", None)
+        if location is None:
+            logger.error("ERROR: MUTATE LANDSCAPE: objective marker is missing its location")
+            return False
+        set_sticky_control = getattr(location, "set_sticky_control", None)
+        if callable(set_sticky_control):
+            set_sticky_control(self.player, source="mutate_landscape")
+        else:
+            location.sticky_controller = self.player
+            location.controlling_player = self.player
+            location.sticky_source = "mutate_landscape"
+        owner_id = str(getattr(self.player, "id", "") or "")
+        mutation_sources = getattr(location, "thousand_sons_warpforged_mutate_landscape_sources", None)
+        if not isinstance(mutation_sources, dict):
+            mutation_sources = {}
+        mutation_sources[owner_id] = str(getattr(stratagem, "name", "") or "MUTATE LANDSCAPE")
+        location.thousand_sons_warpforged_mutate_landscape_sources = mutation_sources
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MUTATE LANDSCAPE: %s mutated objective %s.",
+            getattr(root, "name", "Unit"),
+            getattr(objective, "id", getattr(objective, "name", "objective")),
+        )
+        return True
+
+    def _use_thousand_sons_malevolent_animus(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: MALEVOLENT ANIMUS: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: MALEVOLENT ANIMUS: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_vehicle_unit(root):
+            logger.error("ERROR: MALEVOLENT ANIMUS: target must be a THOUSAND SONS VEHICLE unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: MALEVOLENT ANIMUS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MALEVOLENT ANIMUS: not your turn")
+            return False
+        eligible = candidates or self._ts_warpforged_malevolent_animus_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: MALEVOLENT ANIMUS: target is not eligible")
+            return False
+        if not self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0):
+            logger.error("ERROR: MALEVOLENT ANIMUS: requires a friendly THOUSAND SONS PSYKER within 6\"")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: MALEVOLENT ANIMUS: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_malevolent_animus_active"] = True
+        sr["thousand_sons_malevolent_animus_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_malevolent_animus_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_malevolent_animus_source"] = str(getattr(stratagem, "name", "") or "MALEVOLENT ANIMUS")
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "move_advance_charge_modifier_ignore_rule")
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MALEVOLENT ANIMUS: %s ignores modifiers until your next Command phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_cyberspirit_machinations(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_vehicle_unit(root):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: target must be a THOUSAND SONS VEHICLE unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: not your turn")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: target must have Fallen Back")
+            return False
+        eligible = candidates or self._ts_warpforged_cyberspirit_machinations_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: target is not eligible")
+            return False
+        if not self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: requires a friendly THOUSAND SONS PSYKER within 6\"")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: CYBERSPIRIT MACHINATIONS: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_cyberspirit_machinations_shoot_active"] = True
+        sr["thousand_sons_cyberspirit_machinations_charge_active"] = True
+        sr["thousand_sons_cyberspirit_machinations_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_cyberspirit_machinations_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_cyberspirit_machinations_source"] = str(getattr(stratagem, "name", "") or "CYBERSPIRIT MACHINATIONS")
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "fell_back_and_shoot")
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CYBERSPIRIT MACHINATIONS: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_ensorcelled_infusion(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: ENSORCELLED INFUSION: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: ENSORCELLED INFUSION: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_vehicle_unit(root):
+            logger.error("ERROR: ENSORCELLED INFUSION: target must be a THOUSAND SONS VEHICLE unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ENSORCELLED INFUSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ENSORCELLED INFUSION: not your turn")
+            return False
+        if self._ts_has_shot_this_phase(root):
+            logger.error("ERROR: ENSORCELLED INFUSION: target has already shot this phase")
+            return False
+        eligible = candidates or self._ts_warpforged_ensorcelled_infusion_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ENSORCELLED INFUSION: target is not eligible")
+            return False
+        if not self._ts_warpforged_supporting_psyker_candidates(root, distance=6.0):
+            logger.error("ERROR: ENSORCELLED INFUSION: requires a friendly THOUSAND SONS PSYKER within 6\"")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: ENSORCELLED INFUSION: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_ensorcelled_infusion_active"] = True
+        sr["thousand_sons_ensorcelled_infusion_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_ensorcelled_infusion_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_ensorcelled_infusion_expires_phase"] = "SHOOTING_PHASE"
+        sr["thousand_sons_ensorcelled_infusion_source"] = str(getattr(stratagem, "name", "") or "ENSORCELLED INFUSION")
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ENSORCELLED INFUSION: %s gains [PSYCHIC] and +1 to wound on ranged attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_warpflame_gargoyles(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or attacking_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None or attacking_unit is None:
+            logger.error("ERROR: WARPFLAME GARGOYLES: missing target or enemy unit")
+            return False
+        root = self._ts_root(target_unit)
+        enemy_root = self._ts_root(attacking_unit)
+        if root is None or enemy_root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: WARPFLAME GARGOYLES: target unit is not yours")
+            return False
+        if self._ts_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: WARPFLAME GARGOYLES: enemy unit is invalid")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return False
+        if not self._is_thousand_sons_vehicle_unit(root):
+            logger.error("ERROR: WARPFLAME GARGOYLES: target must be a THOUSAND SONS VEHICLE unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "charge phase":
+            logger.error("ERROR: WARPFLAME GARGOYLES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: WARPFLAME GARGOYLES: only usable in your opponent's turn")
+            return False
+        eligible = candidates or self._ts_warpforged_warpflame_gargoyles_candidates(charging_unit=enemy_root)
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: WARPFLAME GARGOYLES: target is not eligible")
+            return False
+        game_map = self._ts_game_map()
+        if game_map is None or not bool(getattr(game_map, "is_within_engagement_range", lambda _a, _b: False)(root, enemy_root)):
+            logger.error("ERROR: WARPFLAME GARGOYLES: enemy unit must be within Engagement Range")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: WARPFLAME GARGOYLES: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        mortal_wounds = sum(1 for roll in rolls if int(roll) >= 5)
+        apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
+        if callable(apply_mortal_wounds) and mortal_wounds > 0:
+            apply_mortal_wounds(enemy_root, int(mortal_wounds), game_map=game_map)
+        take_battle_shock = getattr(enemy_root, "take_battle_shock_test", None)
+        if callable(take_battle_shock):
+            take_battle_shock(int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0)
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WARPFLAME GARGOYLES: %s rolled %s and dealt %d mortal wound(s) to %s before a Battle-shock test.",
+            getattr(root, "name", "Unit"),
+            rolls,
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
 
     def _use_thousand_sons_warding_hex(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

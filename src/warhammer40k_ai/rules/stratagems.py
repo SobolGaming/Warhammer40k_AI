@@ -135,6 +135,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DESTINED BY FATE",
     "DEVASTATING SORCERY",
     "EGOTISTICAL POWER",
+    "MUTATE LANDSCAPE",
+    "MALEVOLENT ANIMUS",
+    "CYBERSPIRIT MACHINATIONS",
+    "ENSORCELLED INFUSION",
+    "WARPFLAME GARGOYLES",
     "WARDING HEX",
     "WRATH OF THE DOOMED",
     "STRANDS OF TIME",
@@ -728,10 +733,12 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
     "GLIMMERSHIFT PORTAL",
+    "CYBERSPIRIT MACHINATIONS",
     "STRANDS OF TIME",
     "THROUGH THE VEIL",
     "WRATH OF THE DOOMED",
     "KALEIDOSCOPIC TEMPEST",
+    "WARPFLAME GARGOYLES",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
@@ -1953,6 +1960,9 @@ class StratagemManager(
             "MILLENNIA OF EXPERIENCE",
             "ETHEREAL PHANTASM",
             "STRANDS OF TIME",
+            "CYBERSPIRIT MACHINATIONS",
+            "WARPFLAME GARGOYLES",
+            "MUTATE LANDSCAPE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2522,6 +2532,8 @@ class StratagemManager(
             "PREY ON THE WEAK",
             "PSYCHIC SHIELD",
             "DEVASTATING SORCERY",
+            "ENSORCELLED INFUSION",
+            "CYBERSPIRIT MACHINATIONS",
             "PSYCHIC DOMINION",
             "STRANDS OF TIME",
             "THROUGH THE VEIL",
@@ -4916,6 +4928,65 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase trigger where an enemy unit destroyed one of your THOUSAND SONS PSYKER models and a friendly RUBRICAE unit is within 6\" of that destroyed model"
             return result
+        if name_u == "MUTATE LANDSCAPE":
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = [target_unit] if target_unit is not None else list(candidates or self._ts_warpforged_mutate_landscape_candidates() or [])
+            for candidate in candidate_units:
+                objective_candidates = list(context.get("objective_candidates") or [])
+                if not objective_candidates and candidate is not None:
+                    objective_candidates = list(self._ts_warpforged_mutate_landscape_objective_candidates(candidate) or [])
+                if objective_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires your Command phase and a friendly THOUSAND SONS PSYKER within range of a controlled objective marker"
+            return result
+        if name_u == "MALEVOLENT ANIMUS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._ts_warpforged_malevolent_animus_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a THOUSAND SONS VEHICLE within 6\" of a friendly THOUSAND SONS PSYKER"
+            return result
+        if name_u == "CYBERSPIRIT MACHINATIONS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._ts_warpforged_cyberspirit_machinations_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after one of your THOUSAND SONS VEHICLE units Falls Back while within 6\" of a friendly THOUSAND SONS PSYKER"
+            return result
+        if name_u == "ENSORCELLED INFUSION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._ts_warpforged_ensorcelled_infusion_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a THOUSAND SONS VEHICLE within 6\" of a friendly THOUSAND SONS PSYKER that has not been selected to shoot"
+            return result
+        if name_u == "WARPFLAME GARGOYLES":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates and attacking_unit is not None:
+                candidates = self._ts_warpforged_warpflame_gargoyles_candidates(charging_unit=attacking_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Charge phase trigger after an enemy unit ends a Charge move within Engagement Range of one of your THOUSAND SONS VEHICLE units"
+            return result
         if name_u == "WARDING HEX":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5858,6 +5929,11 @@ class StratagemManager(
             "DESTINED BY FATE": "Any phase, just after a failed save: target your THOUSAND SONS PSYKER model and change the Damage characteristic of that attack to 0",
             "DEVASTATING SORCERY": "Shooting phase: target your THOUSAND SONS PSYKER unit that has not been selected to shoot; its Psychic weapons gain +9\" Range and full Hit/Wound re-rolls this phase",
             "EGOTISTICAL POWER": "Command phase: target your THOUSAND SONS PSYKER unit and choose Imbued Manifestation, Psychic Maelstrom, or Wrath of the Immaterium for that unit until your next Command phase",
+            "MUTATE LANDSCAPE": "Command phase: target your THOUSAND SONS PSYKER unit within range of a controlled objective; that objective becomes sticky and deals D3 mortal wounds on a 4+ to enemy units that end a Normal/Advance/Fall Back/Charge move within its range while you retain control",
+            "MALEVOLENT ANIMUS": "Command phase: target your THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER; until your next Command phase it ignores modifiers to its characteristics, Weapon Skill/Ballistic Skill, and its rolls or tests except saving throws",
+            "CYBERSPIRIT MACHINATIONS": "Movement phase, just after your THOUSAND SONS VEHICLE unit Falls Back while within 6\" of a friendly THOUSAND SONS PSYKER: it can shoot and declare a charge this turn",
+            "ENSORCELLED INFUSION": "Shooting phase: target your THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER that has not been selected to shoot; its ranged weapons gain [PSYCHIC] and +1 to Wound this phase",
+            "WARPFLAME GARGOYLES": "Opponent Charge phase, just after an enemy unit ends a Charge move within Engagement Range of your THOUSAND SONS VEHICLE: roll 6D6 and deal 1 mortal wound for each 5+, then that enemy takes a Battle-shock test",
             "WARDING HEX": "Command phase: target your THOUSAND SONS PSYKER unit within range of a controlled objective marker that is wholly within Flow of Magic; that objective becomes sticky until your opponent has greater control at phase end",
             "WRATH OF THE DOOMED": "Fight phase, just after an enemy unit selects targets: target your THOUSAND SONS unit selected by that attacker; it gains melee fight-on-death after the attacker finishes its attacks this phase, succeeding on 4+ or 3+ while wholly within Flow of Magic",
             "STRANDS OF TIME": "Movement phase, just after your THOUSAND SONS PSYKER unit Falls Back: it can shoot or charge this turn, or both while wholly within Flow of Magic",
@@ -6969,6 +7045,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._cleanup_thousand_sons_warpforged_phase_start_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_warpforged_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_thousand_sons_changehost_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -8002,6 +8086,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_thousand_sons_grand_coven_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_thousand_sons_warpforged_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9896,6 +9984,9 @@ class StratagemManager(
         self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
         self._queue_thousand_sons_rubricae_phalanx_charge_reactions(charging_unit=unit, action=action)
         self._queue_thousand_sons_changehost_move_end_reactions(unit=unit, action=action)
+        self._queue_thousand_sons_warpforged_fall_back_reactions(unit=unit, action=action)
+        self._queue_thousand_sons_warpforged_charge_reactions(charging_unit=unit, action=action)
+        self._process_thousand_sons_warpforged_mutate_landscape_move_end(unit=unit, action=action)
         self._queue_thousand_sons_hexwarp_fall_back_reactions(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)

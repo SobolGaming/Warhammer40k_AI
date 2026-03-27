@@ -8523,6 +8523,75 @@ _GRAND_COVEN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRAND_COVEN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WARPFORGED_CABAL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010210003": StratagemToolDescriptor(
+        stratagem_id="000010210003",
+        name="Mutate Landscape",
+        timing="command_phase",
+        target="thousand_sons_psyker_unit_within_controlled_objective_range",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective_with_move_end_mortal_wound_trap",
+        cp_cost=1,
+        effect_params={
+            "trigger_actions": ["normal_move", "advance", "fall_back", "charge"],
+            "trigger_roll": "D6",
+            "success_on": 4,
+            "mortal_wounds_roll": "D3",
+        },
+    ),
+    "000010210004": StratagemToolDescriptor(
+        stratagem_id="000010210004",
+        name="Cyberspirit Machinations",
+        timing="movement_phase_after_fall_back",
+        target="thousand_sons_vehicle_unit_that_fell_back_within_6_of_friendly_psyker",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010210005": StratagemToolDescriptor(
+        stratagem_id="000010210005",
+        name="Malevolent Animus",
+        timing="command_phase",
+        target="thousand_sons_vehicle_unit_within_6_of_friendly_psyker",
+        duration="until_your_next_command_phase",
+        effect="ignore_characteristic_roll_and_test_modifiers_except_saves",
+        cp_cost=1,
+    ),
+    "000010210006": StratagemToolDescriptor(
+        stratagem_id="000010210006",
+        name="Ensorcelled Infusion",
+        timing="shooting_phase_on_select_to_shoot",
+        target="thousand_sons_vehicle_unit_not_yet_shot_within_6_of_friendly_psyker",
+        duration="until_end_of_phase",
+        effect="ranged_psychic_and_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keyword": "PSYCHIC",
+            "wound_bonus": 1,
+        },
+    ),
+    "000010210007": StratagemToolDescriptor(
+        stratagem_id="000010210007",
+        name="Warpflame Gargoyles",
+        timing="opponent_charge_phase_after_charge_move_end",
+        target="thousand_sons_vehicle_unit_within_engagement_range_of_enemy_that_just_charged",
+        duration="immediate",
+        effect="charge_end_mortal_wound_burst_and_battleshock",
+        cp_cost=1,
+        effect_params={
+            "dice_count": 6,
+            "success_on": 5,
+            "mortal_wounds_per_success": 1,
+            "force_battle_shock_test": True,
+        },
+    ),
+}
+
+_WARPFORGED_CABAL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPFORGED_CABAL_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009742002": StratagemToolDescriptor(
         stratagem_id="000009742002",
@@ -9372,6 +9441,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GRAND_COVEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WARPFORGED_CABAL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9511,6 +9583,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _WRATHFUL_PROCESSION_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _GRAND_COVEN_STRATAGEM_BY_NAME.get(key)
+        or _WARPFORGED_CABAL_STRATAGEM_BY_NAME.get(key)
         or _HEXWARP_THRALLBAND_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)

@@ -2060,10 +2060,35 @@ class WargearProfile:
         )
         return any(token in name_norm for token in infernal_names)
 
+    def _thousand_sons_ensorcelled_infusion_active(self, attacker: Optional['Model']) -> bool:
+        try:
+            return bool(
+                self._unit_temp_ranged_effect_active(
+                    attacker,
+                    "thousand_sons_ensorcelled_infusion",
+                    expected_phase="SHOOTING_PHASE",
+                )
+            )
+        except Exception:
+            return False
+
+    def _thousand_sons_ensorcelled_infusion_weapon_matches(self, attacker: Optional['Model']) -> bool:
+        if attacker is None:
+            return False
+        if not self._thousand_sons_ensorcelled_infusion_active(attacker):
+            return False
+        try:
+            return bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            return False
+
     def _is_psychic_attack(self, attacker: Optional['Model']) -> bool:
         if self.is_psychic():
             return True
-        return bool(self._thousand_sons_infernal_fusillade_weapon_matches(attacker))
+        return bool(
+            self._thousand_sons_infernal_fusillade_weapon_matches(attacker)
+            or self._thousand_sons_ensorcelled_infusion_weapon_matches(attacker)
+        )
 
     def _tau_threat_assessment_analyser_hazardous(self, attacker: 'Model') -> Tuple[bool, str]:
         """Return (ranged_hazardous, source) for THREAT ASSESSMENT ANALYSER if active."""
@@ -10040,6 +10065,25 @@ class WargearProfile:
                     "allow_hit": True,
                     "default_choice": str(ironstorm_rule.get("default_choice", "") or "").strip(),
                 }
+        ts_rule_fn = (
+            getattr(root, "_thousand_sons_warpforged_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(ts_rule_fn):
+            try:
+                ts_rule = ts_rule_fn(kind="hit")
+            except Exception:
+                ts_rule = None
+            if isinstance(ts_rule, dict) and ts_rule:
+                return {
+                    "name": str(ts_rule.get("source", "") or "MALEVOLENT ANIMUS").strip() or "MALEVOLENT ANIMUS",
+                    "attack_type": "any",
+                    "skill_kinds": {"ballistic", "weapon"},
+                    "allow_hit": True,
+                    "forced_choice": str(ts_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(ts_rule.get("default_choice", "") or "").strip(),
+                }
 
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         patient_rule_fn = (
@@ -10226,6 +10270,24 @@ class WargearProfile:
                     "attack_type": "any",
                     "allow_wound": True,
                     "default_choice": str(ironstorm_rule.get("default_choice", "") or "").strip(),
+                }
+        ts_rule_fn = (
+            getattr(root, "_thousand_sons_warpforged_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(ts_rule_fn):
+            try:
+                ts_rule = ts_rule_fn(kind="wound")
+            except Exception:
+                ts_rule = None
+            if isinstance(ts_rule, dict) and ts_rule:
+                return {
+                    "name": str(ts_rule.get("source", "") or "MALEVOLENT ANIMUS").strip() or "MALEVOLENT ANIMUS",
+                    "attack_type": "any",
+                    "allow_wound": True,
+                    "forced_choice": str(ts_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(ts_rule.get("default_choice", "") or "").strip(),
                 }
         if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="wound"):
             return {
@@ -13089,11 +13151,16 @@ class WargearProfile:
                     if game_map is not None and not callable(getattr(game_map, provider_attr, None)):
                         provider_attr = "hit_modifier_choice_provider"
                     default_choice = CHOICE_KEEP_ALL
-                    if str(ignore_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                    choice_key = str(ignore_rule.get("forced_choice", "") or ignore_rule.get("default_choice", "") or "").strip().lower()
+                    if choice_key == "ignore_all":
+                        default_choice = CHOICE_IGNORE_ALL
+                    elif choice_key == "ignore_negative":
                         default_choice = CHOICE_IGNORE_NEGATIVE
-                    if roll_value is not None and default_choice == CHOICE_IGNORE_NEGATIVE:
-                        attack_instance.setdefault("skill_modifier_choice", CHOICE_IGNORE_NEGATIVE)
-                        skill_mods, _ignored = filter_signed_modifiers(skill_mods, CHOICE_IGNORE_NEGATIVE)
+                    elif choice_key == "ignore_positive":
+                        default_choice = CHOICE_IGNORE_POSITIVE
+                    if roll_value is not None and default_choice in {CHOICE_IGNORE_NEGATIVE, CHOICE_IGNORE_POSITIVE, CHOICE_IGNORE_ALL}:
+                        attack_instance.setdefault("skill_modifier_choice", default_choice)
+                        skill_mods, _ignored = filter_signed_modifiers(skill_mods, default_choice)
                     else:
                         _choice, skill_mods, _ignored = _resolve_modifier_choice(
                             skill_mods,
@@ -13106,11 +13173,16 @@ class WargearProfile:
                         )
                 if allow_hit and hit_mods:
                     default_choice = CHOICE_KEEP_ALL
-                    if str(ignore_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                    choice_key = str(ignore_rule.get("forced_choice", "") or ignore_rule.get("default_choice", "") or "").strip().lower()
+                    if choice_key == "ignore_all":
+                        default_choice = CHOICE_IGNORE_ALL
+                    elif choice_key == "ignore_negative":
                         default_choice = CHOICE_IGNORE_NEGATIVE
-                    if roll_value is not None and default_choice == CHOICE_IGNORE_NEGATIVE:
-                        attack_instance.setdefault("hit_modifier_choice", CHOICE_IGNORE_NEGATIVE)
-                        hit_mods, _ignored = filter_signed_modifiers(hit_mods, CHOICE_IGNORE_NEGATIVE)
+                    elif choice_key == "ignore_positive":
+                        default_choice = CHOICE_IGNORE_POSITIVE
+                    if roll_value is not None and default_choice in {CHOICE_IGNORE_NEGATIVE, CHOICE_IGNORE_POSITIVE, CHOICE_IGNORE_ALL}:
+                        attack_instance.setdefault("hit_modifier_choice", default_choice)
+                        hit_mods, _ignored = filter_signed_modifiers(hit_mods, default_choice)
                     else:
                         _choice, hit_mods, _ignored = _resolve_modifier_choice(
                             hit_mods,
@@ -18207,6 +18279,12 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
         except Exception:
             pass
+        try:
+            if self._thousand_sons_ensorcelled_infusion_weapon_matches(attacker):
+                dice_modifier += 1
+                wound_result["modifiers"].append("+1 to wound from ENSORCELLED INFUSION")
+        except Exception:
+            pass
         # Thousand Sons: Hexwarp Thrallband (Flow of Magic).
         attack_instance["hexwarp_flow_reroll_wound_ones"] = False
         attack_instance["hexwarp_flow_reroll_wound_ones_source"] = ""
@@ -19318,7 +19396,9 @@ class WargearProfile:
             pass
 
         from ..utility.modifier_choice import (
+            CHOICE_IGNORE_ALL,
             CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
             CHOICE_KEEP_ALL,
             filter_signed_modifiers,
             options_for_signed_pairs,
@@ -19384,8 +19464,17 @@ class WargearProfile:
             choice = attack_instance.get("wound_modifier_choice")
             options = list(wound_result.get("wound_modifier_options", []) or [])
             default_choice = CHOICE_KEEP_ALL
-            if str(ignore_wound_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+            choice_key = str(
+                ignore_wound_rule.get("forced_choice", "")
+                or ignore_wound_rule.get("default_choice", "")
+                or ""
+            ).strip().lower()
+            if choice_key == "ignore_all":
+                default_choice = CHOICE_IGNORE_ALL
+            elif choice_key == "ignore_negative":
                 default_choice = CHOICE_IGNORE_NEGATIVE
+            elif choice_key == "ignore_positive":
+                default_choice = CHOICE_IGNORE_POSITIVE
             if choice is None and roll_value is None:
                 if options:
                     player = None

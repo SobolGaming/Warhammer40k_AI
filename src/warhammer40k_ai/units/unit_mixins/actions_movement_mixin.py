@@ -10097,6 +10097,12 @@ class ActionsMovementMixin:
         if isinstance(ironstorm_rule, dict) and ironstorm_rule:
             return ironstorm_rule
         try:
+            warpforged_rule = self._thousand_sons_warpforged_ignore_modifiers_rule(kind="move")
+        except Exception:
+            warpforged_rule = None
+        if isinstance(warpforged_rule, dict) and warpforged_rule:
+            return warpforged_rule
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
@@ -10198,6 +10204,44 @@ class ActionsMovementMixin:
             rule = None
         return rule if isinstance(rule, dict) and rule else None
 
+    def _thousand_sons_warpforged_ignore_modifiers_rule(self, *, kind: str) -> Optional[dict]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+        }:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        rule_fn = (
+            getattr(ts_mgr, "warpforged_malevolent_animus_ignore_modifier_rule", None)
+            if ts_mgr is not None
+            else None
+        )
+        if not callable(rule_fn):
+            return None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            rule = rule_fn(root, kind=kind_key, game=game)
+        except Exception:
+            rule = None
+        return rule if isinstance(rule, dict) and rule else None
+
     def _move_advance_charge_modifier_ignore_active(self, *, kind: str) -> tuple[bool, str]:
         kind_key = str(kind or "").strip().lower()
         if kind_key not in {"move", "advance", "charge"}:
@@ -10235,9 +10279,23 @@ class ActionsMovementMixin:
             choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
         except Exception:
             choice = ""
-        if not choice:
+        forced_choice = str(rule.get("forced_choice", "") or "").strip().lower() if isinstance(rule, dict) else ""
+        if forced_choice == "ignore_all":
+            choice = CHOICE_IGNORE_ALL
+        elif forced_choice == "ignore_negative":
+            choice = CHOICE_IGNORE_NEGATIVE
+        elif forced_choice == "ignore_positive":
+            choice = CHOICE_IGNORE_POSITIVE
+        elif not choice:
             default_choice = str(rule.get("default_choice", "") or "").strip().lower() if isinstance(rule, dict) else ""
-            choice = CHOICE_IGNORE_NEGATIVE if default_choice == "ignore_negative" else CHOICE_KEEP_ALL
+            if default_choice == "ignore_negative":
+                choice = CHOICE_IGNORE_NEGATIVE
+            elif default_choice == "ignore_positive":
+                choice = CHOICE_IGNORE_POSITIVE
+            elif default_choice == "ignore_all":
+                choice = CHOICE_IGNORE_ALL
+            else:
+                choice = CHOICE_KEEP_ALL
         if choice == CHOICE_KEEP_ALL:
             return list(modifiers or [])
 
@@ -17775,6 +17833,15 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_cyberspirit_machinations_shoot_active",
+                owner_key="thousand_sons_cyberspirit_machinations_turn_owner",
+                turn_key="thousand_sons_cyberspirit_machinations_turn",
+            ):
+                return True
+        except Exception:
+            pass
         enhancement_fall_back_fn = getattr(self, "_enhancement_unit_can_shoot_after_fall_back", None)
         if callable(enhancement_fall_back_fn) and enhancement_fall_back_fn():
             return True
@@ -17941,6 +18008,15 @@ class ActionsMovementMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("battle_focus_star_engines_active"):
+                return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_touched_by_tzeentch_active",
+                owner_key="thousand_sons_touched_by_tzeentch_turn_owner",
+                turn_key="thousand_sons_touched_by_tzeentch_turn",
+            ):
                 return True
         except Exception:
             pass
@@ -18877,6 +18953,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_touched_by_tzeentch_active",
+                owner_key="thousand_sons_touched_by_tzeentch_turn_owner",
+                turn_key="thousand_sons_touched_by_tzeentch_turn",
+            ):
+                return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
             twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_charge_after_advance", None) if mgr is not None else None
@@ -18942,6 +19027,15 @@ class ActionsMovementMixin:
             return True
         if _has_orks_temp_movement_effect_for_unit(self, "charge_after_fall_back"):
             return True
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_cyberspirit_machinations_charge_active",
+                owner_key="thousand_sons_cyberspirit_machinations_turn_owner",
+                turn_key="thousand_sons_cyberspirit_machinations_turn",
+            ):
+                return True
+        except Exception:
+            pass
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None

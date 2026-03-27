@@ -19906,6 +19906,11 @@ def _stratagem_support(
     notes_by_id = {
         "000010655002": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected EMPEROR'S CHILDREN unit imposes -1 to wound against attacks from that attacker while its Strength is greater than the target's Toughness until end of phase.",
         "000008961003": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
+        "000010210003": "Your Command phase: selected THOUSAND SONS PSYKER unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at the end of a phase, and while you retain control it deals D3 mortal wounds on a 4+ to enemy units ending a Normal, Advance, Fall Back, or Charge move within its range.",
+        "000010210004": "Movement phase reaction after one of your THOUSAND SONS VEHICLE units Falls Back while within 6\" of a friendly THOUSAND SONS PSYKER: selected unit can shoot and declare a charge this turn despite Falling Back.",
+        "000010210005": "Your Command phase: selected THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER ignores modifiers to its characteristics, Weapon Skill, Ballistic Skill, and to its rolls or tests (excluding saving throws) until your next Command phase.",
+        "000010210006": "Your Shooting phase: selected THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER and not yet selected to shoot gains [PSYCHIC] on ranged weapons and +1 to Wound rolls for those attacks until end of phase.",
+        "000010210007": "Opponent Charge phase reaction after an enemy unit ends a Charge move within Engagement Range of your THOUSAND SONS VEHICLE: roll 6D6, inflicting 1 mortal wound for each 5+, then that enemy unit must take a Battle-shock test.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20483,6 +20488,11 @@ def _stratagem_support(
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
     if stratagem_id in {
+        "000010210003",
+        "000010210004",
+        "000010210005",
+        "000010210006",
+        "000010210007",
         "000009742002",
         "000009742003",
         "000009742004",

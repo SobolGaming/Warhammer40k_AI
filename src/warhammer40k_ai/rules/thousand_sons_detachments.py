@@ -467,6 +467,82 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             return 5
         return 0
 
+    def clear_warpforged_malevolent_animus(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        changed = False
+        for key in (
+            "thousand_sons_malevolent_animus_active",
+            "thousand_sons_malevolent_animus_turn_owner",
+            "thousand_sons_malevolent_animus_turn",
+            "thousand_sons_malevolent_animus_source",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+        return changed
+
+    def warpforged_malevolent_animus_ignore_modifier_rule(self, unit, *, kind: str, game=None) -> dict | None:
+        if not self.is_warpforged_cabal():
+            return None
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+        }:
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_malevolent_animus_active")):
+            return None
+
+        game_obj = self._resolve_game(game=game)
+        if game_obj is not None:
+            owner_id = str(sr.get("thousand_sons_malevolent_animus_turn_owner", "") or "")
+            try:
+                effect_turn = int(sr.get("thousand_sons_malevolent_animus_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            expired = False
+            if owner_id and current_owner_id == owner_id and current_phase == "COMMAND_PHASE":
+                if effect_turn and current_turn > effect_turn:
+                    expired = True
+            elif effect_turn and current_turn and current_turn < effect_turn:
+                expired = True
+            if expired:
+                self.clear_warpforged_malevolent_animus(root)
+                return None
+
+        source_name = str(
+            sr.get("thousand_sons_malevolent_animus_source", "")
+            or "MALEVOLENT ANIMUS"
+        ).strip() or "MALEVOLENT ANIMUS"
+        return {
+            "source": source_name,
+            "forced_choice": "ignore_all",
+        }
+
     @staticmethod
     def _phase_key_for_game(game) -> str:
         if game is None:

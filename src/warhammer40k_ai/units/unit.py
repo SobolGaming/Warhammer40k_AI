@@ -2799,14 +2799,28 @@ class Unit(
                 rule = rule_fn(kind=ckey) if callable(rule_fn) else None
             except Exception:
                 rule = None
+            if not isinstance(rule, dict):
+                try:
+                    rule_fn = getattr(self, "_thousand_sons_warpforged_ignore_modifiers_rule", None)
+                    rule = rule_fn(kind=ckey) if callable(rule_fn) else None
+                except Exception:
+                    rule = None
             if isinstance(rule, dict) and mods:
                 try:
                     from ..utility.modifier_choice import (
+                        CHOICE_IGNORE_ALL,
                         CHOICE_IGNORE_NEGATIVE,
                         _numeric_modifier_polarity,
                         filter_numeric_modifiers,
                     )
-                    if str(rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                    choice_key = str(rule.get("forced_choice", "") or rule.get("default_choice", "") or "").strip().lower()
+                    if choice_key == "ignore_all":
+                        mods, _ignored = filter_numeric_modifiers(
+                            mods,
+                            CHOICE_IGNORE_ALL,
+                            base_val=int(base_val or 0),
+                        )
+                    elif choice_key == "ignore_negative":
                         if ckey == "leadership":
                             kept = []
                             for mod in list(mods or []):
