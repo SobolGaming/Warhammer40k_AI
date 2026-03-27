@@ -8876,6 +8876,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Twisted Mirage: cannot charge until end of turn after the setup override is used.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("thousand_sons_twisted_mirage_no_charge_turn_owner"):
+                owner = str(sr.get("thousand_sons_twisted_mirage_no_charge_turn_owner") or "")
+                turn = int(sr.get("thousand_sons_twisted_mirage_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Fire and Fade: cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)
@@ -9555,6 +9567,27 @@ class PositioningMixin:
                             found = False
                         elif exp_phase and cur_phase and exp_phase != cur_phase:
                             found = False
+                elif sr.get("thousand_sons_twisted_mirage_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("thousand_sons_twisted_mirage_turn_owner", "") or "")
+                    turn = int(sr.get("thousand_sons_twisted_mirage_turn", 0) or 0)
+                    exp_phase = str(sr.get("thousand_sons_twisted_mirage_expires_phase", "") or "").strip().upper()
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            found = False
+                        elif exp_phase and cur_phase and exp_phase != cur_phase:
+                            found = False
                 elif sr.get("midgame_temp_deep_strike"):
                     found = True
                     try:
@@ -10200,6 +10233,47 @@ class PositioningMixin:
                     through_the_veil_min
                     if min_dist is None
                     else min(min_dist, through_the_veil_min)
+                )
+
+        try:
+            twisted_mirage_min = float(sr.get("thousand_sons_twisted_mirage_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            twisted_mirage_min = 0.0
+        if twisted_mirage_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("thousand_sons_twisted_mirage_turn_owner", "") or "")
+                turn = int(sr.get("thousand_sons_twisted_mirage_turn", 0) or 0)
+                exp = str(sr.get("thousand_sons_twisted_mirage_expires_phase", "") or "").strip().upper()
+                active = bool(sr.get("thousand_sons_twisted_mirage_active"))
+                if not active:
+                    twisted_mirage_min = 0.0
+                elif game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        twisted_mirage_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        twisted_mirage_min = 0.0
+                    elif exp and pname and exp != pname:
+                        twisted_mirage_min = 0.0
+            except Exception:
+                twisted_mirage_min = 0.0
+            if twisted_mirage_min > 0:
+                min_dist = (
+                    twisted_mirage_min
+                    if min_dist is None
+                    else min(min_dist, twisted_mirage_min)
                 )
 
         return float(min_dist) if min_dist is not None else None

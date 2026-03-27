@@ -146,6 +146,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "THROUGH THE VEIL",
     "SCOURING WARPFLAME",
     "KALEIDOSCOPIC TEMPEST",
+    "GIFT OF CHANGE",
+    "DERANGED FEROCITY",
+    "BLESSED TRANSMUTATIONS",
+    "TOUCHED BY TZEENTCH",
+    "TWISTED MIRAGE",
     "PSYCHIC DOMINION",
     "RAMPAGING MONSTROSITIES",
     "SELFLESS DEMISE",
@@ -739,6 +744,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "WRATH OF THE DOOMED",
     "KALEIDOSCOPIC TEMPEST",
     "WARPFLAME GARGOYLES",
+    "GIFT OF CHANGE",
+    "DERANGED FEROCITY",
+    "TWISTED MIRAGE",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
@@ -1872,7 +1880,7 @@ class StratagemManager(
         if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "GRIP OF THE WALKING POX", "SHOCK BOMBARDMENT"}:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
-        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
+        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION", "DERANGED FEROCITY"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
         if names & {
@@ -2037,6 +2045,7 @@ class StratagemManager(
             "STAGED DEATH",
             "VENGEFUL ANIMUS",
             "DETONATOR",
+            "GIFT OF CHANGE",
         }:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
@@ -2356,6 +2365,7 @@ class StratagemManager(
             "PICK THEM OFF",
             "ENCIRCLING SURGE",
             "BLIGHTED LAND",
+            "GIFT OF CHANGE",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2438,6 +2448,9 @@ class StratagemManager(
             "PLAGUE OF WOES",
             "FEVER VISIONS",
             "SEEPING VIRULENCE",
+            "DERANGED FEROCITY",
+            "TOUCHED BY TZEENTCH",
+            "TWISTED MIRAGE",
             "IMPOSSIBLE ECLIPSE",
             "PRETERNATURAL AGILITY",
             "PYROGENESIS",
@@ -5065,6 +5078,67 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase target-selection trigger with an enemy unit that selected one of your THOUSAND SONS PSYKER units as a target"
             return result
+        if name_u == "GIFT OF CHANGE":
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            destroyed_model = context.get("destroyed_model") or context.get("model") or context.get("target_model")
+            root = self._ts_root(destroyed_unit) if destroyed_unit is not None else None
+            if root is None or destroyed_model is None:
+                result["reason"] = "Requires model_destroyed_before_removal trigger for a just-destroyed non-MONSTER THOUSAND SONS CHARACTER model"
+                return result
+            if not self._ts_warpmeld_gift_of_change_model_valid(destroyed_model):
+                result["reason"] = "Requires a just-destroyed non-MONSTER THOUSAND SONS CHARACTER model"
+                return result
+            try:
+                battle_round = int(getattr(self.game, "turn", 0) or 0)
+            except (AttributeError, TypeError, ValueError):
+                battle_round = 0
+            if battle_round and int(getattr(self, "_used_battle_round", {}).get("GIFT OF CHANGE", 0) or 0) == battle_round:
+                result["reason"] = "Already used this battle round"
+                return result
+            result["available"] = True
+            result["reason"] = None
+            return result
+        if name_u == "DERANGED FEROCITY":
+            candidates = list(context.get("candidates") or [])
+            selected_unit = context.get("unit") or context.get("target_unit")
+            if not candidates:
+                candidates = self._ts_warpmeld_deranged_ferocity_candidates(selected_unit=selected_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase trigger after one of your TZEENTCH MUTANT units is selected to fight and has not already fought"
+            return result
+        if name_u == "BLESSED TRANSMUTATIONS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_warpmeld_blessed_transmutations_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a Tzaangors unit below Starting Strength within 12\" of a friendly THOUSAND SONS PSYKER"
+            return result
+        if name_u == "TOUCHED BY TZEENTCH":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_warpmeld_touched_by_tzeentch_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the start of your Movement phase and a friendly TZEENTCH MUTANT unit on the battlefield"
+            return result
+        if name_u == "TWISTED MIRAGE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_warpmeld_twisted_mirage_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase Reinforcements step and a friendly TZEENTCH MUTANT unit arriving from Strategic Reserves this phase"
+            return result
         if name_u == "GLIMMERSHIFT PORTAL":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5940,6 +6014,11 @@ class StratagemManager(
             "THROUGH THE VEIL": "Movement phase Reinforcements step: target your RUBRIC MARINES or SCARAB OCCULT TERMINATORS unit in Strategic Reserves; Rubrics gain temporary Deep Strike this phase, while Scarabs can set up wholly within Flow of Magic and more than 6\" horizontally from enemy units",
             "SCOURING WARPFLAME": "Shooting phase: target your THOUSAND SONS PSYKER unit wholly within Flow of Magic that has not been selected to shoot; its ranged attacks gain [IGNORES COVER] and after it shoots one hit enemy unit can lose cover this phase",
             "KALEIDOSCOPIC TEMPEST": "Opponent Shooting phase, just after an enemy unit selects targets: target your THOUSAND SONS PSYKER unit selected by that attacker; it gains Stealth, and while wholly within Flow of Magic also gains the Benefit of Cover, until end of phase",
+            "GIFT OF CHANGE": "Any phase reaction when a non-MONSTER THOUSAND SONS CHARACTER model from your army is just destroyed: at phase end add one TZEENTCH CHAOS SPAWN unit with one model as close as possible to that destroyed model and not within Engagement Range of enemy units (once per battle round)",
+            "DERANGED FEROCITY": "Fight phase, just after one of your TZEENTCH MUTANT units is selected to fight: it can pile in and consolidate up to 6\", and its models within 3\" of enemy models are eligible to fight while still only targeting enemy units within 3\" and within Engagement Range of the unit",
+            "BLESSED TRANSMUTATIONS": "Command phase: target one friendly Tzaangors unit below Starting Strength and within 12\" of a friendly THOUSAND SONS PSYKER; return up to D3+1 destroyed non-CHARACTER models to that unit",
+            "TOUCHED BY TZEENTCH": "Start of your Movement phase: target one friendly TZEENTCH MUTANT unit; it can shoot and declare a charge in a turn in which it Advanced until end of turn",
+            "TWISTED MIRAGE": "Movement phase Reinforcements step: target your TZEENTCH MUTANT unit arriving from Strategic Reserves; it can set up anywhere more than 6\" horizontally from enemy units, or 9\" if it is a MONSTER, and cannot declare a charge this turn",
             "PSYCHIC DOMINION": "Any phase, just after an enemy unit selects targets: target your THOUSAND SONS unit chosen by that attacker; until end of phase that attacker's Psychic weapons are [HAZARDOUS] and your unit has Feel No Pain 4+ against Psychic attacks",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
             "BROODGUARD IMPULSE": "Any phase: target your HARVESTER unit that was just destroyed; friendly TYRANIDS models add 1 to Wound rolls against the enemy unit that destroyed it until end of battle",
@@ -7060,6 +7139,10 @@ class StratagemManager(
             self._queue_thousand_sons_hexwarp_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_thousand_sons_warpmeld_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -8094,6 +8177,14 @@ class StratagemManager(
             raise
         try:
             self._cleanup_thousand_sons_hexwarp_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._resolve_thousand_sons_warpmeld_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_thousand_sons_warpmeld_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -12164,6 +12255,10 @@ class StratagemManager(
                 unit=unit,
                 selecting_player=selecting_player,
             )
+            self._queue_thousand_sons_warpmeld_fight_unit_selected_reactions(
+                unit=unit,
+                selecting_player=selecting_player,
+            )
         except Exception:
             raise
         # Adeptus Custodes: PEERLESS WARRIOR
@@ -14594,6 +14689,10 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_crusher_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_warpmeld_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

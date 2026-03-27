@@ -2272,6 +2272,13 @@ class GameSetupDeploymentReservesMixin:
         )
         if callable(queue_hexwarp):
             queue_hexwarp(current_player=current_player)
+        queue_warpmeld = (
+            getattr(current_stratagems, "_queue_thousand_sons_warpmeld_reinforcements_step_reactions", None)
+            if current_stratagems is not None
+            else None
+        )
+        if callable(queue_warpmeld):
+            queue_warpmeld(current_player=current_player)
 
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)

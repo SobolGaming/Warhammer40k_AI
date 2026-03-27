@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import math
 from typing import Any, Optional
@@ -215,6 +216,14 @@ class ThousandSonsStratagemMixin:
         checker = getattr(mgr, "_unit_is_tzeentch_mutant_infantry_or_mounted", None) if mgr is not None else None
         return bool(checker(root)) if callable(checker) else False
 
+    def _is_tzeentch_mutant_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        has_tzeentch = self._ts_has_any_keyword(root, "TZEENTCH") or self._ts_has_any_keyword(root, "TZEENTCH MUTANT")
+        has_mutant = self._ts_has_any_keyword(root, "MUTANT") or self._ts_has_any_keyword(root, "TZEENTCH MUTANT")
+        return bool(has_tzeentch and has_mutant)
+
     def _ts_model_is_psyker(self, model: Any, *, unit: Any = None) -> bool:
         if model is None:
             return False
@@ -224,6 +233,27 @@ class ThousandSonsStratagemMixin:
         if root is None:
             return False
         return self._ts_has_any_keyword(root, "PSYKER")
+
+    def _ts_model_is_character(self, model: Any) -> bool:
+        if model is None:
+            return False
+        is_character = getattr(model, "is_character", None)
+        if callable(is_character):
+            try:
+                if bool(is_character()):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        elif bool(is_character):
+            return True
+        if self._ts_model_has_keyword(model, "CHARACTER"):
+            return True
+        parent = getattr(model, "parent_unit", None)
+        if parent is None:
+            return False
+        if bool(getattr(parent, "is_character", False)):
+            return True
+        return self._ts_has_any_keyword(parent, "CHARACTER")
 
     @staticmethod
     def _ts_is_alive(unit: Any) -> bool:
@@ -1392,6 +1422,301 @@ class ThousandSonsStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
+
+    @staticmethod
+    def _ts_is_below_starting_strength(unit: Any) -> bool:
+        if unit is None:
+            return False
+        below_fn = getattr(unit, "is_below_starting_strength", None)
+        if callable(below_fn):
+            try:
+                if bool(below_fn()):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        return bool(list(getattr(unit, "models_lost", []) or []))
+
+    def _ts_returnable_destroyed_non_character_models(self, unit: Any) -> list[Any]:
+        root = self._ts_root(unit)
+        if root is None:
+            return []
+        destroyed_pool = list(getattr(root, "models_lost", []) or [])
+        can_return = getattr(root, "_horrors_can_return_model", None)
+        candidates: list[Any] = []
+        for model in destroyed_pool:
+            if model is None:
+                continue
+            if self._ts_model_is_character(model):
+                continue
+            if callable(can_return) and not bool(can_return(model)):
+                continue
+            candidates.append(model)
+        return sorted(candidates, key=self._ts_sort_key)
+
+    def _ts_warpmeld_supporting_psyker_candidates(self, unit: Any, *, distance: float = 12.0) -> list[Any]:
+        root = self._ts_root(unit)
+        if root is None:
+            return []
+        out: list[Any] = []
+        for candidate in self._ts_army_roots():
+            if candidate is None:
+                continue
+            if not self._ts_owned_by_player(candidate, self.player):
+                continue
+            if not self._ts_on_battlefield(candidate, require_targetable=False):
+                continue
+            if not self._is_thousand_sons_unit(candidate) or not self._is_psyker_unit(candidate):
+                continue
+            if not self._ts_unit_within_distance_of_unit(root, candidate, distance=float(distance)):
+                continue
+            out.append(candidate)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpmeld_blessed_transmutations_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tzaangors_unit(root):
+                continue
+            if not self._ts_is_below_starting_strength(root):
+                continue
+            if not self._ts_returnable_destroyed_non_character_models(root):
+                continue
+            if not self._ts_warpmeld_supporting_psyker_candidates(root, distance=12.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpmeld_deranged_ferocity_candidates(self, *, selected_unit: Any = None) -> list[Any]:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return []
+        root = self._ts_root(selected_unit)
+        if root is None:
+            return []
+        if not self._ts_owned_by_player(root, self.player):
+            return []
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._is_tzeentch_mutant_unit(root):
+            return []
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            return []
+        return [root]
+
+    def _ts_warpmeld_touched_by_tzeentch_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tzeentch_mutant_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpmeld_twisted_mirage_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if not self._is_tzeentch_mutant_unit(root):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status != "strategic_reserves":
+                continue
+            can_arrive = getattr(root, "can_arrive_from_reserves", None)
+            if callable(can_arrive):
+                try:
+                    if not bool(can_arrive(int(getattr(self.game, "turn", 0) or 0))):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_warpmeld_gift_of_change_model_valid(self, model: Any) -> bool:
+        if model is None:
+            return False
+        parent_unit = getattr(model, "parent_unit", None)
+        if parent_unit is None:
+            return False
+        root = self._ts_root(parent_unit)
+        if root is None or not self._ts_owned_by_player(root, self.player):
+            return False
+        if not self._is_thousand_sons_unit(parent_unit) and not self._is_thousand_sons_unit(root):
+            return False
+        if not self._ts_model_is_character(model):
+            return False
+        if self._is_monster_unit(parent_unit) or self._is_monster_unit(root):
+            return False
+        return True
+
+    def _ts_warpmeld_gift_of_change_pending_entries(self) -> list[dict[str, Any]]:
+        pending = getattr(self, "_thousand_sons_warpmeld_gift_of_change_pending", None)
+        if isinstance(pending, list):
+            return pending
+        pending = []
+        setattr(self, "_thousand_sons_warpmeld_gift_of_change_pending", pending)
+        return pending
+
+    def _ts_warpmeld_chaos_spawn_datasheet(self) -> Any:
+        cached = getattr(self, "_thousand_sons_warpmeld_chaos_spawn_datasheet", None)
+        if cached is not None:
+            return cached
+        datasheet = self._waha.get_full_datasheet_info_by_name(
+            "Chaos Spawn",
+            datasheet_id="000001023",
+            faction_id="TS",
+        )
+        if datasheet is None:
+            datasheet = self._waha.get_datasheet(
+                "Chaos Spawn",
+                datasheet_id="000001023",
+                faction_id="TS",
+            )
+        if datasheet is not None:
+            setattr(self, "_thousand_sons_warpmeld_chaos_spawn_datasheet", datasheet)
+        return datasheet
+
+    def _ts_warpmeld_create_chaos_spawn_unit(self) -> Any:
+        datasheet = self._ts_warpmeld_chaos_spawn_datasheet()
+        if datasheet is None:
+            return None
+        from ..units.unit import Unit as UnitClass
+
+        try:
+            unit = UnitClass(datasheet, quantity=1)
+        except TypeError:
+            unit = UnitClass(datasheet)
+        unit.spawned_in_battle = True
+        unit.starting_model_count = 1
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.reserve_turn_deployed = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        unit.arrived_from_reserves_this_turn = False
+        return unit
+
+    def _ts_warpmeld_place_spawn_unit(self, unit: Any, *, destroyed_base: Any) -> bool:
+        if unit is None or destroyed_base is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        models = [model for model in list(getattr(unit, "models", []) or []) if self._ts_model_is_alive(model)]
+        if not models:
+            return False
+        if game_map is None:
+            try:
+                models[0].set_location(
+                    float(getattr(destroyed_base, "x", 0.0) or 0.0),
+                    float(getattr(destroyed_base, "y", 0.0) or 0.0),
+                    float(getattr(destroyed_base, "z", 0.0) or 0.0),
+                    0.0,
+                )
+            except (AttributeError, TypeError, ValueError):
+                return False
+            return True
+
+        try:
+            anchor_x = float(getattr(destroyed_base, "x", 0.0) or 0.0)
+            anchor_y = float(getattr(destroyed_base, "y", 0.0) or 0.0)
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        try:
+            max_radius = max(float(getattr(game_map, "width", 72) or 72), float(getattr(game_map, "height", 48) or 48))
+        except (AttributeError, TypeError, ValueError):
+            max_radius = 72.0
+
+        boundary_repulsors = []
+        get_repulsors = getattr(game_map, "get_battlefield_edge_repulsors", None)
+        if callable(get_repulsors):
+            boundary_repulsors = list(get_repulsors() or [])
+
+        radius = 0.0
+        while radius <= max_radius + 1e-6:
+            angles = [0.0] if radius <= 1e-6 else [float(angle) for angle in range(0, 360, 15)]
+            for angle_deg in angles:
+                radians = math.radians(angle_deg)
+                x = float(anchor_x + math.cos(radians) * radius)
+                y = float(anchor_y + math.sin(radians) * radius)
+                try:
+                    prospective = unit.calculate_model_positions(
+                        x,
+                        y,
+                        game_map,
+                        avoid_friendly_units=True,
+                        boundary_repulsors=boundary_repulsors,
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    prospective = None
+                if not prospective:
+                    continue
+                if not bool(game_map.place_unit(unit)):
+                    continue
+                engaged = False
+                for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(unit) or []):
+                    enemy_root = self._ts_root(enemy)
+                    if enemy_root is None or not self._ts_on_battlefield(enemy_root, require_targetable=False):
+                        continue
+                    try:
+                        if bool(game_map.is_within_engagement_range(unit, enemy_root)):
+                            engaged = True
+                            break
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                if engaged:
+                    if isinstance(getattr(game_map, "units", None), list) and unit in game_map.units:
+                        game_map.units.remove(unit)
+                    continue
+                return True
+            radius += 0.5
+        return False
+
+    def _ts_warpmeld_resolve_gift_of_change_entry(self, entry: dict[str, Any]) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        destroyed_base = entry.get("destroyed_model_base")
+        spawn_unit = self._ts_warpmeld_create_chaos_spawn_unit()
+        if spawn_unit is None:
+            logger.error("ERROR: GIFT OF CHANGE: Chaos Spawn datasheet could not be loaded")
+            return False
+        set_parent = getattr(spawn_unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(army)
+        else:
+            spawn_unit.parent_army = army
+        if not self._ts_warpmeld_place_spawn_unit(spawn_unit, destroyed_base=destroyed_base):
+            logger.error("ERROR: GIFT OF CHANGE: no valid setup location for Chaos Spawn")
+            return False
+        army.add_unit(spawn_unit)
+        rebuild_registry = getattr(self.game, "rebuild_entity_registry", None) if self.game is not None else None
+        if callable(rebuild_registry):
+            rebuild_registry()
+        refresh_rules = getattr(self.game, "refresh_rule_subscribers", None) if self.game is not None else None
+        if callable(refresh_rules):
+            refresh_rules()
+        logger.info(
+            "INFO: GIFT OF CHANGE: spawned %s at the end of the phase.",
+            getattr(spawn_unit, "name", "Chaos Spawn"),
+        )
+        return True
 
     def _ts_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
         root = self._ts_root(unit)
@@ -2681,6 +3006,257 @@ class ThousandSonsStratagemMixin:
             if phase_key == "FIGHT_PHASE":
                 self._ts_clear_ability_cache(root, "fell_back_and_shoot")
 
+    def _queue_thousand_sons_warpmeld_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        if player is not self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+
+        def _queue(name: str, phase_name: str, candidates: list[Any]) -> None:
+            stratagem = getattr(self, "get_by_name", lambda _name: None)(name)
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            if not candidates or self._ts_reaction_exists("phase_start", stratagem.name):
+                return
+            if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name=phase_name):
+                return
+            payload: dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_name,
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            queue_reaction = getattr(self, "_queue_reaction", None)
+            if callable(queue_reaction):
+                queue_reaction(payload, use_timer=False)
+
+        if phase_key == "COMMAND_PHASE":
+            _queue("BLESSED TRANSMUTATIONS", "Command phase", self._ts_warpmeld_blessed_transmutations_candidates())
+        elif phase_key == "MOVEMENT_PHASE":
+            _queue("TOUCHED BY TZEENTCH", "Movement phase", self._ts_warpmeld_touched_by_tzeentch_candidates())
+
+    def _queue_thousand_sons_warpmeld_reinforcements_step_reactions(self, *, current_player: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        if current_player is not self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("TWISTED MIRAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_warpmeld_twisted_mirage_candidates()
+        if not candidates:
+            return
+        if self._ts_reaction_exists("reinforcements_step_start", stratagem.name):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Movement phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "reinforcements_step_start",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player_id": str(getattr(current_player, "id", "") or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_thousand_sons_warpmeld_fight_unit_selected_reactions(self, *, unit: Any, selecting_player: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        if selecting_player is not self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        candidates = self._ts_warpmeld_deranged_ferocity_candidates(selected_unit=unit)
+        if not candidates:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DERANGED FEROCITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        root = candidates[0]
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "fight_unit_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._ts_root(reaction.get("unit") or reaction.get("target_unit")) is root:
+                return
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "fight_unit_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_thousand_sons_warpmeld_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        if not self._ts_warpmeld_gift_of_change_model_valid(model):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("GIFT OF CHANGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (AttributeError, TypeError, ValueError):
+            battle_round = 0
+        if battle_round and int(getattr(self, "_used_battle_round", {}).get(name_u, 0) or 0) == battle_round:
+            return
+        model_id = self._ts_sort_key(model)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "model_destroyed_before_removal":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if model_id and str(reaction.get("destroyed_model_id", "") or "") == model_id:
+                return
+        destroyed_member = getattr(model, "parent_unit", None)
+        destroyed_root = self._ts_root(unit)
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().replace("_", " ").title() or "Any phase"
+        if not stratagem.can_use(self.player, self.game, unit=destroyed_member or destroyed_root, phase_name=phase_name):
+            return
+        try:
+            destroyed_base = copy.deepcopy(getattr(model, "model_base", None))
+        except Exception:
+            destroyed_base = None
+        payload: dict[str, Any] = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": destroyed_member or destroyed_root,
+            "target_unit": destroyed_member or destroyed_root,
+            "destroyed_unit": destroyed_root,
+            "destroyed_model": model,
+            "destroyed_model_id": model_id,
+            "destroyed_model_base": destroyed_base,
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _resolve_thousand_sons_warpmeld_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_key:
+            return
+        pending = self._ts_warpmeld_gift_of_change_pending_entries()
+        if not pending:
+            return
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        keep: list[dict[str, Any]] = []
+        for entry in list(pending):
+            if not isinstance(entry, dict):
+                continue
+            entry_phase = str(entry.get("phase_key", "") or "").strip().upper()
+            try:
+                entry_turn = int(entry.get("turn", 0) or 0)
+            except (TypeError, ValueError):
+                entry_turn = 0
+            if entry_phase == phase_key and (not current_turn or not entry_turn or entry_turn == current_turn):
+                self._ts_warpmeld_resolve_gift_of_change_entry(entry)
+                continue
+            if current_turn and entry_turn and entry_turn < current_turn:
+                continue
+            keep.append(entry)
+        setattr(self, "_thousand_sons_warpmeld_gift_of_change_pending", keep)
+
+    def _cleanup_thousand_sons_warpmeld_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_thousand_sons_warpmeld_pact_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        for root in self._ts_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "MOVEMENT_PHASE":
+                for key in (
+                    "thousand_sons_twisted_mirage_active",
+                    "thousand_sons_twisted_mirage_temp_deep_strike",
+                    "thousand_sons_twisted_mirage_turn_owner",
+                    "thousand_sons_twisted_mirage_turn",
+                    "thousand_sons_twisted_mirage_expires_phase",
+                    "thousand_sons_twisted_mirage_source",
+                    "thousand_sons_twisted_mirage_deep_strike_min_distance",
+                    "thousand_sons_twisted_mirage_no_charge_on_arrival",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                if changed:
+                    root.special_rules = sr
+                    self._ts_clear_ability_cache(root, "deep_strike")
+                continue
+            if phase_key == "FIGHT_PHASE":
+                if bool(sr.get("thousand_sons_deranged_ferocity_added_fight_within_3")) and "fight_within_3" in sr:
+                    sr.pop("fight_within_3", None)
+                    changed = True
+                active_source = str(sr.get("fight_within_3_active_source", "") or "").strip().upper()
+                if active_source == "DERANGED FEROCITY":
+                    sr.pop("fight_within_3_active", None)
+                    sr.pop("fight_within_3_active_source", None)
+                    changed = True
+                for key in (
+                    "thousand_sons_touched_by_tzeentch_active",
+                    "thousand_sons_touched_by_tzeentch_turn_owner",
+                    "thousand_sons_touched_by_tzeentch_turn",
+                    "thousand_sons_touched_by_tzeentch_source",
+                    "thousand_sons_deranged_ferocity_active",
+                    "thousand_sons_deranged_ferocity_turn_owner",
+                    "thousand_sons_deranged_ferocity_turn",
+                    "thousand_sons_deranged_ferocity_expires_phase",
+                    "thousand_sons_deranged_ferocity_source",
+                    "thousand_sons_deranged_ferocity_added_fight_within_3",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                if changed:
+                    root.special_rules = sr
+
     def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         _ = player
         game = getattr(self, "game", None)
@@ -2878,6 +3454,17 @@ class ThousandSonsStratagemMixin:
                 return self._use_thousand_sons_scouring_warpflame(stratagem, **kwargs)
             if name_u == "KALEIDOSCOPIC TEMPEST":
                 return self._use_thousand_sons_kaleidoscopic_tempest(stratagem, **kwargs)
+        if self._is_thousand_sons_warpmeld_pact_detachment():
+            if name_u == "GIFT OF CHANGE":
+                return self._use_thousand_sons_gift_of_change(stratagem, **kwargs)
+            if name_u == "DERANGED FEROCITY":
+                return self._use_thousand_sons_deranged_ferocity(stratagem, **kwargs)
+            if name_u == "BLESSED TRANSMUTATIONS":
+                return self._use_thousand_sons_blessed_transmutations(stratagem, **kwargs)
+            if name_u == "TOUCHED BY TZEENTCH":
+                return self._use_thousand_sons_touched_by_tzeentch(stratagem, **kwargs)
+            if name_u == "TWISTED MIRAGE":
+                return self._use_thousand_sons_twisted_mirage(stratagem, **kwargs)
         return None
 
     def _use_thousand_sons_mutate_landscape(self, stratagem: Any, **kwargs) -> bool:
@@ -3233,6 +3820,391 @@ class ThousandSonsStratagemMixin:
             rolls,
             int(mortal_wounds),
             getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_thousand_sons_gift_of_change(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        destroyed_model = kwargs.get("destroyed_model") or kwargs.get("model") or kwargs.get("target_model")
+        destroyed_base = kwargs.get("destroyed_model_base")
+        candidates = list(kwargs.get("candidates") or [])
+        if destroyed_model is None or target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit") or reaction.get("destroyed_unit")
+                if destroyed_model is None:
+                    destroyed_model = reaction.get("destroyed_model") or reaction.get("model") or reaction.get("target_model")
+                if destroyed_base is None:
+                    destroyed_base = reaction.get("destroyed_model_base")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        destroyed_member = getattr(destroyed_model, "parent_unit", None) if destroyed_model is not None else None
+        root = self._ts_root(target_unit) if target_unit is not None else self._ts_root(destroyed_member)
+        if root is None or destroyed_model is None:
+            logger.error("ERROR: GIFT OF CHANGE: missing destroyed model context")
+            return False
+        if not self._ts_warpmeld_gift_of_change_model_valid(destroyed_model):
+            logger.error("ERROR: GIFT OF CHANGE: target must be a just-destroyed non-MONSTER THOUSAND SONS CHARACTER model")
+            return False
+        if candidates and not self._ts_unit_in_candidates(destroyed_member or root, candidates):
+            logger.error("ERROR: GIFT OF CHANGE: selected target is not currently eligible")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().replace("_", " ").title() or "Any phase"
+        if not stratagem.can_use(self.player, self.game, unit=destroyed_member or root, phase_name=phase_name):
+            logger.error("ERROR: GIFT OF CHANGE: cannot be used in current state")
+            return False
+        try:
+            battle_round = int(getattr(self.game, "turn", 0) or 0)
+        except (AttributeError, TypeError, ValueError):
+            battle_round = 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if battle_round and int(getattr(self, "_used_battle_round", {}).get(name_u, 0) or 0) == battle_round:
+            logger.error("ERROR: GIFT OF CHANGE: already used this battle round")
+            return False
+        if destroyed_base is None:
+            try:
+                destroyed_base = copy.deepcopy(getattr(destroyed_model, "model_base", None))
+            except (AttributeError, TypeError, ValueError):
+                destroyed_base = None
+        if destroyed_base is None:
+            logger.error("ERROR: GIFT OF CHANGE: missing destroyed model position")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=destroyed_member or root):
+            return False
+
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if not phase_key and phase_name:
+            phase_key = str(phase_name).strip().upper().replace(" ", "_")
+        self._ts_warpmeld_gift_of_change_pending_entries().append(
+            {
+                "phase_key": phase_key,
+                "turn": battle_round,
+                "destroyed_model_id": self._ts_sort_key(destroyed_model),
+                "destroyed_model_name": str(getattr(destroyed_model, "name", "") or "Character"),
+                "destroyed_model_base": destroyed_base,
+                "source": str(getattr(stratagem, "name", "") or "GIFT OF CHANGE"),
+            }
+        )
+        if battle_round:
+            self._used_battle_round[name_u] = int(battle_round)
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GIFT OF CHANGE: %s will spawn a Chaos Spawn at the end of the phase.",
+            getattr(destroyed_model, "name", "Character"),
+        )
+        return True
+
+    def _use_thousand_sons_deranged_ferocity(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: DERANGED FEROCITY: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: DERANGED FEROCITY: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tzeentch_mutant_unit(root):
+            logger.error("ERROR: DERANGED FEROCITY: target must be a TZEENTCH MUTANT unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: DERANGED FEROCITY: wrong phase")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: DERANGED FEROCITY: target already fought this phase")
+            return False
+        eligible = candidates or self._ts_warpmeld_deranged_ferocity_candidates(selected_unit=root)
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: DERANGED FEROCITY: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: DERANGED FEROCITY: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "DERANGED FEROCITY").strip() or "DERANGED FEROCITY"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if not sr.get("fight_within_3"):
+            sr["fight_within_3"] = [{"name": source_name}]
+            sr["thousand_sons_deranged_ferocity_added_fight_within_3"] = True
+        set_active = getattr(root, "set_fight_within_3_active", None)
+        if callable(set_active):
+            root.special_rules = sr
+            set_active(True, source=source_name)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+        else:
+            sr["fight_within_3_active"] = True
+            sr["fight_within_3_active_source"] = source_name
+        sr["stratagem_pile_in_distance_override"] = max(6.0, float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0))
+        sr["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_pile_in_source"] = source_name
+        sr["stratagem_consolidate_distance_override"] = max(
+            6.0,
+            float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0),
+        )
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = source_name
+        sr["thousand_sons_deranged_ferocity_active"] = True
+        sr["thousand_sons_deranged_ferocity_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_deranged_ferocity_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_deranged_ferocity_expires_phase"] = "FIGHT_PHASE"
+        sr["thousand_sons_deranged_ferocity_source"] = source_name
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DERANGED FEROCITY: %s can pile in/consolidate 6\" and fight with models within 3\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_blessed_transmutations(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        psyker_model = kwargs.get("psyker_model") or kwargs.get("model") or kwargs.get("source_model")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tzaangors_unit(root):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: target must be a TZAANGORS unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: not your turn")
+            return False
+        eligible = candidates or self._ts_warpmeld_blessed_transmutations_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: target is not currently eligible")
+            return False
+        if not self._ts_is_below_starting_strength(root):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: target must be below Starting Strength")
+            return False
+        destroyed_candidates = self._ts_returnable_destroyed_non_character_models(root)
+        if not destroyed_candidates:
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: target has no eligible destroyed models to return")
+            return False
+        supporting_psykers = self._ts_warpmeld_supporting_psyker_candidates(root, distance=12.0)
+        if not supporting_psykers:
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: requires a friendly THOUSAND SONS PSYKER within 12\"")
+            return False
+        if psyker_model is not None:
+            psyker_root = self._ts_root(getattr(psyker_model, "parent_unit", None) or psyker_model)
+            if psyker_root not in supporting_psykers or not self._ts_model_is_psyker(psyker_model, unit=psyker_root):
+                logger.error("ERROR: BLESSED TRANSMUTATIONS: selected PSYKER model is not eligible")
+                return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        return_full = getattr(self, "_return_destroyed_models_full", None)
+        if not callable(return_full):
+            logger.error("ERROR: BLESSED TRANSMUTATIONS: destroyed-model return helper is unavailable")
+            return False
+        amount = int(dice_module.get_roll("D3") or 0) + 1
+        returned = int(
+            return_full(
+                root,
+                amount=amount,
+                game_map=self._ts_game_map(),
+                skip_character=True,
+            )
+            or 0
+        )
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLESSED TRANSMUTATIONS: %s returned %d model(s).",
+            getattr(root, "name", "Unit"),
+            int(returned),
+        )
+        return True
+
+    def _use_thousand_sons_touched_by_tzeentch(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: TOUCHED BY TZEENTCH: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: TOUCHED BY TZEENTCH: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tzeentch_mutant_unit(root):
+            logger.error("ERROR: TOUCHED BY TZEENTCH: target must be a TZEENTCH MUTANT unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: TOUCHED BY TZEENTCH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TOUCHED BY TZEENTCH: not your turn")
+            return False
+        eligible = candidates or self._ts_warpmeld_touched_by_tzeentch_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: TOUCHED BY TZEENTCH: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: TOUCHED BY TZEENTCH: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_touched_by_tzeentch_active"] = True
+        sr["thousand_sons_touched_by_tzeentch_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_touched_by_tzeentch_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_touched_by_tzeentch_source"] = str(getattr(stratagem, "name", "") or "TOUCHED BY TZEENTCH")
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TOUCHED BY TZEENTCH: %s can shoot and charge after Advancing this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_twisted_mirage(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: TWISTED MIRAGE: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: TWISTED MIRAGE: target unit is not yours")
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+        if reserve_status != "strategic_reserves":
+            logger.error("ERROR: TWISTED MIRAGE: target must be in Strategic Reserves")
+            return False
+        if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+            logger.error("ERROR: TWISTED MIRAGE: embarked units are not eligible")
+            return False
+        if not self._is_tzeentch_mutant_unit(root):
+            logger.error("ERROR: TWISTED MIRAGE: target must be a TZEENTCH MUTANT unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: TWISTED MIRAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TWISTED MIRAGE: not your turn")
+            return False
+        eligible = candidates or self._ts_warpmeld_twisted_mirage_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: TWISTED MIRAGE: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: TWISTED MIRAGE: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        min_distance = 9.0 if self._is_monster_unit(root) else 6.0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_twisted_mirage_active"] = True
+        sr["thousand_sons_twisted_mirage_temp_deep_strike"] = True
+        sr["thousand_sons_twisted_mirage_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_twisted_mirage_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_twisted_mirage_expires_phase"] = "MOVEMENT_PHASE"
+        sr["thousand_sons_twisted_mirage_source"] = str(getattr(stratagem, "name", "") or "TWISTED MIRAGE")
+        sr["thousand_sons_twisted_mirage_deep_strike_min_distance"] = float(min_distance)
+        sr["thousand_sons_twisted_mirage_no_charge_on_arrival"] = True
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "deep_strike")
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TWISTED MIRAGE: %s can arrive more than %.0f\" horizontally from enemy units and cannot charge this turn.",
+            getattr(root, "name", "Unit"),
+            float(min_distance),
         )
         return True
 

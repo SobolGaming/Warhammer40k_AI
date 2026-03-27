@@ -3518,6 +3518,18 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        # Twisted Mirage: if the setup override was active, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("thousand_sons_twisted_mirage_no_charge_on_arrival")):
+                owner = str(sr.get("thousand_sons_twisted_mirage_turn_owner", "") or "")
+                sr["thousand_sons_twisted_mirage_no_charge_turn"] = int(turn or 0)
+                if owner:
+                    sr["thousand_sons_twisted_mirage_no_charge_turn_owner"] = owner
+                self.special_rules = sr
+        except Exception:
+            pass
+
         # Daring Riders: if set up within 9", cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)
@@ -3667,6 +3679,22 @@ class LateGameplayMixin:
                         "thousand_sons_through_the_veil_expires_phase",
                         "thousand_sons_through_the_veil_source",
                         "thousand_sons_through_the_veil_deep_strike_min_distance",
+                    ):
+                        sr.pop(key, None)
+                if (
+                    sr.get("thousand_sons_twisted_mirage_temp_deep_strike") is True
+                    or sr.get("thousand_sons_twisted_mirage_active") is True
+                    or "thousand_sons_twisted_mirage_deep_strike_min_distance" in sr
+                ):
+                    for key in (
+                        "thousand_sons_twisted_mirage_active",
+                        "thousand_sons_twisted_mirage_temp_deep_strike",
+                        "thousand_sons_twisted_mirage_turn_owner",
+                        "thousand_sons_twisted_mirage_turn",
+                        "thousand_sons_twisted_mirage_expires_phase",
+                        "thousand_sons_twisted_mirage_source",
+                        "thousand_sons_twisted_mirage_deep_strike_min_distance",
+                        "thousand_sons_twisted_mirage_no_charge_on_arrival",
                     ):
                         sr.pop(key, None)
                 if sr.get("umbralefic_crystal_temp_deep_strike") is True or "umbralefic_crystal_must_arrive_turn" in sr:

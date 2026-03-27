@@ -8672,6 +8672,88 @@ _HEXWARP_THRALLBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WARPMELD_PACT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010202002": StratagemToolDescriptor(
+        stratagem_id="000010202002",
+        name="Gift of Change",
+        timing="any_phase_on_friendly_character_model_destroyed",
+        target="just_destroyed_non_monster_thousand_sons_character_model_once_per_battle_round",
+        duration="end_of_phase",
+        effect="spawn_chaos_spawn_unit_at_end_of_phase",
+        cp_cost=1,
+        effect_params={
+            "spawn_unit_name": "Chaos Spawn",
+            "spawn_unit_datasheet_id": "000001023",
+            "spawn_unit_faction_id": "TS",
+            "spawn_model_count": 1,
+            "setup_as_close_as_possible": True,
+            "not_within_engagement_range": True,
+            "once_per_battle_round": True,
+        },
+    ),
+    "000010202004": StratagemToolDescriptor(
+        stratagem_id="000010202004",
+        name="Deranged Ferocity",
+        timing="fight_phase_on_select_to_fight",
+        target="tzeentch_mutant_unit_just_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="fight_within_3_and_extend_pile_in_and_consolidate_to_six",
+        cp_cost=1,
+        effect_params={
+            "eligibility_range": 3,
+            "requires_target_unit_in_engagement_range": True,
+            "pile_in_distance": 6,
+            "consolidate_distance": 6,
+        },
+    ),
+    "000010202005": StratagemToolDescriptor(
+        stratagem_id="000010202005",
+        name="Blessed Transmutations",
+        timing="command_phase",
+        target="tzaangors_unit_below_starting_strength_within_12_of_friendly_psyker",
+        duration="immediate",
+        effect="return_destroyed_models",
+        cp_cost=1,
+        effect_params={
+            "return_roll": "D3+1",
+            "required_keyword": "TZAANGORS",
+            "exclude_character": True,
+            "requires_friendly_psyker_within": 12,
+        },
+    ),
+    "000010202006": StratagemToolDescriptor(
+        stratagem_id="000010202006",
+        name="Touched by Tzeentch",
+        timing="movement_phase_start",
+        target="tzeentch_mutant_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance",
+        cp_cost=1,
+        effect_params={"advance_and_shoot": True, "advance_and_charge": True},
+    ),
+    "000010202007": StratagemToolDescriptor(
+        stratagem_id="000010202007",
+        name="Twisted Mirage",
+        timing="movement_phase_reinforcements_step",
+        target="tzeentch_mutant_unit_arriving_from_strategic_reserves",
+        duration="this_turn_and_phase",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={
+            "min_distance": 6,
+            "monster_min_distance": 9,
+            "distance_type": "horizontal",
+            "grant_temp_deep_strike": True,
+            "cannot_charge_this_turn": True,
+            "required_reserve_status": "strategic_reserves",
+        },
+    ),
+}
+
+_WARPMELD_PACT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPMELD_PACT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010206002": StratagemToolDescriptor(
         stratagem_id="000010206002",
@@ -9585,6 +9667,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GRAND_COVEN_STRATAGEM_BY_NAME.get(key)
         or _WARPFORGED_CABAL_STRATAGEM_BY_NAME.get(key)
         or _HEXWARP_THRALLBAND_STRATAGEM_BY_NAME.get(key)
+        or _WARPMELD_PACT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
