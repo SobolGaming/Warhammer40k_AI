@@ -3316,6 +3316,17 @@ class RulesParsingMixin:
                 watcher_in_the_dark_once_per_battle_ability = bool(
                     "once per battle" in text_lower and "watcher in the dark" in text_lower
                 )
+                source_rules = getattr(u, "special_rules", None)
+                normalized_name = str(name or "").strip().lower()
+                if (
+                    isinstance(source_rules, dict)
+                    and normalized_name == "osteoclave fulcrum"
+                    and bool(source_rules.get("enhancement_osteoclave_fulcrum"))
+                    and bool(source_rules.get("enhancement_osteoclave_fulcrum_requires_bearer_alive", True))
+                ):
+                    alive_check = getattr(u, "_enhancement_bearer_model_is_alive", None)
+                    if callable(alive_check) and not bool(alive_check(flag_key="enhancement_osteoclave_fulcrum")):
+                        continue
 
                 for sentence in _iter_sentences(text):
                     if not sentence:
@@ -4773,6 +4784,19 @@ class RulesParsingMixin:
         parsed_ignore: list[str] = []
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
+                source_rules = getattr(u, "special_rules", None)
+                normalized_name = str(name or "").strip().lower()
+                if (
+                    isinstance(source_rules, dict)
+                    and normalized_name == "hyperspatial transfer node"
+                    and bool(source_rules.get("enhancement_hyperspatial_transfer_node"))
+                    and bool(source_rules.get("enhancement_hyperspatial_transfer_node_requires_bearer_alive", True))
+                ):
+                    alive_check = getattr(u, "_enhancement_bearer_model_is_alive", None)
+                    if callable(alive_check) and not bool(
+                        alive_check(flag_key="enhancement_hyperspatial_transfer_node")
+                    ):
+                        continue
                 text_src = u._strip_eligibility_prefix(desc or name or "")
                 text = u._normalize_rules_text(text_src or "")
                 dist = u._parse_advance_no_roll_distance(text)
@@ -4899,7 +4923,15 @@ class RulesParsingMixin:
             member_effects = sr.get("advance_no_roll_effects") if isinstance(sr, dict) else None
             if not isinstance(member_effects, list) or not member_effects:
                 continue
-            effects.extend([entry for entry in member_effects if isinstance(entry, dict)])
+            for entry in member_effects:
+                if not isinstance(entry, dict):
+                    continue
+                if bool(entry.get("requires_bearer_alive", False)):
+                    flag_key = str(entry.get("source_flag_key", "") or "").strip()
+                    alive_check = getattr(member, "_enhancement_bearer_model_is_alive", None)
+                    if flag_key and callable(alive_check) and not bool(alive_check(flag_key=flag_key)):
+                        continue
+                effects.append(entry)
 
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None

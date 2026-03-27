@@ -960,6 +960,56 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         out.sort(key=lambda u: str(get_entity_id(u) or id(u)))
         return out
 
+    def _unit_is_on_battlefield_or_in_strategic_reserves(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status == "strategic_reserves":
+            return True
+        if reserve_status != "deployed":
+            return False
+        if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+            return False
+        return True
+
+    def _hypercrypt_dimensional_overseer_selection_cap_bonus(self, *, game=None) -> int:
+        if not self.is_hypercrypt_legion() or self.army is None:
+            return 0
+        bonus = 0
+        for root in self._iter_unique_army_roots():
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_is_on_battlefield_or_in_strategic_reserves(root):
+                continue
+            for _member, sr in self._attached_members_with_active_enhancement(
+                root,
+                "enhancement_dimensional_overseer",
+            ):
+                active_statuses = {
+                    str(value or "").strip().lower()
+                    for value in list(
+                        sr.get(
+                            "enhancement_dimensional_overseer_active_reserve_statuses",
+                            ("deployed", "strategic_reserves"),
+                        )
+                        or ()
+                    )
+                    if str(value or "").strip()
+                }
+                if not active_statuses:
+                    active_statuses = {"deployed", "strategic_reserves"}
+                reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+                if reserve_status not in active_statuses:
+                    continue
+                bonus += int(max(0, int(sr.get("enhancement_dimensional_overseer_selection_cap_bonus", 1) or 1)))
+        return bonus
+
     def hyperphasing_end_of_opponent_turn_max_units(self, *, game=None) -> int:
         if not self.is_hypercrypt_legion():
             return 0
@@ -969,17 +1019,55 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             size_name = str(getattr(size, "name", "") or size or "")
         size_name = size_name.strip().upper().replace(" ", "_")
         if "INCURSION" in size_name:
-            return 1
-        if "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
-            return 2
-        if "ONSLAUGHT" in size_name:
-            return 3
-        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
-        if points_limit >= 3000:
-            return 3
-        if points_limit >= 2000:
-            return 2
-        return 1
+            base = 1
+        elif "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
+            base = 2
+        elif "ONSLAUGHT" in size_name:
+            base = 3
+        else:
+            points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+            if points_limit >= 3000:
+                base = 3
+            elif points_limit >= 2000:
+                base = 2
+            else:
+                base = 1
+        return int(base) + int(self._hypercrypt_dimensional_overseer_selection_cap_bonus(game=game))
+
+    def _hypercrypt_unit_was_set_up_this_turn(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        was_set_up = getattr(root, "_was_set_up_this_turn", None)
+        if callable(was_set_up):
+            return bool(was_set_up(game=game))
+        if bool(getattr(getattr(root, "round_state", None), "reinforced_this_round", False)):
+            return True
+        turn = self._current_turn(game)
+        return bool(turn and int(getattr(root, "reserve_turn_deployed", 0) or 0) == int(turn))
+
+    def arisen_tyrant_hit_rerolls(self, attacker_model, *, unit=None, game=None) -> tuple[bool, bool, str]:
+        if not self.is_hypercrypt_legion():
+            return False, False, ""
+        root = self._unit_root(unit if unit is not None else attacker_model)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False, False, ""
+        reroll_ones = False
+        reroll_full = False
+        source = ""
+        for _member, sr in self._attached_members_with_active_enhancement(
+            root,
+            "enhancement_arisen_tyrant",
+        ):
+            source = str(sr.get("enhancement_arisen_tyrant_source", "") or "Arisen Tyrant").strip() or "Arisen Tyrant"
+            if bool(
+                sr.get("enhancement_arisen_tyrant_reroll_hit_full_if_set_up_this_turn", True)
+            ) and self._hypercrypt_unit_was_set_up_this_turn(root, game=game):
+                reroll_full = True
+                break
+            if bool(sr.get("enhancement_arisen_tyrant_reroll_hit_ones", True)):
+                reroll_ones = True
+        return bool(reroll_ones), bool(reroll_full), source
 
     def _hyperphasing_phase_key(self, *, game=None, turn_ending_player_id: str = "") -> str:
         if game is None:

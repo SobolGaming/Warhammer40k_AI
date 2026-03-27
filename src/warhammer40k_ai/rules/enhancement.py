@@ -1884,6 +1884,9 @@ class Enhancement:
         is_cryptek_conclave = bool(
             ne_mgr and getattr(ne_mgr, "is_cryptek_conclave", lambda: False)()
         )
+        is_hypercrypt_legion = bool(
+            ne_mgr and getattr(ne_mgr, "is_hypercrypt_legion", lambda: False)()
+        )
         try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
@@ -2298,6 +2301,107 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_metalodermal_tesla_weave_bearer_model_id"] = bearer_id
+
+        if name == "dimensional overseer" or enh_id == "000008554002":
+            if not is_hypercrypt_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Dimensional Overseer").strip() or "Dimensional Overseer"
+            unit.special_rules["enhancement_dimensional_overseer"] = True
+            unit.special_rules["enhancement_dimensional_overseer_source"] = source_name
+            unit.special_rules["enhancement_dimensional_overseer_selection_cap_bonus"] = int(
+                max(0, _coerce_int(params.get("selection_cap_bonus", 1) or 1, default=1))
+            )
+            active_reserve_statuses = [
+                str(value or "").strip().lower()
+                for value in list(params.get("active_reserve_statuses", ("deployed", "strategic_reserves")) or ())
+                if str(value or "").strip()
+            ]
+            if not active_reserve_statuses:
+                active_reserve_statuses = ["deployed", "strategic_reserves"]
+            unit.special_rules["enhancement_dimensional_overseer_active_reserve_statuses"] = list(active_reserve_statuses)
+            unit.special_rules["enhancement_dimensional_overseer_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dimensional_overseer_bearer_model_id"] = bearer_id
+
+        if name == "arisen tyrant" or enh_id == "000008554003":
+            if not is_hypercrypt_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Arisen Tyrant").strip() or "Arisen Tyrant"
+            unit.special_rules["enhancement_arisen_tyrant"] = True
+            unit.special_rules["enhancement_arisen_tyrant_source"] = source_name
+            unit.special_rules["enhancement_arisen_tyrant_reroll_hit_ones"] = bool(
+                params.get("reroll_hit_ones", True)
+            )
+            unit.special_rules["enhancement_arisen_tyrant_reroll_hit_full_if_set_up_this_turn"] = bool(
+                params.get("reroll_hit_full_if_set_up_this_turn", True)
+            )
+            unit.special_rules["enhancement_arisen_tyrant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_arisen_tyrant_bearer_model_id"] = bearer_id
+
+        if name == "hyperspatial transfer node" or enh_id == "000008554004":
+            if not is_hypercrypt_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = (
+                str(getattr(desc, "name", "") or "Hyperspatial Transfer Node").strip()
+                or "Hyperspatial Transfer Node"
+            )
+            advance_distance = int(max(0, _coerce_int(params.get("advance_distance", 6) or 6, default=6)))
+            unit.special_rules["enhancement_hyperspatial_transfer_node"] = True
+            unit.special_rules["enhancement_hyperspatial_transfer_node_source"] = source_name
+            unit.special_rules["enhancement_hyperspatial_transfer_node_advance_distance"] = advance_distance
+            unit.special_rules["enhancement_hyperspatial_transfer_node_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            existing_effects = list(unit.special_rules.get("advance_no_roll_effects", []) or [])
+            existing_effects = [
+                entry
+                for entry in existing_effects
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("tag", "") or "") == "enhancement:hyperspatial_transfer_node"
+                )
+            ]
+            existing_effects.append(
+                {
+                    "distance": int(advance_distance),
+                    "source": source_name,
+                    "tag": "enhancement:hyperspatial_transfer_node",
+                    "requires_bearer_alive": bool(params.get("requires_bearer_alive", True)),
+                    "source_flag_key": "enhancement_hyperspatial_transfer_node",
+                }
+            )
+            unit.special_rules["advance_no_roll_effects"] = existing_effects
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hyperspatial_transfer_node_bearer_model_id"] = bearer_id
+
+        if name == "osteoclave fulcrum" or enh_id == "000008554005":
+            if not is_hypercrypt_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Osteoclave Fulcrum").strip() or "Osteoclave Fulcrum"
+            unit.special_rules["enhancement_osteoclave_fulcrum"] = True
+            unit.special_rules["enhancement_osteoclave_fulcrum_source"] = source_name
+            unit.special_rules["enhancement_osteoclave_fulcrum_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_osteoclave_fulcrum_bearer_model_id"] = bearer_id
 
         if name == "quantum abacus" or enh_id == "000010664002":
             if not is_cryptek_conclave:
@@ -13787,6 +13891,12 @@ class Enhancement:
         refresh_fn = getattr(unit, "_refresh_bearer_unit_common_modifiers", None)
         if callable(refresh_fn):
             refresh_fn()
+        refresh_advance_no_roll_fn = getattr(unit, "_refresh_advance_no_roll_flags", None)
+        if callable(refresh_advance_no_roll_fn):
+            refresh_advance_no_roll_fn()
+        refresh_ignore_vertical_fn = getattr(unit, "_refresh_ignore_vertical_distance_move_types", None)
+        if callable(refresh_ignore_vertical_fn):
+            refresh_ignore_vertical_fn()
 
     def is_unit_eligible(self, unit) -> bool:
         if not self.eligibility_keyword_groups and not self.eligibility_name_options:

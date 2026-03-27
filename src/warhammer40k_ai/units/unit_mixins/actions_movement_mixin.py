@@ -6588,6 +6588,23 @@ class ActionsMovementMixin:
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Ruthless Discipline: re-roll Hit rolls of 1 while ordered")
 
+        ne_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        arisen_tyrant_fn = getattr(ne_mgr, "arisen_tyrant_hit_rerolls", None) if ne_mgr is not None else None
+        if callable(arisen_tyrant_fn):
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            reroll_ones, reroll_full, source = arisen_tyrant_fn(
+                attacker_model,
+                unit=root,
+                game=game_local,
+            )
+            source_name = str(source or "Arisen Tyrant").strip() or "Arisen Tyrant"
+            if bool(reroll_full):
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append(f"{source_name}: re-roll Hit roll")
+            elif bool(reroll_ones):
+                reroll_hit_values.add(1)
+                reroll_hit_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
+
         # Hallowed Martyrs: RIGHTEOUS VENGEANCE (melee hit re-rolls this phase).
         try:
             if atype in ("any", "melee"):

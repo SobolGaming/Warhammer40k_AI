@@ -7155,6 +7155,60 @@ _NECRONS_CANOPTEK_COURT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_CANOPTEK_COURT_DESCRIPTORS.values()
 }
 
+_NECRONS_HYPERCRYPT_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008554002": EnhancementToolDescriptor(
+        enhancement_id="000008554002",
+        name="Dimensional Overseer",
+        timing="passive",
+        target="army",
+        duration="constant_while_bearer_on_battlefield_or_in_strategic_reserves",
+        effect="hyperphasing_selection_cap_bonus",
+        effect_params={
+            "selection_cap_bonus": 1,
+            "active_reserve_statuses": ["deployed", "strategic_reserves"],
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008554003": EnhancementToolDescriptor(
+        enhancement_id="000008554003",
+        name="Arisen Tyrant",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="bearer_unit_hit_reroll_ones_or_full_if_set_up_this_turn",
+        effect_params={
+            "reroll_hit_ones": True,
+            "reroll_hit_full_if_set_up_this_turn": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008554004": EnhancementToolDescriptor(
+        enhancement_id="000008554004",
+        name="Hyperspatial Transfer Node",
+        timing="on_unit_advance",
+        target="bearer_unit",
+        duration="phase",
+        effect="bearer_unit_advance_no_roll_move_bonus",
+        effect_params={
+            "advance_distance": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008554005": EnhancementToolDescriptor(
+        enhancement_id="000008554005",
+        name="Osteoclave Fulcrum",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_deep_strike_to_bearer_unit_models",
+        effect_params={"requires_bearer_alive": True},
+    ),
+}
+
+_NECRONS_HYPERCRYPT_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_HYPERCRYPT_LEGION_DESCRIPTORS.values()
+}
+
 _NECRONS_CURSED_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010668002": EnhancementToolDescriptor(
         enhancement_id="000010668002",
@@ -8580,6 +8634,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_CANOPTEK_COURT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_HYPERCRYPT_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_CURSED_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8776,6 +8833,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_ANNIHILATION_LEGION_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_CANOPTEK_COURT_BY_NAME.get(key)
+        or _NECRONS_HYPERCRYPT_LEGION_BY_NAME.get(key)
         or _NECRONS_CURSED_LEGION_BY_NAME.get(key)
         or _NECRONS_CRYPTEK_CONCLAVE_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
