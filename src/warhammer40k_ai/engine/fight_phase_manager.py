@@ -769,6 +769,47 @@ class FightPhaseManager:
             if marker_turn and current_turn and marker_turn != current_turn:
                 return False
             return True
+
+        def _changehost_deceptive_glamour_active(unit: Unit) -> bool:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_deceptive_glamour_active")):
+                return False
+            expires_phase = str(sr.get("thousand_sons_deceptive_glamour_expires_phase", "") or "").strip().upper()
+            if expires_phase and expires_phase != "FIGHT_PHASE":
+                return False
+            try:
+                marker_turn = int(sr.get("thousand_sons_deceptive_glamour_turn", 0) or 0)
+            except Exception:
+                marker_turn = 0
+            try:
+                current_turn = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if marker_turn and current_turn and marker_turn != current_turn:
+                return False
+            return True
+
+        def _is_scintillating_legions_unit(unit: Unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if hasattr(unit, "has_any_keyword") and unit.has_any_keyword("SCINTILLATING LEGIONS"):
+                    return True
+            except Exception:
+                pass
+            try:
+                faction_id = str(getattr(unit, "faction_id", "") or "").strip().upper()
+                if faction_id in {"SL", "SCINTILLATING LEGIONS", "SCINTILLATING_LEGIONS"}:
+                    return True
+            except Exception:
+                pass
+            try:
+                for keyword in list(getattr(unit, "faction_keywords", []) or []):
+                    if str(keyword or "").strip().upper() == "SCINTILLATING LEGIONS":
+                        return True
+            except Exception:
+                pass
+            return False
         
         enemy_units = self.game.map.get_enemy_units(fighting_unit)
         seen = set()
@@ -822,6 +863,15 @@ class FightPhaseManager:
         forced_targets = [u for u in list(eligible_targets or []) if _suffering_and_sacrifice_active(u)]
         if forced_targets:
             return forced_targets
+        preferred_scintillating_targets = [
+            u for u in list(eligible_targets or []) if _is_scintillating_legions_unit(u)
+        ]
+        if preferred_scintillating_targets:
+            filtered_targets = [
+                u for u in list(eligible_targets or []) if not _changehost_deceptive_glamour_active(u)
+            ]
+            if filtered_targets:
+                return filtered_targets
         return eligible_targets
     
     def _execute_fight_sequence(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback=None) -> None:

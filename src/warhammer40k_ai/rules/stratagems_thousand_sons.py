@@ -356,6 +356,117 @@ class ThousandSonsStratagemMixin:
         setattr(self, "_thousand_sons_revenge_pending", pending)
         return pending
 
+    @staticmethod
+    def _ts_normalize_move_action(action: Any) -> str:
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key == "normal":
+            return "normal_move"
+        if action_key == "fallback":
+            return "fall_back"
+        return action_key
+
+    def _ts_army_roots(self) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_game_map(self) -> Any:
+        return getattr(getattr(self, "game", None), "map", None)
+
+    def _ts_unit_is_engaged(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        game_map = self._ts_game_map()
+        if root is None or game_map is None:
+            return False
+        for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+            enemy_root = self._ts_root(enemy)
+            if enemy_root is None or not self._ts_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _ts_engaged_enemy_units(self, unit: Any) -> list[Any]:
+        root = self._ts_root(unit)
+        game_map = self._ts_game_map()
+        if root is None or game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+            enemy_root = self._ts_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._ts_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    out.append(enemy_root)
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_unit_within_distance_of_unit(self, unit: Any, other_unit: Any, *, distance: float) -> bool:
+        root = self._ts_root(unit)
+        other_root = self._ts_root(other_unit)
+        if root is None or other_root is None:
+            return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+
+            return bool(unit_within_range_of_unit(root, other_root, float(distance), use_attached_aggregate=True))
+        except (AttributeError, ImportError, TypeError, ValueError):
+            return False
+
+    def _ts_unit_wholly_within_distance_of_friendly_thousand_sons_units(
+        self,
+        unit: Any,
+        *,
+        distance: float,
+    ) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        active_models = [model for model in list(getattr(root, "models", []) or []) if self._ts_model_is_alive(model)]
+        if not active_models:
+            return False
+        anchors = [
+            candidate
+            for candidate in self._ts_army_roots()
+            if candidate is not root
+            and self._ts_on_battlefield(candidate, require_targetable=False)
+            and self._is_thousand_sons_unit(candidate)
+        ]
+        if not anchors:
+            return False
+        for model in active_models:
+            if any(self._ts_unit_within_distance_of_model(anchor, model, distance=distance) for anchor in anchors):
+                continue
+            return False
+        return True
+
     def _ts_prune_revenge_pending(self) -> None:
         game = getattr(self, "game", None)
         current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
@@ -553,6 +664,118 @@ class ThousandSonsStratagemMixin:
             if not self._is_scintillating_legions_unit(root):
                 continue
             if self._ts_has_enemy_within_horizontal_distance(root, distance=6.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_changehost_chronosorcerous_bleed_candidates(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return []
+        attacker_root = self._ts_root(charging_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not (self._is_scintillating_legions_unit(root) or (self._is_thousand_sons_unit(root) and self._is_psyker_unit(root))):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_changehost_deceptive_glamour_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return []
+        if not any(
+            self._is_scintillating_legions_unit(root) and self._ts_on_battlefield(root, require_targetable=False)
+            for root in self._ts_army_roots()
+        ):
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
+                continue
+            if self._is_scintillating_legions_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_changehost_ethereal_phantasm_candidates(
+        self,
+        *,
+        enemy_unit: Any = None,
+        action: str = "",
+    ) -> list[Any]:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return []
+        action_key = self._ts_normalize_move_action(action)
+        if action_key not in {"normal_move", "advance", "fall_back"}:
+            return []
+        enemy_root = self._ts_root(enemy_unit)
+        if enemy_root is None or self._ts_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        out: list[Any] = []
+        for root in self._ts_army_roots():
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_scintillating_legions_unit(root):
+                continue
+            if self._ts_unit_is_engaged(root):
+                continue
+            if not self._ts_unit_within_distance_of_unit(root, enemy_root, distance=9.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_changehost_fractal_disjunction_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return []
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_scintillating_legions_unit(root):
+                continue
+            if self._is_monster_unit(root):
                 continue
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
@@ -1008,7 +1231,7 @@ class ThousandSonsStratagemMixin:
         if queued:
             return
 
-    def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+    def _queue_thousand_sons_changehost_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         _ = player
         game = getattr(self, "game", None)
         if game is None:
@@ -1018,11 +1241,8 @@ class ThousandSonsStratagemMixin:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
         if phase_key != "FIGHT_PHASE":
             return
-        active_player = getattr(game, "get_current_player", lambda: None)()
-        if active_player is self.player:
-            return
 
-        stratagem = getattr(self, "get_by_name", lambda _name: None)("GLIMMERSHIFT PORTAL")
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DECEPTIVE GLAMOUR")
         if stratagem is None:
             return
         if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
@@ -1031,24 +1251,21 @@ class ThousandSonsStratagemMixin:
         if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
             return
 
-        candidates = self._ts_glimmershift_portal_candidates()
+        candidates = self._ts_changehost_deceptive_glamour_candidates()
         if not candidates:
             return
-        if self._ts_reaction_exists("phase_end", stratagem.name):
+        if self._ts_reaction_exists("phase_start", stratagem.name):
             return
-        if not stratagem.can_use(self.player, self.game, phase_name="Fight phase"):
+        if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Fight phase"):
             return
 
-        non_monster_candidates = [unit for unit in candidates if not self._is_monster_unit(unit)]
-        max_units = 2 if non_monster_candidates else 1
         payload: dict[str, Any] = {
-            "event": "phase_end",
+            "event": "phase_start",
             "phase": "Fight phase",
             "phase_name": "Fight phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
             "candidates": candidates,
-            "max_units": int(max_units),
         }
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
@@ -1057,7 +1274,273 @@ class ThousandSonsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
-    def _use_thousand_sons_rubricae_phalanx_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+    def _queue_thousand_sons_changehost_charge_reactions(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        charging_root = self._ts_root(charging_unit)
+        if charging_root is None or self._ts_owned_by_player(charging_root, self.player):
+            return
+        if not self._ts_on_battlefield(charging_root, require_targetable=False):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("CHRONOSORCEROUS BLEED")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._ts_changehost_chronosorcerous_bleed_candidates(
+            charging_unit=charging_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._ts_reaction_exists("charge_declared", stratagem.name, enemy_unit=charging_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            enemy_unit=charging_root,
+            phase_name="Charge phase",
+        ):
+            return
+
+        payload: dict[str, Any] = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": charging_root,
+            "attacking_unit": charging_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_thousand_sons_changehost_move_end_reactions(self, *, unit: Any = None, action: str = "") -> None:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        enemy_root = self._ts_root(unit)
+        if enemy_root is None or self._ts_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ETHEREAL PHANTASM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        action_key = self._ts_normalize_move_action(action)
+        candidates = self._ts_changehost_ethereal_phantasm_candidates(enemy_unit=enemy_root, action=action_key)
+        if not candidates:
+            return
+        if self._ts_reaction_exists("unit_move_ended", stratagem.name, enemy_unit=enemy_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            moving_unit=enemy_root,
+            phase_name="Movement phase",
+        ):
+            return
+
+        payload: dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "moving_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_thousand_sons_changehost_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("FRACTAL DISJUNCTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._ts_changehost_fractal_disjunction_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._ts_reaction_exists("shooting_targets_selected", stratagem.name, enemy_unit=attacker_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        _ = player
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "FIGHT_PHASE":
+            active_player = getattr(game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                stratagem = getattr(self, "get_by_name", lambda _name: None)("GLIMMERSHIFT PORTAL")
+                if stratagem is not None:
+                    if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(stratagem, "cp_cost", 0) or 0):
+                        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+                        if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                            candidates = self._ts_glimmershift_portal_candidates()
+                            if candidates and not self._ts_reaction_exists("phase_end", stratagem.name):
+                                if stratagem.can_use(self.player, self.game, phase_name="Fight phase"):
+                                    non_monster_candidates = [unit for unit in candidates if not self._is_monster_unit(unit)]
+                                    max_units = 2 if non_monster_candidates else 1
+                                    payload: dict[str, Any] = {
+                                        "event": "phase_end",
+                                        "phase": "Fight phase",
+                                        "phase_name": "Fight phase",
+                                        "stratagem": stratagem.name,
+                                        "cp_cost": stratagem.cp_cost,
+                                        "candidates": candidates,
+                                        "max_units": int(max_units),
+                                    }
+                                    if len(candidates) == 1:
+                                        payload["unit"] = candidates[0]
+                                        payload["target_unit"] = candidates[0]
+                                    queue_reaction = getattr(self, "_queue_reaction", None)
+                                    if callable(queue_reaction):
+                                        queue_reaction(payload, use_timer=False)
+
+        cleanup_keys_by_phase = {
+            "CHARGE_PHASE": (
+                "thousand_sons_chronosorcerous_bleed_active",
+                "thousand_sons_chronosorcerous_bleed_turn_owner",
+                "thousand_sons_chronosorcerous_bleed_turn",
+                "thousand_sons_chronosorcerous_bleed_source",
+                "thousand_sons_chronosorcerous_bleed_expires_phase",
+                "thousand_sons_chronosorcerous_bleed_charge_modifier",
+            ),
+            "SHOOTING_PHASE": (
+                "thousand_sons_fractal_disjunction_active",
+                "thousand_sons_fractal_disjunction_turn_owner",
+                "thousand_sons_fractal_disjunction_turn",
+                "thousand_sons_fractal_disjunction_source",
+                "thousand_sons_fractal_disjunction_expires_phase",
+                "thousand_sons_fractal_disjunction_targeting_range",
+            ),
+            "FIGHT_PHASE": (
+                "thousand_sons_deceptive_glamour_active",
+                "thousand_sons_deceptive_glamour_turn_owner",
+                "thousand_sons_deceptive_glamour_turn",
+                "thousand_sons_deceptive_glamour_source",
+                "thousand_sons_deceptive_glamour_expires_phase",
+            ),
+        }
+        cleanup_keys = cleanup_keys_by_phase.get(phase_key)
+        if cleanup_keys is None:
+            return
+        for root in self._ts_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in cleanup_keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+
+    def _use_thousand_sons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
@@ -1075,6 +1558,14 @@ class ThousandSonsStratagemMixin:
             if name_u == "REVENGE OF THE RUBRICAE":
                 return self._use_thousand_sons_revenge_of_the_rubricae(stratagem, **kwargs)
         if self._is_thousand_sons_changehost_of_deceit_detachment():
+            if name_u == "CHRONOSORCEROUS BLEED":
+                return self._use_thousand_sons_chronosorcerous_bleed(stratagem, **kwargs)
+            if name_u == "DECEPTIVE GLAMOUR":
+                return self._use_thousand_sons_deceptive_glamour(stratagem, **kwargs)
+            if name_u == "ETHEREAL PHANTASM":
+                return self._use_thousand_sons_ethereal_phantasm(stratagem, **kwargs)
+            if name_u == "FRACTAL DISJUNCTION":
+                return self._use_thousand_sons_fractal_disjunction(stratagem, **kwargs)
             if name_u == "GLIMMERSHIFT PORTAL":
                 return self._use_thousand_sons_glimmershift_portal(stratagem, **kwargs)
         return None
@@ -1564,6 +2055,368 @@ class ThousandSonsStratagemMixin:
             "INFO: REVENGE OF THE RUBRICAE: %s can shoot reactively into %s.",
             getattr(root, "name", "Unit"),
             getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_thousand_sons_chronosorcerous_bleed(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: no target unit provided")
+            return False
+
+        root = self._ts_root(target_unit)
+        enemy_root = self._ts_root(enemy_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: missing charge context")
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not (self._is_scintillating_legions_unit(root) or (self._is_thousand_sons_unit(root) and self._is_psyker_unit(root))):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: target must be a THOUSAND SONS PSYKER or SCINTILLATING LEGIONS unit")
+            return False
+        if self._ts_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: charging unit is not an enemy")
+            return False
+        if not self._ts_is_alive(enemy_root):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: charging unit is not alive")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "charge phase":
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: not opponent's Charge phase")
+            return False
+
+        eligible = candidates or self._ts_changehost_chronosorcerous_bleed_candidates(
+            charging_unit=enemy_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: target must have been selected as a charge target")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            enemy_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: CHRONOSORCEROUS BLEED: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_chronosorcerous_bleed_active"] = True
+        sr["thousand_sons_chronosorcerous_bleed_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_chronosorcerous_bleed_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_chronosorcerous_bleed_source"] = str(getattr(stratagem, "name", "") or "CHRONOSORCEROUS BLEED")
+        sr["thousand_sons_chronosorcerous_bleed_expires_phase"] = "CHARGE_PHASE"
+        sr["thousand_sons_chronosorcerous_bleed_charge_modifier"] = -2
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CHRONOSORCEROUS BLEED: %s imposes -2 to %s's Charge roll this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_thousand_sons_deceptive_glamour(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: DECEPTIVE GLAMOUR: no target unit provided")
+            return False
+
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: DECEPTIVE GLAMOUR: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root):
+            logger.error("ERROR: DECEPTIVE GLAMOUR: target must be a THOUSAND SONS unit")
+            return False
+        if self._is_scintillating_legions_unit(root):
+            logger.error("ERROR: DECEPTIVE GLAMOUR: target cannot be a SCINTILLATING LEGIONS unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: DECEPTIVE GLAMOUR: wrong phase")
+            return False
+
+        eligible = candidates or self._ts_changehost_deceptive_glamour_candidates()
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: DECEPTIVE GLAMOUR: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: DECEPTIVE GLAMOUR: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_deceptive_glamour_active"] = True
+        sr["thousand_sons_deceptive_glamour_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_deceptive_glamour_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_deceptive_glamour_source"] = str(getattr(stratagem, "name", "") or "DECEPTIVE GLAMOUR")
+        sr["thousand_sons_deceptive_glamour_expires_phase"] = "FIGHT_PHASE"
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DECEPTIVE GLAMOUR: enemy melee attacks prefer SCINTILLATING LEGIONS targets over %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_ethereal_phantasm(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+
+        if target_unit is None or enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("moving_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if action is None:
+                    action = reaction.get("action")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: ETHEREAL PHANTASM: no target unit provided")
+            return False
+
+        root = self._ts_root(target_unit)
+        enemy_root = self._ts_root(enemy_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: ETHEREAL PHANTASM: missing move context")
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: ETHEREAL PHANTASM: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_scintillating_legions_unit(root):
+            logger.error("ERROR: ETHEREAL PHANTASM: target must be a SCINTILLATING LEGIONS unit")
+            return False
+        if self._ts_unit_is_engaged(root):
+            logger.error("ERROR: ETHEREAL PHANTASM: target must not be in Engagement Range")
+            return False
+        if self._ts_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: ETHEREAL PHANTASM: moving unit is not an enemy unit")
+            return False
+        if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: ETHEREAL PHANTASM: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ETHEREAL PHANTASM: not opponent's Movement phase")
+            return False
+
+        action_key = self._ts_normalize_move_action(action)
+        eligible = candidates or self._ts_changehost_ethereal_phantasm_candidates(
+            enemy_unit=enemy_root,
+            action=action_key,
+        )
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ETHEREAL PHANTASM: target must be within 9\" of the enemy unit and not engaged")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            moving_unit=enemy_root,
+            phase_name="Movement phase",
+        ):
+            logger.error("ERROR: ETHEREAL PHANTASM: cannot be used in current state")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: ETHEREAL PHANTASM: reactive move queue is unavailable")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        fixed_six = self._ts_unit_wholly_within_distance_of_friendly_thousand_sons_units(root, distance=6.0)
+        max_distance = 6
+        if not fixed_six:
+            from ..utility.dice import get_roll
+
+            max_distance = int(get_roll("D6") or 0)
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="ethereal_phantasm",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "ETHEREAL PHANTASM"),
+            moving_unit=enemy_root,
+            range_value=9,
+            extra_context={"ethereal_phantasm_fixed_six": bool(fixed_six)},
+        )
+        if request is None:
+            logger.error("ERROR: ETHEREAL PHANTASM: failed to queue reactive move")
+            return False
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ETHEREAL PHANTASM: %s can make a reactive Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_thousand_sons_fractal_disjunction(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: FRACTAL DISJUNCTION: no target unit provided")
+            return False
+
+        root = self._ts_root(target_unit)
+        attacker_root = self._ts_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: FRACTAL DISJUNCTION: missing attacker context")
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: FRACTAL DISJUNCTION: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_scintillating_legions_unit(root):
+            logger.error("ERROR: FRACTAL DISJUNCTION: target must be a SCINTILLATING LEGIONS unit")
+            return False
+        if self._is_monster_unit(root):
+            logger.error("ERROR: FRACTAL DISJUNCTION: target cannot be a MONSTER")
+            return False
+        if self._ts_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: FRACTAL DISJUNCTION: attacker is not an enemy unit")
+            return False
+        if not self._ts_is_alive(attacker_root):
+            logger.error("ERROR: FRACTAL DISJUNCTION: attacker is not alive")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FRACTAL DISJUNCTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: FRACTAL DISJUNCTION: not opponent's Shooting phase")
+            return False
+
+        eligible = candidates or self._ts_changehost_fractal_disjunction_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: FRACTAL DISJUNCTION: target must have been selected by the attacking unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: FRACTAL DISJUNCTION: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_fractal_disjunction_active"] = True
+        sr["thousand_sons_fractal_disjunction_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_fractal_disjunction_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_fractal_disjunction_source"] = str(getattr(stratagem, "name", "") or "FRACTAL DISJUNCTION")
+        sr["thousand_sons_fractal_disjunction_expires_phase"] = "SHOOTING_PHASE"
+        sr["thousand_sons_fractal_disjunction_targeting_range"] = 18
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FRACTAL DISJUNCTION: %s can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(root, "name", "Unit"),
         )
         return True
 

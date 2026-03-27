@@ -75,6 +75,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL FUSILLADE",
     "INFERNAL SACRIFICE",
     "GLIMMERSHIFT PORTAL",
+    "CHRONOSORCEROUS BLEED",
+    "DECEPTIVE GLAMOUR",
+    "ETHEREAL PHANTASM",
+    "FRACTAL DISJUNCTION",
+    "SULPHUROUS VEIL",
     "HARDENED KILLERS",
     "HORRIFIC INCURSION",
     "LET THE GALAXY BURN",
@@ -1930,6 +1935,7 @@ class StratagemManager(
             "RELENTLESS PURSUIT",
             "PREDATORY PURSUIT",
             "MILLENNIA OF EXPERIENCE",
+            "ETHEREAL PHANTASM",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -1940,6 +1946,7 @@ class StratagemManager(
             "CALCULATED FEINT",
             "DREAD CRUSADERS",
             "SHADE PATH",
+            "CHRONOSORCEROUS BLEED",
         }:
             add("charge_declared", self._on_charge_declared)
         if names & {
@@ -5727,7 +5734,12 @@ class StratagemManager(
             "FOCUSED FIRE": "Target: two of your T'AU EMPIRE units not yet selected to shoot, and one enemy unit; selected friendly units can only target that enemy unit and improve AP by 1 this phase (not battle rounds 4-5)",
             "COORDINATED TRAP": "Start of your Shooting/Fight phase: target two GENESTEALER CULTS units not yet selected to shoot/fight and one enemy unit; selected units can only target that enemy this phase and gain +1 to Wound rolls against it (Fight phase enemy must be in Engagement Range of both selected units)",
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
+            "CHRONOSORCEROUS BLEED": "Target: your THOUSAND SONS PSYKER or SCINTILLATING LEGIONS unit selected as a target of an enemy charge; that enemy suffers -2 to its Charge roll this phase",
+            "DECEPTIVE GLAMOUR": "Start of the Fight phase: target your THOUSAND SONS unit; enemy melee attacks can only target it if no eligible SCINTILLATING LEGIONS targets exist",
+            "ETHEREAL PHANTASM": "Target: your SCINTILLATING LEGIONS unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move and not in Engagement Range; it can make a reactive Normal move up to D6\", or 6\" while wholly within 6\" of a friendly THOUSAND SONS unit",
+            "FRACTAL DISJUNCTION": "Target: your non-MONSTER SCINTILLATING LEGIONS unit selected as an enemy shooting target; until end of phase it can only be targeted by ranged attacks from within 18\"",
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
+            "SULPHUROUS VEIL": "Target: your THOUSAND SONS or SCINTILLATING LEGIONS unit selected as an enemy shooting/fight target; incoming attacks suffer -1 to Hit this phase",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
             "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
             "CORROSIVE VISCERA": "Target: just-destroyed non-FLY TYRANIDS MONSTER model with Deadly Demise",
@@ -6832,6 +6844,10 @@ class StratagemManager(
             raise
         try:
             self._queue_genestealer_cults_host_of_ascension_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_changehost_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -9745,6 +9761,7 @@ class StratagemManager(
         self._maybe_queue_heroic_intervention(unit, action)
         self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
         self._queue_thousand_sons_rubricae_phalanx_charge_reactions(charging_unit=unit, action=action)
+        self._queue_thousand_sons_changehost_move_end_reactions(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -9816,6 +9833,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_space_marines_vanguard_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_thousand_sons_changehost_charge_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -11162,6 +11183,10 @@ class StratagemManager(
             raise
         try:
             self._queue_thousand_sons_rubricae_phalanx_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+            self._queue_thousand_sons_changehost_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -17785,7 +17810,7 @@ class StratagemManager(
         tau_result = self._use_tau_empire_stratagem(s, **kwargs)
         if tau_result is not None:
             return tau_result
-        thousand_sons_result = self._use_thousand_sons_rubricae_phalanx_stratagem(s, **kwargs)
+        thousand_sons_result = self._use_thousand_sons_stratagem(s, **kwargs)
         if thousand_sons_result is not None:
             return thousand_sons_result
         death_guard_result = self._use_death_guard_stratagem(s, **kwargs)

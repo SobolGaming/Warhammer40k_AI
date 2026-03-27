@@ -12695,6 +12695,47 @@ class ActionsMovementMixin:
                         or "STINKING MIRE"
                     ).strip() or "STINKING MIRE"
                     modifiers.append((-int(abs(penalty)), f"{source}: charge roll modifier"))
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("thousand_sons_chronosorcerous_bleed_active"):
+            applies = True
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            owner_id = str(sr.get("thousand_sons_chronosorcerous_bleed_turn_owner", "") or "").strip()
+            if applies and owner_id and game is not None:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "").strip()
+                if current_owner and current_owner == owner_id:
+                    applies = False
+            if applies and game is not None:
+                exp_phase = str(sr.get("thousand_sons_chronosorcerous_bleed_expires_phase", "") or "").strip().upper()
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if exp_phase and current_phase and current_phase != exp_phase:
+                    applies = False
+                try:
+                    effect_turn = int(sr.get("thousand_sons_chronosorcerous_bleed_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+            if applies:
+                try:
+                    penalty = int(sr.get("thousand_sons_chronosorcerous_bleed_charge_modifier", -2) or -2)
+                except Exception:
+                    penalty = -2
+                if penalty:
+                    source = str(
+                        sr.get("thousand_sons_chronosorcerous_bleed_source", "") or "CHRONOSORCEROUS BLEED"
+                    ).strip() or "CHRONOSORCEROUS BLEED"
+                    modifiers.append((int(penalty), f"{source}: charge roll modifier"))
         return modifiers
 
     def register_wargear_charge_keyword_hit(

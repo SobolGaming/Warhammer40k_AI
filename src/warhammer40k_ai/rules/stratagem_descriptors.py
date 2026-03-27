@@ -8364,6 +8364,63 @@ _WRATHFUL_PROCESSION_STRATAGEM_BY_NAME = {
 }
 
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010198002": StratagemToolDescriptor(
+        stratagem_id="000010198002",
+        name="Sulphurous Veil",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="thousand_sons_or_scintillating_legions_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="hit_roll_penalty",
+        cp_cost=1,
+        effect_params={"hit_modifier": -1},
+    ),
+    "000010198003": StratagemToolDescriptor(
+        stratagem_id="000010198003",
+        name="Deceptive Glamour",
+        timing="fight_phase_start",
+        target="thousand_sons_unit",
+        duration="until_end_of_phase",
+        effect="engaged_enemy_target_lock_with_scintillating_legions_priority",
+        cp_cost=2,
+        effect_params={"preferred_friendly_target_keyword": "SCINTILLATING LEGIONS"},
+    ),
+    "000010198004": StratagemToolDescriptor(
+        stratagem_id="000010198004",
+        name="Ethereal Phantasm",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="scintillating_legions_unit_within_9_of_enemy_not_in_engagement_range",
+        duration="immediate",
+        effect="reactive_normal_move_with_thousand_sons_fixed_six",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "fixed_distance_if_wholly_within_6_of_friendly_thousand_sons": 6,
+            "enemy_trigger_distance": 9,
+        },
+    ),
+    "000010198005": StratagemToolDescriptor(
+        stratagem_id="000010198005",
+        name="Fractal Disjunction",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="non_monster_scintillating_legions_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_distance_cap",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "max_targeting_distance": 18,
+        },
+    ),
+    "000010198006": StratagemToolDescriptor(
+        stratagem_id="000010198006",
+        name="Chronosorcerous Bleed",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="thousand_sons_psyker_or_scintillating_legions_charge_target",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_modifier_non_cumulative_negative",
+        cp_cost=1,
+        effect_params={"charge_roll_modifier": -2},
+    ),
     "000010198007": StratagemToolDescriptor(
         stratagem_id="000010198007",
         name="Glimmershift Portal",
