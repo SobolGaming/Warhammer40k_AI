@@ -5343,6 +5343,29 @@ class AbilitySpecsMixin:
                                 "penalty_applies_when_below_half": False,
                             }
                         )
+        if isinstance(sr, dict) and sr.get("enhancement_eldritch_nightmare"):
+            bearer_id = str(
+                sr.get("enhancement_eldritch_nightmare_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "")
+            if bearer_id and model_id and bearer_id == model_id:
+                requires_bearer_alive = bool(sr.get("enhancement_eldritch_nightmare_requires_bearer_alive", True))
+                if (not requires_bearer_alive) or bool(getattr(model, "is_alive", False)):
+                    source = str(
+                        sr.get("enhancement_eldritch_nightmare_source", "") or "Eldritch Nightmare"
+                    ).strip() or "Eldritch Nightmare"
+                    key = source.lower()
+                    if key not in seen:
+                        seen.add(key)
+                        specs.append(
+                            {
+                                "source": source,
+                                "penalty": 0,
+                                "penalty_applies_when_below_half": False,
+                            }
+                        )
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:

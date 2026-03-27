@@ -1843,6 +1843,9 @@ class Enhancement:
             is_kauyon = bool(tau_mgr and tau_mgr.is_kauyon())
         except Exception:
             is_kauyon = False
+        is_annihilation_legion = bool(
+            ne_mgr and getattr(ne_mgr, "is_annihilation_legion", lambda: False)()
+        )
         try:
             is_awakened_dynasty = bool(ne_mgr and ne_mgr.detachment_matches("Awakened Dynasty"))
         except Exception:
@@ -2076,6 +2079,58 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "eternal madness" or enh_id == "000008543002":
+            if not is_annihilation_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Eternal Madness").strip() or "Eternal Madness"
+            threshold = int(max(2, _coerce_int(params.get("success_on", 4) or 4, default=4)))
+            unit.special_rules["enhancement_eternal_madness"] = True
+            unit.special_rules["enhancement_eternal_madness_source"] = source_name
+            unit.special_rules["enhancement_eternal_madness_threshold"] = int(threshold)
+            unit.special_rules["enhancement_eternal_madness_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_eternal_madness_fight_phase_any_destroyed"] = bool(
+                params.get("fight_phase_any_destroyed", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eternal_madness_bearer_model_id"] = bearer_id
+
+        if name == "ingrained superiority" or enh_id == "000008543003":
+            if not is_annihilation_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Ingrained Superiority").strip() or "Ingrained Superiority"
+            ap_bonus = int(max(0, _coerce_int(params.get("critical_wound_ap_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_ingrained_superiority"] = True
+            unit.special_rules["enhancement_ingrained_superiority_source"] = source_name
+            unit.special_rules["enhancement_ingrained_superiority_critical_wound_ap_bonus"] = int(ap_bonus)
+            unit.special_rules["enhancement_ingrained_superiority_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ingrained_superiority_bearer_model_id"] = bearer_id
+
+        if name == "eldritch nightmare" or enh_id == "000008543005":
+            if not is_annihilation_legion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Eldritch Nightmare").strip() or "Eldritch Nightmare"
+            unit.special_rules["enhancement_eldritch_nightmare"] = True
+            unit.special_rules["enhancement_eldritch_nightmare_source"] = source_name
+            unit.special_rules["enhancement_eldritch_nightmare_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eldritch_nightmare_bearer_model_id"] = bearer_id
 
         if name == "veil of darkness" or enh_id == "000008372002":
             if not is_awakened_dynasty:

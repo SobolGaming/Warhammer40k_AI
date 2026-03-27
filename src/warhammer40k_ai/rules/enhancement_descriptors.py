@@ -7027,6 +7027,45 @@ _THOUSAND_SONS_WARPMELD_PACT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_WARPMELD_PACT_DESCRIPTORS.values()
 }
 
+_NECRONS_ANNIHILATION_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008543002": EnhancementToolDescriptor(
+        enhancement_id="000008543002",
+        name="Eternal Madness",
+        timing="on_model_destroyed_in_fight_phase",
+        target="bearer_unit_models_that_have_not_fought",
+        duration="instant",
+        effect="melee_fight_on_death_after_attacks",
+        effect_params={
+            "roll": "D6",
+            "success_on": 4,
+            "requires_bearer_alive": True,
+            "fight_phase_any_destroyed": True,
+        },
+    ),
+    "000008543003": EnhancementToolDescriptor(
+        enhancement_id="000008543003",
+        name="Ingrained Superiority",
+        timing="on_critical_wound",
+        target="bearer_unit_attacks",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_critical_wound_ap_bonus",
+        effect_params={"critical_wound_ap_bonus": 1, "requires_bearer_alive": True},
+    ),
+    "000008543005": EnhancementToolDescriptor(
+        enhancement_id="000008543005",
+        name="Eldritch Nightmare",
+        timing="start_of_fight_phase",
+        target="enemy_units_within_engagement_range_of_bearer",
+        duration="instant",
+        effect="start_of_fight_phase_bearer_engagement_range_enemy_battleshock",
+        effect_params={"requires_bearer_alive": True},
+    ),
+}
+
+_NECRONS_ANNIHILATION_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_ANNIHILATION_LEGION_DESCRIPTORS.values()
+}
+
 _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008372002": EnhancementToolDescriptor(
         enhancement_id="000008372002",
@@ -8345,6 +8384,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _THOUSAND_SONS_WARPMELD_PACT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_ANNIHILATION_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8535,6 +8577,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME.get(key)
         or _THOUSAND_SONS_WARPFORGED_CABAL_BY_NAME.get(key)
         or _THOUSAND_SONS_WARPMELD_PACT_BY_NAME.get(key)
+        or _NECRONS_ANNIHILATION_LEGION_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)

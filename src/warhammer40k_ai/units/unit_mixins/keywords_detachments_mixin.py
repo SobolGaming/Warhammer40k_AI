@@ -2160,6 +2160,67 @@ class KeywordsDetachmentsMixin:
                 rule = {"threshold": 4, "source": "High Kâhl"}
                 break
 
+        if rule is None and model is not None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            try:
+                attached_models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                attached_models = list(getattr(root, "models", []) or [])
+            attached_model_ids = {
+                str(getattr(m, "id", getattr(m, "_id", "")) or "")
+                for m in list(attached_models or [])
+                if m is not None
+            }
+            current_model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not (isinstance(sr, dict) and bool(sr.get("enhancement_eternal_madness"))):
+                    continue
+                bearer_id = str(
+                    sr.get("enhancement_eternal_madness_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if bearer_id and bearer_id not in attached_model_ids and bearer_id != current_model_id:
+                    continue
+                if bool(sr.get("enhancement_eternal_madness_requires_bearer_alive", True)):
+                    bearer_alive = False
+                    for bearer_model in list(getattr(member, "models", []) or []):
+                        entity_id = str(get_entity_id(bearer_model) or "").strip()
+                        local_id = str(getattr(bearer_model, "id", getattr(bearer_model, "_id", "")) or "").strip()
+                        if bearer_id and bearer_id not in {entity_id, local_id}:
+                            continue
+                        is_alive = getattr(bearer_model, "is_alive", False)
+                        bearer_alive = bool(is_alive() if callable(is_alive) else is_alive)
+                        break
+                    if not bearer_alive:
+                        continue
+                threshold = 4
+                try:
+                    threshold = int(sr.get("enhancement_eternal_madness_threshold", 4) or 4)
+                except (TypeError, ValueError):
+                    threshold = 4
+                source = str(sr.get("enhancement_eternal_madness_source", "") or "Eternal Madness").strip()
+                rule = {
+                    "threshold": int(max(2, threshold)),
+                    "source": source or "Eternal Madness",
+                    "allow_any_fight_phase_destruction": bool(
+                        sr.get("enhancement_eternal_madness_fight_phase_any_destroyed", True)
+                    ),
+                }
+                break
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule

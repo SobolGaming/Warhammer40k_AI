@@ -25,6 +25,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _ANNIHILATION_PROTOCOL_RANGED_KEYWORD = "DESTROYER CULT"
     _ANNIHILATION_PROTOCOL_CHARGE_SOURCE = "Annihilation Protocol (+1 to Charge roll vs Below Half-strength)"
     _ANNIHILATION_PROTOCOL_AP_SOURCE = "Annihilation Protocol (+1 AP vs closest eligible target)"
+    _INGRAINED_SUPERIORITY_SOURCE = "Ingrained Superiority"
     _POWER_MATRIX_KEYWORDS = ("CRYPTEK", "CANOPTEK")
     _POWER_MATRIX_SOURCE = "Power Matrix"
     _COLD_FERVOUR_SOURCE = "Cold Fervour"
@@ -220,6 +221,59 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             if str(getattr(wargear, "name", "") or "").strip().lower() == target_name:
                 return True
         return False
+
+    def _iter_attached_members(self, unit) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")))
+        return members
+
+    def _attached_member_special_rules_with_flag(self, unit, flag_key: str) -> list[tuple[object, dict]]:
+        out: list[tuple[object, dict]] = []
+        for member in self._iter_attached_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(flag_key)):
+                continue
+            out.append((member, sr))
+        return out
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        is_alive = getattr(model, "is_alive", False)
+        return bool(is_alive() if callable(is_alive) else is_alive)
+
+    @staticmethod
+    def _enhancement_bearer_is_alive_for_member(member, special_rules: dict | None = None) -> bool:
+        unit = member
+        sr = special_rules if isinstance(special_rules, dict) else getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                model_id = str(get_entity_id(model) or "").strip()
+                local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id in {model_id, local_id}:
+                    return NecronsDetachmentManager._model_is_alive(model)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return NecronsDetachmentManager._model_is_alive(bearer)
+        return any(
+            NecronsDetachmentManager._model_is_alive(model)
+            for model in list(getattr(unit, "models", []) or [])
+        )
 
     def technosorcerous_unit_is_eligible(self, unit) -> bool:
         if not self.is_cryptek_conclave():
@@ -1145,6 +1199,41 @@ class NecronsDetachmentManager(DetachmentManagerBase):
 
         if bool(is_closest(attacker_model, weapon_profile, target_root, game_map)):
             return 1, self._ANNIHILATION_PROTOCOL_AP_SOURCE
+        return 0, ""
+
+    def annihilation_legion_ingrained_superiority_critical_wound_ap_bonus(
+        self,
+        attacker_model,
+        attack_instance,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        if not self.is_annihilation_legion():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not isinstance(attack_instance, dict) or not bool(attack_instance.get("crit_wound", False)):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_belongs_to_army(root):
+            return 0, ""
+        if not self._entity_has_keyword(root, "NECRONS"):
+            return 0, ""
+        for member, sr in self._attached_member_special_rules_with_flag(root, "enhancement_ingrained_superiority"):
+            if not self._enhancement_bearer_is_alive_for_member(member, sr):
+                continue
+            try:
+                bonus = int(sr.get("enhancement_ingrained_superiority_critical_wound_ap_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                bonus = 1
+            if bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_ingrained_superiority_source", "") or self._INGRAINED_SUPERIORITY_SOURCE).strip()
+            return int(bonus), source or self._INGRAINED_SUPERIORITY_SOURCE
         return 0, ""
 
     @staticmethod

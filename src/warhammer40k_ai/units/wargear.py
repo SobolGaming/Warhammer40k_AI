@@ -23575,6 +23575,31 @@ class WargearProfile:
             save_result["special_effects"].append(
                 f"{source_name}: AP improved by {int(tyranids_ap_bonus)} on Critical Wound"
             )
+        necrons_ap_bonus = 0
+        necrons_ap_source = ""
+        try:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            bonus_fn = (
+                getattr(necrons_mgr, "annihilation_legion_ingrained_superiority_critical_wound_ap_bonus", None)
+                if necrons_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                necrons_ap_bonus, necrons_ap_source = bonus_fn(attacker_model, attack_instance)
+                necrons_ap_bonus = int(necrons_ap_bonus or 0)
+                necrons_ap_source = str(necrons_ap_source or "").strip()
+        except Exception:
+            necrons_ap_bonus = 0
+            necrons_ap_source = ""
+        if int(necrons_ap_bonus or 0) > 0:
+            effective_ap = int(effective_ap) - int(necrons_ap_bonus)
+            source_name = necrons_ap_source or "Ingrained Superiority"
+            save_result["special_effects"].append(
+                f"{source_name}: AP improved by {int(necrons_ap_bonus)} on Critical Wound"
+            )
         save_result["ap_modifier"] = int(effective_ap)
         save_base = target_model.save
         try:

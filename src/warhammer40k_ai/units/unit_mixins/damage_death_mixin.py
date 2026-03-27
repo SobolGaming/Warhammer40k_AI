@@ -1738,6 +1738,11 @@ class DamageDeathMixin:
                     is_melee = bool(parent is not None and parent.is_melee())
                 except Exception:
                     is_melee = False
+                if (not is_melee) and bool(rule.get("allow_any_fight_phase_destruction", False)):
+                    army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    is_melee = phase_name == "FIGHT_PHASE"
                 if is_melee:
                     if bool(rule.get("automatic", False)):
                         pending = getattr(root, "_melee_fight_on_death_pending_models", None)
