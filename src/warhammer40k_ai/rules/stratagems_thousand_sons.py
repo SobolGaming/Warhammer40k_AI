@@ -4175,8 +4175,8 @@ class ThousandSonsStratagemMixin:
         if active_player is not self.player:
             logger.error("ERROR: TWISTED MIRAGE: not your turn")
             return False
-        eligible = candidates or self._ts_warpmeld_twisted_mirage_candidates()
-        if eligible and not self._ts_unit_in_candidates(root, eligible):
+        eligible = list(candidates or self._ts_warpmeld_twisted_mirage_candidates() or [])
+        if not self._ts_unit_in_candidates(root, eligible):
             logger.error("ERROR: TWISTED MIRAGE: target is not currently eligible")
             return False
         if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):

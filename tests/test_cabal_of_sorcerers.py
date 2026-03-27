@@ -122,6 +122,57 @@ def test_cabal_channel_warp_mortals_only_when_channeled():
     assert caster.mortals == 2
 
 
+def test_cabal_rituals_are_selected_incrementally_during_shooting_phase():
+    army, player, mgr = _make_army()
+
+    caster_a = _UnitStub("Sorcerer A", abilities=["Cabal of Sorcerers"], army=army)
+    model_a = SimpleNamespace(id="a", is_alive=True, parent_unit=caster_a)
+    caster_a.models = [model_a]
+
+    caster_b = _UnitStub("Sorcerer B", abilities=["Cabal of Sorcerers"], army=army)
+    model_b = SimpleNamespace(id="b", is_alive=True, parent_unit=caster_b)
+    caster_b.models = [model_b]
+
+    army.units = [caster_a, caster_b]
+
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
+    game_map = _MapStub(enemies=[target], friendlies=[caster_a, caster_b])
+    game = _GameStub(player, game_map)
+    player.game = game
+
+    eligible_before = mgr.get_eligible_casters(game=game, player=player)
+    assert [model.id for _unit, model in eligible_before] == ["a", "b"]
+
+    with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=12.0):
+        first = mgr.attempt_ritual(
+            game,
+            caster_model=model_a,
+            ritual_key=RITUAL_DESTINYS_RUIN.key,
+            target_unit=target,
+            rolls=[4, 3],
+            channel_decision=False,
+        )
+
+        eligible_after_first = mgr.get_eligible_casters(game=game, player=player)
+        available_after_first = mgr.get_available_rituals(caster_model=model_b)
+
+        second = mgr.attempt_ritual(
+            game,
+            caster_model=model_b,
+            ritual_key=RITUAL_TWIST_OF_FATE.key,
+            target_unit=target,
+            rolls=[5, 4],
+            channel_decision=False,
+        )
+
+    assert first["success"] is True
+    assert [model.id for _unit, model in eligible_after_first] == ["b"]
+    assert RITUAL_DESTINYS_RUIN.key not in [ritual.key for ritual in available_after_first]
+    assert RITUAL_TWIST_OF_FATE.key in [ritual.key for ritual in available_after_first]
+    assert second["success"] is True
+    assert mgr.get_eligible_casters(game=game, player=player) == []
+
+
 def test_destinys_ruin_reroll_ones():
     army, player, mgr = _make_army()
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)

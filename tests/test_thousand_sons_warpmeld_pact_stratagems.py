@@ -375,6 +375,43 @@ def test_twisted_mirage_monster_uses_nine_inch_distance():
     assert float(monster.get_deep_strike_min_distance_override() or 0.0) == 9.0
 
 
+def test_twisted_mirage_does_not_allow_turn_one_arrival_after_ambushing_hunters():
+    game, ts_player, enemy_player, ts_army, _enemy_army = _build_game()
+    tzaangors = _make_unit(
+        "Tzaangors",
+        keywords=["THOUSAND SONS", "TZEENTCH", "MUTANT", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+        quantity=2,
+    )
+    ts_army.add_unit(tzaangors)
+    _refresh(game, ts_player, enemy_player)
+    _deploy_unit(game, tzaangors, 12.0, 12.0)
+
+    game.turn = 1
+    game.current_player_index = 1
+    moved_to_reserves = tzaangors.enter_strategic_reserves_midgame(
+        game=game,
+        game_map=game.map,
+        reason="Ambushing Hunters",
+    )
+
+    assert moved_to_reserves is True
+    assert str(getattr(tzaangors, "reserve_status", "") or "") == "strategic_reserves"
+    assert bool(getattr(tzaangors, "_entered_reserves_midgame", False)) is True
+    assert bool(getattr(tzaangors, "_started_in_reserves", False)) is False
+
+    _set_phase(game, ts_player, "MOVEMENT_PHASE", 0)
+
+    assert tzaangors.can_arrive_from_reserves(1) is False
+    assert tzaangors not in list(game.get_units_that_can_arrive_from_reserves(ts_player) or [])
+
+    game.handle_reserves_arrival_phase()
+    pending = _pending_by_name(ts_player.stratagems, "TWISTED MIRAGE")
+    assert pending == []
+    assert ts_player.stratagems.use("TWISTED MIRAGE", unit=tzaangors, phase_name="Movement phase") is False
+    assert int(ts_player.command_points or 0) == 10
+
+
 def test_gift_of_change_queues_on_destroyed_character_and_spawns_chaos_spawn_at_phase_end():
     game, ts_player, _enemy_player, ts_army, _enemy_army = _build_game()
     character = _make_unit(
