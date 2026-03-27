@@ -7122,6 +7122,67 @@ _NECRONS_STARSHATTER_ARSENAL_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.values()
 }
 
+_TYRANIDS_SUBTERRANEAN_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010147002": EnhancementToolDescriptor(
+        enhancement_id="000010147002",
+        name="Synaptic Strategy",
+        timing="while_targeting_rapid_ingress",
+        target="bearer_unit",
+        duration="once_per_battle",
+        effect="rapid_ingress_zero_cp_with_repeat_bypass",
+        once_per_battle=True,
+        effect_params={
+            "stratagem_names": ("RAPID INGRESS",),
+            "usage_key": "synaptic_strategy_rapid_ingress",
+            "repeat_bypass": True,
+        },
+    ),
+    "000010147003": EnhancementToolDescriptor(
+        enhancement_id="000010147003",
+        name="Tremor Senses",
+        timing="after_deployment",
+        target="friendly_tyranids_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("TYRANIDS",),
+            "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
+    "000010147004": EnhancementToolDescriptor(
+        enhancement_id="000010147004",
+        name="Vanguard Intellect",
+        timing="movement_phase_while_in_reserves",
+        target="bearer_unit_in_reserves",
+        duration="constant_while_in_reserves",
+        effect="strategic_reserves_setup_round_bonus_for_deep_strike",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+        },
+    ),
+    "000010147005": EnhancementToolDescriptor(
+        enhancement_id="000010147005",
+        name="Trygon Prime",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_gain_synapse_and_bearer_melee_strength_and_weapon_skill_bonus",
+        effect_params={
+            "gain_keywords": ("SYNAPSE",),
+            "strength_bonus": 1,
+            "weapon_skill_bonus": 1,
+            "bearer_only": True,
+        },
+    ),
+}
+
+_TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_SUBTERRANEAN_ASSAULT_DESCRIPTORS.values()
+}
+
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008417003": EnhancementToolDescriptor(
         enhancement_id="000008417003",
@@ -8123,6 +8184,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TYRANIDS_SUBTERRANEAN_ASSAULT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8297,6 +8361,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _THOUSAND_SONS_WARPMELD_PACT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
+        or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_CRUSHER_STAMPEDE_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)

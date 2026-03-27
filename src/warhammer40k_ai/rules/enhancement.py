@@ -719,6 +719,20 @@ def _normalize_enhancement_redeploy_filter_any_groups(values) -> list[list[str]]
     return groups
 
 
+def _append_keyword_once(entity, keyword: str) -> bool:
+    if entity is None:
+        return False
+    token = str(keyword or "").strip().upper()
+    if not token:
+        return False
+    current = [str(value or "").strip().upper() for value in list(getattr(entity, "keywords", []) or [])]
+    if token in current:
+        return False
+    current.append(token)
+    entity.keywords = list(current)
+    return True
+
+
 def _register_enhancement_redeploy_spec(
     unit,
     *,
@@ -1925,6 +1939,10 @@ class Enhancement:
             is_crusher_stampede = bool(tyr_mgr and tyr_mgr.is_crusher_stampede())
         except Exception:
             is_crusher_stampede = False
+        try:
+            is_subterranean_assault = bool(tyr_mgr and tyr_mgr.is_subterranean_assault())
+        except Exception:
+            is_subterranean_assault = False
 
         bearer = None
         bearer_id = ""
@@ -10098,6 +10116,110 @@ class Enhancement:
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "synaptic strategy" or enh_id == "000010147002":
+            if not is_subterranean_assault:
+                return
+            unit.special_rules["enhancement_synaptic_strategy"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Synaptic Strategy").strip() or "Synaptic Strategy"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(params.get("stratagem_names", ("RAPID INGRESS",)) or ("RAPID INGRESS",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("RAPID INGRESS",)
+            usage_key = str(params.get("usage_key", "synaptic_strategy_rapid_ingress") or "synaptic_strategy_rapid_ingress").strip().lower()
+            if not usage_key:
+                usage_key = "synaptic_strategy_rapid_ingress"
+            unit.special_rules["enhancement_synaptic_strategy_source"] = source_name
+            unit.special_rules["enhancement_synaptic_strategy_usage_key"] = usage_key
+            unit.special_rules["enhancement_synaptic_strategy_stratagems"] = configured_stratagems
+            unit.special_rules["enhancement_synaptic_strategy_repeat_bypass"] = bool(
+                params.get("repeat_bypass", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_synaptic_strategy_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "tremor senses" or enh_id == "000010147003":
+            if not is_subterranean_assault:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tremor Senses").strip() or "Tremor Senses"
+            unit.special_rules["enhancement_tremor_senses"] = True
+            unit.special_rules["enhancement_tremor_senses_source"] = source
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                max_units=_coerce_int(params.get("max_units", 3) or 3, default=3),
+                can_place_in_reserves=bool(params.get("allow_strategic_reserves", True)),
+                redeploy_filters=list(params.get("redeploy_filters", ("TYRANIDS",)) or ()),
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", True)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tremor_senses_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "vanguard intellect" or enh_id == "000010147004":
+            if not is_subterranean_assault:
+                return
+            unit.special_rules["enhancement_vanguard_intellect"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_vanguard_intellect_source"] = (
+                str(getattr(desc, "name", "") or "Vanguard Intellect").strip() or "Vanguard Intellect"
+            )
+            unit.special_rules["enhancement_vanguard_intellect_round_bonus"] = int(
+                max(0, _coerce_int(params.get("strategic_reserves_setup_round_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_vanguard_intellect_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vanguard_intellect_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "trygon prime" or enh_id == "000010147005":
+            if not is_subterranean_assault:
+                return
+            unit.special_rules["enhancement_trygon_prime"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Trygon Prime").strip() or "Trygon Prime"
+            unit.special_rules["enhancement_trygon_prime_source"] = source_name
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                max(0, _coerce_int(params.get("strength_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_bearer_melee_strength_bonus_source"] = source_name
+            unit.special_rules["enhancement_bearer_melee_weapon_skill_bonus"] = int(
+                max(0, _coerce_int(params.get("weapon_skill_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_bearer_melee_weapon_skill_bonus_source"] = source_name
+            _append_keyword_once(unit, "SYNAPSE")
+            if bearer is not None:
+                _append_keyword_once(bearer, "SYNAPSE")
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_trygon_prime_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "ominous presence" or enh_id == "000008404002":
             if not is_crusher_stampede:

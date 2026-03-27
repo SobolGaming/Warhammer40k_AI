@@ -7502,6 +7502,116 @@ class KeywordsDetachmentsMixin:
                 pass
         return True
 
+    def get_synaptic_strategy_stratagem_discount_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "synaptic_strategy_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_synaptic_strategy", False))):
+                continue
+            source_name = str(sr.get("enhancement_synaptic_strategy_source", "") or "Synaptic Strategy").strip()
+            if not source_name:
+                source_name = "Synaptic Strategy"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_synaptic_strategy_stratagems", ("RAPID INGRESS",)) or ("RAPID INGRESS",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("RAPID INGRESS",)
+            usage_key = str(
+                sr.get("enhancement_synaptic_strategy_usage_key", "") or "synaptic_strategy_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "synaptic_strategy_rapid_ingress"
+            rule = {
+                "source": source_name,
+                "ability_key": "synaptic_strategy_rapid_ingress",
+                "usage_key": usage_key,
+                "stratagems": configured_stratagems,
+                "limit": "unit_battle",
+                "repeat_bypass": bool(sr.get("enhancement_synaptic_strategy_repeat_bypass", True)),
+            }
+            break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_synaptic_strategy_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_synaptic_strategy_stratagem_discount_rule()
+        if not rule:
+            return False
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        if name_u != "RAPID INGRESS":
+            return False
+        try:
+            if not root.is_in_reserves():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def mark_synaptic_strategy_used(self, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_synaptic_strategy_stratagem_discount_rule()
+        if not isinstance(rule, dict):
+            return
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if not usage_key:
+            usage_key = "synaptic_strategy_rapid_ingress"
+        source_name = str(source or rule.get("source", "") or "Synaptic Strategy").strip() or "Synaptic Strategy"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["synaptic_strategy_rapid_ingress_used"] = True
+        if source_name:
+            sr["synaptic_strategy_rapid_ingress_used_source"] = source_name
+        if stratagem_name:
+            sr["synaptic_strategy_rapid_ingress_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
     def _unit_is_dire_avengers_or_guardians(self, unit) -> bool:
         if unit is None:
             return False
@@ -11169,6 +11279,43 @@ class KeywordsDetachmentsMixin:
                 if active:
                     try:
                         total_bonus += int(sr.get("enhancement_priority_drop_beacon_round_bonus", 1) or 0)
+                    except Exception:
+                        pass
+        if isinstance(sr, dict) and bool(sr.get("enhancement_vanguard_intellect")):
+            try:
+                started = bool(getattr(root, "_started_in_reserves", False))
+            except Exception:
+                started = False
+            try:
+                in_reserves = bool(getattr(root, "is_in_reserves", lambda: False)())
+            except Exception:
+                in_reserves = False
+            if started and in_reserves:
+                active = True
+                bearer_id = str(
+                    sr.get("enhancement_vanguard_intellect_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if bearer_id:
+                    bearer_alive = False
+                    for model in list(getattr(root, "models", []) or []):
+                        model_entity_id = str(get_entity_id(model) or "").strip()
+                        model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                        if bearer_id != model_entity_id and bearer_id != model_local_id:
+                            continue
+                        alive_attr = getattr(model, "is_alive", True)
+                        bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        break
+                    active = bool(bearer_alive)
+                if active and bool(sr.get("enhancement_vanguard_intellect_requires_deep_strike", True)):
+                    try:
+                        active = bool(getattr(root, "has_deep_strike", lambda: False)())
+                    except Exception:
+                        active = False
+                if active:
+                    try:
+                        total_bonus += int(sr.get("enhancement_vanguard_intellect_round_bonus", 1) or 0)
                     except Exception:
                         pass
         if isinstance(sr, dict) and bool(sr.get("enhancement_transponder_lock_module")):

@@ -3294,6 +3294,14 @@ class StratagemManager(
             return bool(can_use_fn(unit, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_synaptic_strategy_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(self.player, "_target_unit_can_use_synaptic_strategy_stratagem_discount", None)
+        if callable(can_use_fn):
+            return bool(can_use_fn(unit, stratagem_name=stratagem_name))
+        return False
+
     def _unit_can_use_blackwing_mantle_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -3533,6 +3541,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="RAPID INGRESS",
                 )
+                or self._unit_can_use_synaptic_strategy_stratagem_discount(
+                    target_unit,
+                    stratagem_name="RAPID INGRESS",
+                )
                 or self._unit_can_use_blackwing_mantle_stratagem_discount(
                     target_unit,
                     stratagem_name="RAPID INGRESS",
@@ -3548,6 +3560,10 @@ class StratagemManager(
                     stratagem_name="RAPID INGRESS",
                 )
                 or self._unit_can_use_hypersensory_array_stratagem_discount(
+                    cand,
+                    stratagem_name="RAPID INGRESS",
+                )
+                or self._unit_can_use_synaptic_strategy_stratagem_discount(
                     cand,
                     stratagem_name="RAPID INGRESS",
                 )

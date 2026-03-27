@@ -10179,6 +10179,17 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if attack_is_melee:
+                sr = self._unit_special_rules(attacker)
+                ws_bonus = int(sr.get("enhancement_bearer_melee_weapon_skill_bonus", 0) or 0)
+                if ws_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                    source_name = str(
+                        sr.get("enhancement_bearer_melee_weapon_skill_bonus_source", "") or "Enhancement bearer"
+                    ).strip() or "Enhancement bearer"
+                    _add_skill_mod(ws_bonus, f"+{ws_bonus} Weapon Skill from {source_name}")
+        except Exception:
+            pass
+        try:
             army = attacker_unit.get_parent_army() if attacker_unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
             if mgr is not None and attacker_unit is not None:
@@ -16994,8 +17005,11 @@ class WargearProfile:
                     owner_key="enhancement_bearer_melee_strength_bonus_owner",
                 ):
                     strength = strength + bearer_s_bonus
+                    source_name = str(
+                        sr.get("enhancement_bearer_melee_strength_bonus_source", "") or "Enhancement bearer (melee)"
+                    ).strip() or "Enhancement bearer (melee)"
                     wound_result.setdefault("modifiers", []).append(
-                        f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
+                        f"+{bearer_s_bonus}S from {source_name}"
                     )
             righteous_rage_bonus = int(sr.get("enhancement_righteous_rage_bonus", 0) or 0)
             if righteous_rage_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
