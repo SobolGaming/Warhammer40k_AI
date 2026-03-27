@@ -7,6 +7,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -84,6 +85,26 @@ def _set_unit_location(unit: Unit, *, x: float, y: float) -> None:
         model.set_location(float(x), float(y), 0.0, 0.0)
 
 
+def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
+    leader.can_be_attached_to = [bodyguard.name]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+
+def _make_profile(*, melee: bool = False, skill: str = "3+"):
+    data = {
+        "range": "Melee" if melee else "24",
+        "A": "1",
+        "BS_WS": skill,
+        "S": "4",
+        "AP": "0",
+        "D": "1",
+        "description": "",
+    }
+    parent = Wargear({"name": "Test Weapon", "type": "Melee" if melee else "Ranged", **data})
+    return parent.profiles["default"]
+
+
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     necron_army = Army("Necrons", "Awakened Dynasty")
@@ -116,6 +137,26 @@ def _apply_enhancement(unit: Unit, *, description: str = "") -> None:
             "that unit from the battlefield. Then, in the Reinforcements step of your next Movement phase, set up "
             'that unit anywhere on the battlefield that is more than 9" horizontally away from all enemy models.'
         ),
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+
+def _apply_named_enhancement(
+    unit: Unit,
+    *,
+    enhancement_id: str,
+    name: str,
+    description: str,
+    points: int = 20,
+) -> None:
+    enhancement = Enhancement(
+        id=enhancement_id,
+        name=name,
+        faction_id="NEC",
+        detachment="Awakened Dynasty",
+        points=points,
+        description=description,
     )
     unit.enhancement = enhancement
     enhancement.apply_to_unit(unit)
@@ -166,6 +207,20 @@ def test_awakened_dynasty_veil_of_darkness_descriptor_registered():
     assert str(getattr(descriptor, "effect", "") or "") == (
         "once_per_battle_end_of_opponent_turn_enter_strategic_reserves_then_next_movement_phase_deep_strike_return"
     )
+
+
+def test_awakened_dynasty_other_enhancement_descriptors_registered():
+    nether_realm = get_enhancement_tool_descriptor(enhancement_id="000008372003")
+    assert nether_realm is not None
+    assert str(getattr(nether_realm, "name", "") or "") == "Nether-realm Casket"
+    assert str(getattr(nether_realm, "effect", "") or "") == "grant_stealth_while_leading"
+
+    phasal = get_enhancement_tool_descriptor(enhancement_id="000008372004")
+    assert phasal is not None
+    assert str(getattr(phasal, "name", "") or "") == "Phasal Subjugator (Aura)"
+    assert str(getattr(phasal, "effect", "") or "") == "aura_friendly_non_character_unit_hit_bonus"
+    assert float(phasal.effect_params.get("range_inches", 0.0) or 0.0) == 6.0
+    assert int(phasal.effect_params.get("hit_roll_bonus", 0) or 0) == 1
 
 
 def test_veil_of_darkness_prompts_enters_reserves_and_sets_next_movement_return_window():
@@ -244,3 +299,142 @@ def test_veil_of_darkness_does_not_prompt_when_bearer_destroyed():
 
     game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=enemy_player)
     assert _find_optional_request(game, unit=source, ability_key="veil_of_darkness") is None
+
+
+def test_nether_realm_casket_grants_stealth_while_bearer_is_leading_and_alive():
+    necron_army = Army("Necrons", "Awakened Dynasty")
+    necron_army.faction_id = "NEC"
+
+    bodyguard = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    leader = _make_unit(
+        "Necron Overlord",
+        keywords=["CHARACTER", "INFANTRY", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    necron_army.add_unit(bodyguard)
+    necron_army.add_unit(leader)
+    _attach_leader(bodyguard, leader)
+
+    _apply_named_enhancement(
+        leader,
+        enhancement_id="000008372003",
+        name="Nether-realm Casket",
+        description="NECRONS model only. While the bearer is leading a unit, models in that unit have the Stealth ability.",
+    )
+
+    assert bodyguard.has_stealth() is True
+
+    bearer = _bearer_model(leader)
+    assert bearer is not None
+    bearer.take_damage(int(getattr(bearer, "wounds", 0) or 0))
+
+    assert bodyguard.has_stealth() is False
+
+
+def test_phasal_subjugator_aura_grants_hit_bonus_only_to_nearby_non_character_necron_units():
+    game, necron_army, enemy_army, _necron_player, _enemy_player = _build_game()
+    aura_bearer = _make_unit(
+        "Necron Overlord",
+        keywords=["CHARACTER", "INFANTRY", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    attacker = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    character_attacker = _make_unit(
+        "Royal Warden",
+        keywords=["CHARACTER", "INFANTRY", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    far_attacker = _make_unit(
+        "Immortals",
+        keywords=["INFANTRY", "NECRONS"],
+        faction_keywords=["NECRONS"],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(aura_bearer)
+    necron_army.add_unit(attacker)
+    necron_army.add_unit(character_attacker)
+    necron_army.add_unit(far_attacker)
+    enemy_army.add_unit(enemy)
+
+    _apply_named_enhancement(
+        aura_bearer,
+        enhancement_id="000008372004",
+        name="Phasal Subjugator (Aura)",
+        description=(
+            'NECRONS model only. While a friendly NECRONS unit (excluding CHARACTER units) is within 6" of the bearer, '
+            "each time a model in that unit makes an attack, add 1 to the Hit roll."
+        ),
+        points=35,
+    )
+
+    _set_unit_location(aura_bearer, x=0.0, y=0.0)
+    _set_unit_location(attacker, x=5.0, y=0.0)
+    _set_unit_location(character_attacker, x=5.0, y=2.0)
+    _set_unit_location(far_attacker, x=7.5, y=0.0)
+    _set_unit_location(enemy, x=20.0, y=0.0)
+    game.map.units = [aura_bearer, attacker, character_attacker, far_attacker, enemy]
+    game.rebuild_entity_registry()
+
+    profile = _make_profile(skill="3+")
+
+    buffed_hit = profile._hit_target_with_tracking(
+        enemy,
+        attacker.models[0],
+        {},
+        roll_value=2,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(buffed_hit.get("hit"))
+    assert int(buffed_hit.get("final_needed", 0) or 0) == 2
+    assert any("Phasal Subjugator" in str(reason or "") for reason in list(buffed_hit.get("modifiers", []) or []))
+
+    character_hit = profile._hit_target_with_tracking(
+        enemy,
+        character_attacker.models[0],
+        {},
+        roll_value=2,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not bool(character_hit.get("hit"))
+    assert int(character_hit.get("final_needed", 0) or 0) == 3
+
+    far_hit = profile._hit_target_with_tracking(
+        enemy,
+        far_attacker.models[0],
+        {},
+        roll_value=2,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not bool(far_hit.get("hit"))
+    assert int(far_hit.get("final_needed", 0) or 0) == 3
+
+    bearer = _bearer_model(aura_bearer)
+    assert bearer is not None
+    bearer.take_damage(int(getattr(bearer, "wounds", 0) or 0), game_map=game.map)
+
+    expired_hit = profile._hit_target_with_tracking(
+        enemy,
+        attacker.models[0],
+        {},
+        roll_value=2,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not bool(expired_hit.get("hit"))
+    assert int(expired_hit.get("final_needed", 0) or 0) == 3

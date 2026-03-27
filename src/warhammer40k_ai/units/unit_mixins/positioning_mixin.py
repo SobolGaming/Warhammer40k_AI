@@ -10895,6 +10895,13 @@ class PositioningMixin:
             enhancement_name="malphonic susurrus",
         ):
             return True
+        # Awakened Dynasty: Nether-realm Casket grants Stealth while the bearer is leading.
+        if self._attached_unit_has_active_leading_enhancement(
+            "enhancement_nether_realm_casket",
+            enhancement_id="000008372003",
+            enhancement_name="nether-realm casket",
+        ):
+            return True
         # Start of opponent Shooting phase effects (e.g., Hallucinogen Grenades) can grant Stealth until end of phase.
         if isinstance(sr, dict) and sr.get("opponent_shooting_phase_stealth_active") is True:
             return True

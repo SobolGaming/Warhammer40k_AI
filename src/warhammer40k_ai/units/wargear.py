@@ -12446,6 +12446,23 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Necrons: Awakened Dynasty (Phasal Subjugator (Aura)).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            if mgr is not None:
+                bonus, reason = mgr.awakened_dynasty_phasal_subjugator_hit_bonus(unit, game=game)
+                if bonus:
+                    _add_hit_mod(int(bonus), reason)
+        except Exception:
+            pass
         # Space Marines: Heroes of the Chapter.
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)

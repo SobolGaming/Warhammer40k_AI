@@ -92,6 +92,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Annihilation Legion")
 
+    def is_awakened_dynasty(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Awakened Dynasty")
+
     def is_canoptek_court(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -274,6 +279,35 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             NecronsDetachmentManager._model_is_alive(model)
             for model in list(getattr(unit, "models", []) or [])
         )
+
+    @staticmethod
+    def _enhancement_bearer_model_for_member(member, special_rules: dict | None = None):
+        unit = member
+        if unit is None:
+            return None
+        sr = special_rules if isinstance(special_rules, dict) else getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                entity_id = str(get_entity_id(model) or "").strip()
+                local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id in {entity_id, local_id}:
+                    return model
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return bearer
+        models = list(getattr(unit, "models", []) or [])
+        if len(models) == 1:
+            return models[0]
+        for model in models:
+            if NecronsDetachmentManager._model_is_alive(model):
+                return model
+        return None
 
     def technosorcerous_unit_is_eligible(self, unit) -> bool:
         if not self.is_cryptek_conclave():
@@ -1427,6 +1461,64 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 return 1, "Relentless Onslaught (+1 to hit vs objective)"
         except Exception:
             pass
+        return 0, ""
+
+    def awakened_dynasty_phasal_subjugator_hit_bonus(self, attacker_unit, *, game=None) -> tuple[int, str]:
+        if not self.is_awakened_dynasty():
+            return 0, ""
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return 0, ""
+        if not self.unit_is_necrons(root):
+            return 0, ""
+        if self._unit_contains_keyword(root, "CHARACTER"):
+            return 0, ""
+
+        target_models = [model for model in self._iter_unit_models(root) if self._model_is_alive(model)]
+        if not target_models:
+            return 0, ""
+
+        roots_by_key: dict[tuple[str, str], object] = {}
+        for unit in list(getattr(self.army, "units", []) or []):
+            source_root = self._unit_root(unit)
+            if source_root is None:
+                continue
+            root_id = str(get_entity_id(source_root) or getattr(source_root, "_id", "") or "").strip()
+            root_name = str(getattr(source_root, "name", "") or "").strip()
+            roots_by_key[(root_id, root_name)] = source_root
+
+        for _key, source_root in sorted(roots_by_key.items()):
+            if not self._unit_is_active(source_root):
+                continue
+            for member, sr in self._attached_member_special_rules_with_flag(source_root, "enhancement_phasal_subjugator"):
+                if bool(sr.get("enhancement_phasal_subjugator_requires_bearer_alive", True)) and not self._enhancement_bearer_is_alive_for_member(member, sr):
+                    continue
+                bearer_model = self._enhancement_bearer_model_for_member(member, sr)
+                if bearer_model is None or not self._model_is_alive(bearer_model):
+                    continue
+                try:
+                    range_inches = float(sr.get("enhancement_phasal_subjugator_range_inches", 6.0) or 6.0)
+                except (TypeError, ValueError):
+                    range_inches = 6.0
+                if range_inches < 0.0:
+                    continue
+                for target_model in target_models:
+                    distance = float(distance_between_models_bases_3d(bearer_model, target_model))
+                    if distance > range_inches + 1e-6:
+                        continue
+                    try:
+                        bonus = int(sr.get("enhancement_phasal_subjugator_hit_roll_bonus", 1) or 1)
+                    except (TypeError, ValueError):
+                        bonus = 1
+                    if not bonus:
+                        return 0, ""
+                    source = (
+                        str(sr.get("enhancement_phasal_subjugator_source", "") or "Phasal Subjugator (Aura)").strip()
+                        or "Phasal Subjugator (Aura)"
+                    )
+                    return int(bonus), f"{source} (+{int(bonus)} to hit aura)"
         return 0, ""
 
     def relentless_onslaught_assault_applies(self, unit) -> bool:

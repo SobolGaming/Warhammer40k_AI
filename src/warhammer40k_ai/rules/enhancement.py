@@ -2179,6 +2179,42 @@ class Enhancement:
             if isinstance(cache, dict):
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
 
+        if name == "nether-realm casket" or enh_id == "000008372003":
+            if not is_awakened_dynasty:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_nether_realm_casket"] = True
+            unit.special_rules["enhancement_nether_realm_casket_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nether_realm_casket_bearer_model_id"] = bearer_id
+
+        if name == "phasal subjugator (aura)" or enh_id == "000008372004":
+            if not is_awakened_dynasty:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Phasal Subjugator (Aura)").strip() or "Phasal Subjugator (Aura)"
+            unit.special_rules["enhancement_phasal_subjugator"] = True
+            unit.special_rules["enhancement_phasal_subjugator_source"] = source_name
+            unit.special_rules["enhancement_phasal_subjugator_range_inches"] = float(
+                max(0.0, _coerce_float(params.get("range_inches", 6.0), default=6.0))
+            )
+            try:
+                hit_bonus = int(params.get("hit_roll_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                hit_bonus = 1
+            unit.special_rules["enhancement_phasal_subjugator_hit_roll_bonus"] = int(hit_bonus)
+            unit.special_rules["enhancement_phasal_subjugator_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_phasal_subjugator_bearer_model_id"] = bearer_id
+
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:
                 return

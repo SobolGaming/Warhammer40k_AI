@@ -7086,6 +7086,28 @@ _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "return_setup_min_enemy_distance_horiz": 9.0,
         },
     ),
+    "000008372003": EnhancementToolDescriptor(
+        enhancement_id="000008372003",
+        name="Nether-realm Casket",
+        timing="passive_while_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_stealth_while_leading",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000008372004": EnhancementToolDescriptor(
+        enhancement_id="000008372004",
+        name="Phasal Subjugator (Aura)",
+        timing="passive_aura",
+        target="friendly_necrons_non_character_units_within_range_of_bearer",
+        duration="constant",
+        effect="aura_friendly_non_character_unit_hit_bonus",
+        effect_params={
+            "range_inches": 6.0,
+            "hit_roll_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
 }
 
 _NECRONS_AWAKENED_DYNASTY_BY_NAME = {
