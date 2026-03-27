@@ -19816,6 +19816,20 @@ class WargearProfile:
                     reroll_value_reasons.append("Methodical Annihilation: re-roll Wound roll of 1")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            reroll_fn = getattr(mgr, "canoptek_court_hyperphasic_fulcrum_wound_reroll_ones", None) if mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_wound_ones, source = reroll_fn(attacker, game=game)
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Hyperphasic Fulcrum").strip() or "Hyperphasic Fulcrum"
+                    reroll_value_reasons.append(source_name)
+        except Exception:
+            pass
         if rerolls_allowed and bool(attack_instance.get("hexwarp_flow_reroll_wound_ones", False)):
             reroll_wound_values.add(1)
             source_name = str(

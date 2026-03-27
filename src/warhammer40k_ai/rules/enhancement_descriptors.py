@@ -7114,6 +7114,47 @@ _NECRONS_AWAKENED_DYNASTY_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.values()
 }
 
+_NECRONS_CANOPTEK_COURT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008546002": EnhancementToolDescriptor(
+        enhancement_id="000008546002",
+        name="Dimensional Sanctum",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_infiltrators_to_bearer_unit_models",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000008546003": EnhancementToolDescriptor(
+        enhancement_id="000008546003",
+        name="Hyperphasic Fulcrum",
+        timing="passive_while_leading_and_wholly_within_power_matrix",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="power_matrix_bearer_unit_wound_reroll_ones_while_leading",
+        effect_params={"reroll_wound_ones": True, "requires_bearer_alive": True},
+    ),
+    "000008546005": EnhancementToolDescriptor(
+        enhancement_id="000008546005",
+        name="Metalodermal Tesla Weave",
+        timing="on_enemy_charge_declared",
+        target="enemy_unit_that_selected_bearer_unit_as_charge_target",
+        duration="instant_once_per_phase",
+        effect="charge_target_mortal_wounds_once_per_phase",
+        effect_params={
+            "requires_bearer_alive": True,
+            "trigger_roll": "D6",
+            "mid_range": (2, 5),
+            "mid_mortal_wounds": "D3",
+            "high_threshold": 6,
+            "high_mortal_wounds": 3,
+        },
+    ),
+}
+
+_NECRONS_CANOPTEK_COURT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_CANOPTEK_COURT_DESCRIPTORS.values()
+}
+
 _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009749002": EnhancementToolDescriptor(
         enhancement_id="000009749002",
@@ -8412,6 +8453,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_CANOPTEK_COURT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8601,6 +8645,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _THOUSAND_SONS_WARPMELD_PACT_BY_NAME.get(key)
         or _NECRONS_ANNIHILATION_LEGION_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
+        or _NECRONS_CANOPTEK_COURT_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
         or _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME.get(key)

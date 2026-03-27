@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 
 from ..utility.aura_utils import distance_between_models_bases_3d
+from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
@@ -308,6 +309,12 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             if NecronsDetachmentManager._model_is_alive(model):
                 return model
         return None
+
+    def _member_is_currently_leading_root(self, member, root) -> bool:
+        if member is None or root is None or member is root:
+            return False
+        attached_to = getattr(member, "attached_to", None)
+        return self._unit_root(attached_to) is root
 
     def technosorcerous_unit_is_eligible(self, unit) -> bool:
         if not self.is_cryptek_conclave():
@@ -1520,6 +1527,106 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                     )
                     return int(bonus), f"{source} (+{int(bonus)} to hit aura)"
         return 0, ""
+
+    def canoptek_court_hyperphasic_fulcrum_wound_reroll_ones(self, attacker_model, *, game=None) -> tuple[bool, str]:
+        if not self.is_canoptek_court():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return False, ""
+        if not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return False, ""
+        if not self.unit_wholly_within_power_matrix(root, game=game):
+            return False, ""
+
+        for member, sr in self._attached_member_special_rules_with_flag(root, "enhancement_hyperphasic_fulcrum"):
+            if not self._member_is_currently_leading_root(member, root):
+                continue
+            if bool(sr.get("enhancement_hyperphasic_fulcrum_requires_bearer_alive", True)) and not self._enhancement_bearer_is_alive_for_member(member, sr):
+                continue
+            source = (
+                str(sr.get("enhancement_hyperphasic_fulcrum_source", "") or "Hyperphasic Fulcrum").strip()
+                or "Hyperphasic Fulcrum"
+            )
+            return True, f"{source}: re-roll Wound roll of 1 while wholly within Power Matrix"
+        return False, ""
+
+    def canoptek_court_metalodermal_tesla_weave_charge_declared_reactions(
+        self,
+        charging_unit,
+        *,
+        declared_targets=None,
+        game=None,
+    ) -> list[dict]:
+        if not self.is_canoptek_court() or game is None:
+            return []
+        charging_root = self._unit_root(charging_unit)
+        if charging_root is None or self._unit_belongs_to_army(charging_root):
+            return []
+        if not self._unit_is_active(charging_root):
+            return []
+
+        target_roots_by_id: dict[str, object] = {}
+        for target in list(declared_targets or []):
+            target_root = self._unit_root(target)
+            if target_root is None:
+                continue
+            if not self._unit_belongs_to_army(target_root) or not self._unit_is_active(target_root):
+                continue
+            target_id = str(get_entity_id(target_root) or id(target_root))
+            target_roots_by_id[target_id] = target_root
+        if not target_roots_by_id:
+            return []
+
+        phase_key = self._phase_key_for_game(game)
+        phase_key_token = f"{int(phase_key[0])}:{str(phase_key[1] or '').strip().upper()}"
+        outcomes: list[dict] = []
+        for target_id in sorted(target_roots_by_id):
+            target_root = target_roots_by_id[target_id]
+            for member, sr in self._attached_member_special_rules_with_flag(
+                target_root,
+                "enhancement_metalodermal_tesla_weave",
+            ):
+                if bool(sr.get("enhancement_metalodermal_tesla_weave_requires_bearer_alive", True)) and not self._enhancement_bearer_is_alive_for_member(member, sr):
+                    continue
+                if str(sr.get("enhancement_metalodermal_tesla_weave_last_phase_key", "") or "") == phase_key_token:
+                    continue
+
+                trigger_roll = int(get_roll("D6") or 0)
+                mortal_wounds = 0
+                mortal_note = ""
+                if 2 <= trigger_roll <= 5:
+                    rolled_mortal = int(get_roll("D3") or 0)
+                    mortal_wounds = max(0, int(rolled_mortal))
+                    mortal_note = f"D3={int(rolled_mortal)}"
+                elif trigger_roll >= 6:
+                    mortal_wounds = 3
+
+                sr["enhancement_metalodermal_tesla_weave_last_phase_key"] = phase_key_token
+                member.special_rules = sr
+
+                if mortal_wounds > 0:
+                    apply_mortals = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+                    if callable(apply_mortals):
+                        apply_mortals(charging_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+
+                outcomes.append(
+                    {
+                        "source": str(
+                            sr.get("enhancement_metalodermal_tesla_weave_source", "") or "Metalodermal Tesla Weave"
+                        ).strip()
+                        or "Metalodermal Tesla Weave",
+                        "charging_unit_name": str(getattr(charging_root, "name", "") or "Enemy unit").strip()
+                        or "Enemy unit",
+                        "trigger_roll": int(trigger_roll),
+                        "mortal_wounds": int(mortal_wounds),
+                        "mortal_note": mortal_note,
+                    }
+                )
+        return outcomes
 
     def relentless_onslaught_assault_applies(self, unit) -> bool:
         if not self.relentless_onslaught_applies(unit):

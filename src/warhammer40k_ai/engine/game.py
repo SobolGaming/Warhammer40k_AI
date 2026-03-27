@@ -4601,10 +4601,64 @@ class Game(
             set_up_from_disembark=True,
         )
 
-    def _on_charge_declared_detachment_rules(self, unit=None, **_kwargs) -> None:
+    def _on_charge_declared_detachment_rules(self, unit=None, target_units=None, **_kwargs) -> None:
         if unit is None:
             return
         self._queue_chaos_cult_desperate_devotion(unit=unit, action="charge")
+        try:
+            charging_root = unit.get_attached_unit_root()
+        except Exception:
+            charging_root = unit
+        if charging_root is None:
+            return
+        charging_army = charging_root.get_parent_army() if hasattr(charging_root, "get_parent_army") else None
+        if charging_army is None:
+            return
+
+        from ..utility.event_bus import append_action, append_dice
+
+        for player in list(getattr(self, "players", []) or []):
+            reacting_army = getattr(player, "army", None)
+            if reacting_army is None or reacting_army is charging_army:
+                continue
+            necron_mgr = getattr(reacting_army, "necrons_detachments", None)
+            reaction_fn = (
+                getattr(necron_mgr, "canoptek_court_metalodermal_tesla_weave_charge_declared_reactions", None)
+                if necron_mgr is not None
+                else None
+            )
+            if not callable(reaction_fn):
+                continue
+            outcomes = list(
+                reaction_fn(
+                    charging_root,
+                    declared_targets=target_units,
+                    game=self,
+                )
+                or []
+            )
+            for outcome in outcomes:
+                source_name = str(outcome.get("source", "") or "Metalodermal Tesla Weave").strip() or "Metalodermal Tesla Weave"
+                target_name = str(outcome.get("charging_unit_name", "") or "Enemy unit").strip() or "Enemy unit"
+                trigger_roll = int(outcome.get("trigger_roll", 0) or 0)
+                mortal_wounds = int(outcome.get("mortal_wounds", 0) or 0)
+                mortal_note = str(outcome.get("mortal_note", "") or "").strip()
+                if mortal_wounds > 0 and mortal_note:
+                    append_dice(
+                        player,
+                        f"{source_name}: {target_name} roll {int(trigger_roll)} -> {mortal_note} = {int(mortal_wounds)} mortal wounds.",
+                    )
+                elif mortal_wounds > 0:
+                    append_dice(
+                        player,
+                        f"{source_name}: {target_name} roll {int(trigger_roll)} -> {int(mortal_wounds)} mortal wounds.",
+                    )
+                else:
+                    append_dice(player, f"{source_name}: {target_name} roll {int(trigger_roll)} -> no effect.")
+                if mortal_wounds > 0:
+                    append_action(player, f"{source_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.")
+                else:
+                    append_action(player, f"{source_name}: {target_name} suffers no mortal wounds.")
 
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:

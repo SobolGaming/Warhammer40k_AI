@@ -1850,6 +1850,9 @@ class Enhancement:
             is_awakened_dynasty = bool(ne_mgr and ne_mgr.detachment_matches("Awakened Dynasty"))
         except Exception:
             is_awakened_dynasty = False
+        is_canoptek_court = bool(
+            ne_mgr and getattr(ne_mgr, "is_canoptek_court", lambda: False)()
+        )
         try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
@@ -2214,6 +2217,56 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_phasal_subjugator_bearer_model_id"] = bearer_id
+
+        if name == "dimensional sanctum" or enh_id == "000008546002":
+            if not is_canoptek_court:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Dimensional Sanctum").strip() or "Dimensional Sanctum"
+            unit.special_rules["enhancement_dimensional_sanctum"] = True
+            unit.special_rules["enhancement_dimensional_sanctum_source"] = source_name
+            unit.special_rules["enhancement_dimensional_sanctum_infiltrators"] = True
+            unit.special_rules["enhancement_dimensional_sanctum_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dimensional_sanctum_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("infiltrate", None)
+
+        if name == "hyperphasic fulcrum" or enh_id == "000008546003":
+            if not is_canoptek_court:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Hyperphasic Fulcrum").strip() or "Hyperphasic Fulcrum"
+            unit.special_rules["enhancement_hyperphasic_fulcrum"] = True
+            unit.special_rules["enhancement_hyperphasic_fulcrum_source"] = source_name
+            unit.special_rules["enhancement_hyperphasic_fulcrum_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hyperphasic_fulcrum_bearer_model_id"] = bearer_id
+
+        if name == "metalodermal tesla weave" or enh_id == "000008546005":
+            if not is_canoptek_court:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Metalodermal Tesla Weave").strip() or "Metalodermal Tesla Weave"
+            unit.special_rules["enhancement_metalodermal_tesla_weave"] = True
+            unit.special_rules["enhancement_metalodermal_tesla_weave_source"] = source_name
+            unit.special_rules["enhancement_metalodermal_tesla_weave_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_metalodermal_tesla_weave_last_phase_key"] = ""
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_metalodermal_tesla_weave_bearer_model_id"] = bearer_id
 
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:
