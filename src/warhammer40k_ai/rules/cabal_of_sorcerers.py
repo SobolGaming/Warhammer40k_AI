@@ -228,6 +228,11 @@ class CabalOfSorcerersManager:
         if self._model_has_named_ability(model, "Lord of the Planet of the Sorcerers"):
             bonus += 2
         bonus += int(self._spirit_snare_bonus_for_model(model) or 0)
+        if channel and self.army is not None:
+            ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
+            changehost_bonus_fn = getattr(ts_mgr, "changehost_diabolic_savant_channel_bonus", None) if ts_mgr is not None else None
+            if callable(changehost_bonus_fn):
+                bonus += int(changehost_bonus_fn(model) or 0)
 
         immaterial_bonus = 0
         if channel:

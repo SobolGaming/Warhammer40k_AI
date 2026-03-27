@@ -6791,6 +6791,35 @@ _TAU_KAUYON_BY_NAME = {
 }
 
 _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010197002": EnhancementToolDescriptor(
+        enhancement_id="000010197002",
+        name="Nethershriek Mind-eater",
+        timing="start_of_shooting_phase",
+        target="enemy_unit_within_range_visible_to_bearer",
+        duration="instant",
+        effect="visible_enemy_battleshock_test_with_mortal_wounds_on_failure",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "fail_mortal_wounds": 3,
+            "leadership_test_counts_as_battle_shock": True,
+        },
+    ),
+    "000010197003": EnhancementToolDescriptor(
+        enhancement_id="000010197003",
+        name="Diabolic Savant",
+        timing="while_channeling_the_warp",
+        target="bearer",
+        duration="instant_conditional",
+        effect="ritual_test_bonus_while_nearby_scintillating_legions",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "ritual_test_bonus": 1,
+            "requires_channel_the_warp": True,
+            "required_friendly_keyword": "SCINTILLATING LEGIONS",
+        },
+    ),
     "000010197004": EnhancementToolDescriptor(
         enhancement_id="000010197004",
         name="Duplicitous Malediction",
@@ -6802,6 +6831,19 @@ _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS: dict[str, EnhancementToolDescri
             "max_units": 3,
             "allow_strategic_reserves": True,
             "redeploy_filters": ("THOUSAND SONS",),
+        },
+    ),
+    "000010197005": EnhancementToolDescriptor(
+        enhancement_id="000010197005",
+        name="Tome of True Names",
+        timing="start_of_any_phase",
+        target="bearer",
+        duration="until_end_of_phase_once_per_battle",
+        effect="bearer_invulnerable_save",
+        once_per_battle=True,
+        effect_params={
+            "invulnerable_save": 2,
+            "once_per_battle_key": "start_any_phase_invuln:tome_of_true_names",
         },
     ),
 }

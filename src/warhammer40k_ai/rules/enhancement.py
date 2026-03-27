@@ -1869,6 +1869,22 @@ class Enhancement:
         except Exception:
             is_rubricae_phalanx = False
         try:
+            is_changehost_of_deceit = bool(ts_mgr and ts_mgr.is_changehost_of_deceit())
+        except Exception:
+            is_changehost_of_deceit = False
+        try:
+            is_hexwarp_thrallband = bool(ts_mgr and ts_mgr.is_hexwarp_thrallband())
+        except Exception:
+            is_hexwarp_thrallband = False
+        try:
+            is_warpforged_cabal = bool(ts_mgr and ts_mgr.is_warpforged_cabal())
+        except Exception:
+            is_warpforged_cabal = False
+        try:
+            is_warpmeld_pact = bool(ts_mgr and ts_mgr.is_warpmeld_pact())
+        except Exception:
+            is_warpmeld_pact = False
+        try:
             is_host_of_ascension = bool(gsc_mgr and gsc_mgr.is_host_of_ascension())
         except Exception:
             is_host_of_ascension = False
@@ -7267,6 +7283,57 @@ class Enhancement:
             ) + 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "nethershriek mind-eater" or enh_id == "000010197002":
+            if not is_changehost_of_deceit:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Nethershriek Mind-eater").strip() or "Nethershriek Mind-eater"
+            trigger_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 12.0)) or 12.0, default=12.0)))
+            fail_mortal_wounds = int(max(0, _coerce_int(params.get("fail_mortal_wounds", 3) or 3, default=3)))
+            unit.special_rules["enhancement_nethershriek_mind_eater"] = True
+            unit.special_rules["enhancement_nethershriek_mind_eater_source"] = source
+            unit.special_rules["enhancement_nethershriek_mind_eater_range"] = float(trigger_range)
+            unit.special_rules["enhancement_nethershriek_mind_eater_fail_mortal_wounds"] = int(fail_mortal_wounds)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nethershriek_mind_eater_bearer_model_id"] = bearer_id
+
+        if name == "diabolic savant" or enh_id == "000010197003":
+            if not is_changehost_of_deceit:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Diabolic Savant").strip() or "Diabolic Savant"
+            aura_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 6.0)) or 6.0, default=6.0)))
+            channel_bonus = int(max(0, _coerce_int(params.get("ritual_test_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_diabolic_savant"] = True
+            unit.special_rules["enhancement_diabolic_savant_source"] = source
+            unit.special_rules["enhancement_diabolic_savant_range"] = float(aura_range)
+            unit.special_rules["enhancement_diabolic_savant_channel_bonus"] = int(channel_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_diabolic_savant_bearer_model_id"] = bearer_id
+
+        if name == "tome of true names" or enh_id == "000010197005":
+            if not is_changehost_of_deceit:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tome of True Names").strip() or "Tome of True Names"
+            invuln = int(min(7, max(2, _coerce_int(params.get("invulnerable_save", 2) or 2, default=2))))
+            once_key = str(
+                params.get("once_per_battle_key", "start_any_phase_invuln:tome_of_true_names")
+                or "start_any_phase_invuln:tome_of_true_names"
+            ).strip().lower()
+            unit.special_rules["enhancement_tome_of_true_names"] = True
+            unit.special_rules["enhancement_tome_of_true_names_source"] = source
+            unit.special_rules["enhancement_tome_of_true_names_invulnerable_save"] = int(invuln)
+            unit.special_rules["enhancement_tome_of_true_names_once_key"] = once_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tome_of_true_names_bearer_model_id"] = bearer_id
 
         if name == "risen rubricae" or enh_id == "000010205002":
             if not is_rubricae_phalanx:

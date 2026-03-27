@@ -7287,6 +7287,11 @@ class AbilitySpecsMixin:
         cache_key = f"model_start_any_phase_invuln:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        root_sr = getattr(root, "special_rules", None)
 
         specs: list[dict] = []
         seen: set[tuple[str, int]] = set()
@@ -7329,6 +7334,45 @@ class AbilitySpecsMixin:
                     "apply_to_unit": bool(apply_to_unit),
                 }
             )
+
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_tome_of_true_names", False)):
+            bearer_id = str(
+                root_sr.get("enhancement_tome_of_true_names_bearer_model_id", "")
+                or root_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            model_is_bearer = bool(
+                not bearer_id
+                or model_id == bearer_id
+                or (model_local_id and model_local_id == bearer_id)
+            )
+            if model_is_bearer:
+                source = str(
+                    root_sr.get("enhancement_tome_of_true_names_source", "")
+                    or "Tome of True Names"
+                ).strip() or "Tome of True Names"
+                key = str(
+                    root_sr.get("enhancement_tome_of_true_names_once_key", "")
+                    or "start_any_phase_invuln:tome_of_true_names"
+                ).strip().lower() or "start_any_phase_invuln:tome_of_true_names"
+                try:
+                    invuln = int(root_sr.get("enhancement_tome_of_true_names_invulnerable_save", 2) or 2)
+                except (TypeError, ValueError):
+                    invuln = 2
+                invuln = int(max(2, min(7, invuln)))
+                key_tuple = (key, int(invuln))
+                if key_tuple not in seen:
+                    seen.add(key_tuple)
+                    specs.append(
+                        {
+                            "source": source,
+                            "key": key,
+                            "value": int(invuln),
+                            "apply_to_unit": False,
+                        }
+                    )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -9230,6 +9274,11 @@ class AbilitySpecsMixin:
         cache_key = f"model_start_shooting_phase_visible_battleshock:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        root_sr = getattr(root, "special_rules", None)
 
         specs: list[dict] = []
         seen: set[tuple] = set()
@@ -9326,6 +9375,58 @@ class AbilitySpecsMixin:
                     "leadership_test_counts_as_battle_shock": bool(use_leadership_test),
                 }
             )
+
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_nethershriek_mind_eater", False)):
+            bearer_id = str(
+                root_sr.get("enhancement_nethershriek_mind_eater_bearer_model_id", "")
+                or root_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            model_is_bearer = bool(
+                not bearer_id
+                or model_id == bearer_id
+                or (model_local_id and model_local_id == bearer_id)
+            )
+            if model_is_bearer:
+                source = str(
+                    root_sr.get("enhancement_nethershriek_mind_eater_source", "")
+                    or "Nethershriek Mind-eater"
+                ).strip() or "Nethershriek Mind-eater"
+                try:
+                    range_value = int(root_sr.get("enhancement_nethershriek_mind_eater_range", 12) or 12)
+                except (TypeError, ValueError):
+                    range_value = 12
+                try:
+                    fail_mortal_wounds = int(
+                        root_sr.get("enhancement_nethershriek_mind_eater_fail_mortal_wounds", 3) or 3
+                    )
+                except (TypeError, ValueError):
+                    fail_mortal_wounds = 3
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    0,
+                    0,
+                    "",
+                    int(fail_mortal_wounds),
+                    True,
+                )
+                if key not in seen and int(range_value) > 0:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(range_value),
+                            "use_leadership_test": True,
+                            "leadership_test_modifier_if_infantry": 0,
+                            "leadership_test_modifier_if_target_keyword": 0,
+                            "leadership_test_modifier_target_keyword": "",
+                            "fail_mortal_wounds": int(max(0, fail_mortal_wounds)),
+                            "leadership_test_counts_as_battle_shock": True,
+                        }
+                    )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

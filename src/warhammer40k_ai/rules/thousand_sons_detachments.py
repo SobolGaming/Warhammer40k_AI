@@ -676,6 +676,49 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         name = self._normalize_unit_name(getattr(model, "name", ""))
         return "tzaangor" in name
 
+    @staticmethod
+    def _model_special_rule_matches_bearer(model, special_rules: object, *, bearer_key: str) -> bool:
+        if model is None or not isinstance(special_rules, dict):
+            return False
+        bearer_id = str(
+            special_rules.get(bearer_key, "")
+            or special_rules.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        model_id = str(
+            get_entity_id(model)
+            or getattr(model, "id", getattr(model, "_id", ""))
+            or ""
+        ).strip()
+        if not bearer_id:
+            return True
+        return bool(model_id and model_id == bearer_id)
+
+    def _model_within_range_of_attached_unit(self, model, unit, *, radius: float) -> bool:
+        if model is None or unit is None:
+            return False
+        try:
+            max_range = float(radius or 0.0)
+        except (TypeError, ValueError):
+            max_range = 0.0
+        if max_range <= 0.0:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for target_model in list(models or []):
+            if target_model is None or not getattr(target_model, "is_alive", True):
+                continue
+            try:
+                distance = float(distance_between_models_bases_3d(model, target_model))
+            except Exception:
+                continue
+            if distance <= max_range + 1e-6:
+                return True
+        return False
+
     def _warpmeld_phase_key(self, *, game=None) -> str:
         game_obj = self._resolve_game(game=game)
         return self._phase_key_for_game(game_obj)
@@ -964,6 +1007,44 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
                 continue
             return True
         return False
+
+    def changehost_diabolic_savant_channel_bonus(self, model, *, game=None) -> int:
+        if not self.is_changehost_of_deceit():
+            return 0
+        if model is None or not self._model_in_army(model):
+            return 0
+        source_unit = self._attached_unit_root(getattr(model, "parent_unit", None))
+        if source_unit is None or not self._unit_is_on_battlefield(source_unit):
+            return 0
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_diabolic_savant", False)):
+            return 0
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_diabolic_savant_bearer_model_id",
+        ):
+            return 0
+        try:
+            aura_range = float(source_sr.get("enhancement_diabolic_savant_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        try:
+            channel_bonus = int(source_sr.get("enhancement_diabolic_savant_channel_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            channel_bonus = 1
+        if aura_range <= 0.0 or channel_bonus <= 0:
+            return 0
+        for candidate in self._iter_unique_army_roots():
+            if candidate is None or not self._unit_in_army(candidate):
+                continue
+            if not self._unit_is_scintillating_legions(candidate):
+                continue
+            if not self._unit_is_on_battlefield(candidate):
+                continue
+            if self._model_within_range_of_attached_unit(model, candidate, radius=float(aura_range)):
+                return int(channel_bonus)
+        return 0
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
