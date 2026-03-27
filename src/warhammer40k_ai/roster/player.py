@@ -739,6 +739,7 @@ class Player:
                 str(bonus_keyword),
                 int(bonus_range),
                 str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                bool(spec.get("roll_bonus_if_target_within_objective_range", False)),
                 bool(spec.get("roll_bonus_if_source_model_within_vowed_objective", False)),
                 source_model_id,
                 str(spec.get("keyword", "") or "").strip().upper(),
@@ -757,6 +758,7 @@ class Player:
                 str(item.get("roll_bonus_keyword", "") or "").strip().upper(),
                 int(item.get("roll_bonus_range", 0) or 0),
                 str(item.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                int(bool(item.get("roll_bonus_if_target_within_objective_range", False))),
                 int(bool(item.get("roll_bonus_if_source_model_within_vowed_objective", False))),
                 str(item.get("source_model_id", "") or "").strip(),
                 str(item.get("keyword", "") or "").strip().upper(),
@@ -824,6 +826,9 @@ class Player:
                 roll_bonus_value = 0
             roll_bonus_keyword = str(spec.get("roll_bonus_keyword", "") or "").strip().upper()
             roll_bonus_target_keyword = str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper()
+            roll_bonus_if_target_within_objective_range = bool(
+                spec.get("roll_bonus_if_target_within_objective_range", False)
+            )
             try:
                 roll_bonus_range = float(spec.get("roll_bonus_range", 0) or 0)
             except (TypeError, ValueError):
@@ -842,6 +847,11 @@ class Player:
             if roll_bonus_value > 0 and roll_bonus_target_keyword:
                 if self._unit_has_keyword(root, roll_bonus_target_keyword):
                     roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
+            if roll_bonus_value > 0 and roll_bonus_if_target_within_objective_range:
+                within_any_objective = getattr(root, "is_within_any_objective_range", None)
+                if callable(within_any_objective):
+                    if bool(within_any_objective(game_map=getattr(game, "map", None) if game is not None else None)):
+                        roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
             if roll_bonus_value > 0 and roll_bonus_if_source_model_within_vowed_objective:
                 source_model_id = str(spec.get("source_model_id", "") or "").strip()
                 army = self.get_army()

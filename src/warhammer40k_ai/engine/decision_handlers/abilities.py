@@ -1775,9 +1775,6 @@ def _validate_choose_technosorcerous_augmentation(
     if unit is None:
         return ("Technosorcerous Augmentations unit not found.",)
     choice_key = str(choice or "").strip().upper()
-    valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
-    if choice_key not in valid_choices:
-        return ("Technosorcerous Augmentations choice is invalid.",)
     get_army = getattr(unit, "get_parent_army", None)
     army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
     mgr = getattr(army, "necrons_detachments", None) if army is not None else None
@@ -1786,6 +1783,14 @@ def _validate_choose_technosorcerous_augmentation(
         return ("Technosorcerous Augmentations manager not found.",)
     if not bool(unit_ok_fn(unit)):
         return ("Technosorcerous Augmentations requires an eligible CRYPTEK unit in Cryptek Conclave.",)
+    valid_fn = getattr(mgr, "technosorcerous_choice_is_valid", None) if mgr is not None else None
+    if callable(valid_fn):
+        if not bool(valid_fn(unit, choice_key)):
+            return ("Technosorcerous Augmentations choice is invalid.",)
+    else:
+        valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
+        if choice_key not in valid_choices:
+            return ("Technosorcerous Augmentations choice is invalid.",)
     return ()
 
 
@@ -1798,25 +1803,25 @@ def _apply_choose_technosorcerous_augmentation(game: object, request: DecisionRe
         raise RuntimeError("Technosorcerous Augmentations unit not found.")
     choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
     choice_key = str(choice or "").strip().upper()
-    valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
-    if choice_key not in valid_choices:
-        raise RuntimeError("Technosorcerous Augmentations choice is invalid.")
     get_army = getattr(unit, "get_parent_army", None)
     army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
     mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+    valid_fn = getattr(mgr, "technosorcerous_choice_is_valid", None) if mgr is not None else None
+    if callable(valid_fn):
+        if not bool(valid_fn(unit, choice_key)):
+            raise RuntimeError("Technosorcerous Augmentations choice is invalid.")
+    else:
+        valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
+        if choice_key not in valid_choices:
+            raise RuntimeError("Technosorcerous Augmentations choice is invalid.")
     apply_fn = getattr(mgr, "apply_technosorcerous_augmentation_choice", None) if mgr is not None else None
     if not callable(apply_fn):
         raise RuntimeError("Technosorcerous Augmentations manager not found.")
     applied = bool(apply_fn(unit, choice_key, game=game))
     if not applied:
         raise RuntimeError("Technosorcerous Augmentations could not be applied.")
-    label = {
-        "ANTI_INFANTRY_3": "Anti-Infantry 3+",
-        "ANTI_MOUNTED_4": "Anti-Mounted 4+",
-        "ASSAULT": "Assault",
-        "HEAVY": "Heavy",
-        "IGNORES_COVER": "Ignores Cover",
-    }.get(choice_key, choice_key)
+    label_fn = getattr(mgr, "technosorcerous_choice_label", None) if mgr is not None else None
+    label = str(label_fn(choice_key) if callable(label_fn) else choice_key or choice_key)
     player = getattr(army, "player", None) if army is not None else None
     _log_action_for_players(
         game,

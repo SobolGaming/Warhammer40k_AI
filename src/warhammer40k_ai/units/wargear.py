@@ -1793,6 +1793,21 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            range_bonus_fn = (
+                getattr(mgr, "cryptek_conclave_gauntlet_of_compression_range_bonus", None)
+                if mgr is not None
+                else None
+            )
+            if callable(range_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                range_bonus, _source = range_bonus_fn(attacker, self, game=game)
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(unit, "special_rules", None)

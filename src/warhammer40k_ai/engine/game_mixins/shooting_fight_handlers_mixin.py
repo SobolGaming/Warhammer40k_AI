@@ -3053,6 +3053,7 @@ class GameShootingFightHandlersMixin:
             raise RuntimeError("Pinned requires an attacker player.")
         if attacker_player is not self.get_current_player():
             return
+        hit_models_by_target = _kwargs.get("hit_models_by_target")
 
         def _is_enemy_unit(unit) -> bool:
             if unit is None:
@@ -3170,12 +3171,9 @@ class GameShootingFightHandlersMixin:
                     pass
             return False
 
-        unit_specs = attacker_unit.unit_post_shoot_pinned_specs() or []
-        if not unit_specs:
-            return
-
         from ..decision_kinds import DECISION_CHOOSE_QUARRY
 
+        unit_specs = attacker_unit.unit_post_shoot_pinned_specs() or []
         for spec in unit_specs:
             exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
             include_keywords_any = [
@@ -3235,6 +3233,61 @@ class GameShootingFightHandlersMixin:
                     "charge_penalty": int(charge_penalty),
                     "expires_phase": expires_phase,
                     "include_keywords_any": list(include_keywords_any),
+                },
+            )
+            self.request_decision(request)
+
+        try:
+            attacker_army = attacker_unit.get_parent_army()
+        except Exception:
+            attacker_army = None
+        necron_mgr = getattr(attacker_army, "necrons_detachments", None) if attacker_army is not None else None
+        gravitic_fn = (
+            getattr(necron_mgr, "cryptek_conclave_gravitic_bolas_requests", None)
+            if necron_mgr is not None
+            else None
+        )
+        gravitic_requests = (
+            list(
+                gravitic_fn(
+                    attacker_unit,
+                    hits_by_target=hits_by_target,
+                    hit_models_by_target=hit_models_by_target,
+                    game=self,
+                )
+                or []
+            )
+            if callable(gravitic_fn)
+            else []
+        )
+        for request_info in gravitic_requests:
+            candidates = list(request_info.get("candidate_units", []) or [])
+            if not candidates:
+                continue
+            options = [
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+                for cand in candidates
+            ]
+            if not options:
+                continue
+            ability_name = str(request_info.get("ability_name", "") or "Gravitic Bolas").strip() or "Gravitic Bolas"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit to pin.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_pinned",
+                    "ability_name": ability_name,
+                    "move_penalty": int(request_info.get("move_penalty", -2) or -2),
+                    "charge_penalty": int(request_info.get("charge_penalty", -2) or -2),
+                    "expires_phase": str(request_info.get("expires_phase", "") or "COMMAND_PHASE").strip().upper()
+                    or "COMMAND_PHASE",
+                    "include_keywords_any": [],
                 },
             )
             self.request_decision(request)
@@ -6338,42 +6391,19 @@ class GameShootingFightHandlersMixin:
                     continue
                 return
 
+        choice_options_fn = getattr(mgr, "technosorcerous_choice_options", None) if mgr is not None else None
+        choice_options = list(choice_options_fn(root) or []) if callable(choice_options_fn) else []
+        if not choice_options:
+            return
         options = [
             DecisionOption.create(
-                "Anti-Infantry 3+",
+                str(option.get("label", "") or str(option.get("choice", "") or "Choice")),
                 payload={
-                    "choice": "ANTI_INFANTRY_3",
-                    "summary": "Ranged weapons gain [ANTI-INFANTRY 3+] until end of phase.",
+                    "choice": str(option.get("choice", "") or ""),
+                    "summary": str(option.get("summary", "") or ""),
                 },
-            ),
-            DecisionOption.create(
-                "Anti-Mounted 4+",
-                payload={
-                    "choice": "ANTI_MOUNTED_4",
-                    "summary": "Ranged weapons gain [ANTI-MOUNTED 4+] until end of phase.",
-                },
-            ),
-            DecisionOption.create(
-                "Assault",
-                payload={
-                    "choice": "ASSAULT",
-                    "summary": "Ranged weapons gain [ASSAULT] until end of phase.",
-                },
-            ),
-            DecisionOption.create(
-                "Heavy",
-                payload={
-                    "choice": "HEAVY",
-                    "summary": "Ranged weapons gain [HEAVY] until end of phase.",
-                },
-            ),
-            DecisionOption.create(
-                "Ignores Cover",
-                payload={
-                    "choice": "IGNORES_COVER",
-                    "summary": "Ranged weapons gain [IGNORES COVER] until end of phase.",
-                },
-            ),
+            )
+            for option in choice_options
         ]
         req = DecisionRequest.create(
             DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,

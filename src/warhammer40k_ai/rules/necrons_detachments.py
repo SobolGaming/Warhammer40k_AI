@@ -46,13 +46,54 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         "transcendent c tan": 25,
     }
     _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
-    _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
-        "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
-        "ANTI_MOUNTED_4": "ANTI-MOUNTED 4+",
-        "ASSAULT": "ASSAULT",
-        "HEAVY": "HEAVY",
-        "IGNORES_COVER": "IGNORES COVER",
+    _TECHNOSORCEROUS_CHOICE_DATA = {
+        "ANTI_INFANTRY_3": {
+            "keyword": "ANTI-INFANTRY 3+",
+            "label": "Anti-Infantry 3+",
+            "summary": "Ranged weapons gain [ANTI-INFANTRY 3+] until end of phase.",
+        },
+        "ANTI_MOUNTED_4": {
+            "keyword": "ANTI-MOUNTED 4+",
+            "label": "Anti-Mounted 4+",
+            "summary": "Ranged weapons gain [ANTI-MOUNTED 4+] until end of phase.",
+        },
+        "ASSAULT": {
+            "keyword": "ASSAULT",
+            "label": "Assault",
+            "summary": "Ranged weapons gain [ASSAULT] until end of phase.",
+        },
+        "HEAVY": {
+            "keyword": "HEAVY",
+            "label": "Heavy",
+            "summary": "Ranged weapons gain [HEAVY] until end of phase.",
+        },
+        "IGNORES_COVER": {
+            "keyword": "IGNORES COVER",
+            "label": "Ignores Cover",
+            "summary": "Ranged weapons gain [IGNORES COVER] until end of phase.",
+        },
+        "ANTI_MONSTER_5": {
+            "keyword": "ANTI-MONSTER 5+",
+            "label": "Anti-Monster 5+",
+            "summary": "Ranged weapons gain [ANTI-MONSTER 5+] until end of phase.",
+        },
+        "ANTI_VEHICLE_5": {
+            "keyword": "ANTI-VEHICLE 5+",
+            "label": "Anti-Vehicle 5+",
+            "summary": "Ranged weapons gain [ANTI-VEHICLE 5+] until end of phase.",
+        },
     }
+    _TECHNOSORCEROUS_BASE_CHOICE_ORDER = (
+        "ANTI_INFANTRY_3",
+        "ANTI_MOUNTED_4",
+        "ASSAULT",
+        "HEAVY",
+        "IGNORES_COVER",
+    )
+    _TECHNOSORCEROUS_ATOMIC_EXTRA_CHOICE_ORDER = (
+        "ANTI_MONSTER_5",
+        "ANTI_VEHICLE_5",
+    )
 
     _COMMAND_PHASE_SELECT_FRIENDLY_RE = re.compile(
         r"in your command phase, select one friendly (?P<target>.+?) unit(?:,|\s)*"
@@ -316,6 +357,29 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         attached_to = getattr(member, "attached_to", None)
         return self._unit_root(attached_to) is root
 
+    def _attached_members_with_active_enhancement(
+        self,
+        unit,
+        flag_key: str,
+        *,
+        require_attached_member_to_lead_root: bool = False,
+    ) -> list[tuple[object, dict]]:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        out: list[tuple[object, dict]] = []
+        for member, sr in self._attached_member_special_rules_with_flag(root, flag_key):
+            if not self._enhancement_bearer_is_alive_for_member(member, sr):
+                continue
+            if (
+                member is not root
+                and require_attached_member_to_lead_root
+                and not self._member_is_currently_leading_root(member, root)
+            ):
+                continue
+            out.append((member, sr))
+        return out
+
     def technosorcerous_unit_is_eligible(self, unit) -> bool:
         if not self.is_cryptek_conclave():
             return False
@@ -328,7 +392,72 @@ class NecronsDetachmentManager(DetachmentManagerBase):
 
     def technosorcerous_choice_keyword(self, choice_key: str) -> str:
         key = str(choice_key or "").strip().upper()
-        return str(self._TECHNOSORCEROUS_CHOICE_TO_KEYWORD.get(key, "") or "")
+        return str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("keyword", "") or "")
+
+    def technosorcerous_choice_label(self, choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        label = str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("label", "") or "").strip()
+        return label or key
+
+    def technosorcerous_choice_summary(self, choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        summary = str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("summary", "") or "").strip()
+        if summary:
+            return summary
+        keyword = self.technosorcerous_choice_keyword(key)
+        if keyword:
+            return f"Ranged weapons gain [{keyword}] until end of phase."
+        return ""
+
+    def _cryptek_conclave_atomic_disintegrators_extra_choice_keys(self, unit) -> tuple[str, ...]:
+        if not self.is_cryptek_conclave():
+            return ()
+        root = self._unit_root(unit)
+        if root is None or not self.technosorcerous_unit_is_eligible(root):
+            return ()
+        configured: set[str] = set()
+        for _member, sr in self._attached_members_with_active_enhancement(
+            root,
+            "enhancement_atomic_disintegrators",
+            require_attached_member_to_lead_root=True,
+        ):
+            for choice_key in list(sr.get("enhancement_atomic_disintegrators_extra_choice_keys", []) or []):
+                key = str(choice_key or "").strip().upper()
+                if key:
+                    configured.add(key)
+        return tuple(
+            key
+            for key in self._TECHNOSORCEROUS_ATOMIC_EXTRA_CHOICE_ORDER
+            if key in configured and key in self._TECHNOSORCEROUS_CHOICE_DATA
+        )
+
+    def technosorcerous_available_choice_keys(self, unit) -> tuple[str, ...]:
+        if not self.technosorcerous_unit_is_eligible(unit):
+            return ()
+        choices = list(self._TECHNOSORCEROUS_BASE_CHOICE_ORDER)
+        extras = self._cryptek_conclave_atomic_disintegrators_extra_choice_keys(unit)
+        for choice_key in extras:
+            if choice_key not in choices:
+                choices.append(choice_key)
+        return tuple(choices)
+
+    def technosorcerous_choice_is_valid(self, unit, choice_key: str) -> bool:
+        key = str(choice_key or "").strip().upper()
+        if not key:
+            return False
+        return key in set(self.technosorcerous_available_choice_keys(unit))
+
+    def technosorcerous_choice_options(self, unit) -> list[dict]:
+        options: list[dict] = []
+        for choice_key in self.technosorcerous_available_choice_keys(unit):
+            options.append(
+                {
+                    "choice": choice_key,
+                    "label": self.technosorcerous_choice_label(choice_key),
+                    "summary": self.technosorcerous_choice_summary(choice_key),
+                }
+            )
+        return options
 
     @staticmethod
     def _current_phase_name(game) -> str:
@@ -1627,6 +1756,139 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                     }
                 )
         return outcomes
+
+    def cryptek_conclave_gauntlet_of_compression_range_bonus(
+        self,
+        attacker_model,
+        weapon_profile,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        del game
+        if not self.is_cryptek_conclave():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return 0, ""
+
+        for _member, sr in self._attached_members_with_active_enhancement(
+            root,
+            "enhancement_gauntlet_of_compression",
+            require_attached_member_to_lead_root=True,
+        ):
+            try:
+                range_bonus = int(sr.get("enhancement_gauntlet_of_compression_range_bonus", 6) or 6)
+            except (TypeError, ValueError):
+                range_bonus = 6
+            if range_bonus <= 0:
+                continue
+            source = (
+                str(sr.get("enhancement_gauntlet_of_compression_source", "") or "Gauntlet of Compression").strip()
+                or "Gauntlet of Compression"
+            )
+            return int(range_bonus), f"{source} +{int(range_bonus)}\""
+        return 0, ""
+
+    def cryptek_conclave_gravitic_bolas_requests(
+        self,
+        attacker_unit,
+        *,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        game=None,
+    ) -> list[dict]:
+        if not self.is_cryptek_conclave():
+            return []
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return []
+        if game is None:
+            return []
+
+        def _target_root_for_key(target_unit):
+            target_root = self._unit_root(target_unit)
+            return target_root if target_root is not None else target_unit
+
+        def _target_hit_by_bearer(target_unit, bearer_model) -> bool:
+            if bearer_model is None or target_unit is None:
+                return False
+            if isinstance(hit_models_by_target, dict):
+                for candidate, hit_models in list(hit_models_by_target.items()):
+                    if _target_root_for_key(candidate) is not _target_root_for_key(target_unit):
+                        continue
+                    models = list(hit_models or [])
+                    return bearer_model in models
+                return False
+            unit_models = self._iter_unit_models(root)
+            if len(unit_models) == 1 and unit_models[0] is bearer_model:
+                try:
+                    return int((hits_by_target or {}).get(target_unit, 0) or 0) > 0
+                except (AttributeError, TypeError, ValueError):
+                    return False
+            return False
+
+        requests: list[dict] = []
+        for member, sr in self._attached_members_with_active_enhancement(
+            root,
+            "enhancement_gravitic_bolas",
+            require_attached_member_to_lead_root=True,
+        ):
+            bearer_model = self._enhancement_bearer_model_for_member(member, sr)
+            if not self._model_is_alive(bearer_model):
+                continue
+            exclude_keywords_any = [
+                str(value or "").strip().upper()
+                for value in list(sr.get("enhancement_gravitic_bolas_exclude_keywords_any", []) or [])
+                if str(value or "").strip()
+            ]
+            candidates: list = []
+            for target_unit, hits in list((hits_by_target or {}).items()):
+                if target_unit is None:
+                    continue
+                try:
+                    if int(hits or 0) <= 0:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                target_root = self._unit_root(target_unit)
+                if target_root is None or self._unit_belongs_to_army(target_root) or not self._unit_is_active(target_root):
+                    continue
+                if exclude_keywords_any and any(self._unit_has_keyword(target_root, kw) for kw in exclude_keywords_any):
+                    continue
+                if not _target_hit_by_bearer(target_root, bearer_model):
+                    continue
+                candidates.append(target_root)
+            if not candidates:
+                continue
+            candidates = sorted(
+                {cand for cand in candidates},
+                key=lambda unit_obj: str(get_entity_id(unit_obj) or ""),
+            )
+            try:
+                move_penalty = int(sr.get("enhancement_gravitic_bolas_move_penalty", -2) or -2)
+            except (TypeError, ValueError):
+                move_penalty = -2
+            try:
+                charge_penalty = int(sr.get("enhancement_gravitic_bolas_charge_penalty", -2) or -2)
+            except (TypeError, ValueError):
+                charge_penalty = -2
+            requests.append(
+                {
+                    "ability_name": str(sr.get("enhancement_gravitic_bolas_source", "") or "Gravitic Bolas").strip()
+                    or "Gravitic Bolas",
+                    "expires_phase": str(sr.get("enhancement_gravitic_bolas_expires_phase", "") or "COMMAND_PHASE").strip().upper()
+                    or "COMMAND_PHASE",
+                    "move_penalty": int(move_penalty),
+                    "charge_penalty": int(charge_penalty),
+                    "candidate_units": list(candidates),
+                }
+            )
+        return requests
 
     def relentless_onslaught_assault_applies(self, unit) -> bool:
         if not self.relentless_onslaught_applies(unit):

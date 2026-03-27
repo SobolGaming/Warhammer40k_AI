@@ -1853,6 +1853,9 @@ class Enhancement:
         is_canoptek_court = bool(
             ne_mgr and getattr(ne_mgr, "is_canoptek_court", lambda: False)()
         )
+        is_cryptek_conclave = bool(
+            ne_mgr and getattr(ne_mgr, "is_cryptek_conclave", lambda: False)()
+        )
         try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
@@ -2267,6 +2270,135 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_metalodermal_tesla_weave_bearer_model_id"] = bearer_id
+
+        if name == "quantum abacus" or enh_id == "000010664002":
+            if not is_cryptek_conclave:
+                return
+            unit.special_rules["enhancement_quantum_abacus"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 4) or 4, default=4)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            roll_bonus = _coerce_int(params.get("roll_bonus", 1) or 1, default=1)
+            source_name = "Quantum Abacus"
+            unit.special_rules["enhancement_quantum_abacus_source"] = source_name
+            specs = list(unit.special_rules.get("stratagem_target_cp_refund_specs", []) or [])
+            spec = {
+                "roll_min": int(max(2, roll_min)),
+                "cp_gain": int(max(1, cp_gain)),
+                "name": source_name,
+                "description": str(getattr(self, "description", "") or ""),
+            }
+            if roll_bonus > 0 and bool(params.get("roll_bonus_if_target_within_objective_range", True)):
+                spec["roll_bonus"] = int(roll_bonus)
+                spec["roll_bonus_if_target_within_objective_range"] = True
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            dedupe_key = (
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+                str(spec.get("name", "") or "").strip().lower(),
+                int(spec.get("roll_bonus", 0) or 0),
+                bool(spec.get("roll_bonus_if_target_within_objective_range", False)),
+                str(spec.get("source_model_id", "") or "").strip(),
+            )
+            seen_spec_keys = set()
+            deduped_specs: list[dict] = []
+            for existing in specs:
+                key = (
+                    int(existing.get("roll_min", 0) or 0),
+                    int(existing.get("cp_gain", 0) or 0),
+                    str(existing.get("name", "") or "").strip().lower(),
+                    int(existing.get("roll_bonus", 0) or 0),
+                    bool(existing.get("roll_bonus_if_target_within_objective_range", False)),
+                    str(existing.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing)
+            if dedupe_key not in seen_spec_keys:
+                deduped_specs.append(spec)
+            unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_quantum_abacus_bearer_model_id"] = bearer_id
+
+        if name == "atomic disintegrators" or enh_id == "000010664003":
+            if not is_cryptek_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_atomic_disintegrators"] = True
+            unit.special_rules["enhancement_atomic_disintegrators_source"] = (
+                str(getattr(desc, "name", "") or "Atomic Disintegrators").strip() or "Atomic Disintegrators"
+            )
+            extra_choice_keys = [
+                str(value or "").strip().upper()
+                for value in list(params.get("extra_choice_keys", ["ANTI_MONSTER_5", "ANTI_VEHICLE_5"]) or [])
+                if str(value or "").strip()
+            ]
+            if not extra_choice_keys:
+                extra_choice_keys = ["ANTI_MONSTER_5", "ANTI_VEHICLE_5"]
+            unit.special_rules["enhancement_atomic_disintegrators_extra_choice_keys"] = list(extra_choice_keys)
+            unit.special_rules["enhancement_atomic_disintegrators_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_atomic_disintegrators_bearer_model_id"] = bearer_id
+
+        if name == "gauntlet of compression" or enh_id == "000010664004":
+            if not is_cryptek_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_gauntlet_of_compression"] = True
+            unit.special_rules["enhancement_gauntlet_of_compression_source"] = (
+                str(getattr(desc, "name", "") or "Gauntlet of Compression").strip() or "Gauntlet of Compression"
+            )
+            unit.special_rules["enhancement_gauntlet_of_compression_range_bonus"] = int(
+                max(0, _coerce_int(params.get("range_bonus", 6) or 6, default=6))
+            )
+            unit.special_rules["enhancement_gauntlet_of_compression_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gauntlet_of_compression_bearer_model_id"] = bearer_id
+
+        if name == "gravitic bolas" or enh_id == "000010664005":
+            if not is_cryptek_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_gravitic_bolas"] = True
+            unit.special_rules["enhancement_gravitic_bolas_source"] = (
+                str(getattr(desc, "name", "") or "Gravitic Bolas").strip() or "Gravitic Bolas"
+            )
+            unit.special_rules["enhancement_gravitic_bolas_move_penalty"] = int(
+                _coerce_int(params.get("move_penalty", -2) or -2, default=-2)
+            )
+            unit.special_rules["enhancement_gravitic_bolas_charge_penalty"] = int(
+                _coerce_int(params.get("charge_penalty", -2) or -2, default=-2)
+            )
+            unit.special_rules["enhancement_gravitic_bolas_expires_phase"] = (
+                str(params.get("expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper() or "COMMAND_PHASE"
+            )
+            exclude_keywords_any = [
+                str(value or "").strip().upper()
+                for value in list(params.get("exclude_keywords_any", ["TITANIC"]) or [])
+                if str(value or "").strip()
+            ]
+            if not exclude_keywords_any:
+                exclude_keywords_any = ["TITANIC"]
+            unit.special_rules["enhancement_gravitic_bolas_exclude_keywords_any"] = list(exclude_keywords_any)
+            unit.special_rules["enhancement_gravitic_bolas_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gravitic_bolas_bearer_model_id"] = bearer_id
 
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:

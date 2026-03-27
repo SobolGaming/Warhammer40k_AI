@@ -7155,6 +7155,67 @@ _NECRONS_CANOPTEK_COURT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_CANOPTEK_COURT_DESCRIPTORS.values()
 }
 
+_NECRONS_CRYPTEK_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010664002": EnhancementToolDescriptor(
+        enhancement_id="000010664002",
+        name="Quantum Abacus",
+        timing="when_bearer_unit_targeted_by_stratagem",
+        target="bearer_unit",
+        duration="instant_repeatable",
+        effect="targeted_stratagem_cp_refund_with_objective_bonus",
+        effect_params={
+            "roll_min": 4,
+            "cp_gain": 1,
+            "roll_bonus": 1,
+            "roll_bonus_if_target_within_objective_range": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010664003": EnhancementToolDescriptor(
+        enhancement_id="000010664003",
+        name="Atomic Disintegrators",
+        timing="selected_to_shoot",
+        target="bearer_unit",
+        duration="while_selecting_technosorcerous_augmentation",
+        effect="extend_technosorcerous_augmentation_choices",
+        effect_params={
+            "extra_choice_keys": ["ANTI_MONSTER_5", "ANTI_VEHICLE_5"],
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010664004": EnhancementToolDescriptor(
+        enhancement_id="000010664004",
+        name="Gauntlet of Compression",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="bearer_unit_ranged_range_bonus",
+        effect_params={
+            "range_bonus": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010664005": EnhancementToolDescriptor(
+        enhancement_id="000010664005",
+        name="Gravitic Bolas",
+        timing="after_bearer_has_shot",
+        target="enemy_unit_hit_by_bearer_ranged_attacks",
+        duration="until_start_of_next_turn",
+        effect="post_shoot_select_hit_enemy_unit_to_pin",
+        effect_params={
+            "move_penalty": -2,
+            "charge_penalty": -2,
+            "expires_phase": "COMMAND_PHASE",
+            "exclude_keywords_any": ["TITANIC"],
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_NECRONS_CRYPTEK_CONCLAVE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_CRYPTEK_CONCLAVE_DESCRIPTORS.values()
+}
+
 _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009749002": EnhancementToolDescriptor(
         enhancement_id="000009749002",
@@ -8456,6 +8517,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_CANOPTEK_COURT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_CRYPTEK_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8646,6 +8710,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_ANNIHILATION_LEGION_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_CANOPTEK_COURT_BY_NAME.get(key)
+        or _NECRONS_CRYPTEK_CONCLAVE_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
         or _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME.get(key)
