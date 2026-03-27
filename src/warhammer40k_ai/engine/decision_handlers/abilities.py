@@ -3627,6 +3627,61 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                     return ("Selected-to-shoot target must be visible to the source model.",)
         return ()
+    if ability == "prototype_weapon_system":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Prototype Weapon System source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Prototype Weapon System source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Prototype Weapon System source unit was not found.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Prototype Weapon System source model does not belong to the source unit.",)
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and phase_name != current_phase:
+            return ("Prototype Weapon System choice can only be resolved in the queued phase.",)
+        if is_skip_choice(request, result):
+            return ("Prototype Weapon System requires a keyword selection.",)
+        choice_key = str(payload.get("choice_key", "") or ctx.get("choice_key", "") or "").strip().upper()
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return ("Prototype Weapon System choice must be LETHAL_HITS or SUSTAINED_HITS_1.",)
+        allowed_choice_keys = {
+            str(value or "").strip().upper()
+            for value in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(value or "").strip()
+        }
+        if allowed_choice_keys and choice_key not in allowed_choice_keys:
+            return ("Selected Prototype Weapon System mode is not an eligible option.",)
+        weapon_names = [
+            str(value or "").strip()
+            for value in list(payload.get("weapon_names", ctx.get("weapon_names", [])) or [])
+            if str(value or "").strip()
+        ]
+        if not weapon_names:
+            return ("Prototype Weapon System requires bearer ranged weapons.",)
+        return ()
     if ability == "labyrinthine_cunning":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -10606,6 +10661,119 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {tname} marked ({keyword_text} for ranged attacks from {getattr(source_root, 'name', 'Unit')}).",
         )
         return {"target_unit_id": get_entity_id(target_root), "keywords": list(keywords)}
+    if ability == "prototype_weapon_system":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Prototype Weapon System").strip() or "Prototype Weapon System"
+        ability_key = str(
+            payload.get("ability_key") or ctx.get("ability_key") or "prototype_weapon_system"
+        ).strip().lower() or "prototype_weapon_system"
+        choice_key = str(payload.get("choice_key") or ctx.get("choice_key") or "").strip().upper()
+        keyword_lookup = {
+            "LETHAL_HITS": "LETHAL HITS",
+            "SUSTAINED_HITS_1": "SUSTAINED HITS 1",
+        }
+        keyword_name = keyword_lookup.get(choice_key)
+        if not keyword_name:
+            return None
+        weapon_names = [
+            str(value or "").strip()
+            for value in list(payload.get("weapon_names", ctx.get("weapon_names", [])) or [])
+            if str(value or "").strip()
+        ]
+        if not weapon_names:
+            return None
+        source_model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+        if not source_model_id:
+            return None
+        effect_keys: list[str] = []
+        temporary_effects = getattr(model, "_temporary_effects", None)
+        if not isinstance(temporary_effects, dict):
+            model._temporary_effects = {}
+            temporary_effects = model._temporary_effects
+        for weapon_name in weapon_names:
+            weapon_key = re.sub(r"[^a-z0-9]+", "_", str(weapon_name or "").strip().lower()).strip("_")
+            if not weapon_key:
+                continue
+            effect_key = f"{ability_key}:{source_model_id}:{weapon_key}:{choice_key.lower()}"
+            model.set_temporary_weapon_keyword_bonuses(
+                key=effect_key,
+                weapon_name=weapon_name,
+                keywords=[keyword_name],
+                source=ability_name,
+                expires_phase="",
+                attack_type="ranged",
+            )
+            effect_keys.append(effect_key)
+        if not effect_keys:
+            return None
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        existing_effects = [
+            entry
+            for entry in list(source_sr.get("enhancement_prototype_weapon_system_active_effects", []) or [])
+            if isinstance(entry, dict)
+        ]
+        filtered_effects: list[dict] = []
+        for entry in existing_effects:
+            if str(entry.get("model_id", "") or "") != source_model_id:
+                filtered_effects.append(entry)
+                continue
+            if not isinstance(temporary_effects, dict):
+                continue
+            for effect_key in list(entry.get("effect_keys", []) or []):
+                effect_key = str(effect_key or "").strip().lower()
+                if effect_key:
+                    temporary_effects.pop(effect_key, None)
+        filtered_effects.append(
+            {
+                "model_id": source_model_id,
+                "effect_keys": list(effect_keys),
+                "source": ability_name,
+                "choice_key": choice_key,
+            }
+        )
+        source_sr["enhancement_prototype_weapon_system_active_effects"] = filtered_effects
+        source_root.special_rules = source_sr
+        keyword_text = str(keyword_name or "").strip()
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(model, 'name', 'Model')} selected {keyword_text}.",
+        )
+        return {
+            "unit_id": get_entity_id(source_root),
+            "model_id": source_model_id,
+            "choice_key": choice_key,
+            "keywords": [keyword_name],
+            "weapon_names": list(weapon_names),
+            "source": ability_name,
+        }
     if ability == "prescient_redeployment":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

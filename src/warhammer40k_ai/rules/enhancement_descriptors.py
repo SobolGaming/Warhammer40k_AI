@@ -1480,6 +1480,49 @@ _MONTKA_BY_NAME = {
 }
 
 _RETALIATION_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008815002": EnhancementToolDescriptor(
+        enhancement_id="000008815002",
+        name="Internal Grenade Racks",
+        timing="end_of_normal_move",
+        target="enemy_unit_moved_over_by_bearer",
+        duration="instant",
+        effect="bearer_gains_grenades_and_move_over_mortal_wounds",
+        effect_params={
+            "add_keywords": ["GRENADES"],
+            "dice": 6,
+            "threshold": 4,
+            "mortal_per_success": 1,
+            "move_types": ["move"],
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000008815003": EnhancementToolDescriptor(
+        enhancement_id="000008815003",
+        name="Prototype Weapon System",
+        timing="selected_to_shoot",
+        target="bearer_ranged_weapons",
+        duration="until_attacks_resolved",
+        effect="choose_bearer_ranged_weapon_keyword_mode",
+        effect_params={
+            "ability_key": "prototype_weapon_system",
+            "keyword_options": ["LETHAL HITS", "SUSTAINED HITS 1"],
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008815004": EnhancementToolDescriptor(
+        enhancement_id="000008815004",
+        name="Puretide Engram Neurochip",
+        timing="targeted_by_stratagem",
+        target="bearer_unit",
+        duration="instant",
+        effect="targeted_stratagem_cp_refund",
+        effect_params={
+            "roll_min": 4,
+            "cp_gain": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
     "000008815005": EnhancementToolDescriptor(
         enhancement_id="000008815005",
         name="Starflare Ignition System",

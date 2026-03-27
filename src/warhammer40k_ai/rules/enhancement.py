@@ -2180,6 +2180,118 @@ class Enhancement:
             if isinstance(cache, dict):
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
 
+        if name == "internal grenade racks" or enh_id == "000008815002":
+            if not is_retaliation_cadre:
+                return
+            unit.special_rules["enhancement_internal_grenade_racks"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_internal_grenade_racks_source"] = "Internal Grenade Racks"
+            unit.special_rules["enhancement_internal_grenade_racks_dice"] = _coerce_int(
+                params.get("dice", 6) or 6,
+                default=6,
+            )
+            unit.special_rules["enhancement_internal_grenade_racks_threshold"] = _coerce_int(
+                params.get("threshold", 4) or 4,
+                default=4,
+            )
+            unit.special_rules["enhancement_internal_grenade_racks_mortal_per_success"] = _coerce_int(
+                params.get("mortal_per_success", 1) or 1,
+                default=1,
+            )
+            move_types = sorted(
+                {
+                    str(move_type or "").strip().lower()
+                    for move_type in list(params.get("move_types", ["move"]) or ["move"])
+                    if str(move_type or "").strip()
+                }
+                or {"move"}
+            )
+            unit.special_rules["enhancement_internal_grenade_racks_move_types"] = list(move_types)
+            unit.special_rules["enhancement_internal_grenade_racks_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_internal_grenade_racks_optional"] = bool(params.get("optional", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_internal_grenade_racks_bearer_model_id"] = bearer_id
+            if bearer is not None:
+                keywords = list(getattr(bearer, "keywords", []) or [])
+                if "GRENADES" not in {str(keyword or "").strip().upper() for keyword in keywords}:
+                    keywords.append("GRENADES")
+                    bearer.keywords = keywords
+
+        if name == "prototype weapon system" or enh_id == "000008815003":
+            if not is_retaliation_cadre:
+                return
+            unit.special_rules["enhancement_prototype_weapon_system"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_prototype_weapon_system_source"] = "Prototype Weapon System"
+            ability_key = str(params.get("ability_key", "prototype_weapon_system") or "prototype_weapon_system").strip().lower()
+            if not ability_key:
+                ability_key = "prototype_weapon_system"
+            unit.special_rules["enhancement_prototype_weapon_system_ability_key"] = ability_key
+            keyword_options = [
+                str(keyword or "").strip().upper()
+                for keyword in list(params.get("keyword_options", ["LETHAL HITS", "SUSTAINED HITS 1"]) or [])
+                if str(keyword or "").strip()
+            ]
+            if not keyword_options:
+                keyword_options = ["LETHAL HITS", "SUSTAINED HITS 1"]
+            unit.special_rules["enhancement_prototype_weapon_system_keyword_options"] = list(keyword_options)
+            unit.special_rules["enhancement_prototype_weapon_system_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_prototype_weapon_system_bearer_model_id"] = bearer_id
+
+        if name == "puretide engram neurochip" or enh_id == "000008815004":
+            if not is_retaliation_cadre:
+                return
+            unit.special_rules["enhancement_puretide_engram_neurochip"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 4) or 4, default=4)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            source_name = "Puretide Engram Neurochip"
+            unit.special_rules["enhancement_puretide_engram_neurochip_source"] = source_name
+            specs = list(unit.special_rules.get("stratagem_target_cp_refund_specs", []) or [])
+            spec = {
+                "roll_min": int(max(2, roll_min)),
+                "cp_gain": int(max(1, cp_gain)),
+                "name": source_name,
+                "description": str(getattr(self, "description", "") or ""),
+            }
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            dedupe_key = (
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+                str(spec.get("name", "") or "").strip().lower(),
+                str(spec.get("source_model_id", "") or "").strip(),
+            )
+            seen_spec_keys = set()
+            deduped_specs: list[dict] = []
+            for existing in specs:
+                key = (
+                    int(existing.get("roll_min", 0) or 0),
+                    int(existing.get("cp_gain", 0) or 0),
+                    str(existing.get("name", "") or "").strip().lower(),
+                    str(existing.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing)
+            if dedupe_key not in seen_spec_keys:
+                deduped_specs.append(spec)
+            unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_puretide_engram_neurochip_bearer_model_id"] = bearer_id
+
         if name == "radial suffusion" or enh_id == "000008385002":
             if not is_rad_zone_corps:
                 return

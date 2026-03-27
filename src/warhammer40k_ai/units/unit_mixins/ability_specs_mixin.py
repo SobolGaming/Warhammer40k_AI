@@ -1240,6 +1240,84 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_prototype_weapon_system_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Enhancement rule: when selected to shoot, the bearer chooses one ranged weapon keyword mode.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: deterministic selection key
+            - keyword_options: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_prototype_weapon_system:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, tuple[str, ...]]] = set()
+        model_id = str(get_entity_id(model) or "").strip()
+        local_model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+
+        sr_sources: list[dict] = []
+        self_sr = getattr(self, "special_rules", None)
+        if isinstance(self_sr, dict):
+            sr_sources.append(self_sr)
+        root_sr = getattr(root, "special_rules", None)
+        if isinstance(root_sr, dict) and root_sr is not self_sr:
+            sr_sources.append(root_sr)
+
+        for sr in sr_sources:
+            if not bool(sr.get("enhancement_prototype_weapon_system", False)):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_prototype_weapon_system_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            if bearer_id and bearer_id not in {model_id, local_model_id}:
+                continue
+            source = str(
+                sr.get("enhancement_prototype_weapon_system_source", "") or "Prototype Weapon System"
+            ).strip() or "Prototype Weapon System"
+            ability_key = str(
+                sr.get("enhancement_prototype_weapon_system_ability_key", "") or "prototype_weapon_system"
+            ).strip().lower() or "prototype_weapon_system"
+            keyword_options = [
+                str(keyword or "").strip().upper()
+                for keyword in list(
+                    sr.get(
+                        "enhancement_prototype_weapon_system_keyword_options",
+                        ["LETHAL HITS", "SUSTAINED HITS 1"],
+                    )
+                    or []
+                )
+                if str(keyword or "").strip()
+            ]
+            if not keyword_options:
+                keyword_options = ["LETHAL HITS", "SUSTAINED HITS 1"]
+            dedupe_key = (source.lower(), ability_key, tuple(keyword_options))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "keyword_options": list(keyword_options),
+                    "requires_bearer_alive": bool(
+                        sr.get("enhancement_prototype_weapon_system_requires_bearer_alive", True)
+                    ),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_ammo_runt_specs(self) -> List[dict]:
         """
         Unit-level rule: when selected to shoot, can gain [LETHAL HITS] for ranged weapons.
@@ -13707,6 +13785,65 @@ class AbilitySpecsMixin:
                     "move_types": sorted(move_types),
                     "exclude_monster_vehicle": bool(exclude_mv),
                     "fly_bonus": int(fly_bonus or 0),
+                }
+            )
+
+        model_id = str(get_entity_id(model) or "").strip()
+        local_model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr_sources: list[dict] = []
+        self_sr = getattr(self, "special_rules", None)
+        if isinstance(self_sr, dict):
+            sr_sources.append(self_sr)
+        root_sr = getattr(root, "special_rules", None)
+        if isinstance(root_sr, dict) and root_sr is not self_sr:
+            sr_sources.append(root_sr)
+        for sr in sr_sources:
+            if not bool(sr.get("enhancement_internal_grenade_racks", False)):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_internal_grenade_racks_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            if bearer_id and bearer_id not in {model_id, local_model_id}:
+                continue
+            source = str(sr.get("enhancement_internal_grenade_racks_source", "") or "Internal Grenade Racks").strip()
+            if not source:
+                source = "Internal Grenade Racks"
+            move_types = sorted(
+                {
+                    str(move_type or "").strip().lower()
+                    for move_type in list(sr.get("enhancement_internal_grenade_racks_move_types", ["move"]) or [])
+                    if str(move_type or "").strip()
+                }
+                or {"move"}
+            )
+            dice_count = int(max(1, int(sr.get("enhancement_internal_grenade_racks_dice", 6) or 6)))
+            threshold = int(max(2, int(sr.get("enhancement_internal_grenade_racks_threshold", 4) or 4)))
+            mortal_per_success = int(max(1, int(sr.get("enhancement_internal_grenade_racks_mortal_per_success", 1) or 1)))
+            key = (
+                "enhancement_internal_grenade_racks",
+                source.lower(),
+                int(dice_count),
+                int(threshold),
+                int(mortal_per_success),
+                tuple(move_types),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "dice": int(dice_count),
+                    "threshold": int(threshold),
+                    "mortal_per_success": int(mortal_per_success),
+                    "mortal_per_success_die": "",
+                    "move_types": list(move_types),
+                    "exclude_monster_vehicle": False,
+                    "fly_bonus": 0,
+                    "optional": bool(sr.get("enhancement_internal_grenade_racks_optional", True)),
                 }
             )
 

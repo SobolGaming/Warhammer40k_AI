@@ -6678,6 +6678,184 @@ class GameShootingFightHandlersMixin:
             self.request_decision(request)
             return
 
+    def _on_shooting_targets_selected_prototype_weapon_system(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        root_fn = getattr(attacking_unit, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else attacking_unit
+        if root is None or not root.is_alive():
+            return
+        get_army = getattr(root, "get_parent_army", None)
+        army = get_army() if callable(get_army) else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "prototype_weapon_system":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_models.add(model_id)
+
+        models_fn = getattr(root, "get_attached_unit_models", None)
+        models = list(models_fn() or []) if callable(models_fn) else list(getattr(root, "models", []) or [])
+
+        def _model_sort_key(model) -> str:
+            return str(get_entity_id(model) or "")
+
+        choice_key_map = {
+            "LETHAL HITS": "LETHAL_HITS",
+            "SUSTAINED HITS 1": "SUSTAINED_HITS_1",
+        }
+
+        for model in sorted(models, key=_model_sort_key):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if not model_id or model_id in pending_models:
+                continue
+            model_unit = getattr(model, "parent_unit", None) or root
+            spec_fn = getattr(model_unit, "model_prototype_weapon_system_specs", None)
+            specs = list(spec_fn(model) or []) if callable(spec_fn) else []
+            if not specs:
+                continue
+            spec = dict(specs[0] or {})
+            if bool(spec.get("requires_bearer_alive", True)) and not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            ranged_weapon_names: list[str] = []
+            seen_weapon_names: set[str] = set()
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                normalized_name = Unit._norm_wargear_name(weapon_name)
+                if not normalized_name or normalized_name in seen_weapon_names:
+                    continue
+                seen_weapon_names.add(normalized_name)
+                ranged_weapon_names.append(weapon_name)
+            if not ranged_weapon_names:
+                continue
+            ranged_weapon_names = sorted(ranged_weapon_names, key=lambda name: Unit._norm_wargear_name(name))
+            allowed_choice_keys = [
+                choice_key_map[keyword]
+                for keyword in list(spec.get("keyword_options", []) or [])
+                if choice_key_map.get(str(keyword or "").strip().upper())
+            ]
+            if not allowed_choice_keys:
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            source_unit_id = str(get_entity_id(model_unit) or unit_id)
+            if not unit_id:
+                continue
+            ability_name = str(spec.get("source", "") or "Prototype Weapon System").strip() or "Prototype Weapon System"
+            ability_key = str(spec.get("ability_key", "") or "prototype_weapon_system").strip().lower() or "prototype_weapon_system"
+            options = []
+            for choice_key in allowed_choice_keys:
+                label = "Lethal Hits" if choice_key == "LETHAL_HITS" else "Sustained Hits 1"
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "unit_id": unit_id,
+                            "source_unit_id": source_unit_id,
+                            "model_id": model_id,
+                            "choice_key": choice_key,
+                            "ability_key": ability_key,
+                        },
+                    )
+                )
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a weapon mode for {getattr(model, 'name', 'Model')}.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "prototype_weapon_system",
+                    "ability_name": ability_name,
+                    "ability_key": ability_key,
+                    "phase_name": "SHOOTING_PHASE",
+                    "unit": getattr(root, "name", "") or "",
+                    "unit_id": unit_id,
+                    "source_unit_id": source_unit_id,
+                    "model": getattr(model, "name", "") or "",
+                    "model_id": model_id,
+                    "weapon_names": list(ranged_weapon_names),
+                    "allowed_choice_keys": list(allowed_choice_keys),
+                    "optional": False,
+                },
+            )
+            self.request_decision(request)
+            return
+
+    def _on_unit_shooting_resolved_prototype_weapon_system(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        root_fn = getattr(attacker_unit, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else attacker_unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        active_effects = [
+            entry
+            for entry in list(sr.get("enhancement_prototype_weapon_system_active_effects", []) or [])
+            if isinstance(entry, dict)
+        ]
+        if not active_effects:
+            return
+        models_fn = getattr(root, "get_attached_unit_models", None)
+        models = list(models_fn() or []) if callable(models_fn) else list(getattr(root, "models", []) or [])
+        model_by_id: dict[str, Any] = {}
+        for model in models:
+            if model is None:
+                continue
+            entity_id = str(get_entity_id(model) or "")
+            local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+            if entity_id:
+                model_by_id[entity_id] = model
+            if local_id:
+                model_by_id[local_id] = model
+        for entry in active_effects:
+            model_id = str(entry.get("model_id", "") or "").strip()
+            if not model_id:
+                continue
+            model = model_by_id.get(model_id)
+            if model is None:
+                continue
+            effects = getattr(model, "_temporary_effects", None)
+            if not isinstance(effects, dict):
+                continue
+            for effect_key in list(entry.get("effect_keys", []) or []):
+                effect_key = str(effect_key or "").strip().lower()
+                if effect_key:
+                    effects.pop(effect_key, None)
+        sr.pop("enhancement_prototype_weapon_system_active_effects", None)
+        root.special_rules = sr
+
     def _on_shooting_targets_selected_shieldbreaker(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
