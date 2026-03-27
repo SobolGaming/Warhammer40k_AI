@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
@@ -7,6 +8,8 @@ from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.cabal_of_sorcerers import RITUAL_DESTINYS_RUIN
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
@@ -153,12 +156,36 @@ def _build_engine_game():
     return game, army1, army2, p1, p2
 
 
+def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str) -> None:
+    Enhancement(
+        id=enhancement_id,
+        name=enhancement_name,
+        faction_id="TS",
+        detachment="Warpmeld Pact",
+        points=25,
+        description="",
+    ).apply_to_unit(unit)
+
+
 def _option_with_choice(request, choice: bool):
     for opt in list(getattr(request, "options", []) or []):
         payload = dict(getattr(opt, "payload", {}) or {})
         if bool(payload.get("choice", False)) is bool(choice):
             return opt
     raise AssertionError(f"No option with choice={choice}.")
+
+
+def _wire_same_army(*units: Unit) -> Army:
+    army = Army("Thousand Sons", "Warpmeld Pact")
+    army.faction_id = "TS"
+    for unit in units:
+        army.add_unit(unit)
+    return army
+
+
+def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
 
 
 def test_warpmeld_pact_validation_applies_tzaangors_battleline_keyword():
@@ -331,3 +358,129 @@ def test_warpmeld_prompt_resolution_and_phase_end_mortals(monkeypatch):
 
     assert int(before - after) == 2
     assert int(mgr.warpmeld_sacrifice_attacker_wound_bonus(warpmeld_unit.models[0], game=game) or 0) == 0
+
+
+def test_warpmeld_dagger_adds_bonus_equal_to_mortal_wounds_suffered_on_ritual():
+    game, army, enemy_army, _p1, _p2 = _build_engine_game()
+    caster = _make_unit(
+        "Tzaangor Shaman",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="4",
+    )
+    caster.possible_abilities = ["Cabal of Sorcerers"]
+    target = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    army.add_unit(caster)
+    enemy_army.add_unit(target)
+    game.map.units = [caster, target]
+    game.turn = 1
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+    _apply_enhancement(caster, enhancement_id="000010201002", enhancement_name="Warpmeld Dagger")
+
+    mgr = army.cabal_of_sorcerers
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(mgr, "_model_can_see_unit", lambda *_args, **_kwargs: True)
+        mp.setattr(mgr, "_distance_model_to_unit", lambda *_args, **_kwargs: 12.0)
+        result = mgr.attempt_ritual(
+            game,
+            caster_model=caster.models[0],
+            ritual_key=RITUAL_DESTINYS_RUIN.key,
+            target_unit=target,
+            rolls=[1, 2],
+            channel_decision=False,
+            warpmeld_dagger_choice=True,
+            warpmeld_dagger_mortal_roll=2,
+        )
+
+    assert bool(result.get("success")) is True
+    assert bool(result.get("warpmeld_dagger_used")) is True
+    assert int(result.get("warpmeld_dagger_roll", 0) or 0) == 2
+    assert int(result.get("warpmeld_dagger_mortal_wounds", 0) or 0) == 2
+    assert int(result.get("warpmeld_dagger_bonus", 0) or 0) == 2
+    assert int(result.get("total", 0) or 0) == 5
+    assert int(caster.models[0].wounds or 0) == 2
+
+
+def test_warpmeld_diamond_of_distortion_applies_minus_one_to_hit_while_leading():
+    bodyguard = _make_unit(
+        "Tzaangors",
+        keywords=["THOUSAND SONS", "TZEENTCH", "MUTANT", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    leader = _make_unit(
+        "Tzaangor Shaman",
+        keywords=["THOUSAND SONS", "CHARACTER", "PSYKER", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    _wire_same_army(bodyguard, leader)
+    _apply_enhancement(leader, enhancement_id="000010201003", enhancement_name="Diamond of Distortion")
+    _attach_leader(bodyguard, leader)
+
+    penalty, reasons = bodyguard.get_target_hit_roll_penalty("ranged")
+
+    assert int(penalty) == 1
+    assert any("Diamond of Distortion" in str(reason) for reason in list(reasons or ()))
+
+
+def test_warpmeld_diamond_of_distortion_inactive_when_not_leading():
+    leader = _make_unit(
+        "Tzaangor Shaman",
+        keywords=["THOUSAND SONS", "CHARACTER", "PSYKER", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    _wire_same_army(leader)
+    _apply_enhancement(leader, enhancement_id="000010201003", enhancement_name="Diamond of Distortion")
+
+    penalty, reasons = leader.get_target_hit_roll_penalty("ranged")
+
+    assert int(penalty) == 0
+    assert tuple(reasons or ()) == ()
+
+
+def test_bray_lord_grants_scouts_and_tzaangor_attachment_override():
+    leader = _make_unit(
+        "Sorcerer",
+        keywords=["THOUSAND SONS", "CHARACTER", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    leader.can_be_attached_to = ["existing-bodyguard-placeholder"]
+    bodyguard = _make_unit(
+        "Tzaangors",
+        keywords=["THOUSAND SONS", "TZEENTCH", "MUTANT", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    _wire_same_army(leader, bodyguard)
+    _apply_enhancement(leader, enhancement_id="000010201004", enhancement_name="Bray Lord")
+
+    has_scout, scout_distance = leader.has_scout()
+
+    assert bool(has_scout) is True
+    assert float(scout_distance) == 6.0
+    assert "Tzaangors" in list(getattr(leader, "can_be_attached_to_names", []) or [])
+    assert leader.can_attach_to(bodyguard)
+
+
+def test_flowing_flesh_sets_bearer_wounds_to_five_and_grants_fnp_four_plus():
+    bearer_unit = _make_unit(
+        "Tzaangor Shaman",
+        keywords=["THOUSAND SONS", "CHARACTER", "PSYKER", "INFANTRY", "TZAANGOR"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="4",
+    )
+    _wire_same_army(bearer_unit)
+    _apply_enhancement(bearer_unit, enhancement_id="000010201005", enhancement_name="Flowing Flesh")
+
+    bearer = bearer_unit.models[0]
+    fnp_entries = list(bearer_unit.has_feel_no_pain(target_model=bearer) or [])
+
+    assert int(getattr(bearer, "_base_wounds", 0) or 0) == 5
+    assert int(getattr(bearer, "_wounds", 0) or 0) == 5
+    assert (4, None) in fnp_entries

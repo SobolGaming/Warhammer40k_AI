@@ -40,6 +40,31 @@ def _ensure_enhancement_fnp_entry(
     return True
 
 
+def _set_bearer_model_wounds_characteristic(model, desired_base: int) -> bool:
+    if model is None:
+        return False
+    try:
+        resolved_base = max(1, int(desired_base or 0))
+    except (TypeError, ValueError):
+        return False
+    try:
+        prev_base = int(getattr(model, "_base_wounds", resolved_base) or resolved_base)
+    except (TypeError, ValueError):
+        prev_base = resolved_base
+    try:
+        current = int(getattr(model, "_wounds", prev_base) or prev_base)
+    except (TypeError, ValueError):
+        current = prev_base
+    missing = max(0, int(prev_base) - int(current))
+    if int(current) == int(prev_base):
+        model._wounds = int(resolved_base)
+    else:
+        model._wounds = max(0, int(resolved_base) - int(missing))
+    model._base_wounds = int(resolved_base)
+    model._base_wounds_unmodified = int(resolved_base)
+    return True
+
+
 def _current_unit_wounds(unit) -> int:
     total = 0
     for model in list(getattr(unit, "models", []) or []):
@@ -7392,6 +7417,117 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_noctilith_mantle_bearer_model_id"] = bearer_id
+
+        if name == "warpmeld dagger" or enh_id == "000010201002":
+            if not is_warpmeld_pact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warpmeld Dagger").strip() or "Warpmeld Dagger"
+            self_mortal_roll = str(params.get("self_mortal_roll", "D3") or "D3").strip().upper() or "D3"
+            unit.special_rules["enhancement_warpmeld_dagger"] = True
+            unit.special_rules["enhancement_warpmeld_dagger_source"] = source
+            unit.special_rules["enhancement_warpmeld_dagger_self_mortal_roll"] = self_mortal_roll
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warpmeld_dagger_bearer_model_id"] = bearer_id
+
+        if name == "diamond of distortion" or enh_id == "000010201003":
+            if not is_warpmeld_pact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Diamond of Distortion").strip() or "Diamond of Distortion"
+            penalty = int(max(0, _coerce_int(params.get("target_hit_roll_penalty", 1) or 1, default=1)))
+            unit.special_rules["enhancement_diamond_of_distortion"] = True
+            unit.special_rules["enhancement_diamond_of_distortion_source"] = source
+            unit.special_rules["enhancement_diamond_of_distortion_target_hit_roll_penalty"] = int(penalty)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_diamond_of_distortion_bearer_model_id"] = bearer_id
+
+        if name == "bray lord" or enh_id == "000010201004":
+            if not is_warpmeld_pact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Bray Lord").strip() or "Bray Lord"
+            scout_distance = float(max(0.0, _coerce_float(params.get("scouts_distance", 6) or 6, default=6.0)))
+            attach_names = [
+                str(value).strip()
+                for value in list(params.get("attachment_override_unit_names_any", ("Tzaangors",)) or ())
+                if str(value or "").strip()
+            ]
+            unit.special_rules["enhancement_bray_lord"] = True
+            unit.special_rules["enhancement_bray_lord_source"] = source
+            unit.special_rules["enhancement_bray_lord_scout_distance"] = float(scout_distance)
+            unit.special_rules["enhancement_bray_lord_attach_unit_names"] = list(attach_names)
+            try:
+                current_scout = float(unit.special_rules.get("enhancement_scout_distance", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                current_scout = 0.0
+            unit.special_rules["enhancement_scout_distance"] = float(max(current_scout, scout_distance))
+            allowed_names = [
+                str(value).strip()
+                for value in list(getattr(unit, "can_be_attached_to_names", []) or [])
+                if str(value or "").strip()
+            ]
+            allowed_name_set = {str(value).casefold() for value in allowed_names}
+            for attach_name in attach_names:
+                if attach_name.casefold() in allowed_name_set:
+                    continue
+                allowed_names.append(attach_name)
+                allowed_name_set.add(attach_name.casefold())
+            unit.can_be_attached_to_names = list(allowed_names)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bray_lord_bearer_model_id"] = bearer_id
+
+        if name == "flowing flesh" or enh_id == "000010201005":
+            if not is_warpmeld_pact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Flowing Flesh").strip() or "Flowing Flesh"
+            wounds_characteristic = int(
+                max(1, _coerce_int(params.get("wounds_characteristic", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_flowing_flesh"] = True
+            unit.special_rules["enhancement_flowing_flesh_source"] = source
+            unit.special_rules["enhancement_flowing_flesh_wounds_characteristic"] = int(wounds_characteristic)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_flowing_flesh_bearer_model_id"] = bearer_id
+            if bearer is not None and not bool(unit.special_rules.get("enhancement_flowing_flesh_bearer_wounds_applied", False)):
+                if _set_bearer_model_wounds_characteristic(bearer, int(wounds_characteristic)):
+                    unit.special_rules["enhancement_flowing_flesh_bearer_wounds_applied"] = True
+                    try:
+                        unit.starting_total_wounds = sum(
+                            int(getattr(model, "_base_wounds", 0) or 0)
+                            for model in list(getattr(unit, "models", []) or [])
+                        )
+                    except (TypeError, ValueError):
+                        pass
+            tag = f"enhancement_fnp_{enh_id or name}"
+            _ensure_enhancement_fnp_entry(
+                unit,
+                4,
+                source=source,
+                tag=tag,
+                source_model_id=str(bearer_id) if bearer_id else None,
+            )
+            if bearer_id:
+                entries = list(unit.special_rules.get("enhancement_bearer_fnp_entries", []) or [])
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if str(entry.get("tag", "") or "") != tag:
+                        continue
+                    entry["source_model_id"] = str(bearer_id)
+                    changed = True
+                if changed:
+                    unit.special_rules["enhancement_bearer_fnp_entries"] = entries
 
         if name == "warp syphon" or enh_id == "000010209002":
             if not is_warpforged_cabal:

@@ -15474,6 +15474,25 @@ class AbilitySpecsMixin:
             penalty += 1
             reasons.append("Dance of Death (Trickster's Grace): -1 to hit")
 
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        hook = getattr(ts_mgr, "warpmeld_diamond_of_distortion_target_hit_penalty", None) if ts_mgr is not None else None
+        if callable(hook):
+            try:
+                extra_penalty, extra_source = hook(root, attack_type=atype, target_model=target_model)
+            except Exception:
+                extra_penalty, extra_source = 0, ""
+            if int(extra_penalty or 0) > 0:
+                source_name = str(extra_source or "Diamond of Distortion").strip() or "Diamond of Distortion"
+                key = f"warpmeld_diamond:{source_name.lower()}"
+                if key not in seen:
+                    seen.add(key)
+                    penalty += int(extra_penalty)
+                    reasons.append(f"-{int(extra_penalty)} to hit from {source_name}")
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = (int(penalty), tuple(reasons))

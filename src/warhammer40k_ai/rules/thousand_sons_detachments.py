@@ -686,6 +686,74 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             return False
         return bool(root is not None and self._unit_is_on_battlefield(root))
 
+    def warpmeld_dagger_spec(self, model) -> dict | None:
+        if not self.is_warpmeld_pact():
+            return None
+        if model is None or not self._model_in_army(model):
+            return None
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        if root is None or not self._unit_is_on_battlefield(root):
+            return None
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_warpmeld_dagger")
+        if source_member is None or not isinstance(source_sr, dict):
+            return None
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_warpmeld_dagger_bearer_model_id",
+        ):
+            return None
+        source_name = str(
+            source_sr.get("enhancement_warpmeld_dagger_source", "")
+            or "Warpmeld Dagger"
+        ).strip() or "Warpmeld Dagger"
+        self_mortal_roll = str(
+            source_sr.get("enhancement_warpmeld_dagger_self_mortal_roll", "")
+            or "D3"
+        ).strip().upper() or "D3"
+        return {
+            "source": source_name,
+            "self_mortal_roll": self_mortal_roll,
+        }
+
+    def warpmeld_diamond_of_distortion_target_hit_penalty(
+        self,
+        unit,
+        *,
+        attack_type: str = "any",
+        target_model=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del attack_type, target_model, game
+        if not self.is_warpmeld_pact():
+            return 0, ""
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_diamond_of_distortion")
+        if source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if source_member is root or getattr(source_member, "attached_to", None) is not root:
+            return 0, ""
+        bearer_model = self._attached_member_bearer_model(
+            source_member,
+            source_sr,
+            bearer_key="enhancement_diamond_of_distortion_bearer_model_id",
+        )
+        if bearer_model is None:
+            return 0, ""
+        try:
+            penalty = int(source_sr.get("enhancement_diamond_of_distortion_target_hit_roll_penalty", 1) or 1)
+        except (TypeError, ValueError):
+            penalty = 1
+        source_name = str(
+            source_sr.get("enhancement_diamond_of_distortion_source", "")
+            or "Diamond of Distortion"
+        ).strip() or "Diamond of Distortion"
+        return int(max(0, penalty)), source_name
+
     def warpforged_warp_syphon_spec(self, model) -> dict | None:
         if not self.is_warpforged_cabal():
             return None

@@ -1277,7 +1277,8 @@ def _validate_choose_ritual(game: object, request: DecisionRequest, result: Deci
     caster_val = payload.get("caster_model_id") or result.payload.get("caster_model_id")
     if ritual_key is None or caster_val is None:
         return ("Cabal ritual requires ritual_key and caster_model_id.",)
-    if resolve_model(game, caster_val) is None:
+    caster_model = resolve_model(game, caster_val)
+    if caster_model is None:
         return ("Cabal caster model not found.",)
     target_val = result.payload.get("target_unit_id")
     if target_val is not None and resolve_unit(game, target_val) is None:
@@ -1285,9 +1286,25 @@ def _validate_choose_ritual(game: object, request: DecisionRequest, result: Deci
     warp_syphon_target_val = result.payload.get("warp_syphon_target_unit_id")
     if warp_syphon_target_val is not None and resolve_unit(game, warp_syphon_target_val) is None:
         return ("Warp Syphon target unit not found.",)
+    warpmeld_dagger_choice = result.payload.get("warpmeld_dagger_choice")
+    warpmeld_dagger_roll = result.payload.get("warpmeld_dagger_mortal_roll")
+    if warpmeld_dagger_roll is not None:
+        if not bool(warpmeld_dagger_choice):
+            return ("Warpmeld Dagger mortal roll requires warpmeld_dagger_choice.",)
+        try:
+            resolved_roll = int(warpmeld_dagger_roll)
+        except (TypeError, ValueError):
+            return ("Warpmeld Dagger mortal roll must be an integer from 1 to 3.",)
+        if resolved_roll < 1 or resolved_roll > 3:
+            return ("Warpmeld Dagger mortal roll must be between 1 and 3.",)
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "cabal_of_sorcerers", None) is None:
         return ("Cabal manager not found.",)
+    if bool(warpmeld_dagger_choice):
+        ts_mgr = getattr(army, "thousand_sons_detachments", None)
+        spec_fn = getattr(ts_mgr, "warpmeld_dagger_spec", None) if ts_mgr is not None else None
+        if not callable(spec_fn) or not isinstance(spec_fn(caster_model), dict):
+            return ("Warpmeld Dagger is not available for this caster.",)
     return ()
 
 
@@ -1308,6 +1325,8 @@ def _apply_choose_ritual(game: object, request: DecisionRequest, result: Decisio
     rolls = result.payload.get("rolls")
     channel_decision = result.payload.get("channel_decision")
     mortal_roll = result.payload.get("mortal_roll")
+    warpmeld_dagger_choice = result.payload.get("warpmeld_dagger_choice")
+    warpmeld_dagger_mortal_roll = result.payload.get("warpmeld_dagger_mortal_roll")
     return mgr.attempt_ritual(
         game,
         caster_model=caster_model,
@@ -1316,6 +1335,8 @@ def _apply_choose_ritual(game: object, request: DecisionRequest, result: Decisio
         rolls=list(rolls or []),
         channel_decision=channel_decision,
         mortal_roll=mortal_roll,
+        warpmeld_dagger_choice=warpmeld_dagger_choice,
+        warpmeld_dagger_mortal_roll=warpmeld_dagger_mortal_roll,
         warp_syphon_target_unit=warp_syphon_target_unit,
     )
 

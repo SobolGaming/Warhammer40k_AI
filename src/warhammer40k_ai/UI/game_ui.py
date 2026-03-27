@@ -14202,7 +14202,16 @@ class GameView:
                     )
 
                     def _on_channel_resolved(_req, _result):
-                        def _resolve_ritual(*, rolls_payload: list[int], channel_choice: bool, warp_syphon_target=None):
+                        ts_mgr = getattr(player.get_army(), "thousand_sons_detachments", None) if player is not None else None
+
+                        def _resolve_ritual(
+                            *,
+                            rolls_payload: list[int],
+                            channel_choice: bool,
+                            warp_syphon_target=None,
+                            warpmeld_dagger_choice: bool = False,
+                            warpmeld_dagger_mortal_roll: int | None = None,
+                        ):
                             result_payload = {
                                 "target_unit_id": get_entity_id(target_unit),
                                 "rolls": list(rolls_payload),
@@ -14211,6 +14220,10 @@ class GameView:
                             }
                             if warp_syphon_target is not None:
                                 result_payload["warp_syphon_target_unit_id"] = get_entity_id(warp_syphon_target)
+                            if warpmeld_dagger_choice:
+                                result_payload["warpmeld_dagger_choice"] = True
+                                if warpmeld_dagger_mortal_roll is not None:
+                                    result_payload["warpmeld_dagger_mortal_roll"] = int(warpmeld_dagger_mortal_roll)
                             try:
                                 resolve_decision_value(
                                     self.game,
@@ -14220,6 +14233,66 @@ class GameView:
                                 )
                             finally:
                                 self._cabal_flow_active = False
+
+                        def _maybe_resolve_warpmeld_dagger(*, rolls_payload: list[int], channel_choice: bool, warp_syphon_target=None):
+                            spec_fn = getattr(ts_mgr, "warpmeld_dagger_spec", None) if ts_mgr is not None else None
+                            spec = spec_fn(caster_model) if callable(spec_fn) else None
+                            if not isinstance(spec, dict):
+                                _resolve_ritual(
+                                    rolls_payload=list(rolls_payload),
+                                    channel_choice=channel_choice,
+                                    warp_syphon_target=warp_syphon_target,
+                                )
+                                return
+                            dagger_req = _require_pending_decision_request(
+                                self.game if self.game is not None else None,
+                                DECISION_CONFIRM_YES_NO,
+                                "Warpmeld Dagger",
+                                player_id=getattr(player, "id", None),
+                                options=[
+                                    DecisionOption.create("Use Dagger", payload={"choice": True}),
+                                    DecisionOption.create("No", payload={"choice": False}),
+                                ],
+                                context={
+                                    "ability": "warpmeld_dagger",
+                                    "ability_name": "Warpmeld Dagger",
+                                    "source_unit_id": get_entity_id(caster_unit),
+                                    "source_model_id": get_entity_id(caster_model),
+                                    "target_unit_id": get_entity_id(target_unit),
+                                    "optional": True,
+                                },
+                            )
+
+                            def _on_dagger_resolved(_dagger_req, _dagger_result):
+                                chosen = False
+                                selected_option = None
+                                for opt in list(getattr(_dagger_req, "options", []) or []):
+                                    if getattr(opt, "option_id", None) == getattr(_dagger_result, "option_id", None):
+                                        selected_option = opt
+                                        break
+                                payload_local = dict(getattr(selected_option, "payload", {}) or {}) if selected_option is not None else {}
+                                if "choice" in payload_local:
+                                    chosen = bool(payload_local.get("choice"))
+                                elif "choice" in getattr(_dagger_result, "payload", {}):
+                                    chosen = bool(_dagger_result.payload.get("choice"))
+                                if not chosen:
+                                    _resolve_ritual(
+                                        rolls_payload=list(rolls_payload),
+                                        channel_choice=channel_choice,
+                                        warp_syphon_target=warp_syphon_target,
+                                    )
+                                    return
+                                dagger_roll = int(get_roll("D3") or 0)
+                                _resolve_ritual(
+                                    rolls_payload=list(rolls_payload),
+                                    channel_choice=channel_choice,
+                                    warp_syphon_target=warp_syphon_target,
+                                    warpmeld_dagger_choice=True,
+                                    warpmeld_dagger_mortal_roll=dagger_roll,
+                                )
+
+                            if getattr(self, "phase_manager", None) is not None:
+                                self.phase_manager._register_decision_callback(dagger_req, _on_dagger_resolved)
 
                         chosen = False
                         selected = None
@@ -14233,15 +14306,14 @@ class GameView:
                         elif "choice" in getattr(_result, "payload", {}):
                             chosen = bool(_result.payload.get("choice"))
                         if not chosen:
-                            _resolve_ritual(rolls_payload=[r1, r2], channel_choice=False)
+                            _maybe_resolve_warpmeld_dagger(rolls_payload=[r1, r2], channel_choice=False)
                             return
 
                         extra_roll = int(get_roll("D6") or 0)
-                        ts_mgr = getattr(player.get_army(), "thousand_sons_detachments", None) if player is not None else None
                         warp_syphon_candidates_fn = getattr(ts_mgr, "warpforged_warp_syphon_candidates", None) if ts_mgr is not None else None
                         warp_syphon_candidates = list(warp_syphon_candidates_fn(caster_model) or []) if callable(warp_syphon_candidates_fn) else []
                         if not warp_syphon_candidates:
-                            _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+                            _maybe_resolve_warpmeld_dagger(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
                             return
 
                         warp_syphon_options = [DecisionOption.create("None", payload={"action": "skip"})]
@@ -14273,13 +14345,13 @@ class GameView:
                             skip_id = option_id_for_action(warp_syphon_req, "skip")
                             selected_target, apply_result = resolve_decision_value(self.game, warp_syphon_req, vehicle_option_id)
                             if skip_id and vehicle_option_id == skip_id:
-                                _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+                                _maybe_resolve_warpmeld_dagger(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
                                 return
                             if apply_result is None or not getattr(apply_result, "ok", False) or selected_target is None:
                                 _cancel_flow()
                                 return
                             rerolled_extra_roll = int(get_roll("D6") or 0)
-                            _resolve_ritual(
+                            _maybe_resolve_warpmeld_dagger(
                                 rolls_payload=[r1, r2, extra_roll, rerolled_extra_roll],
                                 channel_choice=True,
                                 warp_syphon_target=selected_target,
@@ -14289,7 +14361,7 @@ class GameView:
                             skip_id = option_id_for_action(warp_syphon_req, "skip")
                             if skip_id:
                                 resolve_decision_value(self.game, warp_syphon_req, skip_id)
-                            _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+                            _maybe_resolve_warpmeld_dagger(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
 
                         self.cabal_target_dialog.show(
                             title="Warp Syphon",

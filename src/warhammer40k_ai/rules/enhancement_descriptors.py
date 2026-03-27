@@ -6975,6 +6975,58 @@ _THOUSAND_SONS_WARPFORGED_CABAL_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_WARPFORGED_CABAL_DESCRIPTORS.values()
 }
 
+_THOUSAND_SONS_WARPMELD_PACT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010201002": EnhancementToolDescriptor(
+        enhancement_id="000010201002",
+        name="Warpmeld Dagger",
+        timing="while_attempting_ritual",
+        target="bearer",
+        duration="instant_optional",
+        effect="optional_self_mortal_for_ritual_bonus",
+        effect_params={"self_mortal_roll": "D3"},
+    ),
+    "000010201003": EnhancementToolDescriptor(
+        enhancement_id="000010201003",
+        name="Diamond of Distortion",
+        timing="passive_while_leading_unit",
+        target="bearer_led_unit",
+        duration="constant_while_leading",
+        effect="leading_unit_target_hit_penalty",
+        effect_params={
+            "target_hit_roll_penalty": 1,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000010201004": EnhancementToolDescriptor(
+        enhancement_id="000010201004",
+        name="Bray Lord",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup_and_constant",
+        effect="scouts_and_attachment_override",
+        effect_params={
+            "scouts_distance": 6,
+            "attachment_override_unit_names_any": ("Tzaangors",),
+        },
+    ),
+    "000010201005": EnhancementToolDescriptor(
+        enhancement_id="000010201005",
+        name="Flowing Flesh",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_fnp_and_set_wounds",
+        effect_params={
+            "fnp": 4,
+            "wounds_characteristic": 5,
+        },
+    ),
+}
+
+_THOUSAND_SONS_WARPMELD_PACT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_WARPMELD_PACT_DESCRIPTORS.values()
+}
+
 _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008372002": EnhancementToolDescriptor(
         enhancement_id="000008372002",
@@ -8062,6 +8114,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _THOUSAND_SONS_WARPFORGED_CABAL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _THOUSAND_SONS_WARPMELD_PACT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8239,6 +8294,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME.get(key)
         or _THOUSAND_SONS_WARPFORGED_CABAL_BY_NAME.get(key)
+        or _THOUSAND_SONS_WARPMELD_PACT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)

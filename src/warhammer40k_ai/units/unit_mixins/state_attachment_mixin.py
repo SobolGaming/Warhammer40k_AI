@@ -4079,6 +4079,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Bray Lord (Warpmeld Pact): bearer can attach to Tzaangors.
+        try:
+            if self._bray_lord_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Skwad Leader (Taktikal Brigade): bearer can attach to Kommandos.
         try:
             if self._skwad_leader_can_attach_to(bodyguard):

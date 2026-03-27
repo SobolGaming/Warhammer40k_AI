@@ -519,6 +519,7 @@ Optional ability confirmations (yes/no):
 - oathbound_speculator_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="oathbound_speculator"`, `unit_id`, `source_unit_id`, `cost`, `trigger`, `turn_owner`, `turn`)
 - dead_reckoning_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="dead_reckoning"`, `unit_id`, `source_unit_id`, `turn_owner`, `turn`)
 - cabal_channel_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cabal_channel_warp"`)
+- warpmeld_dagger_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="warpmeld_dagger"`, `ability_name="Warpmeld Dagger"`, `source_unit_id`, `source_model_id`, `target_unit_id`, `optional=true`)
 - stratagem_cp_discount_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="direct_the_slaughter"` or `ability="targeted_stratagem_discount"` or `ability="gift_of_foresight"` or `ability="mirror_of_fates"` or `ability="ancestral_crest"` or `ability="master_of_the_pageant"` or `ability="opponent_stratagem_cp_increase"` or `ability="brutal_example_overwatch"` or `ability="beast_handler_heroic_intervention"`)
 - flickering_reality_reroll_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickering_reality_reroll"`, `unit_id`, `base_roll`, `ability_name`, `phase_name`)
 - pyrogenesis_flux_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="pyrogenesis_flux"`, `unit_id`, `base_strength_bonus`, `base_ap_bonus`, `flux_strength_bonus`, `flux_ap_bonus`, `ability_name`, `phase_name`)

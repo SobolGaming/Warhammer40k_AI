@@ -1613,6 +1613,22 @@ class PositioningMixin:
             return False
         return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="KOMMANDOS")
 
+    def _bray_lord_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_bray_lord"):
+            return False
+        names = self._taktikal_enhancement_attach_override_names(
+            flag_key="enhancement_bray_lord",
+            attach_names_key="enhancement_bray_lord_attach_unit_names",
+            defaults=("Tzaangors",),
+        )
+        if not names:
+            return False
+        return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="TZAANGOR")
+
     def _mek_kaptin_can_attach_to(self, bodyguard) -> bool:
         if bodyguard is None:
             return False

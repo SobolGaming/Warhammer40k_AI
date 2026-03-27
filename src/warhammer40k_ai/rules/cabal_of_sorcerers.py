@@ -704,6 +704,8 @@ class CabalOfSorcerersManager:
         rolls: Optional[list[int]] = None,
         channel_decision: Optional[bool] = None,
         mortal_roll: Optional[int] = None,
+        warpmeld_dagger_choice: Optional[bool] = None,
+        warpmeld_dagger_mortal_roll: Optional[int] = None,
         warp_syphon_target_unit=None,
     ) -> dict:
         result = {
@@ -884,7 +886,62 @@ class CabalOfSorcerersManager:
                 except Exception:
                     pass
 
+        warpmeld_dagger_bonus = 0
+        if bool(warpmeld_dagger_choice) and self.army is not None:
+            ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
+            spec_fn = getattr(ts_mgr, "warpmeld_dagger_spec", None) if ts_mgr is not None else None
+            spec = spec_fn(caster_model) if callable(spec_fn) else None
+            if isinstance(spec, dict):
+                dagger_roll_expr = str(spec.get("self_mortal_roll", "") or "D3").strip().upper() or "D3"
+                dagger_roll = warpmeld_dagger_mortal_roll
+                if dagger_roll is None:
+                    try:
+                        dagger_roll = int(get_roll(dagger_roll_expr) or 0)
+                    except Exception:
+                        dagger_roll = 0
+                try:
+                    before_wounds = int(getattr(caster_model, "wounds", getattr(caster_model, "_wounds", 0)) or 0)
+                except Exception:
+                    before_wounds = 0
+                result["warpmeld_dagger_used"] = True
+                result["warpmeld_dagger_roll"] = int(max(0, int(dagger_roll or 0)))
+                try:
+                    caster_model.take_damage(
+                        int(dagger_roll or 0),
+                        is_mortal=True,
+                        game_map=game_map,
+                        damage_source="enhancement",
+                    )
+                except TypeError:
+                    caster_model.take_damage(
+                        int(dagger_roll or 0),
+                        is_mortal=True,
+                        game_map=game_map,
+                    )
+                except Exception:
+                    pass
+                try:
+                    after_wounds = int(getattr(caster_model, "wounds", getattr(caster_model, "_wounds", 0)) or 0)
+                except Exception:
+                    after_wounds = 0
+                after_wounds = max(0, after_wounds)
+                suffered = max(0, min(int(before_wounds), int(before_wounds) - int(after_wounds)))
+                result["warpmeld_dagger_mortal_wounds"] = int(suffered)
+                result["warpmeld_dagger_bonus"] = int(suffered)
+                try:
+                    if not getattr(caster_model, "is_alive", True):
+                        result["reason"] = "caster destroyed"
+                        result["rolls"] = total_rolls
+                        result["total"] = int(sum(total_rolls))
+                        return self._finalize_ritual_result(
+                            game, ritual, caster_unit, caster_model, target_unit, result
+                        )
+                except Exception:
+                    pass
+                warpmeld_dagger_bonus = int(suffered)
+
         total = int(sum(total_rolls))
+        total += int(warpmeld_dagger_bonus or 0)
         total += int(self._ritual_test_bonus_for_model(caster_model, channel=bool(channel)) or 0)
         result["rolls"] = total_rolls
         result["total"] = total
