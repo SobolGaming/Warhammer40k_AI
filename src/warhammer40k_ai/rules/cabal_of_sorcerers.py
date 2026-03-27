@@ -297,10 +297,23 @@ class CabalOfSorcerersManager:
         model_id = self._model_id(model)
         return bool(model_id and model_id == bearer_id)
 
+    def _rituals_blocked_for_model(self, model) -> bool:
+        if model is None or self.army is None:
+            return False
+        ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
+        blocked_fn = getattr(ts_mgr, "hexwarp_noctilith_mantle_blocks_rituals", None) if ts_mgr is not None else None
+        return bool(callable(blocked_fn) and blocked_fn(model))
+
     def _ritual_range_bonus_for_model(self, model) -> int:
+        bonus = 0
         if self._model_is_enhancement_bearer(model, "enhancement_lord_of_forbidden_lore"):
-            return 6
-        return 0
+            bonus += 6
+        if self.army is not None:
+            ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
+            empowered_bonus_fn = getattr(ts_mgr, "hexwarp_empowered_manifestation_ritual_range_bonus", None) if ts_mgr is not None else None
+            if callable(empowered_bonus_fn):
+                bonus += int(empowered_bonus_fn(model) or 0)
+        return int(bonus)
 
     def _ritual_range_for_model(self, model) -> float:
         return float(24.0 + self._ritual_range_bonus_for_model(model))
@@ -441,6 +454,8 @@ class CabalOfSorcerersManager:
         self._reset_for_shooting_phase(game, player)
 
     def get_available_rituals(self, caster_model=None) -> list[CabalRitual]:
+        if caster_model is not None and self._rituals_blocked_for_model(caster_model):
+            return []
         rituals = [r for r in DEFAULT_RITUALS if r.key not in self.used_rituals]
         if (
             caster_model is not None
@@ -733,6 +748,9 @@ class CabalOfSorcerersManager:
             return result
         if not self._unit_is_available(caster_unit):
             result["reason"] = "caster unavailable"
+            return result
+        if self._rituals_blocked_for_model(caster_model):
+            result["reason"] = "caster cannot use rituals"
             return result
 
         try:

@@ -5613,6 +5613,27 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and not self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+                bonus_fn = getattr(ts_mgr, "hexwarp_empyric_onslaught_attacks_bonus", None) if ts_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    attacks_bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(attacks_bonus or 0):
+                        source_name = str(source or "Empyric Onslaught").strip() or "Empyric Onslaught"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(attacks_bonus),
+                                source="enhancement:hexwarp_empyric_onslaught_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(f"{source_name} +{int(attacks_bonus)}A")
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and not self.parent_wargear.is_melee() and self.is_pistol():
                 sr = self._unit_special_rules(attacker)
                 if bool(sr.get("enhancement_legacy_sidearm", False)):
@@ -17187,6 +17208,21 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{psychic_bonus}S from Eldritch Vortex of E'taph"
                 )
+        try:
+            if isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+                bonus_fn = getattr(ts_mgr, "hexwarp_arcane_might_strength_bonus", None) if ts_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Arcane Might").strip() or "Arcane Might"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         # Aura: add Strength to weapons for nearby friendly units.
         try:
             from ..utility.aura_effects import get_aura_strength_bonus

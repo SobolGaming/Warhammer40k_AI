@@ -6852,6 +6852,63 @@ _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.values()
 }
 
+_THOUSAND_SONS_HEXWARP_THRALLBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009741002": EnhancementToolDescriptor(
+        enhancement_id="000009741002",
+        name="Arcane Might",
+        timing="passive_and_flow_of_magic_conditional",
+        target="models_in_bearer_unit_psychic_weapons",
+        duration="constant",
+        effect="psychic_weapon_strength_bonus_for_bearer_unit",
+        effect_params={
+            "base_strength_bonus": 1,
+            "flow_strength_bonus": 2,
+        },
+    ),
+    "000009741003": EnhancementToolDescriptor(
+        enhancement_id="000009741003",
+        name="Empowered Manifestation",
+        timing="passive_while_bearer_unit_wholly_within_flow",
+        target="bearer_psychic_abilities_and_bearer_unit_psychic_hazardous_tests",
+        duration="constant_conditional",
+        effect="ritual_range_and_hazardous_reroll_while_within_flow",
+        effect_params={
+            "range_bonus": 6,
+            "ritual_range_bonus": 6,
+            "hazardous_reroll": True,
+            "requires_wholly_within_flow_of_magic": True,
+        },
+    ),
+    "000009741004": EnhancementToolDescriptor(
+        enhancement_id="000009741004",
+        name="Empyric Onslaught",
+        timing="passive_while_bearer_unit_wholly_within_flow",
+        target="bearer_ranged_psychic_weapons",
+        duration="constant_conditional",
+        effect="bearer_ranged_psychic_attacks_bonus",
+        effect_params={
+            "attacks_bonus": 3,
+            "requires_wholly_within_flow_of_magic": True,
+        },
+    ),
+    "000009741005": EnhancementToolDescriptor(
+        enhancement_id="000009741005",
+        name="Noctilith Mantle",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_on_battlefield",
+        effect="treat_bearer_unit_as_wholly_within_flow_and_prevent_ritual_selection",
+        effect_params={
+            "treat_unit_as_wholly_within_flow_of_magic": True,
+            "prevent_ritual_selection": True,
+        },
+    ),
+}
+
+_THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_HEXWARP_THRALLBAND_DESCRIPTORS.values()
+}
+
 _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008372002": EnhancementToolDescriptor(
         enhancement_id="000008372002",
@@ -7933,6 +7990,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _THOUSAND_SONS_HEXWARP_THRALLBAND_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8108,6 +8168,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _TAU_KROOT_HUNTING_PACK_BY_NAME.get(key)
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
+        or _THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)

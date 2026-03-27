@@ -7335,6 +7335,64 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_tome_of_true_names_bearer_model_id"] = bearer_id
 
+        if name == "arcane might" or enh_id == "000009741002":
+            if not is_hexwarp_thrallband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Arcane Might").strip() or "Arcane Might"
+            base_bonus = int(max(0, _coerce_int(params.get("base_strength_bonus", 1) or 1, default=1)))
+            flow_bonus = int(max(0, _coerce_int(params.get("flow_strength_bonus", 2) or 2, default=2)))
+            unit.special_rules["enhancement_arcane_might"] = True
+            unit.special_rules["enhancement_arcane_might_source"] = source
+            unit.special_rules["enhancement_arcane_might_base_strength_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_arcane_might_flow_strength_bonus"] = int(flow_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_arcane_might_bearer_model_id"] = bearer_id
+
+        if name == "empowered manifestation" or enh_id == "000009741003":
+            if not is_hexwarp_thrallband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Empowered Manifestation").strip() or "Empowered Manifestation"
+            ritual_range_bonus = int(max(0, _coerce_int(params.get("ritual_range_bonus", 6) or 6, default=6)))
+            unit.special_rules["enhancement_empowered_manifestation"] = True
+            unit.special_rules["enhancement_empowered_manifestation_source"] = source
+            unit.special_rules["enhancement_empowered_manifestation_ritual_range_bonus"] = int(ritual_range_bonus)
+            unit.special_rules["enhancement_empowered_manifestation_hazardous_reroll"] = bool(
+                params.get("hazardous_reroll", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_empowered_manifestation_bearer_model_id"] = bearer_id
+
+        if name == "empyric onslaught" or enh_id == "000009741004":
+            if not is_hexwarp_thrallband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Empyric Onslaught").strip() or "Empyric Onslaught"
+            attacks_bonus = int(max(0, _coerce_int(params.get("attacks_bonus", 3) or 3, default=3)))
+            unit.special_rules["enhancement_empyric_onslaught"] = True
+            unit.special_rules["enhancement_empyric_onslaught_source"] = source
+            unit.special_rules["enhancement_empyric_onslaught_attacks_bonus"] = int(attacks_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_empyric_onslaught_bearer_model_id"] = bearer_id
+
+        if name == "noctilith mantle" or enh_id == "000009741005":
+            if not is_hexwarp_thrallband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Noctilith Mantle").strip() or "Noctilith Mantle"
+            unit.special_rules["enhancement_noctilith_mantle"] = True
+            unit.special_rules["enhancement_noctilith_mantle_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_noctilith_mantle_bearer_model_id"] = bearer_id
+
         if name == "risen rubricae" or enh_id == "000010205002":
             if not is_rubricae_phalanx:
                 return

@@ -475,7 +475,7 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         zones.update(set(self.hexwarp_flow_zones or {"own"}))
         return zones
 
-    def _model_wholly_within_hexwarp_flow(self, model, *, game=None) -> bool:
+    def _model_position_wholly_within_hexwarp_flow(self, model, *, game=None) -> bool:
         if model is None:
             return False
         if not bool(getattr(model, "is_alive", True)):
@@ -507,6 +507,28 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             zone = "nml"
         return zone in self._active_hexwarp_flow_zones(game=game_obj)
 
+    def _unit_wholly_within_hexwarp_flow(self, unit, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        _source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_noctilith_mantle")
+        if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_noctilith_mantle", False)):
+            return True
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        active_models = [model for model in list(models or []) if model is not None and bool(getattr(model, "is_alive", True))]
+        if not active_models:
+            return False
+        return all(self._model_position_wholly_within_hexwarp_flow(model, game=game) for model in active_models)
+
+    def _model_wholly_within_hexwarp_flow(self, model, *, game=None) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if self._unit_wholly_within_hexwarp_flow(unit, game=game):
+            return True
+        return self._model_position_wholly_within_hexwarp_flow(model, game=game)
+
     def hexwarp_flow_of_magic_psychic_wound_modifiers(self, model, weapon_profile=None, *, game=None) -> tuple[int, bool, str]:
         if not self.is_hexwarp_thrallband():
             return 0, False, ""
@@ -523,6 +545,146 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         if self._model_wholly_within_hexwarp_flow(model, game=game_obj):
             return 1, False, "Flow of Magic"
         return 0, True, "Flow of Magic"
+
+    def hexwarp_arcane_might_strength_bonus(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
+        if not self.is_hexwarp_thrallband():
+            return 0, ""
+        if model is None or weapon_profile is None:
+            return 0, ""
+        if not self._model_in_army(model):
+            return 0, ""
+        if not self._model_is_thousand_sons(model):
+            return 0, ""
+        is_psychic = getattr(weapon_profile, "is_psychic", None)
+        if not callable(is_psychic) or not bool(is_psychic()):
+            return 0, ""
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_arcane_might")
+        if source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        try:
+            base_bonus = int(source_sr.get("enhancement_arcane_might_base_strength_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_bonus = 1
+        try:
+            flow_bonus = int(source_sr.get("enhancement_arcane_might_flow_strength_bonus", 2) or 2)
+        except (TypeError, ValueError):
+            flow_bonus = 2
+        source_name = str(
+            source_sr.get("enhancement_arcane_might_source", "") or "Arcane Might"
+        ).strip() or "Arcane Might"
+        game_obj = self._resolve_game(game=game)
+        if self._unit_wholly_within_hexwarp_flow(root, game=game_obj):
+            return int(max(0, flow_bonus)), source_name
+        return int(max(0, base_bonus)), source_name
+
+    def hexwarp_empowered_manifestation_ritual_range_bonus(self, model, *, game=None) -> int:
+        if not self.is_hexwarp_thrallband():
+            return 0
+        if model is None or not self._model_in_army(model):
+            return 0
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_empowered_manifestation")
+        if source_member is None or not isinstance(source_sr, dict):
+            return 0
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_empowered_manifestation_bearer_model_id",
+        ):
+            return 0
+        game_obj = self._resolve_game(game=game)
+        if not self._unit_wholly_within_hexwarp_flow(root, game=game_obj):
+            return 0
+        try:
+            return int(source_sr.get("enhancement_empowered_manifestation_ritual_range_bonus", 6) or 6)
+        except (TypeError, ValueError):
+            return 6
+
+    def hexwarp_empowered_manifestation_hazardous_reroll_rule(
+        self,
+        unit,
+        *,
+        dice_count: int = 1,
+        game=None,
+    ) -> dict | None:
+        if not self.is_hexwarp_thrallband():
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        if not self._unit_is_on_battlefield(root):
+            return None
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_empowered_manifestation")
+        if source_member is None or not isinstance(source_sr, dict):
+            return None
+        if not bool(source_sr.get("enhancement_empowered_manifestation_hazardous_reroll", True)):
+            return None
+        game_obj = self._resolve_game(game=game)
+        if not self._unit_wholly_within_hexwarp_flow(root, game=game_obj):
+            return None
+        source_name = str(
+            source_sr.get("enhancement_empowered_manifestation_source", "")
+            or "Empowered Manifestation"
+        ).strip() or "Empowered Manifestation"
+        return {
+            "action_id": "hexwarp_empowered_manifestation_hazardous_reroll",
+            "label": f"{source_name} Hazardous re-roll",
+            "mode": "select",
+            "allow_success": True,
+            "max_select": int(max(1, int(dice_count or 1))),
+            "source": source_name,
+        }
+
+    def hexwarp_empyric_onslaught_attacks_bonus(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
+        if not self.is_hexwarp_thrallband():
+            return 0, ""
+        if model is None or weapon_profile is None:
+            return 0, ""
+        if not self._model_in_army(model):
+            return 0, ""
+        if not self._model_is_thousand_sons(model):
+            return 0, ""
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged = bool(parent is not None and getattr(parent, "is_ranged", lambda: False)())
+        is_psychic = getattr(weapon_profile, "is_psychic", None)
+        if not is_ranged or not callable(is_psychic) or not bool(is_psychic()):
+            return 0, ""
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        _source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_empyric_onslaught")
+        if not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_empyric_onslaught_bearer_model_id",
+        ):
+            return 0, ""
+        game_obj = self._resolve_game(game=game)
+        if not self._unit_wholly_within_hexwarp_flow(root, game=game_obj):
+            return 0, ""
+        try:
+            attacks_bonus = int(source_sr.get("enhancement_empyric_onslaught_attacks_bonus", 3) or 3)
+        except (TypeError, ValueError):
+            attacks_bonus = 3
+        if attacks_bonus <= 0:
+            return 0, ""
+        source_name = str(
+            source_sr.get("enhancement_empyric_onslaught_source", "")
+            or "Empyric Onslaught"
+        ).strip() or "Empyric Onslaught"
+        return int(attacks_bonus), source_name
+
+    def hexwarp_noctilith_mantle_blocks_rituals(self, model, *, game=None) -> bool:
+        if not self.is_hexwarp_thrallband():
+            return False
+        if model is None or not self._model_in_army(model):
+            return False
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_noctilith_mantle")
+        if source_member is None or not isinstance(source_sr, dict):
+            return False
+        return bool(root is not None and self._unit_is_on_battlefield(root))
 
     @staticmethod
     def _normalize_unit_name(name: str) -> str:
@@ -541,6 +703,21 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             if root is not None:
                 return root
         return unit
+
+    def _attached_unit_members(self, unit) -> list:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        return list(members or [root])
+
+    def _attached_member_with_special_rule(self, unit, flag_key: str):
+        for member in self._attached_unit_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return member, sr
+        return None, {}
 
     def _iter_unique_army_roots(self) -> list:
         roots: list = []

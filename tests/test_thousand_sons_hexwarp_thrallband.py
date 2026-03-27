@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.attack_resolution import AttackResolutionManager, AttackSequence
+from warhammer40k_ai.rules.cabal_of_sorcerers import RITUAL_DESTINYS_RUIN
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.units import wargear as wargear_mod
 from warhammer40k_ai.units.unit import Unit
-from warhammer40k_ai.units.wargear import WargearProfile
+from warhammer40k_ai.units.wargear import AttackResult, WargearProfile
 
 
 class _MockDatasheet:
@@ -64,22 +67,27 @@ def _make_unit(
     return unit
 
 
-def _make_profile(*, psychic: bool) -> WargearProfile:
+def _make_profile(*, psychic: bool, attacks: str = "1", hazardous: bool = False) -> WargearProfile:
     parent = SimpleNamespace(
         name="Test Weapon",
         is_melee=lambda: False,
         is_ranged=lambda: True,
     )
+    keywords = []
+    if psychic:
+        keywords.append("Psychic")
+    if hazardous:
+        keywords.append("Hazardous")
     return WargearProfile(
         profile_name="Profile",
         wargear_data={
             "range": "24",
-            "A": "1",
+            "A": str(attacks),
             "BS_WS": "3+",
             "S": "4",
             "AP": "0",
             "D": "1",
-            "description": "Psychic" if psychic else "",
+            "description": ", ".join(keywords),
         },
         parent_wargear=parent,
     )
@@ -97,6 +105,46 @@ def _aura_stub():
         target_toughness_reasons=(),
         crit_wound_threshold=None,
         crit_wound_reasons=(),
+    )
+
+
+def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str) -> None:
+    Enhancement(
+        id=enhancement_id,
+        name=enhancement_name,
+        faction_id="TS",
+        detachment="Hexwarp Thrallband",
+        points=25,
+        description="",
+    ).apply_to_unit(unit)
+
+
+def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
+    leader.can_be_attached_to = [bodyguard.name]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+
+def _make_attack_result(profile: WargearProfile, attacker, target_unit: Unit) -> AttackResult:
+    return AttackResult(
+        weapon_name=profile.name,
+        attacker_name=getattr(attacker, "name", "Attacker"),
+        target_unit_name=getattr(target_unit, "name", "Target"),
+        attacks_rolled=0,
+        attacks_dice_expression=str(profile.attacks),
+        attacks_dice_rolls=[],
+        attacks_special_modifiers=[],
+        hit_results=[],
+        wound_results=[],
+        save_results=[],
+        damage_results=[],
+        hazardous_roll=None,
+        hazardous_damage=0,
+        total_hits=0,
+        total_wounds=0,
+        total_saves_failed=0,
+        total_damage_dealt=0,
+        models_killed=0,
     )
 
 
@@ -284,3 +332,303 @@ def test_hexwarp_flow_of_magic_does_not_apply_to_non_psychic_attacks():
     assert int(bonus) == 0
     assert bool(reroll_ones) is False
     assert source == ""
+
+
+def test_hexwarp_arcane_might_gives_plus_one_strength_outside_flow_to_bearer_unit_models():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    leader = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY", "CHARACTER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    bodyguard = _make_unit(
+        "Rubric Marines",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    army.add_unit(leader)
+    army.add_unit(bodyguard)
+    _attach_leader(bodyguard, leader)
+    _apply_enhancement(leader, enhancement_id="000009741002", enhancement_name="Arcane Might")
+
+    leader.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    bodyguard.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=0,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    bonus, source = army.thousand_sons_detachments.hexwarp_arcane_might_strength_bonus(
+        bodyguard.models[0],
+        _make_profile(psychic=True),
+        game=game,
+    )
+
+    assert int(bonus or 0) == 1
+    assert source == "Arcane Might"
+
+
+def test_hexwarp_arcane_might_gives_plus_two_strength_when_bearer_unit_wholly_within_flow():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    leader = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY", "CHARACTER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    bodyguard = _make_unit(
+        "Rubric Marines",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    army.add_unit(leader)
+    army.add_unit(bodyguard)
+    _attach_leader(bodyguard, leader)
+    _apply_enhancement(leader, enhancement_id="000009741002", enhancement_name="Arcane Might")
+
+    leader.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    bodyguard.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=1,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    bonus, source = army.thousand_sons_detachments.hexwarp_arcane_might_strength_bonus(
+        bodyguard.models[0],
+        _make_profile(psychic=True),
+        game=game,
+    )
+
+    assert int(bonus or 0) == 2
+    assert source == "Arcane Might"
+
+
+def test_hexwarp_empowered_manifestation_extends_ritual_range_when_wholly_within_flow():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    caster.possible_abilities = ["Cabal of Sorcerers"]
+    target = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army.add_unit(caster)
+    enemy_army.add_unit(target)
+    _apply_enhancement(caster, enhancement_id="000009741003", enhancement_name="Empowered Manifestation")
+
+    caster.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=1,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    assert float(army.cabal_of_sorcerers._ritual_range_for_model(caster.models[0])) == 30.0
+
+
+def test_hexwarp_empowered_manifestation_adds_hazardous_reroll_rule():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    army.add_unit(caster)
+    _apply_enhancement(caster, enhancement_id="000009741003", enhancement_name="Empowered Manifestation")
+    caster.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=1,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    profile = _make_profile(psychic=True, hazardous=True)
+    attacker_model = caster.models[0]
+    attacker_model_id = str(getattr(attacker_model, "id", "") or "")
+    captured_spec = {}
+
+    def _capture_request_dice_roll(*, player_id, spec, prompt=None):
+        captured_spec["player_id"] = player_id
+        captured_spec["spec"] = dict(spec or {})
+        return SimpleNamespace(context={"roll_id": 1})
+
+    game.request_dice_roll = _capture_request_dice_roll
+    game.is_authoritative = True
+
+    resolution = AttackResolutionManager()
+    resolution._resolve_profile = lambda _game, _wargear_id, _profile_name: profile
+    resolution._resolve_unit = lambda _game, unit_id: caster if str(unit_id) == "attacker" else None
+    resolution._resolve_model = lambda _game, model_id: attacker_model if str(model_id) == attacker_model_id else None
+
+    seq = AttackSequence(
+        sequence_id=1,
+        attacker_unit_id="attacker",
+        target_unit_id="target",
+        wargear_id="wargear",
+        profile_name="Profile",
+        model_ids=[attacker_model_id],
+    )
+    queued = resolution._request_hazardous_roll(game, seq)
+
+    assert queued is True
+    reroll_rules = list((captured_spec.get("spec", {}) or {}).get("reroll_rules", []) or [])
+    empowered_rule = next(
+        rule
+        for rule in reroll_rules
+        if str(rule.get("action_id", "") or "") == "hexwarp_empowered_manifestation_hazardous_reroll"
+    )
+    assert int(empowered_rule.get("max_select", 0) or 0) == 1
+
+
+def test_hexwarp_empyric_onslaught_adds_three_attacks_to_bearer_ranged_psychic_weapon():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    target = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army.add_unit(caster)
+    enemy_army.add_unit(target)
+    _apply_enhancement(caster, enhancement_id="000009741004", enhancement_name="Empyric Onslaught")
+
+    caster.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=1,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    profile = _make_profile(psychic=True, attacks="1")
+    attack_result = _make_attack_result(profile, caster.models[0], target)
+    attacks = profile._resolve_attack_count(
+        target,
+        caster.models[0],
+        attack_result,
+        publish_roll_event=False,
+    )
+
+    assert int(attacks.num_attacks or 0) == 4
+    assert any("Empyric Onslaught" in str(entry or "") for entry in list(attack_result.attacks_special_modifiers or []))
+
+
+def test_hexwarp_noctilith_mantle_treats_unit_as_wholly_within_flow_outside_zone():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    army.add_unit(caster)
+    _apply_enhancement(caster, enhancement_id="000009741005", enhancement_name="Noctilith Mantle")
+
+    caster.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=0,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    bonus, reroll_ones, source = army.thousand_sons_detachments.hexwarp_flow_of_magic_psychic_wound_modifiers(
+        caster.models[0],
+        _make_profile(psychic=True),
+        game=game,
+    )
+
+    assert int(bonus or 0) == 1
+    assert bool(reroll_ones) is False
+    assert source == "Flow of Magic"
+
+
+def test_hexwarp_noctilith_mantle_prevents_models_in_unit_from_using_rituals():
+    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    caster.possible_abilities = ["Cabal of Sorcerers"]
+    target = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army.add_unit(caster)
+    enemy_army.add_unit(target)
+    _apply_enhancement(caster, enhancement_id="000009741005", enhancement_name="Noctilith Mantle")
+
+    caster.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+    target.models[0].set_location(18.0, 10.0, 0.0, 0.0)
+    game, _enemy_player, _objectives = _build_flow_game(
+        army=army,
+        enemy_army=enemy_army,
+        nml_controlled=0,
+        nml_total=2,
+    )
+    army.thousand_sons_detachments.on_phase_start(game=game)
+
+    mgr = army.cabal_of_sorcerers
+    result = mgr.attempt_ritual(
+        game,
+        caster_model=caster.models[0],
+        ritual_key=RITUAL_DESTINYS_RUIN.key,
+        target_unit=target,
+        rolls=[6, 6],
+        channel_decision=False,
+    )
+
+    assert not bool(result.get("success"))
+    assert "cannot use rituals" in str(result.get("reason", "")).lower()

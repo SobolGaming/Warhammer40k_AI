@@ -2267,6 +2267,16 @@ class AttackResolutionManager:
                 sanctified_rule = sanctified_rule_fn(attacker_unit, dice_count=int(len(test_model_ids)))
                 if sanctified_rule:
                     reroll_rules.append(sanctified_rule)
+            ts_mgr = getattr(attacker_army, "thousand_sons_detachments", None) if attacker_army is not None else None
+            empowered_rule_fn = (
+                getattr(ts_mgr, "hexwarp_empowered_manifestation_hazardous_reroll_rule", None)
+                if ts_mgr is not None
+                else None
+            )
+            if callable(empowered_rule_fn):
+                empowered_rule = empowered_rule_fn(attacker_unit, dice_count=int(len(test_model_ids)), game=game)
+                if empowered_rule:
+                    reroll_rules.append(empowered_rule)
         roll_spec = {
             "dice_count": int(len(test_model_ids)),
             "faces": 6,
