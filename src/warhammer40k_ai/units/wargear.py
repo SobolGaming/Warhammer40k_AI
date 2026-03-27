@@ -10705,6 +10705,32 @@ class WargearProfile:
                 pass
             try:
                 unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and bool(sr.get("thousand_sons_scouring_warpflame_active")):
+                    army = root.get_parent_army() if root is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    applies = True
+                    owner_id = str(sr.get("thousand_sons_scouring_warpflame_turn_owner", "") or "")
+                    turn = int(sr.get("thousand_sons_scouring_warpflame_turn", 0) or 0)
+                    exp = str(sr.get("thousand_sons_scouring_warpflame_expires_phase", "") or "").strip().upper()
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            applies = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            applies = False
+                        elif exp and cur_phase and exp != cur_phase:
+                            applies = False
+                    if applies:
+                        attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
                 ignores_cover_fn = (

@@ -3654,6 +3654,21 @@ class LateGameplayMixin:
                         "dark_apparitions_source",
                     ):
                         sr.pop(key, None)
+                if (
+                    sr.get("thousand_sons_through_the_veil_temp_deep_strike") is True
+                    or sr.get("thousand_sons_through_the_veil_active") is True
+                    or "thousand_sons_through_the_veil_deep_strike_min_distance" in sr
+                ):
+                    for key in (
+                        "thousand_sons_through_the_veil_active",
+                        "thousand_sons_through_the_veil_temp_deep_strike",
+                        "thousand_sons_through_the_veil_turn_owner",
+                        "thousand_sons_through_the_veil_turn",
+                        "thousand_sons_through_the_veil_expires_phase",
+                        "thousand_sons_through_the_veil_source",
+                        "thousand_sons_through_the_veil_deep_strike_min_distance",
+                    ):
+                        sr.pop(key, None)
                 if sr.get("umbralefic_crystal_temp_deep_strike") is True or "umbralefic_crystal_must_arrive_turn" in sr:
                     for key in (
                         "umbralefic_crystal_temp_deep_strike",

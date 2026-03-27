@@ -8523,6 +8523,86 @@ _GRAND_COVEN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRAND_COVEN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009742002": StratagemToolDescriptor(
+        stratagem_id="000009742002",
+        name="Warding Hex",
+        timing="command_phase",
+        target="thousand_sons_psyker_unit_within_controlled_objective_range_wholly_within_flow_of_magic",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+    ),
+    "000009742003": StratagemToolDescriptor(
+        stratagem_id="000009742003",
+        name="Wrath of the Doomed",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="thousand_sons_unit_targeted_by_attacking_enemy_unit",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "threshold": 4,
+            "flow_of_magic_threshold": 3,
+        },
+    ),
+    "000009742004": StratagemToolDescriptor(
+        stratagem_id="000009742004",
+        name="Strands of Time",
+        timing="movement_phase_after_fall_back",
+        target="thousand_sons_psyker_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_or_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "choices": ["SHOOT", "CHARGE"],
+            "flow_of_magic_choice": "BOTH",
+        },
+    ),
+    "000009742005": StratagemToolDescriptor(
+        stratagem_id="000009742005",
+        name="Through the Veil",
+        timing="movement_phase_reinforcements_step",
+        target="rubric_marines_or_scarab_occult_terminators_unit_in_strategic_reserves",
+        duration="until_end_of_phase",
+        effect="temporary_deep_strike_with_hexwarp_flow_setup",
+        cp_cost=1,
+        effect_params={
+            "rubric_marines_grant_temp_deep_strike": True,
+            "scarab_occult_min_distance": 6,
+            "scarab_occult_distance_type": "horizontal",
+            "scarab_occult_requires_wholly_within_flow_of_magic": True,
+        },
+    ),
+    "000009742006": StratagemToolDescriptor(
+        stratagem_id="000009742006",
+        name="Scouring Warpflame",
+        timing="shooting_phase",
+        target="thousand_sons_psyker_unit_wholly_within_flow_of_magic_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_ignores_cover_and_post_shoot_no_cover",
+        cp_cost=1,
+    ),
+    "000009742007": StratagemToolDescriptor(
+        stratagem_id="000009742007",
+        name="Kaleidoscopic Tempest",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="thousand_sons_psyker_unit_targeted_by_attacking_enemy_unit",
+        duration="until_end_of_phase",
+        effect="stealth_and_conditional_cover",
+        cp_cost=1,
+        effect_params={
+            "grant_stealth": True,
+            "grant_cover_while_wholly_within_flow_of_magic": True,
+        },
+    ),
+}
+
+_HEXWARP_THRALLBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010206002": StratagemToolDescriptor(
         stratagem_id="000010206002",
@@ -9292,6 +9372,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GRAND_COVEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HEXWARP_THRALLBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9428,6 +9511,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _WRATHFUL_PROCESSION_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _GRAND_COVEN_STRATAGEM_BY_NAME.get(key)
+        or _HEXWARP_THRALLBAND_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)

@@ -4933,6 +4933,38 @@ class AbilitySpecsMixin:
                     }
                 )
 
+        try:
+            source_sr = getattr(root, "special_rules", None)
+            if isinstance(source_sr, dict) and bool(source_sr.get("thousand_sons_scouring_warpflame_active")):
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                owner_id = str(source_sr.get("thousand_sons_scouring_warpflame_turn_owner", "") or "")
+                turn = int(source_sr.get("thousand_sons_scouring_warpflame_turn", 0) or 0)
+                exp_phase = str(source_sr.get("thousand_sons_scouring_warpflame_expires_phase", "") or "").strip().upper()
+                applies = True
+                if game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        applies = False
+                    elif turn and cur_turn and turn != cur_turn:
+                        applies = False
+                    elif exp_phase and cur_phase and exp_phase != cur_phase:
+                        applies = False
+                if applies:
+                    _append_spec(
+                        source=str(
+                            source_sr.get("thousand_sons_scouring_warpflame_source", "")
+                            or "SCOURING WARPFLAME"
+                        ).strip()
+                        or "SCOURING WARPFLAME",
+                        any_weapon=True,
+                        duration="phase_end",
+                    )
+        except Exception:
+            pass
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)

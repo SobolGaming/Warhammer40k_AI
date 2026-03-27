@@ -20151,6 +20151,12 @@ def _stratagem_support(
         "DECEPTIVE GLAMOUR": "Start of the Fight phase: selected THOUSAND SONS unit cannot be selected as an enemy fight target while any eligible SCINTILLATING LEGIONS fight targets remain for that attacker.",
         "DEVASTATING SORCERY": "Your Shooting phase: selected THOUSAND SONS PSYKER unit that has not been selected to shoot gains +9\" range on Psychic ranged weapons and full Hit/Wound re-rolls with Psychic weapons until end of phase.",
         "EGOTISTICAL POWER": "Your Command phase: selected THOUSAND SONS PSYKER unit chooses Imbued Manifestation, Psychic Maelstrom, or Wrath of the Immaterium as a unit-only Kindred Sorcery override until your next Command phase.",
+        "WARDING HEX": "Your Command phase: selected THOUSAND SONS PSYKER within range of a controlled objective marker that is wholly within Flow of Magic makes that objective sticky until your opponent's Level of Control is greater at the end of a phase.",
+        "WRATH OF THE DOOMED": "Fight phase reaction after enemy targets are selected: selected THOUSAND SONS target gains melee fight-on-death after the attacker finishes its attacks this phase, succeeding on 4+ or 3+ while wholly within Flow of Magic.",
+        "STRANDS OF TIME": "Movement phase reaction after a THOUSAND SONS PSYKER unit Falls Back: selected unit can shoot or charge this turn, or do both while wholly within Flow of Magic.",
+        "THROUGH THE VEIL": "Movement phase Reinforcements step: selected RUBRIC MARINES or SCARAB OCCULT TERMINATORS unit in Strategic Reserves gains Hexwarp arrival permissions; Rubrics gain temporary Deep Strike this phase, while Scarabs can set up wholly within Flow of Magic and more than 6\" horizontally from enemy units.",
+        "SCOURING WARPFLAME": "Your Shooting phase: selected THOUSAND SONS PSYKER unit wholly within Flow of Magic and not yet selected to shoot gains [IGNORES COVER] on ranged attacks and can strip cover from one hit enemy unit after shooting this phase.",
+        "KALEIDOSCOPIC TEMPEST": "Opponent Shooting phase reaction after enemy targets are selected: selected THOUSAND SONS PSYKER target gains Stealth until end of phase, and also gains the Benefit of Cover while wholly within Flow of Magic.",
         "ETHEREAL PHANTASM": "Opponent Movement phase reaction after an enemy Normal/Advance/Fall Back move ends: selected SCINTILLATING LEGIONS unit within 9\" and not engaged queues a reactive Normal move of D6\", or a fixed 6\" while wholly within 6\" of a friendly THOUSAND SONS unit.",
         "FRACTAL DISJUNCTION": "Opponent Shooting phase reaction after enemy targets are selected: selected non-MONSTER SCINTILLATING LEGIONS unit can only be targeted by ranged attacks from within 18\" until end of phase.",
         "SULPHUROUS VEIL": "Opponent Shooting phase or either Fight phase defensive reaction after enemy targets are selected: selected THOUSAND SONS or SCINTILLATING LEGIONS unit imposes -1 to Hit rolls against attacks that target it until end of phase.",
@@ -20474,6 +20480,15 @@ def _stratagem_support(
         "SAVAGE ROAR",
         "SWARM-GUIDED SALVOES",
         "UNTRAMMELLED FEROCITY",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000009742002",
+        "000009742003",
+        "000009742004",
+        "000009742005",
+        "000009742006",
+        "000009742007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
 

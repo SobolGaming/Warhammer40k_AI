@@ -9534,6 +9534,27 @@ class PositioningMixin:
                             found = False
                         elif exp_phase and cur_phase and exp_phase != cur_phase:
                             found = False
+                elif sr.get("thousand_sons_through_the_veil_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("thousand_sons_through_the_veil_turn_owner", "") or "")
+                    turn = int(sr.get("thousand_sons_through_the_veil_turn", 0) or 0)
+                    exp_phase = str(sr.get("thousand_sons_through_the_veil_expires_phase", "") or "").strip().upper()
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            found = False
+                        elif exp_phase and cur_phase and exp_phase != cur_phase:
+                            found = False
                 elif sr.get("midgame_temp_deep_strike"):
                     found = True
                     try:
@@ -10140,6 +10161,47 @@ class PositioningMixin:
             if dark_apparitions_min > 0:
                 min_dist = dark_apparitions_min if min_dist is None else min(min_dist, dark_apparitions_min)
 
+        try:
+            through_the_veil_min = float(sr.get("thousand_sons_through_the_veil_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            through_the_veil_min = 0.0
+        if through_the_veil_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("thousand_sons_through_the_veil_turn_owner", "") or "")
+                turn = int(sr.get("thousand_sons_through_the_veil_turn", 0) or 0)
+                exp = str(sr.get("thousand_sons_through_the_veil_expires_phase", "") or "").strip().upper()
+                active = bool(sr.get("thousand_sons_through_the_veil_active"))
+                if not active:
+                    through_the_veil_min = 0.0
+                elif game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        through_the_veil_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        through_the_veil_min = 0.0
+                    elif exp and pname and exp != pname:
+                        through_the_veil_min = 0.0
+            except Exception:
+                through_the_veil_min = 0.0
+            if through_the_veil_min > 0:
+                min_dist = (
+                    through_the_veil_min
+                    if min_dist is None
+                    else min(min_dist, through_the_veil_min)
+                )
+
         return float(min_dist) if min_dist is not None else None
 
     def get_dark_apparitions_friendly_distance_requirement(self, *, game=None) -> Optional[float]:
@@ -10312,6 +10374,98 @@ class PositioningMixin:
                 except Exception:
                     continue
             if not within_required:
+                return False
+        return True
+
+    def is_through_the_veil_arrival_valid(
+        self,
+        prospective_positions: list[tuple[float, float, float, float]],
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_through_the_veil_active")):
+            return True
+        gm = game
+        if gm is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is None:
+            return False
+        owner_id = str(sr.get("thousand_sons_through_the_veil_turn_owner", "") or "")
+        effect_turn = int(sr.get("thousand_sons_through_the_veil_turn", 0) or 0)
+        exp_phase = str(sr.get("thousand_sons_through_the_veil_expires_phase", "") or "").strip().upper()
+        cur_player = getattr(gm, "get_current_player", lambda: None)()
+        cur_owner = str(getattr(cur_player, "id", "") or "")
+        cur_turn = int(getattr(gm, "turn", 0) or 0)
+        cur_phase = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+        if owner_id and cur_owner and owner_id != cur_owner:
+            return True
+        if effect_turn and cur_turn and effect_turn != cur_turn:
+            return True
+        if exp_phase and cur_phase and exp_phase != cur_phase:
+            return True
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        has_scarab_keyword = False
+        try:
+            has_scarab_keyword = bool(root.has_any_keyword("SCARAB OCCULT TERMINATORS"))
+        except Exception:
+            has_scarab_keyword = False
+        if not (has_scarab_keyword or "SCARAB OCCULT TERMINATORS" in name_u):
+            return True
+        if not prospective_positions:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        player = getattr(army, "player", None)
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        if player is None or mgr is None:
+            return False
+        zones_fn = getattr(mgr, "_active_hexwarp_flow_zones", None)
+        zones = set(zones_fn(game=gm) or {"own"}) if callable(zones_fn) else {"own"}
+        if not zones:
+            zones = {"own"}
+        players = list(getattr(gm, "players", []) or [])
+        opponent = next((candidate for candidate in players if candidate is not player), None)
+        unit_models = list(getattr(root, "models", []) or [])
+        for idx, (x, y, z, facing) in enumerate(list(prospective_positions or [])):
+            if idx >= len(unit_models):
+                break
+            try:
+                base = root._create_potential_base(x, y, z, facing, model=unit_models[idx])
+            except Exception:
+                return False
+            if base is None:
+                return False
+            try:
+                in_own = bool(gm.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.id))
+            except Exception:
+                return False
+            try:
+                in_enemy = bool(
+                    opponent is not None
+                    and gm.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.id)
+                )
+            except Exception:
+                return False
+            zone = "nml"
+            if in_own:
+                zone = "own"
+            elif in_enemy:
+                zone = "enemy"
+            if zone not in zones:
                 return False
         return True
 

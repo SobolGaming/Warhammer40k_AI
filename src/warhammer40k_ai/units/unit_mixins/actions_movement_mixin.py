@@ -17766,6 +17766,15 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_strands_of_time_shoot_active",
+                owner_key="thousand_sons_strands_of_time_turn_owner",
+                turn_key="thousand_sons_strands_of_time_turn",
+            ):
+                return True
+        except Exception:
+            pass
         enhancement_fall_back_fn = getattr(self, "_enhancement_unit_can_shoot_after_fall_back", None)
         if callable(enhancement_fall_back_fn) and enhancement_fall_back_fn():
             return True
@@ -19135,6 +19144,15 @@ class ActionsMovementMixin:
                 active_key="thousand_sons_ardent_automata_active",
                 owner_key="thousand_sons_ardent_automata_turn_owner",
                 turn_key="thousand_sons_ardent_automata_turn",
+            ):
+                return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_strands_of_time_charge_active",
+                owner_key="thousand_sons_strands_of_time_turn_owner",
+                turn_key="thousand_sons_strands_of_time_turn",
             ):
                 return True
         except Exception:

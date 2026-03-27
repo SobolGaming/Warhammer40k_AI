@@ -2240,6 +2240,27 @@ def _evaluate_reserves_arrival_positions(
                     "Dark Apparitions: reserves Deep Strike setup validation failed."
                 ]
             }
+        try:
+            checker = getattr(unit, "is_through_the_veil_arrival_valid", None)
+            if callable(checker):
+                if not bool(
+                    checker(
+                        prospective,
+                        game=game,
+                        game_map=game_map,
+                    )
+                ):
+                    return {
+                        "errors": [
+                            "Through the Veil: SCARAB OCCULT TERMINATORS must arrive wholly within your army's Flow of Magic."
+                        ]
+                    }
+        except Exception:
+            return {
+                "errors": [
+                    "Through the Veil: reserves Deep Strike setup validation failed."
+                ]
+            }
 
     try:
         from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -2398,6 +2419,13 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 "dread_talons_screaming_descent_no_charge_turn_owner",
                 "dread_talons_screaming_descent_no_charge_turn",
                 "dread_talons_screaming_descent_no_charge_source",
+                "thousand_sons_through_the_veil_active",
+                "thousand_sons_through_the_veil_temp_deep_strike",
+                "thousand_sons_through_the_veil_turn_owner",
+                "thousand_sons_through_the_veil_turn",
+                "thousand_sons_through_the_veil_expires_phase",
+                "thousand_sons_through_the_veil_source",
+                "thousand_sons_through_the_veil_deep_strike_min_distance",
                 "eternity_gate_no_charge_turn_owner",
                 "eternity_gate_no_charge_turn",
                 "eternity_gate_no_charge_source",

@@ -46,6 +46,11 @@ class ThousandSonsStratagemMixin:
         checker = getattr(mgr, "is_grand_coven", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_thousand_sons_hexwarp_thrallband_detachment(self) -> bool:
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "is_hexwarp_thrallband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _ts_phase_key_for_game(self) -> str:
         mgr = self._ts_detachment_mgr()
         phase_key_fn = getattr(mgr, "_phase_key_for_game", None) if mgr is not None else None
@@ -888,6 +893,320 @@ class ThousandSonsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
 
+    @staticmethod
+    def _ts_hexwarp_strands_choice_options() -> list[dict[str, str]]:
+        return [
+            {"choice_key": "SHOOT", "label": "Shoot"},
+            {"choice_key": "CHARGE", "label": "Charge"},
+        ]
+
+    @staticmethod
+    def _ts_choice_key(choice: Any) -> str:
+        value = choice
+        if isinstance(choice, dict):
+            value = (
+                choice.get("choice_key")
+                or choice.get("key")
+                or choice.get("choice")
+                or choice.get("label")
+            )
+        return str(value or "").strip().upper().replace(" ", "_")
+
+    @staticmethod
+    def _ts_clear_ability_cache(root: Any, *prefixes: str) -> None:
+        cache = getattr(root, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            return
+        normalized = tuple(str(prefix or "") for prefix in prefixes if str(prefix or ""))
+        if not normalized:
+            return
+        for key in list(cache.keys()):
+            key_str = str(key or "")
+            if any(key_str.startswith(prefix) for prefix in normalized):
+                cache.pop(key, None)
+
+    def _is_scarab_occult_terminators_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        if not self._is_thousand_sons_unit(root):
+            return False
+        if self._ts_has_any_keyword(root, "SCARAB OCCULT TERMINATORS"):
+            return True
+        return "SCARAB OCCULT TERMINATORS" in str(getattr(root, "name", "") or "").strip().upper()
+
+    def _ts_hexwarp_unit_wholly_within_flow(self, unit: Any) -> bool:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return False
+        root = self._ts_root(unit)
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "_unit_wholly_within_hexwarp_flow", None) if mgr is not None else None
+        return bool(checker(root, game=getattr(self, "game", None))) if callable(checker) and root is not None else False
+
+    def _ts_hexwarp_model_wholly_within_flow(self, model: Any) -> bool:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return False
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "_model_wholly_within_hexwarp_flow", None) if mgr is not None else None
+        return bool(checker(model, game=getattr(self, "game", None))) if callable(checker) and model is not None else False
+
+    def _ts_hexwarp_objective_wholly_within_flow(self, objective: Any) -> bool:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        location = getattr(objective, "location", None)
+        if location is None or bool(getattr(location, "removed", False)):
+            return False
+        mgr = self._ts_detachment_mgr()
+        zones_fn = getattr(mgr, "_active_hexwarp_flow_zones", None) if mgr is not None else None
+        zones = set(zones_fn(game=game) or {"own"}) if callable(zones_fn) else {"own"}
+        if not zones:
+            zones = {"own"}
+        players = list(getattr(game, "players", []) or [])
+        opponent = next((candidate for candidate in players if candidate is not self.player), None)
+        try:
+            x = float(getattr(location, "x", 0.0) or 0.0)
+            y = float(getattr(location, "y", 0.0) or 0.0)
+            radius = float(getattr(location, "control_radius", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if radius < 0.0:
+            radius = 0.0
+
+        class _ObjectiveBase:
+            radius = 0.0
+            facing = 0.0
+            base_type = type("_ObjectiveBaseType", (), {"name": "CIRCULAR"})()
+
+            def get_radius(self) -> float:
+                return 0.0
+
+        sample_points = [(x, y)]
+        if radius > 0.0:
+            diag = float(radius / math.sqrt(2.0))
+            sample_points.extend(
+                [
+                    (x + radius, y),
+                    (x - radius, y),
+                    (x, y + radius),
+                    (x, y - radius),
+                    (x + diag, y + diag),
+                    (x + diag, y - diag),
+                    (x - diag, y + diag),
+                    (x - diag, y - diag),
+                ]
+            )
+        base = _ObjectiveBase()
+        for px, py in sample_points:
+            try:
+                in_own = bool(game.is_position_wholly_in_deployment_zone(float(px), float(py), base, self.player.id))
+            except (AttributeError, TypeError, ValueError):
+                return False
+            try:
+                in_enemy = bool(
+                    opponent is not None
+                    and game.is_position_wholly_in_deployment_zone(float(px), float(py), base, opponent.id)
+                )
+            except (AttributeError, TypeError, ValueError):
+                return False
+            zone = "nml"
+            if in_own:
+                zone = "own"
+            elif in_enemy:
+                zone = "enemy"
+            if zone not in zones:
+                return False
+        return True
+
+    def _ts_hexwarp_psyker_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_fell_back: bool = False,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
+                continue
+            if not self._is_psyker_unit(root):
+                continue
+            if require_not_shot and self._ts_has_shot_this_phase(root):
+                continue
+            if require_fell_back and not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_hexwarp_warding_hex_objective_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return []
+        root = self._ts_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not bool(is_within(location)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            if not self._ts_hexwarp_objective_wholly_within_flow(objective):
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
+
+    def _ts_hexwarp_warding_hex_candidates(self) -> list[Any]:
+        out: list[Any] = []
+        for root in self._ts_hexwarp_psyker_candidates():
+            if self._ts_hexwarp_warding_hex_objective_candidates(root):
+                out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_hexwarp_wrath_of_the_doomed_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return []
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_hexwarp_kaleidoscopic_tempest_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return []
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
+                continue
+            if not self._is_psyker_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_hexwarp_through_the_veil_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status != "strategic_reserves":
+                continue
+            if not (self._is_rubric_marines_unit(root) or self._is_scarab_occult_terminators_unit(root)):
+                continue
+            if self._is_scarab_occult_terminators_unit(root):
+                has_deep_strike = getattr(root, "has_deep_strike", None)
+                if callable(has_deep_strike) and not bool(has_deep_strike()):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_hexwarp_scouring_warpflame_candidates(self) -> list[Any]:
+        return [
+            root
+            for root in self._ts_hexwarp_psyker_candidates(require_not_shot=True)
+            if self._ts_hexwarp_unit_wholly_within_flow(root)
+        ]
+
     def _ts_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
         root = self._ts_root(unit)
         if root is None:
@@ -1638,6 +1957,309 @@ class ThousandSonsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_thousand_sons_hexwarp_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        _ = player
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("WARDING HEX")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_hexwarp_warding_hex_candidates()
+        if not candidates:
+            return
+        if self._ts_reaction_exists("phase_start", stratagem.name):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Command phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "phase_start",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_thousand_sons_hexwarp_fall_back_reactions(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower().replace(" ", "_") not in {"fall_back", "fallback"}:
+            return
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+        root = self._ts_root(unit)
+        if root is None:
+            return
+        if not self._ts_owned_by_player(root, self.player):
+            return
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("STRANDS OF TIME")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            return
+        if self._ts_reaction_exists("unit_move_ended", stratagem.name):
+            return
+        payload: dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "action": "fall_back",
+            "candidates": [root],
+            "flow_of_magic": bool(self._ts_hexwarp_unit_wholly_within_flow(root)),
+        }
+        if not bool(payload["flow_of_magic"]):
+            payload["choice_options"] = self._ts_hexwarp_strands_choice_options()
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_thousand_sons_hexwarp_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("KALEIDOSCOPIC TEMPEST")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_hexwarp_kaleidoscopic_tempest_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._ts_reaction_exists("shooting_targets_selected", stratagem.name, enemy_unit=attacker_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_thousand_sons_hexwarp_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("WRATH OF THE DOOMED")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_hexwarp_wrath_of_the_doomed_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._ts_reaction_exists("fight_targets_selected", stratagem.name, enemy_unit=attacker_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            attacking_unit=attacker_root,
+            phase_name="Fight phase",
+        ):
+            return
+        payload: dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_thousand_sons_hexwarp_reinforcements_step_reactions(self, *, current_player: Any) -> None:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        if current_player is not self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("THROUGH THE VEIL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_hexwarp_through_the_veil_candidates()
+        if not candidates:
+            return
+        if self._ts_reaction_exists("reinforcements_step_start", stratagem.name):
+            return
+        if not stratagem.can_use(self.player, self.game, unit=candidates[0], phase_name="Movement phase"):
+            return
+        payload: dict[str, Any] = {
+            "event": "reinforcements_step_start",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player_id": str(getattr(current_player, "id", "") or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _cleanup_thousand_sons_hexwarp_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_thousand_sons_hexwarp_thrallband_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        cleanup_keys_by_phase = {
+            "MOVEMENT_PHASE": (
+                "thousand_sons_through_the_veil_active",
+                "thousand_sons_through_the_veil_temp_deep_strike",
+                "thousand_sons_through_the_veil_turn_owner",
+                "thousand_sons_through_the_veil_turn",
+                "thousand_sons_through_the_veil_expires_phase",
+                "thousand_sons_through_the_veil_source",
+                "thousand_sons_through_the_veil_deep_strike_min_distance",
+            ),
+            "SHOOTING_PHASE": (
+                "thousand_sons_scouring_warpflame_active",
+                "thousand_sons_scouring_warpflame_turn_owner",
+                "thousand_sons_scouring_warpflame_turn",
+                "thousand_sons_scouring_warpflame_expires_phase",
+                "thousand_sons_scouring_warpflame_source",
+            ),
+            "FIGHT_PHASE": (
+                "thousand_sons_wrath_of_the_doomed_active",
+                "thousand_sons_wrath_of_the_doomed_turn_owner",
+                "thousand_sons_wrath_of_the_doomed_turn",
+                "thousand_sons_wrath_of_the_doomed_source",
+                "thousand_sons_wrath_of_the_doomed_expires_phase",
+                "thousand_sons_strands_of_time_shoot_active",
+                "thousand_sons_strands_of_time_charge_active",
+                "thousand_sons_strands_of_time_turn_owner",
+                "thousand_sons_strands_of_time_turn",
+                "thousand_sons_strands_of_time_source",
+                "thousand_sons_strands_of_time_choice",
+            ),
+        }
+        cleanup_keys = cleanup_keys_by_phase.get(phase_key)
+        if cleanup_keys is None:
+            return
+        for root in self._ts_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in cleanup_keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if not changed:
+                continue
+            root.special_rules = sr
+            if phase_key == "MOVEMENT_PHASE":
+                self._ts_clear_ability_cache(root, "deep_strike")
+            elif phase_key == "SHOOTING_PHASE":
+                self._ts_clear_ability_cache(root, "unit_post_shoot_no_cover_specs")
+            elif phase_key == "FIGHT_PHASE":
+                self._ts_clear_ability_cache(root, "fell_back_and_shoot", "melee_fight_on_death_after_attacks:")
+
     def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         _ = player
         game = getattr(self, "game", None)
@@ -1811,7 +2433,472 @@ class ThousandSonsStratagemMixin:
                 return self._use_thousand_sons_egotistical_power(stratagem, **kwargs)
             if name_u == "PSYCHIC DOMINION":
                 return self._use_thousand_sons_psychic_dominion(stratagem, **kwargs)
+        if self._is_thousand_sons_hexwarp_thrallband_detachment():
+            if name_u == "WARDING HEX":
+                return self._use_thousand_sons_warding_hex(stratagem, **kwargs)
+            if name_u == "WRATH OF THE DOOMED":
+                return self._use_thousand_sons_wrath_of_the_doomed(stratagem, **kwargs)
+            if name_u == "STRANDS OF TIME":
+                return self._use_thousand_sons_strands_of_time(stratagem, **kwargs)
+            if name_u == "THROUGH THE VEIL":
+                return self._use_thousand_sons_through_the_veil(stratagem, **kwargs)
+            if name_u == "SCOURING WARPFLAME":
+                return self._use_thousand_sons_scouring_warpflame(stratagem, **kwargs)
+            if name_u == "KALEIDOSCOPIC TEMPEST":
+                return self._use_thousand_sons_kaleidoscopic_tempest(stratagem, **kwargs)
         return None
+
+    def _use_thousand_sons_warding_hex(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or (objective is None and not objective_candidates):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: WARDING HEX: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: WARDING HEX: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: WARDING HEX: target must be a THOUSAND SONS PSYKER unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: WARDING HEX: wrong phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_warding_hex_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: WARDING HEX: selected unit is not currently eligible")
+            return False
+        if not objective_candidates:
+            objective_candidates = self._ts_hexwarp_warding_hex_objective_candidates(root)
+        if objective is None and objective_candidates:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: WARDING HEX: no controlled objective wholly within Flow of Magic is in range")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: WARDING HEX: selected objective is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: WARDING HEX: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        location = getattr(objective, "location", None)
+        if location is None:
+            logger.error("ERROR: WARDING HEX: objective marker is missing its location")
+            return False
+        set_sticky_control = getattr(location, "set_sticky_control", None)
+        if callable(set_sticky_control):
+            set_sticky_control(self.player, source="warding_hex")
+        else:
+            location.sticky_controller = self.player
+            location.controlling_player = self.player
+            location.sticky_source = "warding_hex"
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WARDING HEX: %s made objective %s sticky while it remains wholly within Flow of Magic.",
+            getattr(root, "name", "Unit"),
+            getattr(objective, "id", getattr(objective, "name", "objective")),
+        )
+        return True
+
+    def _use_thousand_sons_wrath_of_the_doomed(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: WRATH OF THE DOOMED: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        attacker_root = self._ts_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: WRATH OF THE DOOMED: missing attacker context")
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: WRATH OF THE DOOMED: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root):
+            logger.error("ERROR: WRATH OF THE DOOMED: target must be a THOUSAND SONS unit")
+            return False
+        if self._ts_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: WRATH OF THE DOOMED: attacker is not an enemy unit")
+            return False
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: WRATH OF THE DOOMED: wrong phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_wrath_of_the_doomed_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: WRATH OF THE DOOMED: target must have been selected by the attacking enemy unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Fight phase",
+        ):
+            logger.error("ERROR: WRATH OF THE DOOMED: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_wrath_of_the_doomed_active"] = True
+        sr["thousand_sons_wrath_of_the_doomed_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        sr["thousand_sons_wrath_of_the_doomed_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_wrath_of_the_doomed_source"] = str(getattr(stratagem, "name", "") or "WRATH OF THE DOOMED")
+        sr["thousand_sons_wrath_of_the_doomed_expires_phase"] = "FIGHT_PHASE"
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "melee_fight_on_death_after_attacks:")
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WRATH OF THE DOOMED: %s gains melee fight-on-death until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_strands_of_time(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        choice_key = self._ts_choice_key(kwargs.get("choice"))
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if action is None:
+                    action = reaction.get("action")
+                if not choice_key:
+                    choice_key = self._ts_choice_key(reaction.get("choice"))
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: STRANDS OF TIME: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: STRANDS OF TIME: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: STRANDS OF TIME: target must be a THOUSAND SONS PSYKER unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: STRANDS OF TIME: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: STRANDS OF TIME: not your Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key and action_key not in {"fall_back", "fallback"}:
+            logger.error("ERROR: STRANDS OF TIME: wrong trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: STRANDS OF TIME: target must have Fallen Back this phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_psyker_candidates(require_fell_back=True)
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: STRANDS OF TIME: selected unit is not currently eligible")
+            return False
+        in_flow = self._ts_hexwarp_unit_wholly_within_flow(root)
+        if not in_flow and choice_key not in {"SHOOT", "CHARGE"}:
+            logger.error("ERROR: STRANDS OF TIME: choice must be SHOOT or CHARGE when outside Flow of Magic")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: STRANDS OF TIME: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        grant_shoot = bool(in_flow or choice_key == "SHOOT")
+        grant_charge = bool(in_flow or choice_key == "CHARGE")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_strands_of_time_shoot_active"] = grant_shoot
+        sr["thousand_sons_strands_of_time_charge_active"] = grant_charge
+        sr["thousand_sons_strands_of_time_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_strands_of_time_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_strands_of_time_source"] = str(getattr(stratagem, "name", "") or "STRANDS OF TIME")
+        sr["thousand_sons_strands_of_time_choice"] = "BOTH" if in_flow else str(choice_key or "")
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "fell_back_and_shoot")
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: STRANDS OF TIME: %s can %s after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+            "shoot and charge" if in_flow else str(choice_key or "").strip().lower(),
+        )
+        return True
+
+    def _use_thousand_sons_through_the_veil(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THROUGH THE VEIL: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: THROUGH THE VEIL: target unit is not yours")
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+        if reserve_status != "strategic_reserves":
+            logger.error("ERROR: THROUGH THE VEIL: target must be in Strategic Reserves")
+            return False
+        if not (self._is_rubric_marines_unit(root) or self._is_scarab_occult_terminators_unit(root)):
+            logger.error("ERROR: THROUGH THE VEIL: target must be RUBRIC MARINES or SCARAB OCCULT TERMINATORS")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: THROUGH THE VEIL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THROUGH THE VEIL: not your Movement phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_through_the_veil_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THROUGH THE VEIL: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: THROUGH THE VEIL: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_through_the_veil_active"] = True
+        sr["thousand_sons_through_the_veil_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_through_the_veil_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_through_the_veil_expires_phase"] = "MOVEMENT_PHASE"
+        sr["thousand_sons_through_the_veil_source"] = str(getattr(stratagem, "name", "") or "THROUGH THE VEIL")
+        if self._is_rubric_marines_unit(root):
+            sr["thousand_sons_through_the_veil_temp_deep_strike"] = True
+        if self._is_scarab_occult_terminators_unit(root):
+            sr["thousand_sons_through_the_veil_deep_strike_min_distance"] = 6.0
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "deep_strike")
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THROUGH THE VEIL: %s can arrive using Hexwarp Deep Strike permissions this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_scouring_warpflame(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: SCOURING WARPFLAME: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: SCOURING WARPFLAME: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: SCOURING WARPFLAME: target must be a THOUSAND SONS PSYKER unit")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SCOURING WARPFLAME: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SCOURING WARPFLAME: not your Shooting phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_scouring_warpflame_candidates()
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SCOURING WARPFLAME: target must be wholly within Flow of Magic and not yet selected to shoot")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: SCOURING WARPFLAME: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_scouring_warpflame_active"] = True
+        sr["thousand_sons_scouring_warpflame_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_scouring_warpflame_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_scouring_warpflame_expires_phase"] = "SHOOTING_PHASE"
+        sr["thousand_sons_scouring_warpflame_source"] = str(getattr(stratagem, "name", "") or "SCOURING WARPFLAME")
+        root.special_rules = sr
+        self._ts_clear_ability_cache(root, "unit_post_shoot_no_cover_specs")
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCOURING WARPFLAME: %s gains Ignores Cover and post-shoot no-cover selection this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_kaleidoscopic_tempest(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        attacker_root = self._ts_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: missing attacker context")
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: target must be a THOUSAND SONS PSYKER unit")
+            return False
+        if self._ts_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: attacker is not an enemy unit")
+            return False
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: not opponent's Shooting phase")
+            return False
+        eligible = candidates or self._ts_hexwarp_kaleidoscopic_tempest_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if eligible and not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: target must have been selected by the attacking enemy unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: KALEIDOSCOPIC TEMPEST: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["opponent_shooting_phase_stealth_active"] = True
+        sr["opponent_shooting_phase_stealth_owner"] = str(getattr(active_player, "id", "") or "")
+        sr["opponent_shooting_phase_stealth_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["opponent_shooting_phase_stealth_source"] = str(getattr(stratagem, "name", "") or "KALEIDOSCOPIC TEMPEST")
+        sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+        if self._ts_hexwarp_unit_wholly_within_flow(root):
+            self._append_defensive_effect(
+                root,
+                "defensive_cover_bonuses",
+                {
+                    "attack_type": "ranged",
+                    "expires_phase": "SHOOTING_PHASE",
+                    "source": str(getattr(stratagem, "name", "") or "KALEIDOSCOPIC TEMPEST"),
+                },
+            )
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: KALEIDOSCOPIC TEMPEST: %s gains Stealth%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and Benefit of Cover" if self._ts_hexwarp_unit_wholly_within_flow(root) else "",
+        )
+        return True
 
     def _use_thousand_sons_arcane_focus(self, stratagem: Any, **kwargs) -> bool:
         caster_model = kwargs.get("caster_model") or kwargs.get("target_model") or kwargs.get("model")

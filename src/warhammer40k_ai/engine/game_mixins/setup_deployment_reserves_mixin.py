@@ -2265,6 +2265,13 @@ class GameSetupDeploymentReservesMixin:
         )
         if callable(queue_dread_talons):
             queue_dread_talons(current_player=current_player)
+        queue_hexwarp = (
+            getattr(current_stratagems, "_queue_thousand_sons_hexwarp_reinforcements_step_reactions", None)
+            if current_stratagems is not None
+            else None
+        )
+        if callable(queue_hexwarp):
+            queue_hexwarp(current_player=current_player)
 
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)

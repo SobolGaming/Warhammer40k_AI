@@ -1638,6 +1638,45 @@ class KeywordsDetachmentsMixin:
         if too_arrogant_rule is not None:
             return too_arrogant_rule
 
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("thousand_sons_wrath_of_the_doomed_active")):
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+                owner_id = str(sr.get("thousand_sons_wrath_of_the_doomed_turn_owner", "") or "").strip()
+                effect_turn = int(sr.get("thousand_sons_wrath_of_the_doomed_turn", 0) or 0)
+                exp_phase = str(sr.get("thousand_sons_wrath_of_the_doomed_expires_phase", "") or "").strip().upper()
+                if (
+                    phase_name == "FIGHT_PHASE"
+                    and (not owner_id or not current_owner_id or owner_id == current_owner_id)
+                    and (not effect_turn or not current_turn or effect_turn == current_turn)
+                    and (not exp_phase or exp_phase == phase_name)
+                ):
+                    threshold = 4
+                    army = self.get_parent_army()
+                    mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+                    in_flow = False
+                    checker = getattr(mgr, "_unit_wholly_within_hexwarp_flow", None) if mgr is not None else None
+                    if callable(checker):
+                        try:
+                            in_flow = bool(checker(self, game=game))
+                        except Exception:
+                            in_flow = False
+                    if in_flow:
+                        threshold = 3
+                    return {
+                        "threshold": int(threshold),
+                        "source": str(
+                            sr.get("thousand_sons_wrath_of_the_doomed_source", "")
+                            or "WRATH OF THE DOOMED"
+                        ).strip()
+                        or "WRATH OF THE DOOMED",
+                    }
+        except Exception:
+            pass
+
         # Temporary effect hook: Boon of Death (Mortarion).
         try:
             sr = getattr(self, "special_rules", None)

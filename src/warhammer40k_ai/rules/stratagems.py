@@ -135,6 +135,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DESTINED BY FATE",
     "DEVASTATING SORCERY",
     "EGOTISTICAL POWER",
+    "WARDING HEX",
+    "WRATH OF THE DOOMED",
+    "STRANDS OF TIME",
+    "THROUGH THE VEIL",
+    "SCOURING WARPFLAME",
+    "KALEIDOSCOPIC TEMPEST",
     "PSYCHIC DOMINION",
     "RAMPAGING MONSTROSITIES",
     "SELFLESS DEMISE",
@@ -722,6 +728,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
     "GLIMMERSHIFT PORTAL",
+    "STRANDS OF TIME",
+    "THROUGH THE VEIL",
+    "WRATH OF THE DOOMED",
+    "KALEIDOSCOPIC TEMPEST",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
@@ -1942,6 +1952,7 @@ class StratagemManager(
             "PREDATORY PURSUIT",
             "MILLENNIA OF EXPERIENCE",
             "ETHEREAL PHANTASM",
+            "STRANDS OF TIME",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2173,6 +2184,7 @@ class StratagemManager(
             "SHIELD NODES",
             "PSYCHIC SHIELD",
             "PSYCHIC DOMINION",
+            "KALEIDOSCOPIC TEMPEST",
             "ILLUMINATING FIRE",
             "RIDE HARD, RIDE FAST",
             "EVASIVE MANOEUVRES",
@@ -2241,6 +2253,7 @@ class StratagemManager(
             "SAVAGE ROAR",
             "ETERNAL HATE",
             "PSYCHIC DOMINION",
+            "WRATH OF THE DOOMED",
             "NEVER OUTGUNNED",
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
@@ -2510,6 +2523,11 @@ class StratagemManager(
             "PSYCHIC SHIELD",
             "DEVASTATING SORCERY",
             "PSYCHIC DOMINION",
+            "STRANDS OF TIME",
+            "THROUGH THE VEIL",
+            "SCOURING WARPFLAME",
+            "KALEIDOSCOPIC TEMPEST",
+            "WRATH OF THE DOOMED",
             "PROFANE ZEAL",
             "REAVERS' FLURRY",
             "SEIZE THE PRIZE",
@@ -4898,6 +4916,84 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase trigger where an enemy unit destroyed one of your THOUSAND SONS PSYKER models and a friendly RUBRICAE unit is within 6\" of that destroyed model"
             return result
+        if name_u == "WARDING HEX":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_warding_hex_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Command phase and a friendly THOUSAND SONS PSYKER within range of a controlled objective marker that is wholly within Flow of Magic"
+            return result
+        if name_u == "WRATH OF THE DOOMED":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_wrath_of_the_doomed_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight target-selection trigger with an enemy unit that selected one of your THOUSAND SONS units as a target"
+            return result
+        if name_u == "STRANDS OF TIME":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_psyker_candidates(require_fell_back=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after one of your THOUSAND SONS PSYKER units Falls Back"
+            return result
+        if name_u == "THROUGH THE VEIL":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_through_the_veil_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase Reinforcements step and a RUBRIC MARINES or SCARAB OCCULT TERMINATORS unit in Strategic Reserves"
+            return result
+        if name_u == "SCOURING WARPFLAME":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_scouring_warpflame_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a THOUSAND SONS PSYKER unit wholly within Flow of Magic that has not been selected to shoot"
+            return result
+        if name_u == "KALEIDOSCOPIC TEMPEST":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_hexwarp_kaleidoscopic_tempest_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase target-selection trigger with an enemy unit that selected one of your THOUSAND SONS PSYKER units as a target"
+            return result
         if name_u == "GLIMMERSHIFT PORTAL":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5762,6 +5858,12 @@ class StratagemManager(
             "DESTINED BY FATE": "Any phase, just after a failed save: target your THOUSAND SONS PSYKER model and change the Damage characteristic of that attack to 0",
             "DEVASTATING SORCERY": "Shooting phase: target your THOUSAND SONS PSYKER unit that has not been selected to shoot; its Psychic weapons gain +9\" Range and full Hit/Wound re-rolls this phase",
             "EGOTISTICAL POWER": "Command phase: target your THOUSAND SONS PSYKER unit and choose Imbued Manifestation, Psychic Maelstrom, or Wrath of the Immaterium for that unit until your next Command phase",
+            "WARDING HEX": "Command phase: target your THOUSAND SONS PSYKER unit within range of a controlled objective marker that is wholly within Flow of Magic; that objective becomes sticky until your opponent has greater control at phase end",
+            "WRATH OF THE DOOMED": "Fight phase, just after an enemy unit selects targets: target your THOUSAND SONS unit selected by that attacker; it gains melee fight-on-death after the attacker finishes its attacks this phase, succeeding on 4+ or 3+ while wholly within Flow of Magic",
+            "STRANDS OF TIME": "Movement phase, just after your THOUSAND SONS PSYKER unit Falls Back: it can shoot or charge this turn, or both while wholly within Flow of Magic",
+            "THROUGH THE VEIL": "Movement phase Reinforcements step: target your RUBRIC MARINES or SCARAB OCCULT TERMINATORS unit in Strategic Reserves; Rubrics gain temporary Deep Strike this phase, while Scarabs can set up wholly within Flow of Magic and more than 6\" horizontally from enemy units",
+            "SCOURING WARPFLAME": "Shooting phase: target your THOUSAND SONS PSYKER unit wholly within Flow of Magic that has not been selected to shoot; its ranged attacks gain [IGNORES COVER] and after it shoots one hit enemy unit can lose cover this phase",
+            "KALEIDOSCOPIC TEMPEST": "Opponent Shooting phase, just after an enemy unit selects targets: target your THOUSAND SONS PSYKER unit selected by that attacker; it gains Stealth, and while wholly within Flow of Magic also gains the Benefit of Cover, until end of phase",
             "PSYCHIC DOMINION": "Any phase, just after an enemy unit selects targets: target your THOUSAND SONS unit chosen by that attacker; until end of phase that attacker's Psychic weapons are [HAZARDOUS] and your unit has Feel No Pain 4+ against Psychic attacks",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
             "BROODGUARD IMPULSE": "Any phase: target your HARVESTER unit that was just destroyed; friendly TYRANIDS models add 1 to Wound rolls against the enemy unit that destroyed it until end of battle",
@@ -6870,6 +6972,10 @@ class StratagemManager(
             self._queue_thousand_sons_changehost_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_thousand_sons_hexwarp_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -7896,6 +8002,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_thousand_sons_grand_coven_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_thousand_sons_hexwarp_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9786,6 +9896,7 @@ class StratagemManager(
         self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
         self._queue_thousand_sons_rubricae_phalanx_charge_reactions(charging_unit=unit, action=action)
         self._queue_thousand_sons_changehost_move_end_reactions(unit=unit, action=action)
+        self._queue_thousand_sons_hexwarp_fall_back_reactions(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -11220,6 +11331,10 @@ class StratagemManager(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
+            self._queue_thousand_sons_hexwarp_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -12112,6 +12227,13 @@ class StratagemManager(
             raise
         try:
             self._queue_renegade_raiders_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_hexwarp_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
