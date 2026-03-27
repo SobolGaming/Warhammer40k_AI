@@ -4,6 +4,7 @@ import logging
 import math
 from typing import Any, Optional
 
+from .thousand_sons_detachments import GRAND_COVEN_BY_KEY
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,18 @@ class ThousandSonsStratagemMixin:
         mgr = self._ts_detachment_mgr()
         checker = getattr(mgr, "is_changehost_of_deceit", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
+
+    def _is_thousand_sons_grand_coven_detachment(self) -> bool:
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "is_grand_coven", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _ts_phase_key_for_game(self) -> str:
+        mgr = self._ts_detachment_mgr()
+        phase_key_fn = getattr(mgr, "_phase_key_for_game", None) if mgr is not None else None
+        if callable(phase_key_fn):
+            return str(phase_key_fn(getattr(self, "game", None)) or "")
+        return ""
 
     @staticmethod
     def _ts_has_any_keyword(entity: Any, keyword: str) -> bool:
@@ -635,6 +648,101 @@ class ThousandSonsStratagemMixin:
         out: list[Any] = []
         for root in self._ts_rubricae_battlefield_candidates(require_fell_back=False):
             if not self._ts_unit_within_distance_of_model(root, destroyed_model, distance=6.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_grand_coven_psyker_candidates(self, *, require_not_shot: bool = False) -> list[Any]:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
+                continue
+            if not self._is_psyker_unit(root):
+                continue
+            if require_not_shot and self._ts_has_shot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_grand_coven_desecration_objective_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return []
+        root = self._ts_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not bool(is_within(location)):
+                continue
+            controller = getattr(location, "controlling_player", None)
+            sticky_controller = getattr(location, "sticky_controller", None)
+            if controller is not self.player and sticky_controller is not self.player:
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            out.append(objective)
+        out.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return out
+
+    def _ts_grand_coven_psychic_dominion_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return []
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_thousand_sons_unit(root):
                 continue
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
@@ -1463,6 +1571,73 @@ class ThousandSonsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_thousand_sons_grand_coven_target_reactions(
+        self,
+        *,
+        event_name: str,
+        phase_name: str,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != str(phase_name or "").strip().upper().replace(" ", "_"):
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("PSYCHIC DOMINION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._ts_grand_coven_psychic_dominion_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        if self._ts_reaction_exists(event_name, stratagem.name, enemy_unit=attacker_root):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=candidates[0],
+            attacking_unit=attacker_root,
+            phase_name=str(phase_name or "").replace("_", " ").title(),
+        ):
+            return
+        payload = {
+            "event": event_name,
+            "phase_name": str(phase_name or "").replace("_", " ").title(),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         _ = player
         game = getattr(self, "game", None)
@@ -1540,6 +1715,61 @@ class ThousandSonsStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _cleanup_thousand_sons_grand_coven_phase_start_effects(self, *, player: Any, phase: Any) -> None:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        if player is not self.player:
+            return
+        mgr = self._ts_detachment_mgr()
+        clear_fn = getattr(mgr, "clear_all_grand_coven_overrides", None) if mgr is not None else None
+        if callable(clear_fn):
+            clear_fn()
+
+    def _cleanup_thousand_sons_grand_coven_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_thousand_sons_grand_coven_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        cleanup_keys_by_phase = {
+            "SHOOTING_PHASE": (
+                "thousand_sons_devastating_sorcery_active",
+                "thousand_sons_devastating_sorcery_phase_key",
+                "thousand_sons_devastating_sorcery_owner",
+                "thousand_sons_devastating_sorcery_turn",
+                "thousand_sons_devastating_sorcery_source",
+                "thousand_sons_psychic_dominion_active",
+                "thousand_sons_psychic_dominion_phase_key",
+                "thousand_sons_psychic_dominion_owner",
+                "thousand_sons_psychic_dominion_turn",
+                "thousand_sons_psychic_dominion_source",
+                "thousand_sons_psychic_dominion_attacker_unit_id",
+            ),
+            "FIGHT_PHASE": (
+                "thousand_sons_psychic_dominion_active",
+                "thousand_sons_psychic_dominion_phase_key",
+                "thousand_sons_psychic_dominion_owner",
+                "thousand_sons_psychic_dominion_turn",
+                "thousand_sons_psychic_dominion_source",
+                "thousand_sons_psychic_dominion_attacker_unit_id",
+            ),
+        }
+        cleanup_keys = cleanup_keys_by_phase.get(phase_key)
+        if cleanup_keys is None:
+            return
+        for root in self._ts_army_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in cleanup_keys:
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+
     def _use_thousand_sons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -1568,7 +1798,400 @@ class ThousandSonsStratagemMixin:
                 return self._use_thousand_sons_fractal_disjunction(stratagem, **kwargs)
             if name_u == "GLIMMERSHIFT PORTAL":
                 return self._use_thousand_sons_glimmershift_portal(stratagem, **kwargs)
+        if self._is_thousand_sons_grand_coven_detachment():
+            if name_u == "ARCANE FOCUS":
+                return self._use_thousand_sons_arcane_focus(stratagem, **kwargs)
+            if name_u == "DESECRATION OF WORLDS":
+                return self._use_thousand_sons_desecration_of_worlds(stratagem, **kwargs)
+            if name_u == "DESTINED BY FATE":
+                return self._use_thousand_sons_destined_by_fate(stratagem, **kwargs)
+            if name_u == "DEVASTATING SORCERY":
+                return self._use_thousand_sons_devastating_sorcery(stratagem, **kwargs)
+            if name_u == "EGOTISTICAL POWER":
+                return self._use_thousand_sons_egotistical_power(stratagem, **kwargs)
+            if name_u == "PSYCHIC DOMINION":
+                return self._use_thousand_sons_psychic_dominion(stratagem, **kwargs)
         return None
+
+    def _use_thousand_sons_arcane_focus(self, stratagem: Any, **kwargs) -> bool:
+        caster_model = kwargs.get("caster_model") or kwargs.get("target_model") or kwargs.get("model")
+        rolls_state = kwargs.get("rolls_state")
+        current_rolls = list(kwargs.get("current_rolls") or [])
+        if not current_rolls and isinstance(rolls_state, dict):
+            current_rolls = list(rolls_state.get("rolls") or [])
+        if caster_model is None or not current_rolls:
+            logger.error("ERROR: ARCANE FOCUS: missing caster model or psychic test rolls")
+            return False
+        mgr = self._ts_detachment_mgr()
+        eligible_fn = getattr(mgr, "grand_coven_model_is_thousand_sons_psyker", None) if mgr is not None else None
+        if not callable(eligible_fn) or not bool(eligible_fn(caster_model, game=self.game)):
+            logger.error("ERROR: ARCANE FOCUS: target model must be a THOUSAND SONS PSYKER model from your army")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ARCANE FOCUS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ARCANE FOCUS: not your turn")
+            return False
+        if kwargs.get("channeled") is False:
+            logger.error("ERROR: ARCANE FOCUS: trigger requires Channel the Warp")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=getattr(caster_model, "parent_unit", None)):
+            return False
+
+        from ..utility.dice import get_roll
+
+        reroll_values = list(kwargs.get("reroll_values") or kwargs.get("rerolls") or [])
+        rerolled = []
+        for idx in range(len(current_rolls)):
+            if idx < len(reroll_values):
+                rerolled.append(int(reroll_values[idx]))
+            else:
+                rerolled.append(int(get_roll("D6") or 0))
+        if isinstance(rolls_state, dict):
+            rolls_state["rolls"] = list(rerolled)
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ARCANE FOCUS: re-rolled %d psychic test dice for %s.",
+            len(rerolled),
+            getattr(caster_model, "name", "Model"),
+        )
+        return True
+
+    def _use_thousand_sons_desecration_of_worlds(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if target_unit is None:
+            logger.error("ERROR: DESECRATION OF WORLDS: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: DESECRATION OF WORLDS: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: DESECRATION OF WORLDS: target must be a THOUSAND SONS PSYKER unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: DESECRATION OF WORLDS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DESECRATION OF WORLDS: not your turn")
+            return False
+
+        if not objective_candidates:
+            objective_candidates = self._ts_grand_coven_desecration_objective_candidates(root)
+        if objective is None and objective_candidates:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: DESECRATION OF WORLDS: no controlled objective marker within range")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: DESECRATION OF WORLDS: objective is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: DESECRATION OF WORLDS: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        location = getattr(objective, "location", None)
+        if location is None:
+            logger.error("ERROR: DESECRATION OF WORLDS: objective marker is missing its location")
+            return False
+        set_sticky_control = getattr(location, "set_sticky_control", None)
+        if callable(set_sticky_control):
+            set_sticky_control(self.player, source="desecration_of_worlds")
+        else:
+            location.sticky_controller = self.player
+            location.sticky_source = "desecration_of_worlds"
+            location.controlling_player = self.player
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DESECRATION OF WORLDS: %s makes %s sticky.",
+            getattr(root, "name", "Unit"),
+            getattr(objective, "name", "Objective"),
+        )
+        return True
+
+    def _use_thousand_sons_destined_by_fate(self, stratagem: Any, **kwargs) -> bool:
+        target_model = kwargs.get("target_model") or kwargs.get("model")
+        attack_instance = kwargs.get("attack_instance")
+        if target_model is None or not isinstance(attack_instance, dict):
+            logger.error("ERROR: DESTINED BY FATE: missing target model or attack context")
+            return False
+        mgr = self._ts_detachment_mgr()
+        eligible_fn = getattr(mgr, "grand_coven_model_is_thousand_sons_psyker", None) if mgr is not None else None
+        if not callable(eligible_fn) or not bool(eligible_fn(target_model, game=self.game)):
+            logger.error("ERROR: DESTINED BY FATE: target must be a THOUSAND SONS PSYKER model from your army")
+            return False
+        if bool(attack_instance.get("force_damage_zero", False)):
+            logger.error("ERROR: DESTINED BY FATE: damage is already set to 0 for this attack")
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if not phase_name:
+            logger.error("ERROR: DESTINED BY FATE: phase context is missing")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=getattr(target_model, "parent_unit", None)):
+            return False
+
+        attack_instance["force_damage_zero"] = True
+        attack_instance["force_damage_zero_source"] = str(getattr(stratagem, "name", "") or "DESTINED BY FATE")
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DESTINED BY FATE: %s changes the attack's Damage characteristic to 0.",
+            getattr(target_model, "name", "Model"),
+        )
+        return True
+
+    def _use_thousand_sons_devastating_sorcery(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: DEVASTATING SORCERY: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: DEVASTATING SORCERY: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: DEVASTATING SORCERY: target must be a THOUSAND SONS PSYKER unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DEVASTATING SORCERY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DEVASTATING SORCERY: not your turn")
+            return False
+        if self._ts_has_shot_this_phase(root):
+            logger.error("ERROR: DEVASTATING SORCERY: target has already shot this phase")
+            return False
+
+        eligible = candidates or self._ts_grand_coven_psyker_candidates(require_not_shot=True)
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: DEVASTATING SORCERY: target is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: DEVASTATING SORCERY: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_devastating_sorcery_active"] = True
+        sr["thousand_sons_devastating_sorcery_phase_key"] = self._ts_phase_key_for_game()
+        sr["thousand_sons_devastating_sorcery_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_devastating_sorcery_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_devastating_sorcery_source"] = str(getattr(stratagem, "name", "") or "DEVASTATING SORCERY")
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEVASTATING SORCERY: %s gains +9\" Psychic range and full Hit/Wound re-rolls with Psychic weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_egotistical_power(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: EGOTISTICAL POWER: no target unit provided")
+            return False
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: EGOTISTICAL POWER: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_thousand_sons_unit(root) or not self._is_psyker_unit(root):
+            logger.error("ERROR: EGOTISTICAL POWER: target must be a THOUSAND SONS PSYKER unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "command phase":
+            logger.error("ERROR: EGOTISTICAL POWER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EGOTISTICAL POWER: not your turn")
+            return False
+
+        eligible = candidates or self._ts_grand_coven_psyker_candidates(require_not_shot=False)
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EGOTISTICAL POWER: target is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: EGOTISTICAL POWER: cannot be used in current state")
+            return False
+
+        choice_key = str(kwargs.get("choice_key") or kwargs.get("key") or kwargs.get("choice") or "").strip().upper()
+        if choice_key and choice_key not in GRAND_COVEN_BY_KEY:
+            logger.error("ERROR: EGOTISTICAL POWER: invalid Kindred Sorcery choice")
+            return False
+        mgr = self._ts_detachment_mgr()
+        apply_override = getattr(mgr, "apply_grand_coven_override", None) if mgr is not None else None
+        if not callable(apply_override):
+            logger.error("ERROR: EGOTISTICAL POWER: Grand Coven detachment manager is unavailable")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+
+        if choice_key:
+            if not bool(apply_override(root, choice_key, game=self.game, source=stratagem.name)):
+                logger.error("ERROR: EGOTISTICAL POWER: failed to apply the selected Kindred Sorcery override")
+                return False
+            logger.info(
+                "INFO: EGOTISTICAL POWER: %s now uses %s until your next Command phase.",
+                getattr(root, "name", "Unit"),
+                getattr(GRAND_COVEN_BY_KEY.get(choice_key), "name", choice_key),
+            )
+            return True
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_GRAND_COVEN
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                str(desc.name or choice).strip() or choice,
+                payload={
+                    "choice_key": choice,
+                    "unit_id": self._ts_sort_key(root),
+                },
+            )
+            for choice, desc in GRAND_COVEN_BY_KEY.items()
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_GRAND_COVEN,
+            "Choose Kindred Sorcery override",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "egotistical_power",
+                "ability_name": str(getattr(stratagem, "name", "") or "Egotistical Power"),
+                "unit_id": self._ts_sort_key(root),
+                "army_id": self._ts_sort_key(getattr(root, "get_parent_army", lambda: None)()),
+                "allowed_choice_keys": list(GRAND_COVEN_BY_KEY.keys()),
+            },
+        )
+        if hasattr(self.game, "request_decision"):
+            self.game.request_decision(request)
+        logger.info(
+            "INFO: EGOTISTICAL POWER: queued Kindred Sorcery override choice for %s.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_psychic_dominion(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or kwargs.get("targets") or [])
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None or attacking_unit is None:
+            logger.error("ERROR: PSYCHIC DOMINION: missing target or attacking unit context")
+            return False
+
+        root = self._ts_root(target_unit)
+        attacker_root = self._ts_root(attacking_unit)
+        if root is None or attacker_root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: PSYCHIC DOMINION: target unit is not yours")
+            return False
+        if self._ts_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: PSYCHIC DOMINION: attacking unit must be an enemy unit")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return False
+        if not self._is_thousand_sons_unit(root):
+            logger.error("ERROR: PSYCHIC DOMINION: target must be a THOUSAND SONS unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PSYCHIC DOMINION: trigger only occurs in the Shooting or Fight phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: PSYCHIC DOMINION: not an opponent trigger")
+            return False
+
+        eligible = candidates or self._ts_grand_coven_psychic_dominion_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PSYCHIC DOMINION: target is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, attacking_unit=attacker_root, phase_name=phase_name.title()):
+            logger.error("ERROR: PSYCHIC DOMINION: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_psychic_dominion_active"] = True
+        sr["thousand_sons_psychic_dominion_phase_key"] = self._ts_phase_key_for_game()
+        sr["thousand_sons_psychic_dominion_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["thousand_sons_psychic_dominion_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["thousand_sons_psychic_dominion_source"] = str(getattr(stratagem, "name", "") or "PSYCHIC DOMINION")
+        sr["thousand_sons_psychic_dominion_attacker_unit_id"] = self._ts_sort_key(attacker_root)
+        root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PSYCHIC DOMINION: %s gains Feel No Pain 4+ against Psychic attacks and %s's Psychic weapons become Hazardous this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Attacking unit"),
+        )
+        return True
 
     def _use_thousand_sons_ardent_automata(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

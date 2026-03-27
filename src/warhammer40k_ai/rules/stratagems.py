@@ -70,6 +70,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DELAYED MUTATIONS",
     "DETONATOR",
     "DIABOLIC REGENERATION",
+    "ARCANE FOCUS",
     "FROM ALL SIDES",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
@@ -130,6 +131,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SECURE BIOMASS",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "DESECRATION OF WORLDS",
+    "DESTINED BY FATE",
+    "DEVASTATING SORCERY",
+    "EGOTISTICAL POWER",
+    "PSYCHIC DOMINION",
     "RAMPAGING MONSTROSITIES",
     "SELFLESS DEMISE",
     "SAVAGE ROAR",
@@ -2166,6 +2172,7 @@ class StratagemManager(
             "ORBITAL OVERSIGHT",
             "SHIELD NODES",
             "PSYCHIC SHIELD",
+            "PSYCHIC DOMINION",
             "ILLUMINATING FIRE",
             "RIDE HARD, RIDE FAST",
             "EVASIVE MANOEUVRES",
@@ -2233,6 +2240,7 @@ class StratagemManager(
             "STRENGTH IN UNITY",
             "SAVAGE ROAR",
             "ETERNAL HATE",
+            "PSYCHIC DOMINION",
             "NEVER OUTGUNNED",
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
@@ -2500,6 +2508,8 @@ class StratagemManager(
             "MALICIOUS SURGE",
             "PREY ON THE WEAK",
             "PSYCHIC SHIELD",
+            "DEVASTATING SORCERY",
+            "PSYCHIC DOMINION",
             "PROFANE ZEAL",
             "REAVERS' FLURRY",
             "SEIZE THE PRIZE",
@@ -5747,6 +5757,12 @@ class StratagemManager(
             "ABLATIVE CARAPACE": "Opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets: selected HARVESTER unit gains Feel No Pain 5+, or Feel No Pain 4+ while within range of a controlled objective, until end of phase",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
+            "ARCANE FOCUS": "Target: your THOUSAND SONS model that just Channelled the Warp for a Ritual; re-roll all Psychic test dice before resolving that Ritual",
+            "DESECRATION OF WORLDS": "Command phase: target your THOUSAND SONS PSYKER unit within range of a controlled objective; that objective becomes sticky until your opponent's Level of Control is greater at phase end",
+            "DESTINED BY FATE": "Any phase, just after a failed save: target your THOUSAND SONS PSYKER model and change the Damage characteristic of that attack to 0",
+            "DEVASTATING SORCERY": "Shooting phase: target your THOUSAND SONS PSYKER unit that has not been selected to shoot; its Psychic weapons gain +9\" Range and full Hit/Wound re-rolls this phase",
+            "EGOTISTICAL POWER": "Command phase: target your THOUSAND SONS PSYKER unit and choose Imbued Manifestation, Psychic Maelstrom, or Wrath of the Immaterium for that unit until your next Command phase",
+            "PSYCHIC DOMINION": "Any phase, just after an enemy unit selects targets: target your THOUSAND SONS unit chosen by that attacker; until end of phase that attacker's Psychic weapons are [HAZARDOUS] and your unit has Feel No Pain 4+ against Psychic attacks",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
             "BROODGUARD IMPULSE": "Any phase: target your HARVESTER unit that was just destroyed; friendly TYRANIDS models add 1 to Wound rolls against the enemy unit that destroyed it until end of battle",
             "DEATH FRENZY": "Target: TYRANIDS unit selected as a target of an enemy unit's fight attacks",
@@ -6847,6 +6863,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._cleanup_thousand_sons_grand_coven_phase_start_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_thousand_sons_changehost_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -7872,6 +7892,10 @@ class StratagemManager(
             raise
         try:
             self._queue_thousand_sons_changehost_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_thousand_sons_grand_coven_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -11190,6 +11214,12 @@ class StratagemManager(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
+            self._queue_thousand_sons_grand_coven_target_reactions(
+                event_name="shooting_targets_selected",
+                phase_name="SHOOTING_PHASE",
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -12252,6 +12282,15 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_agents_veiled_blade_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_grand_coven_target_reactions(
+                event_name="fight_targets_selected",
+                phase_name="FIGHT_PHASE",
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

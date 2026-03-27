@@ -2391,9 +2391,26 @@ def _validate_choose_grand_coven(game: object, request: DecisionRequest, result:
     choice = payload.get("choice_key") or payload.get("key")
     if choice is None:
         return ("Grand Coven selection requires choice_key.",)
+    ability = str(request.context.get("ability", "") or "").strip().lower()
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "thousand_sons_detachments", None) is None:
         return ("Grand Coven manager not found.",)
+    if ability == "egotistical_power":
+        from ...rules.thousand_sons_detachments import GRAND_COVEN_BY_KEY
+
+        choice_key = str(choice or "").strip().upper()
+        allowed_choice_keys = {
+            str(item or "").strip().upper()
+            for item in list(request.context.get("allowed_choice_keys", []) or [])
+            if str(item or "").strip()
+        }
+        if choice_key not in GRAND_COVEN_BY_KEY:
+            return ("Grand Coven selection requires a valid choice_key.",)
+        if allowed_choice_keys and choice_key not in allowed_choice_keys:
+            return ("Grand Coven choice is not allowed for this request.",)
+        unit_id = payload.get("unit_id") or request.context.get("unit_id")
+        if resolve_unit(game, unit_id) is None:
+            return ("Grand Coven target unit not found.",)
     return ()
 
 
@@ -2408,6 +2425,22 @@ def _apply_choose_grand_coven(game: object, request: DecisionRequest, result: De
     if mgr is None:
         raise RuntimeError("Grand Coven manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
+    ability = str(request.context.get("ability", "") or "").strip().lower()
+    if ability == "egotistical_power":
+        unit_id = payload.get("unit_id") or request.context.get("unit_id")
+        unit = resolve_unit(game, unit_id)
+        if unit is None:
+            raise RuntimeError("Grand Coven target unit not found.")
+        source_name = str(request.context.get("ability_name", "") or "Egotistical Power").strip() or "Egotistical Power"
+        applied = bool(mgr.apply_grand_coven_override(unit, choice, game=game, source=source_name))
+        try:
+            player = getattr(army, "player", None)
+            label = _option_label(request, result) or str(choice)
+            unit_name = getattr(unit, "name", "Unit")
+            _log_action_for_players(game, player, f"{source_name}: {unit_name} gains {label} until your next Command phase")
+        except Exception:
+            pass
+        return applied
     battle_round = request.context.get("battle_round")
     applied = bool(mgr.select_grand_coven(choice, battle_round=battle_round))
     try:

@@ -8443,6 +8443,86 @@ _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GRAND_COVEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010194002": StratagemToolDescriptor(
+        stratagem_id="000010194002",
+        name="Psychic Dominion",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="thousand_sons_unit_targeted_by_enemy_unit",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_vs_psychic_and_attacker_psychic_hazardous",
+        cp_cost=1,
+        effect_params={
+            "fnp": 4,
+            "fnp_condition": "against psychic attacks",
+            "grant_hazardous_to_attacker_psychic_weapons": True,
+        },
+    ),
+    "000010194003": StratagemToolDescriptor(
+        stratagem_id="000010194003",
+        name="Destined by Fate",
+        timing="any_phase_after_failed_save",
+        target="thousand_sons_psyker_model_with_failed_save",
+        duration="selected_attack_only",
+        effect="set_damage_characteristic_to_zero",
+        cp_cost=1,
+    ),
+    "000010194004": StratagemToolDescriptor(
+        stratagem_id="000010194004",
+        name="Egotistical Power",
+        timing="your_command_phase",
+        target="thousand_sons_psyker_unit",
+        duration="until_your_next_command_phase",
+        effect="unit_specific_kindred_sorcery_override",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                "IMBUED_MANIFESTATION",
+                "PSYCHIC_MAELSTROM",
+                "WRATH_OF_THE_IMMATERIUM",
+            ],
+        },
+    ),
+    "000010194005": StratagemToolDescriptor(
+        stratagem_id="000010194005",
+        name="Desecration of Worlds",
+        timing="your_command_phase",
+        target="thousand_sons_psyker_unit_within_controlled_objective_range",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+    ),
+    "000010194006": StratagemToolDescriptor(
+        stratagem_id="000010194006",
+        name="Arcane Focus",
+        timing="shooting_phase_after_channeled_ritual_test",
+        target="thousand_sons_model_that_channeled_the_warp",
+        duration="immediate",
+        effect="reroll_all_channeled_ritual_test_dice",
+        cp_cost=1,
+        effect_params={"reroll_scope": "all_ritual_test_dice"},
+    ),
+    "000010194007": StratagemToolDescriptor(
+        stratagem_id="000010194007",
+        name="Devastating Sorcery",
+        timing="shooting_phase_on_select_to_shoot",
+        target="thousand_sons_psyker_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="psychic_range_bonus_and_full_hit_wound_rerolls",
+        cp_cost=2,
+        effect_params={
+            "range_bonus": 9,
+            "reroll_hit": "full",
+            "reroll_wound": "full",
+            "psychic_only": True,
+        },
+    ),
+}
+
+_GRAND_COVEN_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GRAND_COVEN_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010206002": StratagemToolDescriptor(
         stratagem_id="000010206002",
@@ -9209,6 +9289,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GRAND_COVEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9344,6 +9427,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _WRATH_OF_THE_ROCK_STRATAGEM_BY_NAME.get(key)
         or _WRATHFUL_PROCESSION_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
+        or _GRAND_COVEN_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)

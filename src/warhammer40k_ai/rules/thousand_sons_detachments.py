@@ -41,6 +41,12 @@ GRAND_COVEN_ABILITIES: tuple[GrandCovenAbility, ...] = (
     WRATH_OF_THE_IMMATERIUM,
 )
 GRAND_COVEN_BY_KEY = {a.key: a for a in GRAND_COVEN_ABILITIES}
+GRAND_COVEN_OVERRIDE_SPECIAL_RULE_KEYS: tuple[str, ...] = (
+    "thousand_sons_egotistical_power_active",
+    "thousand_sons_egotistical_power_choice_key",
+    "thousand_sons_egotistical_power_source",
+    "thousand_sons_egotistical_power_phase_key",
+)
 
 
 class ThousandSonsDetachmentManager(DetachmentManagerBase):
@@ -144,6 +150,86 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             return None
         return GRAND_COVEN_BY_KEY.get(self.grand_coven_active_key)
 
+    def grand_coven_model_is_thousand_sons_psyker(self, model, *, game=None) -> bool:
+        if not self._army_has_grand_coven():
+            return False
+        if model is None:
+            return False
+        if not self._model_is_thousand_sons(model):
+            return False
+        if not self._model_in_army(model):
+            return False
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        return bool(self._unit_is_thousand_sons_psyker(root))
+
+    def apply_grand_coven_override(self, unit, ability, *, game=None, source: str = "Egotistical Power") -> bool:
+        if not self._army_has_grand_coven():
+            return False
+        key = getattr(ability, "key", ability)
+        key = str(key or "").strip().upper()
+        if key not in GRAND_COVEN_BY_KEY:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        if not self._unit_has_keyword_or_faction(root, "THOUSAND SONS", faction_id=self.faction_id):
+            return False
+        if not self._unit_is_thousand_sons_psyker(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["thousand_sons_egotistical_power_active"] = True
+        sr["thousand_sons_egotistical_power_choice_key"] = key
+        sr["thousand_sons_egotistical_power_source"] = str(source or "Egotistical Power").strip() or "Egotistical Power"
+        sr["thousand_sons_egotistical_power_phase_key"] = self._phase_key_for_game(self._resolve_game(game=game))
+        root.special_rules = sr
+        return True
+
+    def clear_grand_coven_override(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        changed = False
+        for key in GRAND_COVEN_OVERRIDE_SPECIAL_RULE_KEYS:
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+        return changed
+
+    def clear_all_grand_coven_overrides(self) -> None:
+        if not self._army_has_grand_coven():
+            return
+        for root in self._iter_unique_army_roots():
+            self.clear_grand_coven_override(root)
+
+    def _grand_coven_override_for_model(self, model) -> Optional[GrandCovenAbility]:
+        if not self.grand_coven_model_is_thousand_sons_psyker(model):
+            return None
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_egotistical_power_active")):
+            return None
+        key = str(sr.get("thousand_sons_egotistical_power_choice_key", "") or "").strip().upper()
+        return GRAND_COVEN_BY_KEY.get(key)
+
+    def _active_grand_coven_for_model(self, model, *, game=None) -> Optional[GrandCovenAbility]:
+        override = self._grand_coven_override_for_model(model)
+        if override is not None:
+            return override
+        if not self._grand_coven_applies(model, game=game):
+            return None
+        return self.get_active_grand_coven(game=game)
+
     def _grand_coven_applies(self, model, *, game=None) -> bool:
         if not self._army_has_grand_coven():
             return False
@@ -156,10 +242,8 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         return True
 
     def grand_coven_psychic_range_bonus(self, model, weapon_profile=None, *, game=None) -> int:
-        active = self.get_active_grand_coven(game=game)
+        active = self._active_grand_coven_for_model(model, game=game)
         if active is None or active.key != IMBUED_MANIFESTATION.key:
-            return 0
-        if not self._grand_coven_applies(model, game=game):
             return 0
         if weapon_profile is None:
             return 0
@@ -178,10 +262,8 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         return 6
 
     def grand_coven_psychic_wound_bonus(self, model, weapon_profile=None, *, game=None) -> int:
-        active = self.get_active_grand_coven(game=game)
+        active = self._active_grand_coven_for_model(model, game=game)
         if active is None or active.key != PSYCHIC_MAELSTROM.key:
-            return 0
-        if not self._grand_coven_applies(model, game=game):
             return 0
         if weapon_profile is None:
             return 0
@@ -193,10 +275,8 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         return 1
 
     def grand_coven_devastating_wounds(self, model, weapon_profile=None, *, game=None) -> bool:
-        active = self.get_active_grand_coven(game=game)
+        active = self._active_grand_coven_for_model(model, game=game)
         if active is None or active.key != WRATH_OF_THE_IMMATERIUM.key:
-            return False
-        if not self._grand_coven_applies(model, game=game):
             return False
         if weapon_profile is None:
             return False

@@ -205,7 +205,9 @@ Command phase:
 - huntress_eye_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="huntress_eye"`, `ability_name="Huntress' Eye"`, `army_id`, `command_phase_owner_id`, `source_unit_id`, `source_member_unit_id`, `source_model_id`, `range`)
 - veteran_of_the_kataphraktoi_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="veteran_of_the_kataphraktoi"`, `ability_name="Veteran of the Kataphraktoi"`, `army_id`, `command_phase_owner_id`, `source_unit_id`, `source_member_unit_id`, `source_model_id`, `range`, `optional=true`)
 - zealous_litanies_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="zealous_litanies"`, `ability_name="Zealous Litanies"`, `army_id`, `player_id`, `battle_round`, `allowed_choice_keys`, `optional=true`)
-- grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
+- grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`; or `ability="egotistical_power"`, `ability_name`, `unit_id`, `allowed_choice_keys[]` for the per-unit Kindred Sorcery override)
+- arcane_focus_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="arcane_focus"`, `ability_name="Arcane Focus"`, `ritual_key`, `ritual_name`, `unit_id`, `model_id`, `initial_rolls[]`, `optional=true`)
+- destined_by_fate_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="destined_by_fate"`, `ability_name="Destined by Fate"`, `unit_id`, `model_id`, `attacker_unit_id`, `phase_name`, `optional=true`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
 - labyrinthine_cunning_dialog: CHOOSE_QUARRY {action="spend_pain_token_gain_cp" | action="roll_d6_gain_cp" | skip} (context `ability="labyrinthine_cunning"`, `ability_name="Labyrinthine Cunning"`, `phase="Command phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `cp_gain`, `success_on`, `optional=true`)
 - conductor_of_torment_dialog: CHOOSE_QUARRY {action="gain_pain_token_and_switch_to_drukhari" | action="spend_pain_token_and_switch_to_harlequins" | skip} (context `ability="conductor_of_torment"`, `ability_name="Conductor of Torment"`, `phase="Command phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_tokens_gained`, `pain_token_cost`, `current_winning_side`, `optional=true`)
@@ -545,7 +547,9 @@ Faction / Detachment / Ability choices:
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip} (Combat Doctrines / Mastered Doctrines; availability validated by engine)
 - angelic_legacy_dialog: CHOOSE_ANGELIC_LEGACY {choice_id} (Angelic Inheritors; payload includes `choice_keys` with exactly two selected legacy abilities)
-- grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
+- grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip} (army-wide Kindred Sorcery selection, or `ability="egotistical_power"` with `unit_id` for the Grand Coven stratagem override)
+- arcane_focus_dialog: CONFIRM_YES_NO {choice}
+- destined_by_fate_dialog: CONFIRM_YES_NO {choice}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)

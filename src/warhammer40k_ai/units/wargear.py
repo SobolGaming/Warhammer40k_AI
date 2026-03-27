@@ -1565,6 +1565,78 @@ class WargearProfile:
         )
         return int(bonus), source
 
+    def _thousand_sons_devastating_sorcery_active(self, attacker: Optional['Model']) -> Tuple[bool, str]:
+        if attacker is None or not self._is_psychic_attack(attacker):
+            return False, ""
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = getattr(attacker, "parent_unit", None)
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_devastating_sorcery_active")):
+            return False, ""
+        game = None
+        try:
+            army = root.get_parent_army() if root is not None else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        except Exception:
+            game = None
+        effect_phase = str(sr.get("thousand_sons_devastating_sorcery_phase_key", "") or "").strip().upper()
+        if effect_phase:
+            current_phase = ""
+            current_phase_key = ""
+            try:
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                current_phase = ""
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            try:
+                current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            except Exception:
+                current_player = None
+            current_player_id = str(getattr(current_player, "id", "") or "").strip().upper()
+            if current_phase and current_turn:
+                current_phase_key = f"{int(current_turn)}:{current_phase}:{current_player_id}"
+            if ":" in effect_phase:
+                if current_phase_key and current_phase_key != effect_phase:
+                    return False, ""
+            elif current_phase and current_phase != effect_phase:
+                return False, ""
+        try:
+            effect_turn = int(sr.get("thousand_sons_devastating_sorcery_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if effect_turn:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != effect_turn:
+                return False, ""
+        owner_id = str(sr.get("thousand_sons_devastating_sorcery_owner", "") or "").strip()
+        if owner_id:
+            unit_owner_id = ""
+            try:
+                army = root.get_parent_army() if root is not None else None
+                player = getattr(army, "player", None) if army is not None else None
+                unit_owner_id = str(getattr(player, "id", "") or "")
+                if not unit_owner_id and player is not None:
+                    unit_owner_id = str(get_entity_id(player) or "")
+            except Exception:
+                unit_owner_id = ""
+            if unit_owner_id and unit_owner_id != owner_id:
+                return False, ""
+        source = (
+            str(sr.get("thousand_sons_devastating_sorcery_source", "") or "DEVASTATING SORCERY").strip()
+            or "DEVASTATING SORCERY"
+        )
+        return True, source
+
     def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
         """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
         try:
@@ -1654,6 +1726,12 @@ class WargearProfile:
             if mgr is not None and callable(getattr(mgr, "grand_coven_psychic_range_bonus", None)):
                 game = getattr(getattr(army, "player", None), "game", None)
                 bonus += int(mgr.grand_coven_psychic_range_bonus(attacker, self, game=game) or 0)
+        except Exception:
+            pass
+        try:
+            active, _source = self._thousand_sons_devastating_sorcery_active(attacker)
+            if active and self.parent_wargear is not None and bool(self.parent_wargear.is_ranged()):
+                bonus += 9
         except Exception:
             pass
         try:
@@ -7992,6 +8070,23 @@ class WargearProfile:
             if callable(fn):
                 target_melee_hazardous_sources = list(fn() or [])
                 target_melee_hazardous = bool(target_melee_hazardous_sources)
+            pd_fn = getattr(target_root, "grand_coven_psychic_dominion_hazardous_against", None) if target_root is not None else None
+            if callable(pd_fn):
+                try:
+                    pd_hazardous, pd_source = pd_fn(
+                        getattr(attacker, "parent_unit", None),
+                        is_psychic_attack=bool(self._is_psychic_attack(attacker)),
+                        game=getattr(getattr(getattr(attacker, "parent_unit", None), "get_parent_army", lambda: None)(), "player", None).game
+                        if getattr(attacker, "parent_unit", None) is not None
+                        else None,
+                    )
+                except Exception:
+                    pd_hazardous, pd_source = False, ""
+                if pd_hazardous:
+                    target_melee_hazardous = True
+                    source_name = str(pd_source or "PSYCHIC DOMINION").strip() or "PSYCHIC DOMINION"
+                    if source_name not in target_melee_hazardous_sources:
+                        target_melee_hazardous_sources.append(source_name)
         if target_melee_hazardous:
             hazardous_active = True
             hazardous_source_count += 1
@@ -8067,6 +8162,26 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append(f"{source}: [HAZARDOUS] (ranged)")
                     except Exception:
                         pass
+            pd_fn = getattr(target_root, "grand_coven_psychic_dominion_hazardous_against", None) if target_root is not None else None
+            if callable(pd_fn):
+                try:
+                    pd_hazardous, pd_source = pd_fn(
+                        getattr(attacker, "parent_unit", None),
+                        is_psychic_attack=bool(self._is_psychic_attack(attacker)),
+                        game=getattr(getattr(getattr(attacker, "parent_unit", None), "get_parent_army", lambda: None)(), "player", None).game
+                        if getattr(attacker, "parent_unit", None) is not None
+                        else None,
+                    )
+                except Exception:
+                    pd_hazardous, pd_source = False, ""
+                if pd_hazardous:
+                    target_ranged_hazardous = True
+                    hazardous_active = True
+                    hazardous_source_count += 1
+                    source_name = str(pd_source or "PSYCHIC DOMINION").strip() or "PSYCHIC DOMINION"
+                    note = f"{source_name}: [HAZARDOUS] (ranged)"
+                    if note not in attack_result.attacks_special_modifiers:
+                        attack_result.attacks_special_modifiers.append(note)
         dread_mob_manual_hazardous = False
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -9251,6 +9366,102 @@ class WargearProfile:
             pass
 
         return True
+
+    def _maybe_apply_thousand_sons_destined_by_fate(
+        self,
+        target_model: 'Model',
+        attack_instance: Dict,
+    ) -> bool:
+        if target_model is None or not isinstance(attack_instance, dict):
+            return False
+        if bool(attack_instance.get("force_damage_zero")):
+            return False
+        unit = getattr(target_model, "parent_unit", None)
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            root = unit
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        det_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        eligible_fn = getattr(det_mgr, "grand_coven_model_is_thousand_sons_psyker", None) if det_mgr is not None else None
+        if not callable(eligible_fn) or not bool(eligible_fn(target_model, game=game)):
+            return False
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        stratagem = getattr(stratagems, "get_by_name", lambda _name: None)("DESTINED BY FATE") if stratagems is not None else None
+        if stratagem is None:
+            return False
+        if int(getattr(player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return False
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").replace("_", " ").title()
+        use_now = False
+        explicit_decision = attack_instance.get("destined_by_fate_decision")
+        if explicit_decision is not None:
+            use_now = bool(explicit_decision)
+        else:
+            try:
+                from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.decision_utils import resolve_or_reuse_decision_value
+            except Exception:
+                use_now = False
+            else:
+                ctx = {
+                    "ability": "destined_by_fate",
+                    "ability_name": "Destined by Fate",
+                    "unit_id": str(get_entity_id(root) or ""),
+                    "model_id": str(get_entity_id(target_model) or ""),
+                    "attacker_unit_id": str(get_entity_id(attack_instance.get("attacker_unit")) or ""),
+                    "phase_name": phase_name,
+                    "optional": True,
+                }
+                request = DecisionRequest.create(
+                    DECISION_CONFIRM_YES_NO,
+                    "Use Destined by Fate?",
+                    player_id=getattr(player, "id", None),
+                    options=[
+                        DecisionOption.create("Use", payload={"choice": True}),
+                        DecisionOption.create("Skip", payload={"choice": False}),
+                    ],
+                    context=ctx,
+                )
+                if game is not None and hasattr(game, "request_decision"):
+                    game.request_decision(request)
+                use_decision = bool(
+                    getattr(player, "_should_use_optional_ability", lambda _key, _ctx: False)(
+                        "DESTINED_BY_FATE",
+                        dict(ctx),
+                    )
+                )
+                option_id = None
+                for option in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(option, "payload", {}) or {})
+                    if bool(payload.get("choice", False)) == bool(use_decision):
+                        option_id = option.option_id
+                        break
+                if option_id:
+                    _value, apply_result = resolve_or_reuse_decision_value(
+                        game,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    use_now = bool(use_decision and apply_result is not None and getattr(apply_result, "ok", False))
+        if not use_now:
+            return False
+        return bool(
+            stratagems.use(
+                "DESTINED BY FATE",
+                target_model=target_model,
+                attack_instance=attack_instance,
+                phase_name=phase_name,
+            )
+        )
 
     def _maybe_apply_aspect_shrine_token(
         self,
@@ -13128,6 +13339,12 @@ class WargearProfile:
                 reroll_value_reasons.extend(list(model_hit_mods.get("reroll_hit_reasons", ()) or ()))
                 if bool(model_hit_mods.get("reroll_hit_full", False)):
                     reroll_full_reasons.extend(list(model_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            active, source = self._thousand_sons_devastating_sorcery_active(attacker)
+            if active:
+                reroll_full_reasons.append(f"{source}: re-roll Hit roll with Psychic weapons")
         except Exception:
             pass
         # Target buffs: post-shoot keyword hit reroll ones (e.g., Symbiotic Targeting).
@@ -19291,6 +19508,12 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            active, source = self._thousand_sons_devastating_sorcery_active(attacker)
+            if active:
+                reroll_full_reasons.append(f"{source}: re-roll Wound roll with Psychic weapons")
+        except Exception:
+            pass
+        try:
             admech_rules = self._admech_datasheet_weapon_rules(attacker)
             for rule in list(admech_rules.get("wound_reroll_full", []) or []):
                 if not isinstance(rule, dict):
@@ -23604,6 +23827,12 @@ class WargearProfile:
                     if t_unit is not None and hasattr(t_unit, "mark_shadow_field_broken"):
                         t_unit.mark_shadow_field_broken(target_model)
                     save_result['special_effects'].append("Shadow Field broken")
+        except Exception:
+            pass
+
+        try:
+            if not save_result.get("saved", False):
+                self._maybe_apply_thousand_sons_destined_by_fate(target_model, attack_instance)
         except Exception:
             pass
 

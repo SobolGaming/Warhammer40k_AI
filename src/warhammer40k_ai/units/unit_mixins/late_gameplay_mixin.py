@@ -2133,6 +2133,112 @@ class LateGameplayMixin:
         
         return found_abilities
 
+    def grand_coven_psychic_dominion_active(self, *, game=None) -> Tuple[bool, str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("thousand_sons_psychic_dominion_active")):
+            return False, ""
+        if game is None:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+            except Exception:
+                game = None
+        effect_phase = str(sr.get("thousand_sons_psychic_dominion_phase_key", "") or "").strip().upper()
+        if effect_phase:
+            current_phase = ""
+            current_phase_key = ""
+            try:
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                current_phase = ""
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            try:
+                current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            except Exception:
+                current_player = None
+            current_player_id = str(getattr(current_player, "id", "") or "").strip().upper()
+            if current_phase and current_turn:
+                current_phase_key = f"{int(current_turn)}:{current_phase}:{current_player_id}"
+            if ":" in effect_phase:
+                if current_phase_key and current_phase_key != effect_phase:
+                    return False, ""
+            elif current_phase and current_phase != effect_phase:
+                return False, ""
+        try:
+            effect_turn = int(sr.get("thousand_sons_psychic_dominion_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if effect_turn:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != effect_turn:
+                return False, ""
+        owner_id = str(sr.get("thousand_sons_psychic_dominion_owner", "") or "").strip()
+        if owner_id:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+            except Exception:
+                player = None
+            unit_owner_id = ""
+            if player is not None:
+                unit_owner_id = str(getattr(player, "id", "") or "")
+                if not unit_owner_id:
+                    try:
+                        unit_owner_id = str(get_entity_id(player) or "")
+                    except Exception:
+                        unit_owner_id = ""
+            if unit_owner_id and unit_owner_id != owner_id:
+                return False, ""
+        source = (
+            str(sr.get("thousand_sons_psychic_dominion_source", "") or "PSYCHIC DOMINION").strip()
+            or "PSYCHIC DOMINION"
+        )
+        return True, source
+
+    def grand_coven_psychic_dominion_hazardous_against(
+        self,
+        attacking_unit,
+        *,
+        is_psychic_attack: bool,
+        game=None,
+    ) -> Tuple[bool, str]:
+        if not bool(is_psychic_attack):
+            return False, ""
+        active, source = self.grand_coven_psychic_dominion_active(game=game)
+        if not active:
+            return False, ""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, ""
+        attacker_unit_id = str(sr.get("thousand_sons_psychic_dominion_attacker_unit_id", "") or "").strip()
+        if not attacker_unit_id:
+            return False, ""
+        attacker_root = attacking_unit
+        try:
+            if attacking_unit is not None and hasattr(attacking_unit, "get_attached_unit_root"):
+                attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        current_attacker_id = str(get_entity_id(attacker_root) or "")
+        if current_attacker_id and current_attacker_id != attacker_unit_id:
+            return False, ""
+        return True, source
+
     def has_feel_no_pain(self, target_model: Optional['Model'] = None) -> List[Tuple[int, Optional[str]]]:
         """Check if the unit has Feel No Pain abilities and return all of them.
         
@@ -2627,6 +2733,14 @@ class LateGameplayMixin:
                             continue
                         seen.add(key)
                         result.append((int(val), cond))
+        except Exception:
+            pass
+        try:
+            active, _source = self.grand_coven_psychic_dominion_active()
+            if active:
+                entry = (4, "against psychic attacks")
+                if entry not in result:
+                    result.append(entry)
         except Exception:
             pass
         try:

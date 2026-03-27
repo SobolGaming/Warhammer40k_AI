@@ -2051,6 +2051,13 @@ class AttackResolutionManager:
         attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
         if profile is None or attacker_unit is None:
             return False
+        source_model = None
+        for model_id in list(seq.model_ids or []):
+            source_model = self._resolve_model(game, model_id)
+            if source_model is not None and bool(getattr(source_model, "is_alive", False)):
+                break
+        if source_model is None and seq.model_ids:
+            source_model = self._resolve_model(game, str(seq.model_ids[0]))
         profile_hazardous = False
         try:
             profile_hazardous = bool(profile.is_hazardous())
@@ -2078,13 +2085,6 @@ class AttackResolutionManager:
             else None
         )
         if callable(manual_hazardous_fn):
-            source_model = None
-            for model_id in list(seq.model_ids or []):
-                source_model = self._resolve_model(game, model_id)
-                if source_model is not None and bool(getattr(source_model, "is_alive", False)):
-                    break
-            if source_model is None and seq.model_ids:
-                source_model = self._resolve_model(game, str(seq.model_ids[0]))
             if source_model is not None:
                 try:
                     dread_mob_manual_hazardous = bool(manual_hazardous_fn(source_model, game=game))
@@ -2097,6 +2097,22 @@ class AttackResolutionManager:
             fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
             if callable(fn):
                 target_melee_hazardous = bool(fn())
+            pd_fn = getattr(target_root, "grand_coven_psychic_dominion_hazardous_against", None) if target_root is not None else None
+            if callable(pd_fn) and source_model is not None:
+                try:
+                    is_psychic_attack = bool(profile._is_psychic_attack(source_model))
+                except (AttributeError, TypeError, ValueError):
+                    is_psychic_attack = False
+                try:
+                    pd_hazardous, _pd_source = pd_fn(
+                        attacker_unit,
+                        is_psychic_attack=is_psychic_attack,
+                        game=game,
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    pd_hazardous = False
+                if pd_hazardous:
+                    target_melee_hazardous = True
         if is_ranged and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
             target_root = target_unit.get_attached_unit_root()
             sr = getattr(target_root, "special_rules", None) if target_root is not None else None
@@ -2128,6 +2144,22 @@ class AttackResolutionManager:
                     if turn and int(getattr(game, "turn", 0) or 0) != int(turn):
                         apply_hazardous = False
                 target_ranged_hazardous = bool(apply_hazardous)
+            pd_fn = getattr(target_root, "grand_coven_psychic_dominion_hazardous_against", None) if target_root is not None else None
+            if callable(pd_fn) and source_model is not None:
+                try:
+                    is_psychic_attack = bool(profile._is_psychic_attack(source_model))
+                except (AttributeError, TypeError, ValueError):
+                    is_psychic_attack = False
+                try:
+                    pd_hazardous, _pd_source = pd_fn(
+                        attacker_unit,
+                        is_psychic_attack=is_psychic_attack,
+                        game=game,
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    pd_hazardous = False
+                if pd_hazardous:
+                    target_ranged_hazardous = True
         if is_ranged:
             attacker_sr = getattr(attacker_unit, "special_rules", None)
             if isinstance(attacker_sr, dict) and attacker_sr.get("tau_experimental_ammunition_active"):

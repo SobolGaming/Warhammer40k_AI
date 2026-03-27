@@ -703,6 +703,8 @@ class CabalOfSorcerersManager:
         target_unit=None,
         rolls: Optional[list[int]] = None,
         channel_decision: Optional[bool] = None,
+        arcane_focus_decision: Optional[bool] = None,
+        arcane_focus_rerolls: Optional[list[int]] = None,
         mortal_roll: Optional[int] = None,
         warpmeld_dagger_choice: Optional[bool] = None,
         warpmeld_dagger_mortal_roll: Optional[int] = None,
@@ -846,6 +848,84 @@ class CabalOfSorcerersManager:
                         result["warp_syphon_target_mortal_wounds"] = int(max(0, mortal_amount))
             total_rolls.append(extra)
         result["channeled"] = bool(channel)
+        if channel:
+            army_player = getattr(self.army, "player", None) if self.army is not None else None
+            stratagems = getattr(army_player, "stratagems", None) if army_player is not None else None
+            stratagem = getattr(stratagems, "get_by_name", lambda _name: None)("ARCANE FOCUS") if stratagems is not None else None
+            use_arcane_focus = False
+            if stratagem is not None:
+                if arcane_focus_decision is not None:
+                    use_arcane_focus = bool(arcane_focus_decision)
+                else:
+                    try:
+                        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                        from ..engine.decisions import DecisionOption, DecisionRequest
+                        from ..utility.decision_utils import resolve_or_reuse_decision_value
+                        from ..utility.entity_ids import get_entity_id
+                    except Exception:
+                        use_arcane_focus = False
+                    else:
+                        unit_id = str(get_entity_id(caster_unit) or "")
+                        model_id = str(get_entity_id(caster_model) or "")
+                        ctx = {
+                            "ability": "arcane_focus",
+                            "ability_name": "Arcane Focus",
+                            "ritual_key": str(ritual.key or ""),
+                            "ritual_name": str(ritual.name or ""),
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "initial_rolls": list(total_rolls),
+                            "optional": True,
+                        }
+                        request = DecisionRequest.create(
+                            DECISION_CONFIRM_YES_NO,
+                            "Use Arcane Focus?",
+                            player_id=getattr(army_player, "id", None),
+                            options=[
+                                DecisionOption.create("Use", payload={"choice": True}),
+                                DecisionOption.create("Skip", payload={"choice": False}),
+                            ],
+                            context=ctx,
+                        )
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(request)
+                        use_now = bool(
+                            getattr(army_player, "_should_use_optional_ability", lambda _key, _ctx: False)(
+                                "ARCANE_FOCUS",
+                                dict(ctx),
+                            )
+                        )
+                        option_id = None
+                        for option in list(getattr(request, "options", []) or []):
+                            payload = dict(getattr(option, "payload", {}) or {})
+                            if bool(payload.get("choice", False)) == bool(use_now):
+                                option_id = option.option_id
+                                break
+                        if option_id:
+                            _value, apply_result = resolve_or_reuse_decision_value(
+                                game,
+                                request,
+                                option_id,
+                                player_id=getattr(army_player, "id", None),
+                            )
+                            use_arcane_focus = bool(use_now and apply_result is not None and getattr(apply_result, "ok", False))
+            if use_arcane_focus and stratagems is not None:
+                rolls_state = {"rolls": list(total_rolls)}
+                used = bool(
+                    stratagems.use(
+                        "ARCANE FOCUS",
+                        caster_model=caster_model,
+                        current_rolls=list(total_rolls),
+                        rolls_state=rolls_state,
+                        channeled=True,
+                        phase_name="Shooting phase",
+                        reroll_values=list(arcane_focus_rerolls or []),
+                    )
+                )
+                if used:
+                    total_rolls = list(rolls_state.get("rolls") or total_rolls)
+                    result["arcane_focus_used"] = True
+                    result["arcane_focus_rolls"] = list(total_rolls)
 
         # Apply mortal wounds for doubles/triples only if Channel the Warp was used.
         if channel:
