@@ -8937,6 +8937,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Reletavistic Tether: arriving within 9" after the setup override denies charges until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("reletavistic_tether_no_charge_turn_owner"):
+                owner = str(sr.get("reletavistic_tether_no_charge_turn_owner") or "")
+                turn = int(sr.get("reletavistic_tether_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Screaming Descent: cannot charge until end of turn after 6" setup.
         try:
             sr = getattr(self, "special_rules", None)
@@ -9966,6 +9978,44 @@ class PositioningMixin:
                 cosmic_min = 0.0
             if cosmic_min > 0:
                 min_dist = cosmic_min if min_dist is None else min(min_dist, cosmic_min)
+
+        try:
+            reletavistic_min = float(sr.get("enhancement_reletavistic_tether_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            reletavistic_min = 0.0
+        if reletavistic_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                requires_bearer_alive = bool(sr.get("enhancement_reletavistic_tether_requires_bearer_alive", True))
+                bearer_model_id = str(
+                    sr.get("enhancement_reletavistic_tether_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if requires_bearer_alive and bearer_model_id:
+                    get_model_by_id = getattr(root, "get_attached_unit_model_by_id", None)
+                    if callable(get_model_by_id):
+                        bearer_model = get_model_by_id(bearer_model_id)
+                        if bearer_model is None or not bool(getattr(bearer_model, "is_alive", False)):
+                            reletavistic_min = 0.0
+                if reletavistic_min > 0 and game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    source_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if source_owner and cur_owner and source_owner != cur_owner:
+                        reletavistic_min = 0.0
+            except Exception:
+                reletavistic_min = 0.0
+            if reletavistic_min > 0:
+                min_dist = reletavistic_min if min_dist is None else min(min_dist, reletavistic_min)
 
         try:
             screaming_descent_min = float(sr.get("dread_talons_screaming_descent_deep_strike_min_distance", 0) or 0)

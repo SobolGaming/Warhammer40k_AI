@@ -7992,6 +7992,7 @@ class AbilitySpecsMixin:
         Returns a list of specs with keys:
             - source: ability name
             - min_enemy_distance_horiz: int
+            - no_charge_if_within_distance_horiz: float
         """
         try:
             root = self.get_attached_unit_root()
@@ -8010,6 +8011,39 @@ class AbilitySpecsMixin:
             members = [root]
         if not members:
             members = [root]
+        root_sr = getattr(root, "special_rules", None)
+        reletavistic_min_enemy = 0
+        reletavistic_no_charge_distance = 0.0
+        reletavistic_source = ""
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_reletavistic_tether")):
+            requires_bearer_alive = bool(root_sr.get("enhancement_reletavistic_tether_requires_bearer_alive", True))
+            bearer_model_id = str(
+                root_sr.get("enhancement_reletavistic_tether_bearer_model_id", "")
+                or root_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_alive = True
+            get_model_by_id = getattr(root, "get_attached_unit_model_by_id", None)
+            if bearer_model_id and callable(get_model_by_id):
+                bearer_model = get_model_by_id(bearer_model_id)
+                bearer_alive = bool(bearer_model is not None and getattr(bearer_model, "is_alive", False))
+            if bearer_alive or not requires_bearer_alive:
+                try:
+                    reletavistic_min_enemy = int(
+                        root_sr.get("enhancement_reletavistic_tether_advance_redeploy_min_distance", 0) or 0
+                    )
+                except Exception:
+                    reletavistic_min_enemy = 0
+                try:
+                    reletavistic_no_charge_distance = float(
+                        root_sr.get("enhancement_reletavistic_tether_no_charge_if_within_distance", 0) or 0
+                    )
+                except Exception:
+                    reletavistic_no_charge_distance = 0.0
+                reletavistic_source = (
+                    str(root_sr.get("enhancement_reletavistic_tether_source", "") or "Reletavistic Tether").strip()
+                    or "Reletavistic Tether"
+                )
 
         for member in members:
             for name, desc in member._iter_ability_entries_for_rules(model=None):
@@ -8032,7 +8066,13 @@ class AbilitySpecsMixin:
                 if min_enemy <= 0:
                     continue
                 source = str(name or "Advance redeploy").strip() or "Advance redeploy"
-                key = (source.lower(), int(min_enemy))
+                no_charge_distance = 0.0
+                if reletavistic_min_enemy > 0 and "transdimensional displacement" in source.lower():
+                    min_enemy = int(max(1, min(min_enemy, reletavistic_min_enemy)))
+                    no_charge_distance = float(max(0.0, reletavistic_no_charge_distance))
+                    if reletavistic_source:
+                        source = reletavistic_source
+                key = (source.lower(), int(min_enemy), float(no_charge_distance))
                 if key in seen:
                     continue
                 seen.add(key)
@@ -8040,6 +8080,7 @@ class AbilitySpecsMixin:
                     {
                         "source": source,
                         "min_enemy_distance_horiz": int(min_enemy),
+                        "no_charge_if_within_distance_horiz": float(no_charge_distance),
                     }
                 )
 
@@ -11429,6 +11470,7 @@ class AbilitySpecsMixin:
             - optional: bool
             - limit_one_per_army: bool
             - grant_ranged_hazardous: bool
+            - apply_wound_penalty_on_failed_leadership_test: bool
             - resolution_mode: str
             - required_target_keywords: list[str]
             - excluded_target_keywords: list[str]
@@ -11682,6 +11724,62 @@ class AbilitySpecsMixin:
                             "resolution_mode": resolution_mode,
                             "required_target_keywords": list(required_keywords),
                             "excluded_target_keywords": list(excluded_keywords),
+                        }
+                    )
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_animus_damper")):
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            bearer_model_id = str(
+                sr.get("enhancement_animus_damper_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if not bearer_model_id or not model_id or model_id == bearer_model_id:
+                source = str(sr.get("enhancement_animus_damper_source", "") or "Animus Damper").strip() or "Animus Damper"
+                try:
+                    range_value = int(float(sr.get("enhancement_animus_damper_range", 9999.0) or 9999.0))
+                except Exception:
+                    range_value = 9999
+                resolution_mode = str(
+                    sr.get("enhancement_animus_damper_resolution_mode", "") or "leadership_test"
+                ).strip().lower() or "leadership_test"
+                required_keywords: list[str] = []
+                for keyword in list(sr.get("enhancement_animus_damper_required_target_keywords", ("VEHICLE",)) or ("VEHICLE",)):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in required_keywords:
+                        required_keywords.append(kw)
+                apply_failed_wound_penalty = bool(
+                    sr.get("enhancement_animus_damper_apply_wound_penalty_on_failed_leadership_test", True)
+                )
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    False,
+                    True,
+                    False,
+                    False,
+                    resolution_mode,
+                    tuple(required_keywords),
+                    tuple(),
+                    bool(apply_failed_wound_penalty),
+                )
+                if range_value > 0 and key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(range_value),
+                            "mortal_on_one": False,
+                            "optional": True,
+                            "limit_one_per_army": False,
+                            "grant_ranged_hazardous": False,
+                            "apply_wound_penalty_on_failed_leadership_test": bool(apply_failed_wound_penalty),
+                            "resolution_mode": resolution_mode,
+                            "required_target_keywords": list(required_keywords),
+                            "excluded_target_keywords": [],
                         }
                     )
 

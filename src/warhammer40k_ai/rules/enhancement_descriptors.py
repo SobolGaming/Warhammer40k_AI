@@ -7269,6 +7269,69 @@ _NECRONS_OBEISANCE_PHALANX_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_OBEISANCE_PHALANX_DESCRIPTORS.values()
 }
 
+_NECRONS_PANTHEON_OF_WOE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010672002": EnhancementToolDescriptor(
+        enhancement_id="000010672002",
+        name="Singularity Matrix",
+        timing="opponent_stratagem_targeting",
+        target="enemy_unit_within_range_of_bearer",
+        duration="constant",
+        effect="targeted_stratagem_cp_increase",
+        range_in=12.0,
+        effect_params={
+            "cp_increase": 1,
+            "ability_name": "Lord of Deceit (Aura)",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010672003": EnhancementToolDescriptor(
+        enhancement_id="000010672003",
+        name="Quantum Goad",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="charge_after_advance",
+        effect_params={
+            "charge_after_advance": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010672004": EnhancementToolDescriptor(
+        enhancement_id="000010672004",
+        name="Animus Damper",
+        timing="start_of_opponent_shooting_phase",
+        target="visible_enemy_vehicle_unit",
+        duration="until_end_of_phase",
+        effect="opponent_shooting_phase_select_visible_vehicle_leadership_test_hit_penalty_and_failed_test_wound_penalty",
+        range_in=9999.0,
+        effect_params={
+            "range": 9999,
+            "required_target_keywords": ["VEHICLE"],
+            "resolution_mode": "leadership_test",
+            "apply_wound_penalty_on_failed_leadership_test": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010672005": EnhancementToolDescriptor(
+        enhancement_id="000010672005",
+        name="Reletavistic Tether",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="deep_strike_and_translocation_six_inch_setup_with_conditional_no_charge",
+        effect_params={
+            "deep_strike_min_distance": 6,
+            "advance_redeploy_min_distance": 6,
+            "no_charge_if_within_distance": 9,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_NECRONS_PANTHEON_OF_WOE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_PANTHEON_OF_WOE_DESCRIPTORS.values()
+}
+
 _NECRONS_CURSED_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010668002": EnhancementToolDescriptor(
         enhancement_id="000010668002",
@@ -8700,6 +8763,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_OBEISANCE_PHALANX_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_PANTHEON_OF_WOE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_CURSED_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8898,6 +8964,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_CANOPTEK_COURT_BY_NAME.get(key)
         or _NECRONS_HYPERCRYPT_LEGION_BY_NAME.get(key)
         or _NECRONS_OBEISANCE_PHALANX_BY_NAME.get(key)
+        or _NECRONS_PANTHEON_OF_WOE_BY_NAME.get(key)
         or _NECRONS_CURSED_LEGION_BY_NAME.get(key)
         or _NECRONS_CRYPTEK_CONCLAVE_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)

@@ -836,6 +836,10 @@ class GameReactiveDecisionsMixin:
                 min_enemy_distance = 0
             if min_enemy_distance <= 0:
                 continue
+            try:
+                no_charge_if_within_distance = float(spec.get("no_charge_if_within_distance_horiz", 0) or 0)
+            except Exception:
+                no_charge_if_within_distance = 0.0
             ability_name = str(spec.get("source", "") or "Advance redeploy").strip() or "Advance redeploy"
             ctx = {
                 "ability_name": ability_name,
@@ -843,6 +847,7 @@ class GameReactiveDecisionsMixin:
                 "unit": getattr(unit, "name", "") or "",
                 "unit_id": unit_id,
                 "min_enemy_distance_horiz": int(min_enemy_distance),
+                "no_charge_if_within_distance_horiz": float(no_charge_if_within_distance),
             }
             message = (
                 f"Use {ability_name} for {getattr(unit, 'name', 'Unit')} "
@@ -857,6 +862,7 @@ class GameReactiveDecisionsMixin:
                 payload={
                     "unit_id": unit_id,
                     "min_enemy_distance_horiz": int(min_enemy_distance),
+                    "no_charge_if_within_distance_horiz": float(no_charge_if_within_distance),
                 },
                 instance_key=f"{unit_id}:advance_redeploy",
             )
@@ -5793,6 +5799,9 @@ class GameReactiveDecisionsMixin:
                     "allow_skip": False,
                     "ability_name": ability_name,
                     "min_enemy_distance_horiz": int(ctx.get("min_enemy_distance_horiz", 9) or 9),
+                    "no_charge_if_within_distance_horiz": float(
+                        ctx.get("no_charge_if_within_distance_horiz", 0) or 0
+                    ),
                 },
             )
             self.request_decision(request_move)

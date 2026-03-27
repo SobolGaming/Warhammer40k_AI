@@ -2547,6 +2547,76 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 unit=unit,
                 set_up_as_reinforcements=False,
             )
+        try:
+            no_charge_distance = float(ctx.get("no_charge_if_within_distance_horiz", 0) or 0)
+        except Exception:
+            no_charge_distance = 0.0
+        if placement_kind == "advance_redeploy_9h" and no_charge_distance > 0.0:
+            try:
+                from ...utility.aura_utils import horizontal_distance_between_bases_2d
+            except Exception:
+                horizontal_distance_between_bases_2d = None
+            if callable(horizontal_distance_between_bases_2d):
+                game_map = getattr(game, "map", None)
+                own_army_getter = getattr(unit, "get_parent_army", None)
+                own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+                within_threshold = False
+                for enemy in list(getattr(game_map, "units", []) or []):
+                    if enemy is unit:
+                        continue
+                    enemy_root_getter = getattr(enemy, "get_attached_unit_root", None)
+                    enemy_root = enemy_root_getter() if callable(enemy_root_getter) else enemy
+                    if enemy_root is None:
+                        continue
+                    enemy_army_getter = getattr(enemy_root, "get_parent_army", None)
+                    enemy_army = enemy_army_getter() if callable(enemy_army_getter) else getattr(enemy_root, "parent_army", None)
+                    if own_army is not None and enemy_army is own_army:
+                        continue
+                    try:
+                        if not getattr(enemy_root, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy_root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    for enemy_model in list(getattr(enemy_root, "models", []) or []):
+                        if not getattr(enemy_model, "is_alive", True):
+                            continue
+                        enemy_base = getattr(enemy_model, "model_base", None)
+                        if enemy_base is None:
+                            continue
+                        for own_model in list(getattr(unit, "models", []) or []):
+                            if not getattr(own_model, "is_alive", True):
+                                continue
+                            own_base = getattr(own_model, "model_base", None)
+                            if own_base is None:
+                                continue
+                            if float(horizontal_distance_between_bases_2d(own_base, enemy_base)) <= no_charge_distance + 1e-6:
+                                within_threshold = True
+                                break
+                        if within_threshold:
+                            break
+                    if within_threshold:
+                        break
+                if within_threshold:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    try:
+                        sr["reletavistic_tether_no_charge_turn"] = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        sr["reletavistic_tether_no_charge_turn"] = 0
+                    try:
+                        owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                    except Exception:
+                        owner = ""
+                    if owner:
+                        sr["reletavistic_tether_no_charge_turn_owner"] = owner
+                    sr["reletavistic_tether_no_charge_source"] = (
+                        str(ctx.get("ability_name", "") or "Reletavistic Tether").strip()
+                        or "Reletavistic Tether"
+                    )
+                    unit.special_rules = sr
     if bool(ctx.get("redeploy_followup", False)):
         try:
             unit_id = str(ctx.get("redeploy_unit_id", "") or unit_id)

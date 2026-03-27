@@ -2294,6 +2294,7 @@ class RulesParsingMixin:
             if isinstance(sr, dict) and (
                 bool(sr.get("enhancement_archraider"))
                 or bool(sr.get("enhancement_coronal_susurrant"))
+                or bool(sr.get("enhancement_singularity_matrix"))
                 or bool(sr.get("enhancement_shadow_war_veteran"))
                 or bool(sr.get("enhancement_mirror_of_fates"))
             ):
@@ -2303,6 +2304,7 @@ class RulesParsingMixin:
                     if (
                         ("archraider" in low_name and bool(sr.get("enhancement_archraider")))
                         or ("coronal susurrant" in low_name and bool(sr.get("enhancement_coronal_susurrant")))
+                        or ("singularity matrix" in low_name and bool(sr.get("enhancement_singularity_matrix")))
                         or ("shadow war veteran" in low_name and bool(sr.get("enhancement_shadow_war_veteran")))
                         or ("mirror of fates" in low_name and bool(sr.get("enhancement_mirror_of_fates")))
                         or "lord of deceit" in norm

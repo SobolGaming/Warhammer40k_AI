@@ -3506,6 +3506,68 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        # Reletavistic Tether: if set up within 9" after the 6" setup override, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            tether_min = (
+                float(sr.get("enhancement_reletavistic_tether_deep_strike_min_distance", 0) or 0)
+                if isinstance(sr, dict)
+                else 0.0
+            )
+            if tether_min and game_map is not None:
+                requires_bearer_alive = bool(sr.get("enhancement_reletavistic_tether_requires_bearer_alive", True))
+                bearer_model_id = str(
+                    sr.get("enhancement_reletavistic_tether_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                bearer_alive = True
+                get_model_by_id = getattr(self, "get_attached_unit_model_by_id", None)
+                if bearer_model_id and callable(get_model_by_id):
+                    bearer_model = get_model_by_id(bearer_model_id)
+                    bearer_alive = bool(bearer_model is not None and getattr(bearer_model, "is_alive", False))
+                if bearer_alive or not requires_bearer_alive:
+                    from ...utility.aura_utils import horizontal_distance_between_bases_2d
+
+                    threshold = float(sr.get("enhancement_reletavistic_tether_no_charge_if_within_distance", 9.0) or 9.0)
+                    within_threshold = False
+                    for enemy in list(game_map.get_enemy_units(self) or []):
+                        try:
+                            if not getattr(enemy, "is_alive", lambda: True)():
+                                continue
+                            if not getattr(enemy, "deployed", True):
+                                continue
+                        except Exception:
+                            continue
+                        for em in list(getattr(enemy, "models", []) or []):
+                            if not getattr(em, "is_alive", True):
+                                continue
+                            for m in list(getattr(self, "models", []) or []):
+                                if not getattr(m, "is_alive", True):
+                                    continue
+                                if float(horizontal_distance_between_bases_2d(m.model_base, em.model_base)) <= threshold + 1e-6:
+                                    within_threshold = True
+                                    break
+                            if within_threshold:
+                                break
+                        if within_threshold:
+                            break
+                    if within_threshold:
+                        try:
+                            owner = self.get_parent_army().player.id
+                        except Exception:
+                            owner = ""
+                        sr["reletavistic_tether_no_charge_turn"] = int(turn or 0)
+                        if owner:
+                            sr["reletavistic_tether_no_charge_turn_owner"] = owner
+                        sr["reletavistic_tether_no_charge_source"] = (
+                            str(sr.get("enhancement_reletavistic_tether_source", "") or "Reletavistic Tether").strip()
+                            or "Reletavistic Tether"
+                        )
+                        self.special_rules = sr
+        except Exception:
+            pass
+
         # Tunnel Crawlers: if the 6" Deep Strike option was active, cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)

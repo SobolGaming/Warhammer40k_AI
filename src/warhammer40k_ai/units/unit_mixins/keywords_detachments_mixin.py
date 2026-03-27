@@ -16032,6 +16032,43 @@ class KeywordsDetachmentsMixin:
             types.add("charge")
         return types
 
+    def _enhancement_rule_text_is_active(self) -> bool:
+        enh = getattr(self, "enhancement", None)
+        if enh is None:
+            return False
+
+        requires_bearer_alive: Optional[bool] = None
+        enhancement_id = str(getattr(enh, "id", "") or "").strip()
+        enhancement_name = str(getattr(enh, "name", "") or "").strip()
+        if enhancement_id or enhancement_name:
+            from ...rules.enhancement_descriptors import get_enhancement_tool_descriptor
+
+            descriptor = get_enhancement_tool_descriptor(
+                enhancement_id=enhancement_id,
+                name=enhancement_name,
+            )
+            if descriptor is not None:
+                params = getattr(descriptor, "effect_params", None)
+                if isinstance(params, dict) and "requires_bearer_alive" in params:
+                    requires_bearer_alive = bool(params.get("requires_bearer_alive", False))
+
+        if requires_bearer_alive is None:
+            special_rules = getattr(self, "special_rules", None)
+            if isinstance(special_rules, dict):
+                requires_bearer_alive = any(
+                    bool(value)
+                    for key, value in special_rules.items()
+                    if str(key or "").startswith("enhancement_")
+                    and str(key or "").endswith("_requires_bearer_alive")
+                )
+
+        if not bool(requires_bearer_alive):
+            return True
+        get_bearer = getattr(self, "_get_enhancement_bearer_model", None)
+        if not callable(get_bearer):
+            return False
+        return get_bearer() is not None
+
     def _iter_ability_entries_for_rules(
         self,
         model: Optional['Model'] = None,
@@ -16059,7 +16096,7 @@ class KeywordsDetachmentsMixin:
             if enh is not None:
                 name = getattr(enh, "name", "") or ""
                 desc = getattr(enh, "description", "") or ""
-                if name or desc:
+                if (name or desc) and self._enhancement_rule_text_is_active():
                     yield name, desc
 
         # Model-level abilities (if provided)

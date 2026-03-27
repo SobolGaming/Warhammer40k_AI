@@ -23178,6 +23178,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             resolution_mode = "d6_table"
 
         if resolution_mode == "leadership_test":
+            apply_failed_wound_penalty = bool(ctx.get("apply_wound_penalty_on_failed_leadership_test", False))
             leadership_test_passed = None
             pass_check = getattr(target_root, "pass_leadership_check", None)
             if not callable(pass_check):
@@ -23210,16 +23211,29 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 except Exception:
                     pass
             else:
-                _apply_ineligible_to_shoot()
-                try:
-                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                    _log_action_for_players(
-                        game,
-                        player,
-                        f"{ability_name}: Leadership test failed; {tname} cannot shoot this phase.",
-                    )
-                except Exception:
-                    pass
+                if apply_failed_wound_penalty:
+                    _apply_hit_penalty()
+                    _apply_wound_penalty()
+                    try:
+                        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                        _log_action_for_players(
+                            game,
+                            player,
+                            f"{ability_name}: Leadership test failed; {tname} suffers -1 to hit and -1 to wound this phase.",
+                        )
+                    except Exception:
+                        pass
+                else:
+                    _apply_ineligible_to_shoot()
+                    try:
+                        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                        _log_action_for_players(
+                            game,
+                            player,
+                            f"{ability_name}: Leadership test failed; {tname} cannot shoot this phase.",
+                        )
+                    except Exception:
+                        pass
             return target_unit
 
         try:

@@ -14693,6 +14693,9 @@ class GamePhaseHandlersMixin:
                         mortal_on_one = bool(spec.get("mortal_on_one", False))
                         grant_ranged_hazardous = bool(spec.get("grant_ranged_hazardous", False))
                         apply_wound_penalty_on_six = bool(spec.get("apply_wound_penalty_on_six", False))
+                        apply_wound_penalty_on_failed_leadership_test = bool(
+                            spec.get("apply_wound_penalty_on_failed_leadership_test", False)
+                        )
                         resolution_mode = str(spec.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table"
                         required_keywords: list[str] = []
                         for keyword in list(spec.get("required_target_keywords", ()) or []):
@@ -14720,6 +14723,7 @@ class GamePhaseHandlersMixin:
                                 "mortal_on_one": mortal_on_one,
                                 "grant_ranged_hazardous": grant_ranged_hazardous,
                                 "apply_wound_penalty_on_six": apply_wound_penalty_on_six,
+                                "apply_wound_penalty_on_failed_leadership_test": apply_wound_penalty_on_failed_leadership_test,
                                 "resolution_mode": resolution_mode,
                                 "required_target_keywords": list(required_keywords),
                                 "excluded_target_keywords": list(excluded_keywords),
@@ -14842,6 +14846,9 @@ class GamePhaseHandlersMixin:
                         "mortal_on_one": bool(meta.get("mortal_on_one", False)),
                         "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
                         "apply_wound_penalty_on_six": bool(meta.get("apply_wound_penalty_on_six", False)),
+                        "apply_wound_penalty_on_failed_leadership_test": bool(
+                            meta.get("apply_wound_penalty_on_failed_leadership_test", False)
+                        ),
                         "resolution_mode": str(meta.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table",
                         "optional": bool(meta.get("optional", False)),
                         "limit_one_per_army": bool(meta.get("limit_one", False)),
@@ -21411,6 +21418,13 @@ class GamePhaseHandlersMixin:
                             "cosmic_precision_turn_owner",
                             "cosmic_precision_turn",
                             "cosmic_precision_source",
+                        ):
+                            sr.pop(k, None)
+                    if str(sr.get("reletavistic_tether_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "reletavistic_tether_no_charge_turn_owner",
+                            "reletavistic_tether_no_charge_turn",
+                            "reletavistic_tether_no_charge_source",
                         ):
                             sr.pop(k, None)
                     if str(sr.get("aetherstride_sustained_hits_d3_owner", "") or "") == owner_id:

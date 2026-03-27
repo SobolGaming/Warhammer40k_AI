@@ -1890,6 +1890,9 @@ class Enhancement:
         is_obeisance_phalanx = bool(
             ne_mgr and getattr(ne_mgr, "is_obeisance_phalanx", lambda: False)()
         )
+        is_pantheon_of_woe = bool(
+            ne_mgr and getattr(ne_mgr, "is_pantheon_of_woe", lambda: False)()
+        )
         try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
@@ -2380,6 +2383,139 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_eternal_conqueror_bearer_model_id"] = bearer_id
+
+        if name == "singularity matrix" or enh_id == "000010672002":
+            if not is_pantheon_of_woe:
+                return
+            unit.special_rules["enhancement_singularity_matrix"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            aura_range = _coerce_int(params.get("range", 0), default=0)
+            if aura_range <= 0:
+                try:
+                    aura_range = int(getattr(desc, "range_in", 12) or 12)
+                except Exception:
+                    aura_range = 12
+            cp_increase = _coerce_int(params.get("cp_increase", 1) or 1, default=1)
+            ability_name = str(params.get("ability_name", "Lord of Deceit (Aura)") or "Lord of Deceit (Aura)").strip()
+            if not ability_name:
+                ability_name = "Lord of Deceit (Aura)"
+            unit.special_rules["enhancement_singularity_matrix_range"] = int(max(1, aura_range))
+            unit.special_rules["enhancement_singularity_matrix_cp_increase"] = int(max(1, cp_increase))
+            unit.special_rules["enhancement_singularity_matrix_source"] = "Singularity Matrix"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_singularity_matrix_bearer_model_id"] = bearer_id
+            try:
+                if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
+                    unit._refresh_targeted_stratagem_cp_increase_flags()
+            except Exception:
+                pass
+            spec = {
+                "range": int(max(1, aura_range)),
+                "keyword": "",
+                "name": ability_name,
+                "description": str(getattr(self, "description", "") or ""),
+                "optional": False,
+                "limit": "",
+                "max_cp": None,
+                "cp_increase": int(max(1, cp_increase)),
+                "usage_key": "STRATAGEM_CP_INCREASE:SINGULARITY_MATRIX",
+            }
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            existing_specs = list(unit.special_rules.get("stratagem_target_cp_increase_aura", []) or [])
+            deduped_specs: list[dict] = []
+            seen_spec_keys: set[tuple[str, str]] = set()
+            for existing_spec in existing_specs + [spec]:
+                if not isinstance(existing_spec, dict):
+                    continue
+                key = (
+                    str(existing_spec.get("usage_key", "") or "").strip().upper(),
+                    str(existing_spec.get("source_model_id", "") or "").strip().lower(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing_spec)
+            unit.special_rules["stratagem_target_cp_increase_aura"] = deduped_specs
+
+        if name == "quantum goad" or enh_id == "000010672003":
+            if not is_pantheon_of_woe:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Quantum Goad").strip() or "Quantum Goad"
+            unit.special_rules["enhancement_quantum_goad"] = True
+            unit.special_rules["enhancement_quantum_goad_source"] = source_name
+            _append_enhancement_bearer_unit_charge_after_advance_rule(
+                unit,
+                source=source_name,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_quantum_goad_bearer_model_id"] = bearer_id
+
+        if name == "animus damper" or enh_id == "000010672004":
+            if not is_pantheon_of_woe:
+                return
+            unit.special_rules["enhancement_animus_damper"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = float(params.get("range", 9999.0) or 9999.0)
+            except Exception:
+                range_inches = 9999.0
+            required_keywords = [
+                str(kw or "").strip().upper()
+                for kw in list(params.get("required_target_keywords", ("VEHICLE",)) or ("VEHICLE",))
+                if str(kw or "").strip()
+            ]
+            if not required_keywords:
+                required_keywords = ["VEHICLE"]
+            resolution_mode = str(params.get("resolution_mode", "leadership_test") or "leadership_test").strip().lower()
+            if not resolution_mode:
+                resolution_mode = "leadership_test"
+            unit.special_rules["enhancement_animus_damper_range"] = float(max(0.0, range_inches))
+            unit.special_rules["enhancement_animus_damper_required_target_keywords"] = list(required_keywords)
+            unit.special_rules["enhancement_animus_damper_resolution_mode"] = resolution_mode
+            unit.special_rules["enhancement_animus_damper_apply_wound_penalty_on_failed_leadership_test"] = bool(
+                params.get("apply_wound_penalty_on_failed_leadership_test", True)
+            )
+            unit.special_rules["enhancement_animus_damper_source"] = "Animus Damper"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_animus_damper_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "reletavistic tether" or enh_id == "000010672005":
+            if not is_pantheon_of_woe:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Reletavistic Tether").strip() or "Reletavistic Tether"
+            unit.special_rules["enhancement_reletavistic_tether"] = True
+            unit.special_rules["enhancement_reletavistic_tether_source"] = source_name
+            unit.special_rules["enhancement_reletavistic_tether_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_reletavistic_tether_deep_strike_min_distance"] = float(
+                max(0.0, _coerce_float(params.get("deep_strike_min_distance", 6.0), default=6.0))
+            )
+            unit.special_rules["enhancement_reletavistic_tether_advance_redeploy_min_distance"] = int(
+                max(0, _coerce_int(params.get("advance_redeploy_min_distance", 6) or 6, default=6))
+            )
+            unit.special_rules["enhancement_reletavistic_tether_no_charge_if_within_distance"] = float(
+                max(0.0, _coerce_float(params.get("no_charge_if_within_distance", 9.0), default=9.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_reletavistic_tether_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "dimensional overseer" or enh_id == "000008554002":
             if not is_hypercrypt_legion:
