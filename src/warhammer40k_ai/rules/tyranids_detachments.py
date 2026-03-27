@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import math
 import uuid
+from itertools import combinations
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from .detachment_manager import DetachmentManagerBase
-from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d, unit_within_range_of_unit
+from ..utility.aura_utils import (
+    horizontal_distance_point_to_model_base_2d,
+    model_within_range_of_unit,
+    unit_within_range_of_unit,
+)
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
@@ -161,6 +166,33 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Unending Swarm")
 
+    def _unit_has_naturalised_camouflage(self, unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_naturalised_camouflage")):
+            return True
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        enh_name = self._norm(str(getattr(enhancement, "name", "") or ""))
+        return bool(enh_id == "000008408003" or enh_name == "naturalisedcamouflage")
+
+    def _iter_naturalised_camouflage_sources(self) -> list:
+        army = self.army
+        if army is None:
+            return []
+        unique_by_id = {}
+        for unit in list(getattr(army, "units", []) or []):
+            if not self._unit_has_naturalised_camouflage(unit):
+                continue
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if not unit_id or unit_id in unique_by_id:
+                continue
+            unique_by_id[unit_id] = unit
+        return [unique_by_id[k] for k in sorted(unique_by_id.keys())]
+
     def is_vanguard_onslaught(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -190,6 +222,281 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if not self._unit_is_tyranids(root):
             return False
         return self._unending_swarm_unit_is_endless_multitude(root)
+
+    def unending_swarm_relentless_hunger_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        _ = game
+        if not self.is_unending_swarm():
+            return 0, ""
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_tyranids(root):
+            return 0, ""
+        for member, sr in self._attached_member_special_rules_with_flag(root, "enhancement_relentless_hunger"):
+            if not self._enhancement_bearer_is_alive_for_member(member, sr):
+                continue
+            try:
+                bonus = int(sr.get("enhancement_relentless_hunger_move_bonus", 2) or 2)
+            except (TypeError, ValueError):
+                bonus = 2
+            if bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_relentless_hunger_source", "") or "Relentless Hunger").strip()
+            return int(bonus), source or "Relentless Hunger"
+        return 0, ""
+
+    def unending_swarm_piercing_talons_critical_wound_ap_bonus(
+        self,
+        attacker_model,
+        attack_instance,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        if not self.is_unending_swarm():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not isinstance(attack_instance, dict) or not bool(attack_instance.get("crit_wound", False)):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_tyranids(root):
+            return 0, ""
+        for member, sr in self._attached_member_special_rules_with_flag(root, "enhancement_piercing_talons"):
+            if not self._enhancement_bearer_is_alive_for_member(member, sr):
+                continue
+            try:
+                bonus = int(sr.get("enhancement_piercing_talons_critical_wound_ap_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                bonus = 1
+            if bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_piercing_talons_source", "") or "Piercing Talons").strip()
+            return int(bonus), source or "Piercing Talons"
+        return 0, ""
+
+    def naturalised_camouflage_selectable_units(self, source_unit, *, game=None) -> list:
+        _ = game
+        if not self.is_unending_swarm():
+            return []
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._unit_in_army(source_root):
+            return []
+        if not self._unit_has_naturalised_camouflage(source_unit):
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        bearer = self._enhancement_bearer_model_for_member(source_unit, source_sr)
+        if bearer is None or not self._model_is_alive(bearer):
+            return []
+        try:
+            range_in = float(source_sr.get("enhancement_naturalised_camouflage_range", 9.0) or 9.0)
+        except (TypeError, ValueError):
+            range_in = 9.0
+        if range_in <= 0.0:
+            return []
+        selectable: list[Any] = []
+        for root in self._iter_army_roots():
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not self._unit_is_tyranids(root):
+                continue
+            if not self._unending_swarm_unit_is_endless_multitude(root):
+                continue
+            if not model_within_range_of_unit(bearer, root, float(range_in), use_attached_aggregate=True):
+                continue
+            selectable.append(root)
+        selectable.sort(key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")))
+        return selectable
+
+    def _pending_naturalised_camouflage_request(self, game, *, source_unit_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "naturalised_camouflage":
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                continue
+            if int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return True
+        return False
+
+    def _clear_naturalised_camouflage_effects(self, source_unit_id: str = "") -> None:
+        source_filter = str(source_unit_id or "").strip()
+        for root in self._iter_army_roots():
+            for member in self._iter_attached_members(root):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                entries = list(sr.get("bearer_unit_benefit_of_cover", []) or [])
+                if not entries:
+                    continue
+                kept_entries = []
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        kept_entries.append(entry)
+                        continue
+                    entry_source_id = str(entry.get("source_unit_id", "") or "").strip()
+                    enhancement_key = str(entry.get("enhancement_key", "") or "").strip().lower()
+                    source_name = str(entry.get("source", "") or "").strip().lower()
+                    if enhancement_key != "naturalised_camouflage" and source_name != "naturalised camouflage":
+                        kept_entries.append(entry)
+                        continue
+                    if source_filter and entry_source_id != source_filter:
+                        kept_entries.append(entry)
+                        continue
+                    changed = True
+                if not changed:
+                    continue
+                if kept_entries:
+                    sr["bearer_unit_benefit_of_cover"] = kept_entries
+                else:
+                    sr.pop("bearer_unit_benefit_of_cover", None)
+                member.special_rules = sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+
+    def _queue_naturalised_camouflage_selection_requests(self, *, game=None, battle_round: int) -> None:
+        if not self.is_unending_swarm():
+            return
+        army = self.army
+        player = getattr(army, "player", None) if army is not None else None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round) != 1:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request_fn = getattr(game, "request_decision", None)
+        for source_unit in self._iter_naturalised_camouflage_sources():
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if bool(sr.get("enhancement_naturalised_camouflage_resolved")):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "").strip()
+            if not source_unit_id:
+                continue
+            if self._pending_naturalised_camouflage_request(
+                game,
+                source_unit_id=source_unit_id,
+                battle_round=int(battle_round),
+            ):
+                continue
+
+            selectable = list(self.naturalised_camouflage_selectable_units(source_unit, game=game) or [])
+            try:
+                max_units = int(sr.get("enhancement_naturalised_camouflage_max_units", 3) or 3)
+            except (TypeError, ValueError):
+                max_units = 3
+            max_units = max(0, int(max_units))
+
+            candidate_ids = [
+                str(get_entity_id(target) or "")
+                for target in selectable
+                if str(get_entity_id(target) or "").strip()
+            ]
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "selected_unit_ids": [],
+                        "selection_kind": "none",
+                    },
+                )
+            ]
+            for target in selectable:
+                target_id = str(get_entity_id(target) or "").strip()
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target, "name", "Unit") or "Unit"),
+                        payload={
+                            "selected_unit_ids": [target_id],
+                            "selection_kind": "one_unit",
+                        },
+                    )
+                )
+            for count in range(2, max_units + 1):
+                for selected in combinations(selectable, count):
+                    selected_ids = []
+                    selected_names = []
+                    for target in selected:
+                        target_id = str(get_entity_id(target) or "").strip()
+                        if not target_id:
+                            selected_ids = []
+                            break
+                        selected_ids.append(target_id)
+                        selected_names.append(str(getattr(target, "name", "Unit") or "Unit"))
+                    if not selected_ids:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            " + ".join(selected_names),
+                            payload={
+                                "selected_unit_ids": selected_ids,
+                                "selection_kind": f"{count}_units",
+                            },
+                        )
+                    )
+
+            if len(options) <= 1:
+                sr["enhancement_naturalised_camouflage_selected_unit_ids"] = []
+                sr["enhancement_naturalised_camouflage_resolved"] = True
+                source_unit.special_rules = sr
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Naturalised Camouflage: select up to three friendly Endless Multitude units within 9\".",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "naturalised_camouflage",
+                    "ability_name": "Naturalised Camouflage",
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "battle_round": int(battle_round),
+                    "candidate_unit_ids": list(candidate_ids),
+                    "max_selections": int(max_units),
+                    "optional": True,
+                },
+            )
+            if callable(request_fn):
+                request_fn(request)
 
     def questing_tendrils_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
         _ = game
@@ -597,6 +904,35 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             if TyranidsDetachmentManager._model_is_alive(model):
                 return True
         return False
+
+    @staticmethod
+    def _enhancement_bearer_model_for_member(member, special_rules: Optional[dict] = None):
+        unit = member
+        if unit is None:
+            return None
+        sr = special_rules if isinstance(special_rules, dict) else getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                entity_id = str(get_entity_id(model) or "").strip()
+                local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id in {entity_id, local_id}:
+                    return model
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return bearer
+        models = list(getattr(unit, "models", []) or [])
+        if len(models) == 1:
+            return models[0]
+        for model in models:
+            if TyranidsDetachmentManager._model_is_alive(model):
+                return model
+        return None
 
     def _timed_unit_effect_is_active(
         self,
@@ -2603,6 +2939,12 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             self.active_synaptic_imperative_key = None
             self.synaptic_imperative_active_round = None
         self._queue_synaptic_imperatives_request(int(br), game=game)
+
+        if self.is_unending_swarm():
+            if int(br) == 1:
+                self._queue_naturalised_camouflage_selection_requests(game=game, battle_round=int(br))
+            else:
+                self._clear_naturalised_camouflage_effects()
 
         if not self._army_has_hyper_adaptations():
             return

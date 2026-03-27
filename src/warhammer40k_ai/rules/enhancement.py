@@ -1947,6 +1947,10 @@ class Enhancement:
             is_synaptic_nexus = bool(tyr_mgr and tyr_mgr.is_synaptic_nexus())
         except Exception:
             is_synaptic_nexus = False
+        try:
+            is_unending_swarm = bool(tyr_mgr and tyr_mgr.is_unending_swarm())
+        except Exception:
+            is_unending_swarm = False
 
         bearer = None
         bearer_id = ""
@@ -10311,6 +10315,75 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_dirgeheart_of_kharis_bearer_model_id"] = bearer_id
+
+        if name == "relentless hunger" or enh_id == "000008408002":
+            if not is_unending_swarm:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Relentless Hunger").strip() or "Relentless Hunger"
+            move_bonus = int(max(0, _coerce_int(params.get("movement_bonus", 2) or 2, default=2)))
+            unit.special_rules["enhancement_relentless_hunger"] = True
+            unit.special_rules["enhancement_relentless_hunger_source"] = source_name
+            unit.special_rules["enhancement_relentless_hunger_move_bonus"] = int(move_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_relentless_hunger_bearer_model_id"] = bearer_id
+
+        if name == "naturalised camouflage" or enh_id == "000008408003":
+            if not is_unending_swarm:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Naturalised Camouflage").strip() or "Naturalised Camouflage"
+            selection_range = float(
+                max(
+                    0.0,
+                    _coerce_float(params.get("range", getattr(desc, "range_in", 9.0)) or 9.0, default=9.0),
+                )
+            )
+            max_units = int(max(0, _coerce_int(params.get("max_units", 3) or 3, default=3)))
+            unit.special_rules["enhancement_naturalised_camouflage"] = True
+            unit.special_rules["enhancement_naturalised_camouflage_source"] = source_name
+            unit.special_rules["enhancement_naturalised_camouflage_range"] = float(selection_range)
+            unit.special_rules["enhancement_naturalised_camouflage_max_units"] = int(max_units)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_naturalised_camouflage_bearer_model_id"] = bearer_id
+
+        if name == "piercing talons" or enh_id == "000008408004":
+            if not is_unending_swarm:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Piercing Talons").strip() or "Piercing Talons"
+            ap_bonus = int(max(0, _coerce_int(params.get("critical_wound_ap_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_piercing_talons"] = True
+            unit.special_rules["enhancement_piercing_talons_source"] = source_name
+            unit.special_rules["enhancement_piercing_talons_critical_wound_ap_bonus"] = int(ap_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_piercing_talons_bearer_model_id"] = bearer_id
+
+        if name == "adrenalised onslaught" or enh_id == "000008408005":
+            if not is_unending_swarm:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Adrenalised Onslaught").strip() or "Adrenalised Onslaught"
+            pile_in_bonus = int(max(0, _coerce_int(params.get("pile_in_distance_bonus", 3) or 3, default=3)))
+            consolidate_bonus = int(
+                max(0, _coerce_int(params.get("consolidate_distance_bonus", 3) or 3, default=3))
+            )
+            unit.special_rules["enhancement_adrenalised_onslaught"] = True
+            unit.special_rules["enhancement_adrenalised_onslaught_source"] = source_name
+            unit.special_rules["enhancement_adrenalised_onslaught_pile_in_distance_bonus"] = int(pile_in_bonus)
+            unit.special_rules["enhancement_adrenalised_onslaught_consolidate_distance_bonus"] = int(
+                consolidate_bonus
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_adrenalised_onslaught_bearer_model_id"] = bearer_id
 
         if name == "ominous presence" or enh_id == "000008404002":
             if not is_crusher_stampede:

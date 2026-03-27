@@ -7245,6 +7245,63 @@ _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.values()
 }
 
+_TYRANIDS_UNENDING_SWARM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008408002": EnhancementToolDescriptor(
+        enhancement_id="000008408002",
+        name="Relentless Hunger",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_movement_bonus",
+        effect_params={"movement_bonus": 2, "requires_bearer_alive": True},
+    ),
+    "000008408003": EnhancementToolDescriptor(
+        enhancement_id="000008408003",
+        name="Naturalised Camouflage",
+        timing="start_of_first_battle_round",
+        target="up_to_three_friendly_endless_multitude_units_within_range_of_bearer",
+        duration="until_end_of_battle_round",
+        effect="select_friendly_endless_multitude_units_for_ranged_benefit_of_cover",
+        range_in=9.0,
+        effect_params={
+            "range": 9.0,
+            "max_units": 3,
+            "target_keyword": "ENDLESS MULTITUDE",
+            "attack_type": "ranged",
+            "grants_benefit_of_cover": True,
+            "selection_battle_round": 1,
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000008408004": EnhancementToolDescriptor(
+        enhancement_id="000008408004",
+        name="Piercing Talons",
+        timing="on_critical_wound",
+        target="bearer_unit_attacks",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_critical_wound_ap_bonus",
+        effect_params={"critical_wound_ap_bonus": 1, "requires_bearer_alive": True},
+    ),
+    "000008408005": EnhancementToolDescriptor(
+        enhancement_id="000008408005",
+        name="Adrenalised Onslaught",
+        timing="fight_phase_move",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_pile_in_and_consolidate_distance_bonus",
+        effect_params={
+            "pile_in_distance_bonus": 3,
+            "consolidate_distance_bonus": 3,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_TYRANIDS_UNENDING_SWARM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_UNENDING_SWARM_DESCRIPTORS.values()
+}
+
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008417003": EnhancementToolDescriptor(
         enhancement_id="000008417003",
@@ -8252,6 +8309,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TYRANIDS_SYNAPTIC_NEXUS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TYRANIDS_UNENDING_SWARM_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8428,6 +8488,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_SUBTERRANEAN_ASSAULT_BY_NAME.get(key)
         or _TYRANIDS_SYNAPTIC_NEXUS_BY_NAME.get(key)
+        or _TYRANIDS_UNENDING_SWARM_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_CRUSHER_STAMPEDE_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)

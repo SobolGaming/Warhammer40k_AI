@@ -7199,6 +7199,60 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if unit_id not in allowed_ids:
                 return ("Student of Kauyon selection includes an ineligible unit.",)
         return ()
+    if ability == "naturalised_camouflage":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Naturalised Camouflage source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tyranids_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_unending_swarm", lambda: False)()):
+            return ("Naturalised Camouflage requires a Tyranids Unending Swarm army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_naturalised_camouflage")):
+            return ("Naturalised Camouflage source unit does not have this enhancement.",)
+        if bool(source_sr.get("enhancement_naturalised_camouflage_resolved")):
+            return ("Naturalised Camouflage has already resolved.",)
+        try:
+            required_round = int(ctx.get("battle_round", 1) or 1)
+        except (TypeError, ValueError):
+            required_round = 1
+        current_round = int(getattr(game, "turn", 0) or 0)
+        if required_round > 0 and current_round and required_round != current_round:
+            return ("Naturalised Camouflage selection is no longer valid for this battle round.",)
+        if is_skip_choice(request, result):
+            return ()
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        try:
+            max_selections = int(
+                source_sr.get(
+                    "enhancement_naturalised_camouflage_max_units",
+                    ctx.get("max_selections", 3),
+                )
+                or 3
+            )
+        except (TypeError, ValueError):
+            max_selections = 3
+        max_selections = max(0, int(max_selections))
+        if len(selected_ids) > max_selections:
+            return ("Naturalised Camouflage can select at most three units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Naturalised Camouflage selected_unit_ids must be unique.",)
+
+        selectable = list(getattr(mgr, "naturalised_camouflage_selectable_units")(source_unit, game=game) or [])
+        allowed_ids = {str(get_entity_id(unit) or "") for unit in selectable}
+        for unit_id in selected_ids:
+            if unit_id not in allowed_ids:
+                return ("Naturalised Camouflage selection includes an ineligible unit.",)
+        return ()
     if ability == "admired_leader":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -17442,6 +17496,125 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 game,
                 player,
                 f"Student of Kauyon: {source_name} selected none.",
+            )
+        return selected_roots
+    if ability == "naturalised_camouflage":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tyranids_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        try:
+            max_selections = int(
+                source_sr.get(
+                    "enhancement_naturalised_camouflage_max_units",
+                    ctx.get("max_selections", 3),
+                )
+                or 3
+            )
+        except Exception:
+            max_selections = 3
+        max_selections = max(0, int(max_selections))
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        if is_skip_choice(request, result):
+            selected_vals = []
+
+        selectable_units = list(getattr(mgr, "naturalised_camouflage_selectable_units")(source_unit, game=game) or [])
+        selectable_by_id = {str(get_entity_id(unit) or ""): unit for unit in selectable_units}
+
+        selected_roots = []
+        seen_ids: set[str] = set()
+        for unit_id in list(selected_vals or []):
+            unit_id_str = str(unit_id or "").strip()
+            if not unit_id_str or unit_id_str in seen_ids:
+                continue
+            root = selectable_by_id.get(unit_id_str)
+            if root is None:
+                continue
+            seen_ids.add(unit_id_str)
+            selected_roots.append(root)
+            if len(selected_roots) >= max_selections:
+                break
+
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        clear_fn = getattr(mgr, "_clear_naturalised_camouflage_effects", None)
+        if callable(clear_fn):
+            clear_fn(source_unit_id=source_unit_id)
+
+        selected_unit_ids = []
+        ability_name = str(ctx.get("ability_name", "") or "Naturalised Camouflage").strip() or "Naturalised Camouflage"
+        for root in selected_roots:
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in members:
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    member_sr = {}
+                entries = list(member_sr.get("bearer_unit_benefit_of_cover", []) or [])
+                exists = any(
+                    isinstance(entry, dict)
+                    and str(entry.get("enhancement_key", "") or "").strip().lower() == "naturalised_camouflage"
+                    and str(entry.get("source_unit_id", "") or "").strip() == source_unit_id
+                    and str(entry.get("attack_type", "") or "ranged").strip().lower() == "ranged"
+                    for entry in entries
+                )
+                if not exists:
+                    entries.append(
+                        {
+                            "attack_type": "ranged",
+                            "source": ability_name,
+                            "source_unit_id": source_unit_id,
+                            "enhancement_key": "naturalised_camouflage",
+                        }
+                    )
+                member_sr["bearer_unit_benefit_of_cover"] = entries
+                member.special_rules = member_sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+            selected_unit_ids.append(str(get_entity_id(root) or ""))
+
+        source_sr["enhancement_naturalised_camouflage"] = True
+        source_sr["enhancement_naturalised_camouflage_resolved"] = True
+        source_sr["enhancement_naturalised_camouflage_selected_unit_ids"] = sorted(
+            [uid for uid in selected_unit_ids if uid]
+        )
+        source_unit.special_rules = source_sr
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        if selected_roots:
+            names = ", ".join(str(getattr(unit_obj, "name", "Unit") or "Unit") for unit_obj in selected_roots)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} selected {names}; selected units gain Benefit of Cover against ranged attacks until end of battle round.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} selected none.",
             )
         return selected_roots
     if ability == "admired_leader":

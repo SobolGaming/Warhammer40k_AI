@@ -23212,6 +23212,31 @@ class WargearProfile:
             save_result["special_effects"].append(
                 f"{source_name}: AP improved by {int(dread_mob_ap_bonus)} on Critical Wound"
             )
+        tyranids_ap_bonus = 0
+        tyranids_ap_source = ""
+        try:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            tyranids_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            bonus_fn = (
+                getattr(tyranids_mgr, "unending_swarm_piercing_talons_critical_wound_ap_bonus", None)
+                if tyranids_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                tyranids_ap_bonus, tyranids_ap_source = bonus_fn(attacker_model, attack_instance)
+                tyranids_ap_bonus = int(tyranids_ap_bonus or 0)
+                tyranids_ap_source = str(tyranids_ap_source or "").strip()
+        except Exception:
+            tyranids_ap_bonus = 0
+            tyranids_ap_source = ""
+        if int(tyranids_ap_bonus or 0) > 0:
+            effective_ap = int(effective_ap) - int(tyranids_ap_bonus)
+            source_name = tyranids_ap_source or "Piercing Talons"
+            save_result["special_effects"].append(
+                f"{source_name}: AP improved by {int(tyranids_ap_bonus)} on Critical Wound"
+            )
         save_result["ap_modifier"] = int(effective_ap)
         save_base = target_model.save
         try:
