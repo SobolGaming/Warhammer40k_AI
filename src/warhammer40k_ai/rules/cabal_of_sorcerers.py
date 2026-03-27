@@ -313,6 +313,9 @@ class CabalOfSorcerersManager:
             empowered_bonus_fn = getattr(ts_mgr, "hexwarp_empowered_manifestation_ritual_range_bonus", None) if ts_mgr is not None else None
             if callable(empowered_bonus_fn):
                 bonus += int(empowered_bonus_fn(model) or 0)
+            runemaster_bonus_fn = getattr(ts_mgr, "warpforged_runemaster_ritual_range_bonus", None) if ts_mgr is not None else None
+            if callable(runemaster_bonus_fn):
+                bonus += int(runemaster_bonus_fn(model) or 0)
         return int(bonus)
 
     def _ritual_range_for_model(self, model) -> float:
@@ -701,6 +704,7 @@ class CabalOfSorcerersManager:
         rolls: Optional[list[int]] = None,
         channel_decision: Optional[bool] = None,
         mortal_roll: Optional[int] = None,
+        warp_syphon_target_unit=None,
     ) -> dict:
         result = {
             "success": False,
@@ -806,6 +810,38 @@ class CabalOfSorcerersManager:
                 extra = int(provided_rolls[2])
             else:
                 extra = int(get_roll("D6") or 0)
+            if self.army is not None and warp_syphon_target_unit is not None:
+                ts_mgr = getattr(self.army, "thousand_sons_detachments", None)
+                can_target_fn = getattr(ts_mgr, "warpforged_warp_syphon_can_target", None) if ts_mgr is not None else None
+                spec_fn = getattr(ts_mgr, "warpforged_warp_syphon_spec", None) if ts_mgr is not None else None
+                can_use_warp_syphon = bool(callable(can_target_fn) and can_target_fn(caster_model, warp_syphon_target_unit))
+                if can_use_warp_syphon:
+                    spec = spec_fn(caster_model) if callable(spec_fn) else None
+                    if isinstance(spec, dict):
+                        if len(provided_rolls) >= 4:
+                            extra = int(provided_rolls[3])
+                        else:
+                            extra = int(get_roll("D6") or 0)
+                        mortal_amount = int(spec.get("self_mortal_wounds", 1) or 1)
+                        if mortal_amount > 0:
+                            try:
+                                warp_syphon_target_unit._apply_mortal_wounds_to_unit(
+                                    warp_syphon_target_unit,
+                                    int(mortal_amount),
+                                    game_map=getattr(game, "map", None),
+                                )
+                            except TypeError:
+                                warp_syphon_target_unit._apply_mortal_wounds_to_unit(
+                                    warp_syphon_target_unit,
+                                    int(mortal_amount),
+                                )
+                        result["warp_syphon_used"] = True
+                        result["warp_syphon_target_unit_id"] = str(
+                            getattr(warp_syphon_target_unit, "_id", "")
+                            or getattr(warp_syphon_target_unit, "id", "")
+                            or ""
+                        )
+                        result["warp_syphon_target_mortal_wounds"] = int(max(0, mortal_amount))
             total_rolls.append(extra)
         result["channeled"] = bool(channel)
 

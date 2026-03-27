@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.cabal_of_sorcerers import RITUAL_DESTINYS_RUIN
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units import wargear as wargear_mod
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.unit_mixins import damage_death_mixin as death_mod
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility import dice as dice_mod
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.dice import DiceCollection
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -141,6 +148,52 @@ def _build_game(*, army: Army, enemy_army: Army, phase_name: str = "SHOOTING_PHA
     army.player = player
     enemy_army.player = enemy_player
     return game
+
+
+def _build_real_game():
+    army = Army("Thousand Sons", "Warpforged Cabal")
+    army.faction_id = "TS"
+    enemy_army = Army("Enemy", "Other")
+    enemy_army.faction_id = "EN"
+    player = Player("Player", PlayerControl.REMOTE, army=army)
+    enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+    game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+    return game, army, enemy_army, player, enemy_player
+
+
+def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str) -> None:
+    Enhancement(
+        id=enhancement_id,
+        name=enhancement_name,
+        faction_id="TS",
+        detachment="Warpforged Cabal",
+        points=25,
+        description="",
+    ).apply_to_unit(unit)
+
+
+def _find_master_request(game: Game):
+    return next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+        and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "master_of_mechanisms"
+    )
+
+
+def _option_for_model(request, model):
+    model_id = str(get_entity_id(model) or "")
+    return next(
+        option
+        for option in list(getattr(request, "options", []) or [])
+        if str((getattr(option, "payload", {}) or {}).get("target_model_id", "") or "") == model_id
+    )
+
+
+def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
+    leader.can_be_attached_to = [bodyguard.name]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
 
 
 def test_warpfire_infusion_nearby_psyker_grants_one_hit_wound_and_damage_reroll():
@@ -332,3 +385,249 @@ def test_warpfire_infusion_deadly_demise_triggers_on_five_when_near_psyker(monke
     _set_location(psyker, 20.0, 0.0)
     vehicle._trigger_deadly_demise(vehicle.models[0], game_map=SimpleNamespace())
     assert int(explosions["count"]) == 0
+
+
+def test_warpforged_perplexing_cloak_grants_lone_operative_when_nearby_vehicle():
+    game, army, _enemy_army, _player, _enemy_player = _build_real_game()
+
+    bearer = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "INFANTRY", "CHARACTER", "PSYKER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    vehicle = _make_unit(
+        "Forgefiend",
+        keywords=["THOUSAND SONS", "VEHICLE"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="12",
+    )
+    army.add_unit(bearer)
+    army.add_unit(vehicle)
+    _apply_enhancement(
+        bearer,
+        enhancement_id="000010209003",
+        enhancement_name="The Perplexing Cloak",
+    )
+    _set_location(bearer, 0.0, 0.0)
+    _set_location(vehicle, 2.0, 0.0)
+    game.map.units = [bearer, vehicle]
+    game.rebuild_entity_registry()
+
+    assert bearer.has_lone_operative() is True
+
+    _set_location(vehicle, 10.0, 0.0)
+    assert bearer.has_lone_operative() is False
+
+
+def test_warpforged_perplexing_cloak_does_not_grant_lone_operative_to_attached_root():
+    game, army, _enemy_army, _player, _enemy_player = _build_real_game()
+
+    bodyguard = _make_unit(
+        "Rubric Marines",
+        keywords=["THOUSAND SONS", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    leader = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "INFANTRY", "CHARACTER", "PSYKER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    vehicle = _make_unit(
+        "Forgefiend",
+        keywords=["THOUSAND SONS", "VEHICLE"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="12",
+    )
+    army.add_unit(bodyguard)
+    army.add_unit(leader)
+    army.add_unit(vehicle)
+    _apply_enhancement(
+        leader,
+        enhancement_id="000010209003",
+        enhancement_name="The Perplexing Cloak",
+    )
+    _attach_leader(bodyguard, leader)
+    _set_location(bodyguard, 0.0, 0.0)
+    _set_location(leader, 0.0, 0.0)
+    _set_location(vehicle, 2.0, 0.0)
+    game.map.units = [bodyguard, leader, vehicle]
+    game.rebuild_entity_registry()
+
+    assert bodyguard.has_lone_operative() is False
+    assert leader.has_lone_operative() is False
+
+
+def test_warpforged_biomechanical_mutation_queues_and_applies_vehicle_model_repair(monkeypatch):
+    game, army, _enemy_army, player, _enemy_player = _build_real_game()
+    game.turn = 2
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+
+    bearer = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "INFANTRY", "CHARACTER", "PSYKER"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    vehicle = _make_unit(
+        "Forgefiend",
+        keywords=["THOUSAND SONS", "VEHICLE"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="12",
+    )
+    army.add_unit(bearer)
+    army.add_unit(vehicle)
+    _apply_enhancement(
+        bearer,
+        enhancement_id="000010209004",
+        enhancement_name="Biomechanical Mutation",
+    )
+    _set_location(bearer, 0.0, 0.0)
+    _set_location(vehicle, 2.0, 0.0)
+    game.map.units = [bearer, vehicle]
+    game.rebuild_entity_registry()
+
+    vehicle_model = vehicle.models[0]
+    vehicle_model.wounds = int(vehicle_model.wounds) - 3
+    before_wounds = int(vehicle_model.wounds)
+
+    game._on_phase_start_master_of_mechanisms(player=player, phase=game.phase)
+    request = _find_master_request(game)
+    assert str((request.context or {}).get("ability_name", "") or "") == "Biomechanical Mutation"
+    assert str((request.context or {}).get("selection_kind", "") or "") == "model"
+    assert bool((request.context or {}).get("target_requires_vehicle", False)) is True
+    assert int((request.context or {}).get("range", 0) or 0) == 6
+
+    option = _option_for_model(request, vehicle_model)
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda _expr: 2)
+    result = resolve_decision_command(game, request, option.option_id, player_id=player.id)
+    assert bool(getattr(result, "ok", False)) is True
+    assert int(vehicle_model.wounds) == before_wounds + 2
+
+
+def test_warpforged_runemaster_adds_ritual_range_when_nearby_vehicle(monkeypatch):
+    game, army, enemy_army, _player, _enemy_player = _build_real_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    caster.possible_abilities = ["Cabal of Sorcerers"]
+    vehicle = _make_unit(
+        "Forgefiend",
+        keywords=["THOUSAND SONS", "VEHICLE"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="12",
+    )
+    target = _make_unit(
+        "Enemy Infantry",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army.add_unit(caster)
+    army.add_unit(vehicle)
+    enemy_army.add_unit(target)
+    _apply_enhancement(
+        caster,
+        enhancement_id="000010209005",
+        enhancement_name="Warp-cursed Runemaster",
+    )
+    _set_location(caster, 0.0, 0.0)
+    _set_location(vehicle, 4.0, 0.0)
+    _set_location(target, 10.0, 0.0)
+    game.map.units = [caster, vehicle, target]
+    game.rebuild_entity_registry()
+
+    mgr = army.cabal_of_sorcerers
+    monkeypatch.setattr(mgr, "_model_can_see_unit", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(mgr, "_distance_model_to_unit", lambda *_args, **_kwargs: 30.0)
+    result = mgr.attempt_ritual(
+        game,
+        caster_model=caster.models[0],
+        ritual_key=RITUAL_DESTINYS_RUIN.key,
+        target_unit=target,
+        rolls=[1, 2, 3],
+        channel_decision=True,
+        mortal_roll=0,
+    )
+    assert bool(result.get("success")) is True
+    assert int(result.get("total", 0) or 0) == 6
+
+    _set_location(vehicle, 20.0, 0.0)
+    army.cabal_of_sorcerers = type(mgr)(army)
+    mgr = army.cabal_of_sorcerers
+    monkeypatch.setattr(mgr, "_model_can_see_unit", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(mgr, "_distance_model_to_unit", lambda *_args, **_kwargs: 30.0)
+    result = mgr.attempt_ritual(
+        game,
+        caster_model=caster.models[0],
+        ritual_key=RITUAL_DESTINYS_RUIN.key,
+        target_unit=target,
+        rolls=[1, 2, 3],
+        channel_decision=True,
+        mortal_roll=0,
+    )
+    assert bool(result.get("success")) is False
+    assert str(result.get("reason", "") or "") == "invalid target"
+
+
+def test_warpforged_warp_syphon_rerolls_channel_die_and_damages_selected_vehicle(monkeypatch):
+    game, army, enemy_army, _player, _enemy_player = _build_real_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+
+    caster = _make_unit(
+        "Infernal Master",
+        keywords=["THOUSAND SONS", "PSYKER", "INFANTRY"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    caster.possible_abilities = ["Cabal of Sorcerers"]
+    vehicle = _make_unit(
+        "Forgefiend",
+        keywords=["THOUSAND SONS", "VEHICLE"],
+        faction_keywords=["THOUSAND SONS"],
+        wounds="12",
+    )
+    target = _make_unit(
+        "Enemy Infantry",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army.add_unit(caster)
+    army.add_unit(vehicle)
+    enemy_army.add_unit(target)
+    _apply_enhancement(
+        caster,
+        enhancement_id="000010209002",
+        enhancement_name="Warp Syphon",
+    )
+    _set_location(caster, 0.0, 0.0)
+    _set_location(vehicle, 4.0, 0.0)
+    _set_location(target, 10.0, 0.0)
+    game.map.units = [caster, vehicle, target]
+    game.rebuild_entity_registry()
+
+    before_wounds = int(vehicle.models[0].wounds)
+    mgr = army.cabal_of_sorcerers
+    monkeypatch.setattr(mgr, "_model_can_see_unit", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(mgr, "_distance_model_to_unit", lambda *_args, **_kwargs: 10.0)
+    result = mgr.attempt_ritual(
+        game,
+        caster_model=caster.models[0],
+        ritual_key=RITUAL_DESTINYS_RUIN.key,
+        target_unit=target,
+        rolls=[1, 2, 2, 3],
+        channel_decision=True,
+        mortal_roll=0,
+        warp_syphon_target_unit=vehicle,
+    )
+    assert bool(result.get("success")) is True
+    assert bool(result.get("warp_syphon_used")) is True
+    assert list(result.get("rolls") or []) == [1, 2, 3]
+    assert int(result.get("total", 0) or 0) == 6
+    assert int(result.get("warp_syphon_target_mortal_wounds", 0) or 0) == 1
+    assert int(vehicle.models[0].wounds) == before_wounds - 1

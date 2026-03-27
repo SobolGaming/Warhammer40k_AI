@@ -1282,6 +1282,9 @@ def _validate_choose_ritual(game: object, request: DecisionRequest, result: Deci
     target_val = result.payload.get("target_unit_id")
     if target_val is not None and resolve_unit(game, target_val) is None:
         return ("Cabal target unit not found.",)
+    warp_syphon_target_val = result.payload.get("warp_syphon_target_unit_id")
+    if warp_syphon_target_val is not None and resolve_unit(game, warp_syphon_target_val) is None:
+        return ("Warp Syphon target unit not found.",)
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "cabal_of_sorcerers", None) is None:
         return ("Cabal manager not found.",)
@@ -1301,6 +1304,7 @@ def _apply_choose_ritual(game: object, request: DecisionRequest, result: Decisio
     ritual_key = payload.get("ritual_key") or result.payload.get("ritual_key")
     caster_model = resolve_model(game, payload.get("caster_model_id") or result.payload.get("caster_model_id"))
     target_unit = resolve_unit(game, result.payload.get("target_unit_id"))
+    warp_syphon_target_unit = resolve_unit(game, result.payload.get("warp_syphon_target_unit_id"))
     rolls = result.payload.get("rolls")
     channel_decision = result.payload.get("channel_decision")
     mortal_roll = result.payload.get("mortal_roll")
@@ -1312,6 +1316,7 @@ def _apply_choose_ritual(game: object, request: DecisionRequest, result: Decisio
         rolls=list(rolls or []),
         channel_decision=channel_decision,
         mortal_roll=mortal_roll,
+        warp_syphon_target_unit=warp_syphon_target_unit,
     )
 
 
@@ -3391,6 +3396,33 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "warp_syphon":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_model = resolve_model(
+            game,
+            payload.get("source_model_id") or ctx.get("source_model_id"),
+        )
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if source_model is None:
+            return ("Warp Syphon source model was not found.",)
+        if target_unit is None:
+            return ("Warp Syphon target unit was not found.",)
+        source_unit = getattr(source_model, "parent_unit", None)
+        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Warp Syphon target must be friendly.",)
+        ts_mgr = getattr(source_army, "thousand_sons_detachments", None)
+        can_target_fn = getattr(ts_mgr, "warpforged_warp_syphon_can_target", None) if ts_mgr is not None else None
+        if not callable(can_target_fn) or not bool(can_target_fn(source_model, target_root)):
+            return ("Warp Syphon target is not eligible.",)
+        return ()
     if ability == "command_phase_miracle_discard_return_mode":
         payload = _option_payload(request, result)
         allow_skip = bool(ctx.get("allow_skip", True))
@@ -10216,6 +10248,18 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "warp_syphon":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            raise RuntimeError("Warp Syphon target unit not found.")
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        return get_target_root() if callable(get_target_root) else target_unit
     if ability == "fiery_conviction":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(

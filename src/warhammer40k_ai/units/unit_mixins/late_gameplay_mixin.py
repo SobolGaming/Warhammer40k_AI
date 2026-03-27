@@ -3917,6 +3917,20 @@ class LateGameplayMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            lone_operative_fn = (
+                getattr(ts_mgr, "warpforged_perplexing_cloak_lone_operative_applies", None)
+                if ts_mgr is not None
+                else None
+            )
+            if callable(lone_operative_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if lone_operative_fn(self, game=game):
+                    return True
+        except Exception:
+            pass
         if isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth"):
             try:
                 game_map = self.get_parent_army().player.game.map

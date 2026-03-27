@@ -595,6 +595,7 @@ Faction / Detachment / Ability choices:
 - quarry_selection_dialog (Malevolent Heraldry): CHOOSE_QUARRY {reroll_mode} (context `ability="traitoris_malevolent_heraldry"`, `ability_name="Malevolent Heraldry"`, `army_id`, `battle_round`, `source_unit_id`, `initial_rolls[]`, `available_reroll_modes[]`, `optional=false`)
 - quarry_selection_dialog (Shadow Assignment): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`, `ability_name="Shadow Assignment"`)
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
+- quarry_selection_dialog (Warp Syphon): CHOOSE_QUARRY {target_unit_id | skip} (context `ability="warp_syphon"`, `ability_name="Warp Syphon"`, `source_unit_id`, `source_model_id`, `target_unit_id`, `candidate_unit_ids[]`, `optional=true`)
 - quarry_selection_dialog (Ethereal Pathway): CHOOSE_QUARRY {selected_unit_ids[] | skip} (context `ability="ethereal_pathway"`, `ability_name="Ethereal Pathway"`, `source_unit_id`, `enhancement_id`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`, `modifier_kind="wound_roll"`)

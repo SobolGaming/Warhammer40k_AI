@@ -7393,6 +7393,68 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_noctilith_mantle_bearer_model_id"] = bearer_id
 
+        if name == "warp syphon" or enh_id == "000010209002":
+            if not is_warpforged_cabal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warp Syphon").strip() or "Warp Syphon"
+            aura_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 6.0)) or 6.0, default=6.0)))
+            self_mortal_wounds = int(max(0, _coerce_int(params.get("self_mortal_wounds", 1) or 1, default=1)))
+            unit.special_rules["enhancement_warp_syphon"] = True
+            unit.special_rules["enhancement_warp_syphon_source"] = source
+            unit.special_rules["enhancement_warp_syphon_range"] = float(aura_range)
+            unit.special_rules["enhancement_warp_syphon_self_mortal_wounds"] = int(self_mortal_wounds)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warp_syphon_bearer_model_id"] = bearer_id
+
+        if name == "the perplexing cloak" or enh_id == "000010209003":
+            if not is_warpforged_cabal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "The Perplexing Cloak").strip() or "The Perplexing Cloak"
+            aura_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 3.0)) or 3.0, default=3.0)))
+            unit.special_rules["enhancement_perplexing_cloak"] = True
+            unit.special_rules["enhancement_perplexing_cloak_source"] = source
+            unit.special_rules["enhancement_perplexing_cloak_range"] = float(aura_range)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_perplexing_cloak_bearer_model_id"] = bearer_id
+
+        if name == "biomechanical mutation" or enh_id == "000010209004":
+            if not is_warpforged_cabal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Biomechanical Mutation").strip() or "Biomechanical Mutation"
+            aura_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 6.0)) or 6.0, default=6.0)))
+            heal_roll = str(params.get("heal_roll", "D3") or "D3").strip().upper() or "D3"
+            unit.special_rules["enhancement_biomechanical_mutation"] = True
+            unit.special_rules["enhancement_biomechanical_mutation_source"] = source
+            unit.special_rules["enhancement_biomechanical_mutation_range"] = float(aura_range)
+            unit.special_rules["enhancement_biomechanical_mutation_heal_roll"] = heal_roll
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_biomechanical_mutation_bearer_model_id"] = bearer_id
+
+        if name == "warp-cursed runemaster" or enh_id == "000010209005":
+            if not is_warpforged_cabal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warp-cursed Runemaster").strip() or "Warp-cursed Runemaster"
+            aura_range = float(max(0.0, _coerce_float(params.get("range", getattr(desc, "range_in", 6.0)) or 6.0, default=6.0)))
+            ritual_range_bonus = int(max(0, _coerce_int(params.get("ritual_range_bonus", 6) or 6, default=6)))
+            unit.special_rules["enhancement_warp_cursed_runemaster"] = True
+            unit.special_rules["enhancement_warp_cursed_runemaster_source"] = source
+            unit.special_rules["enhancement_warp_cursed_runemaster_range"] = float(aura_range)
+            unit.special_rules["enhancement_warp_cursed_runemaster_ritual_range_bonus"] = int(ritual_range_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warp_cursed_runemaster_bearer_model_id"] = bearer_id
+
         if name == "risen rubricae" or enh_id == "000010205002":
             if not is_rubricae_phalanx:
                 return

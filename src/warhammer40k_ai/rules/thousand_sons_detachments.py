@@ -686,6 +686,182 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             return False
         return bool(root is not None and self._unit_is_on_battlefield(root))
 
+    def warpforged_warp_syphon_spec(self, model) -> dict | None:
+        if not self.is_warpforged_cabal():
+            return None
+        if model is None or not self._model_in_army(model):
+            return None
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_warp_syphon")
+        if source_member is None or not isinstance(source_sr, dict):
+            return None
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_warp_syphon_bearer_model_id",
+        ):
+            return None
+        try:
+            aura_range = float(source_sr.get("enhancement_warp_syphon_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        try:
+            self_mortal_wounds = int(source_sr.get("enhancement_warp_syphon_self_mortal_wounds", 1) or 1)
+        except (TypeError, ValueError):
+            self_mortal_wounds = 1
+        source_name = str(
+            source_sr.get("enhancement_warp_syphon_source", "")
+            or "Warp Syphon"
+        ).strip() or "Warp Syphon"
+        return {
+            "source": source_name,
+            "range": float(max(0.0, aura_range)),
+            "self_mortal_wounds": int(max(0, self_mortal_wounds)),
+        }
+
+    def warpforged_warp_syphon_candidates(self, model) -> list:
+        spec = self.warpforged_warp_syphon_spec(model)
+        if not isinstance(spec, dict):
+            return []
+        candidates: list = []
+        for candidate in self._iter_unique_army_roots():
+            if candidate is None or not self._unit_is_on_battlefield(candidate):
+                continue
+            if not self._unit_is_thousand_sons_vehicle(candidate):
+                continue
+            if not self._model_within_range_of_attached_unit(model, candidate, radius=float(spec["range"])):
+                continue
+            candidates.append(candidate)
+        return sorted(candidates, key=self._unit_sort_key)
+
+    def warpforged_warp_syphon_can_target(self, model, target_unit) -> bool:
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return False
+        return any(target_root is candidate for candidate in self.warpforged_warp_syphon_candidates(model))
+
+    def warpforged_perplexing_cloak_lone_operative_applies(self, unit, *, game=None) -> bool:
+        if not self.is_warpforged_cabal():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_perplexing_cloak")
+        if source_member is None or not isinstance(source_sr, dict):
+            return False
+        if source_member is not root:
+            # Lone Operative granted to an attached Leader does not transfer to the bodyguard root.
+            return False
+        bearer_model = self._attached_member_bearer_model(
+            source_member,
+            source_sr,
+            bearer_key="enhancement_perplexing_cloak_bearer_model_id",
+        )
+        if bearer_model is None:
+            return False
+        try:
+            aura_range = float(source_sr.get("enhancement_perplexing_cloak_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            aura_range = 3.0
+        for candidate in self._iter_unique_army_roots():
+            if candidate is None or candidate is root:
+                continue
+            if not self._unit_is_on_battlefield(candidate):
+                continue
+            if not self._unit_is_thousand_sons_vehicle(candidate):
+                continue
+            if self._model_within_range_of_attached_unit(bearer_model, candidate, radius=float(max(0.0, aura_range))):
+                return True
+        return False
+
+    def warpforged_biomechanical_mutation_rule(self, unit, *, game=None) -> dict | None:
+        if not self.is_warpforged_cabal():
+            return None
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return None
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_biomechanical_mutation")
+        if source_member is None or not isinstance(source_sr, dict):
+            return None
+        bearer_model = self._attached_member_bearer_model(
+            source_member,
+            source_sr,
+            bearer_key="enhancement_biomechanical_mutation_bearer_model_id",
+        )
+        if bearer_model is None:
+            return None
+        source_name = str(
+            source_sr.get("enhancement_biomechanical_mutation_source", "")
+            or "Biomechanical Mutation"
+        ).strip() or "Biomechanical Mutation"
+        try:
+            aura_range = float(source_sr.get("enhancement_biomechanical_mutation_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        heal_roll = str(
+            source_sr.get("enhancement_biomechanical_mutation_heal_roll", "")
+            or "D3"
+        ).strip().upper() or "D3"
+        return {
+            "source": source_name,
+            "phase": "COMMAND_PHASE",
+            "range": int(max(0, round(aura_range))),
+            "heal_roll": heal_roll,
+            "heal_flat": 0,
+            "hit_bonus": 0,
+            "hit_reroll_ones": False,
+            "fnp_value": 0,
+            "fnp_requires_vehicle": False,
+            "target_requires_vehicle": True,
+            "target_keyword": "THOUSAND SONS",
+            "target_keywords": ["THOUSAND SONS"],
+            "target_in_source_unit": False,
+            "allow_self_target": True,
+            "selection_kind": "model",
+            "limit_once_per_turn": False,
+            "limit_scope": "model",
+            "requires_damaged_target": False,
+            "expires_phase": "COMMAND_PHASE",
+            "hit_bonus_model_only": False,
+            "weapon_choice_required": False,
+            "weapon_attack_type": "any",
+            "weapon_keywords": [],
+            "model_id": str(get_entity_id(bearer_model) or ""),
+        }
+
+    def warpforged_runemaster_ritual_range_bonus(self, model) -> int:
+        if not self.is_warpforged_cabal():
+            return 0
+        if model is None or not self._model_in_army(model):
+            return 0
+        root = self._attached_unit_root(getattr(model, "parent_unit", None))
+        source_member, source_sr = self._attached_member_with_special_rule(root, "enhancement_warp_cursed_runemaster")
+        if source_member is None or not isinstance(source_sr, dict):
+            return 0
+        if not self._model_special_rule_matches_bearer(
+            model,
+            source_sr,
+            bearer_key="enhancement_warp_cursed_runemaster_bearer_model_id",
+        ):
+            return 0
+        try:
+            aura_range = float(source_sr.get("enhancement_warp_cursed_runemaster_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        has_vehicle_support = any(
+            self._model_within_range_of_attached_unit(model, candidate, radius=float(max(0.0, aura_range)))
+            for candidate in self._iter_unique_army_roots()
+            if candidate is not None
+            and self._unit_is_on_battlefield(candidate)
+            and self._unit_is_thousand_sons_vehicle(candidate)
+        )
+        if not has_vehicle_support:
+            return 0
+        try:
+            return int(source_sr.get("enhancement_warp_cursed_runemaster_ritual_range_bonus", 6) or 6)
+        except (TypeError, ValueError):
+            return 6
+
     @staticmethod
     def _normalize_unit_name(name: str) -> str:
         text = str(name or "").strip().lower()
@@ -718,6 +894,26 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
             if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
                 return member, sr
         return None, {}
+
+    @staticmethod
+    def _unit_sort_key(unit) -> str:
+        root = unit
+        uid = str(get_entity_id(root) or getattr(root, "_id", "") or "").strip()
+        if uid:
+            return uid
+        return str(getattr(root, "name", "") or "")
+
+    def _attached_member_bearer_model(self, member, special_rules: object, *, bearer_key: str):
+        if member is None or not isinstance(special_rules, dict):
+            return None
+        get_models = getattr(member, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(member, "models", []) or [])
+        for model in list(models or []):
+            if model is None or not bool(getattr(model, "is_alive", False)):
+                continue
+            if self._model_special_rule_matches_bearer(model, special_rules, bearer_key=bearer_key):
+                return model
+        return None
 
     def _iter_unique_army_roots(self) -> list:
         roots: list = []

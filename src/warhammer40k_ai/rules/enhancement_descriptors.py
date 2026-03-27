@@ -6909,6 +6909,72 @@ _THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_HEXWARP_THRALLBAND_DESCRIPTORS.values()
 }
 
+_THOUSAND_SONS_WARPFORGED_CABAL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010209002": EnhancementToolDescriptor(
+        enhancement_id="000010209002",
+        name="Warp Syphon",
+        timing="while_channeling_the_warp",
+        target="bearer_and_selected_friendly_vehicle_unit_within_range",
+        duration="instant_conditional",
+        effect="optional_vehicle_self_mortal_for_channel_die_reroll",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "self_mortal_wounds": 1,
+            "reroll_channel_die": True,
+            "required_target_keywords": ("THOUSAND SONS", "VEHICLE"),
+        },
+    ),
+    "000010209003": EnhancementToolDescriptor(
+        enhancement_id="000010209003",
+        name="The Perplexing Cloak",
+        timing="passive_while_near_friendly_vehicle",
+        target="bearer",
+        duration="constant_conditional",
+        effect="conditional_lone_operative_while_nearby_vehicle",
+        range_in=3.0,
+        effect_params={
+            "range": 3.0,
+            "grants_lone_operative": True,
+            "required_target_keywords": ("THOUSAND SONS", "VEHICLE"),
+        },
+    ),
+    "000010209004": EnhancementToolDescriptor(
+        enhancement_id="000010209004",
+        name="Biomechanical Mutation",
+        timing="command_phase_start",
+        target="friendly_thousand_sons_vehicle_model_within_range",
+        duration="instant",
+        effect="repair_vehicle_model",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "heal_roll": "D3",
+            "selection_kind": "model",
+            "target_requires_vehicle": True,
+            "target_keyword": "THOUSAND SONS",
+        },
+    ),
+    "000010209005": EnhancementToolDescriptor(
+        enhancement_id="000010209005",
+        name="Warp-cursed Runemaster",
+        timing="while_manifesting_ritual_near_friendly_vehicle",
+        target="bearer",
+        duration="instant_conditional",
+        effect="ritual_range_bonus_while_nearby_vehicle",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "ritual_range_bonus": 6,
+            "required_target_keywords": ("THOUSAND SONS", "VEHICLE"),
+        },
+    ),
+}
+
+_THOUSAND_SONS_WARPFORGED_CABAL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_WARPFORGED_CABAL_DESCRIPTORS.values()
+}
+
 _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008372002": EnhancementToolDescriptor(
         enhancement_id="000008372002",
@@ -7993,6 +8059,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _THOUSAND_SONS_HEXWARP_THRALLBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _THOUSAND_SONS_WARPFORGED_CABAL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8169,6 +8238,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _THOUSAND_SONS_HEXWARP_THRALLBAND_BY_NAME.get(key)
+        or _THOUSAND_SONS_WARPFORGED_CABAL_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)

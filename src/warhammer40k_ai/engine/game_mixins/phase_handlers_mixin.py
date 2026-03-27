@@ -13574,6 +13574,11 @@ class GamePhaseHandlersMixin:
             get_rule = getattr(root, "get_command_phase_vehicle_repair_hit_bonus_rule", None)
             rule = get_rule() if callable(get_rule) else None
             if not isinstance(rule, dict):
+                ts_mgr = getattr(army, "thousand_sons_detachments", None)
+                ts_rule_fn = getattr(ts_mgr, "warpforged_biomechanical_mutation_rule", None) if ts_mgr is not None else None
+                if callable(ts_rule_fn):
+                    rule = ts_rule_fn(root, game=self)
+            if not isinstance(rule, dict):
                 if not bool(getattr(root, "has_master_of_mechanisms", lambda: False)()):
                     continue
                 rule = {
@@ -13668,13 +13673,19 @@ class GamePhaseHandlersMixin:
                 models = list(root.get_attached_unit_models() or [])
             except Exception:
                 models = list(getattr(root, "models", []) or [])
+            source_model_id = str(rule.get("model_id", "") or rule.get("source_model_id", "") or "").strip()
             bearer = None
             for model in list(models or []):
                 alive_attr = getattr(model, "is_alive", False)
                 alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
-                if alive:
-                    bearer = model
-                    break
+                if not alive:
+                    continue
+                if source_model_id:
+                    model_id = str(get_entity_id(model) or getattr(model, "_id", "") or "").strip()
+                    if model_id != source_model_id:
+                        continue
+                bearer = model
+                break
             if bearer is None:
                 continue
             if once_per_battle and once_per_battle_key and once_per_battle_scope == "model":

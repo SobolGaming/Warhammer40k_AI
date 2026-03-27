@@ -14175,7 +14175,7 @@ class GameView:
                         "Channel the Warp?"
                     )
 
-                    from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
                     from ..engine.decisions import DecisionOption, DecisionRequest
 
                     channel_options = [
@@ -14202,6 +14202,25 @@ class GameView:
                     )
 
                     def _on_channel_resolved(_req, _result):
+                        def _resolve_ritual(*, rolls_payload: list[int], channel_choice: bool, warp_syphon_target=None):
+                            result_payload = {
+                                "target_unit_id": get_entity_id(target_unit),
+                                "rolls": list(rolls_payload),
+                                "channel_decision": bool(channel_choice),
+                                "caster_model_id": get_entity_id(caster_model),
+                            }
+                            if warp_syphon_target is not None:
+                                result_payload["warp_syphon_target_unit_id"] = get_entity_id(warp_syphon_target)
+                            try:
+                                resolve_decision_value(
+                                    self.game,
+                                    ritual_req,
+                                    option_id,
+                                    result_payload=result_payload,
+                                )
+                            finally:
+                                self._cabal_flow_active = False
+
                         chosen = False
                         selected = None
                         for opt in list(getattr(_req, "options", []) or []):
@@ -14213,20 +14232,77 @@ class GameView:
                             chosen = bool(payload.get("choice"))
                         elif "choice" in getattr(_result, "payload", {}):
                             chosen = bool(_result.payload.get("choice"))
-                        try:
-                            resolve_decision_value(
-                                self.game,
-                                ritual_req,
-                                option_id,
-                                result_payload={
-                                    "target_unit_id": get_entity_id(target_unit),
-                                    "rolls": [r1, r2],
-                                    "channel_decision": chosen,
-                                    "caster_model_id": get_entity_id(caster_model),
-                                },
+                        if not chosen:
+                            _resolve_ritual(rolls_payload=[r1, r2], channel_choice=False)
+                            return
+
+                        extra_roll = int(get_roll("D6") or 0)
+                        ts_mgr = getattr(player.get_army(), "thousand_sons_detachments", None) if player is not None else None
+                        warp_syphon_candidates_fn = getattr(ts_mgr, "warpforged_warp_syphon_candidates", None) if ts_mgr is not None else None
+                        warp_syphon_candidates = list(warp_syphon_candidates_fn(caster_model) or []) if callable(warp_syphon_candidates_fn) else []
+                        if not warp_syphon_candidates:
+                            _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+                            return
+
+                        warp_syphon_options = [DecisionOption.create("None", payload={"action": "skip"})]
+                        warp_syphon_options.extend(
+                            DecisionOption.create(
+                                getattr(candidate, "name", "Unit"),
+                                payload={"target_unit_id": get_entity_id(candidate)},
                             )
-                        finally:
-                            self._cabal_flow_active = False
+                            for candidate in list(warp_syphon_candidates or [])
+                        )
+                        warp_syphon_req = _require_pending_decision_request(
+                            self.game if self.game is not None else None,
+                            DECISION_CHOOSE_QUARRY,
+                            "Warp Syphon",
+                            player_id=getattr(player, "id", None),
+                            options=warp_syphon_options,
+                            context={
+                                "ability": "warp_syphon",
+                                "ability_name": "Warp Syphon",
+                                "source_unit_id": get_entity_id(caster_unit),
+                                "source_model_id": get_entity_id(caster_model),
+                                "target_unit_id": get_entity_id(target_unit),
+                                "candidate_unit_ids": [get_entity_id(candidate) for candidate in list(warp_syphon_candidates or [])],
+                                "optional": True,
+                            },
+                        )
+
+                        def _on_warp_syphon(vehicle_option_id: str):
+                            skip_id = option_id_for_action(warp_syphon_req, "skip")
+                            selected_target, apply_result = resolve_decision_value(self.game, warp_syphon_req, vehicle_option_id)
+                            if skip_id and vehicle_option_id == skip_id:
+                                _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+                                return
+                            if apply_result is None or not getattr(apply_result, "ok", False) or selected_target is None:
+                                _cancel_flow()
+                                return
+                            rerolled_extra_roll = int(get_roll("D6") or 0)
+                            _resolve_ritual(
+                                rolls_payload=[r1, r2, extra_roll, rerolled_extra_roll],
+                                channel_choice=True,
+                                warp_syphon_target=selected_target,
+                            )
+
+                        def _on_warp_syphon_cancel():
+                            skip_id = option_id_for_action(warp_syphon_req, "skip")
+                            if skip_id:
+                                resolve_decision_value(self.game, warp_syphon_req, skip_id)
+                            _resolve_ritual(rolls_payload=[r1, r2, extra_roll], channel_choice=True)
+
+                        self.cabal_target_dialog.show(
+                            title="Warp Syphon",
+                            header="Choose a nearby vehicle or None.",
+                            subtitle="Select a friendly THOUSAND SONS VEHICLE unit within 6\" to suffer 1 mortal wound and re-roll the Channel the Warp die.",
+                            on_confirm=_on_warp_syphon,
+                            on_cancel=_on_warp_syphon_cancel,
+                            decision_request=warp_syphon_req,
+                        )
+                        try:
+                            self.dialog_manager.open(self.cabal_target_dialog, modal=True)
+                        except Exception:
+                            _cancel_flow()
 
                     if getattr(self, "phase_manager", None) is not None:
                         self.phase_manager._register_decision_callback(channel_req, _on_channel_resolved)
