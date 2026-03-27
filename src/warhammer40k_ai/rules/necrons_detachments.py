@@ -1213,6 +1213,64 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, self._WORTHY_FOES_SOURCE
 
+    def honourable_combatant_on_enemy_unit_destroyed(self, destroyed_unit, *, destroyed_by_unit=None, game=None) -> bool:
+        del game
+        if not self.is_obeisance_phalanx() or self.army is None:
+            return False
+        attacker_root = self._unit_root(destroyed_by_unit)
+        destroyed_root = self._unit_root(destroyed_unit)
+        if attacker_root is None or destroyed_root is None:
+            return False
+        if not self._unit_belongs_to_army(attacker_root):
+            return False
+        if not self._unit_contains_keyword(destroyed_root, "CHARACTER"):
+            return False
+        destroyed_army = destroyed_root.get_parent_army() if hasattr(destroyed_root, "get_parent_army") else None
+        if destroyed_army is self.army:
+            return False
+        opposing_player = getattr(destroyed_army, "player", None)
+        if opposing_player is None or int(getattr(opposing_player, "command_points", 0) or 0) <= 0:
+            return False
+        for _member, sr in self._attached_members_with_active_enhancement(
+            attacker_root,
+            "enhancement_honourable_combatant",
+        ):
+            cp_loss = int(max(0, int(sr.get("enhancement_honourable_combatant_cp_loss", 1) or 1)))
+            if cp_loss <= 0:
+                continue
+            source = str(sr.get("enhancement_honourable_combatant_source", "") or "Honourable Combatant").strip()
+            return bool(
+                opposing_player.spend_command_points(
+                    cp_loss,
+                    reason=f"{source}: enemy CHARACTER unit destroyed",
+                    source="ability",
+                )
+            )
+        return False
+
+    def eternal_conqueror_hit_reroll(self, attacker_model, target_unit, *, unit=None, game=None) -> tuple[bool, str]:
+        if not self.is_obeisance_phalanx():
+            return False, ""
+        root = self._unit_root(unit if unit is not None else attacker_model)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None or not self._unit_belongs_to_army(root):
+            return False, ""
+        target_within_objective_range = getattr(root, "_target_within_objective_range", None)
+        if not callable(target_within_objective_range):
+            return False, ""
+        game_map = getattr(game, "map", None) if game is not None else None
+        if not bool(target_within_objective_range(target_root, game_map=game_map)):
+            return False, ""
+        for _member, sr in self._attached_members_with_active_enhancement(
+            root,
+            "enhancement_eternal_conqueror",
+        ):
+            if not bool(sr.get("enhancement_eternal_conqueror_reroll_hit_full", True)):
+                continue
+            source = str(sr.get("enhancement_eternal_conqueror_source", "") or "Eternal Conqueror").strip()
+            return True, source or "Eternal Conqueror"
+        return False, ""
+
     def _worthy_foes_eligible_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_obeisance_phalanx():
             return []

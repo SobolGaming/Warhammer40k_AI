@@ -1887,6 +1887,9 @@ class Enhancement:
         is_hypercrypt_legion = bool(
             ne_mgr and getattr(ne_mgr, "is_hypercrypt_legion", lambda: False)()
         )
+        is_obeisance_phalanx = bool(
+            ne_mgr and getattr(ne_mgr, "is_obeisance_phalanx", lambda: False)()
+        )
         try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
@@ -2301,6 +2304,82 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_metalodermal_tesla_weave_bearer_model_id"] = bearer_id
+
+        if name == "honourable combatant" or enh_id == "000008550002":
+            if not is_obeisance_phalanx:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Honourable Combatant").strip() or "Honourable Combatant"
+            unit.special_rules["enhancement_honourable_combatant"] = True
+            unit.special_rules["enhancement_honourable_combatant_source"] = source_name
+            unit.special_rules["enhancement_honourable_combatant_cp_loss"] = int(
+                max(0, _coerce_int(params.get("cp_loss", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_honourable_combatant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_honourable_combatant_bearer_model_id"] = bearer_id
+
+        if name == "unflinching will" or enh_id == "000008550003":
+            if not is_obeisance_phalanx:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Unflinching Will").strip() or "Unflinching Will"
+            unit.special_rules["enhancement_unflinching_will"] = True
+            unit.special_rules["enhancement_unflinching_will_source"] = source_name
+            unit.special_rules["enhancement_unflinching_will_anti_keyword"] = str(
+                params.get("anti_keyword", "INFANTRY") or "INFANTRY"
+            ).strip().upper() or "INFANTRY"
+            unit.special_rules["enhancement_unflinching_will_anti_value"] = int(
+                max(2, _coerce_int(params.get("anti_value", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_unflinching_will_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_unflinching_will_bearer_model_id"] = bearer_id
+
+        if name == "warrior noble" or enh_id == "000008550004":
+            if not is_obeisance_phalanx:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Warrior Noble").strip() or "Warrior Noble"
+            unit.special_rules["enhancement_warrior_noble"] = True
+            unit.special_rules["enhancement_warrior_noble_source"] = source_name
+            unit.special_rules["enhancement_warrior_noble_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warrior_noble_bearer_model_id"] = bearer_id
+
+        if name == "eternal conqueror" or enh_id == "000008550005":
+            if not is_obeisance_phalanx:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Eternal Conqueror").strip() or "Eternal Conqueror"
+            unit.special_rules["enhancement_eternal_conqueror"] = True
+            unit.special_rules["enhancement_eternal_conqueror_source"] = source_name
+            unit.special_rules["enhancement_eternal_conqueror_requires_target_within_objective_range"] = bool(
+                params.get("requires_target_within_objective_range", True)
+            )
+            unit.special_rules["enhancement_eternal_conqueror_reroll_hit_full"] = bool(
+                params.get("reroll_hit_full", True)
+            )
+            unit.special_rules["enhancement_eternal_conqueror_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eternal_conqueror_bearer_model_id"] = bearer_id
 
         if name == "dimensional overseer" or enh_id == "000008554002":
             if not is_hypercrypt_legion:

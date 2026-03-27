@@ -3327,6 +3327,15 @@ class RulesParsingMixin:
                     alive_check = getattr(u, "_enhancement_bearer_model_is_alive", None)
                     if callable(alive_check) and not bool(alive_check(flag_key="enhancement_osteoclave_fulcrum")):
                         continue
+                if (
+                    isinstance(source_rules, dict)
+                    and normalized_name == "warrior noble"
+                    and bool(source_rules.get("enhancement_warrior_noble"))
+                    and bool(source_rules.get("enhancement_warrior_noble_requires_bearer_alive", True))
+                ):
+                    alive_check = getattr(u, "_enhancement_bearer_model_is_alive", None)
+                    if callable(alive_check) and not bool(alive_check(flag_key="enhancement_warrior_noble")):
+                        continue
 
                 for sentence in _iter_sentences(text):
                     if not sentence:

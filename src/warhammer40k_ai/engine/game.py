@@ -9686,6 +9686,16 @@ class Game(
         except Exception:
             attacker_root = destroyed_by_unit
 
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        ne_mgr = getattr(attacker_army, "necrons_detachments", None) if attacker_army is not None else None
+        honourable_combatant_fn = getattr(ne_mgr, "honourable_combatant_on_enemy_unit_destroyed", None) if ne_mgr is not None else None
+        if callable(honourable_combatant_fn):
+            honourable_combatant_fn(
+                unit,
+                destroyed_by_unit=attacker_root,
+                game=self,
+            )
+
         # Adepta Sororitas datasheet support:
         # enemy units that destroyed one or more friendly ADEPTA SORORITAS units this battle.
         destroyed_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None

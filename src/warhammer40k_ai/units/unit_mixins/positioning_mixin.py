@@ -5838,6 +5838,57 @@ class PositioningMixin:
             is_melee_attack = atype in ("", "any", "melee")
             if is_melee_attack and self._attached_unit_model_is_enhancement_bearer(
                 model,
+                flag_key="enhancement_unflinching_will",
+                enhancement_id="000008550003",
+                enhancement_name="unflinching will",
+                require_leading=False,
+            ):
+                source = "Unflinching Will"
+                anti_keyword = "INFANTRY"
+                anti_value = 5
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict) or not bool(sr.get("enhancement_unflinching_will")):
+                        continue
+                    source = str(sr.get("enhancement_unflinching_will_source", "") or "").strip() or "Unflinching Will"
+                    anti_keyword = (
+                        str(sr.get("enhancement_unflinching_will_anti_keyword", "INFANTRY") or "INFANTRY").strip().upper()
+                        or "INFANTRY"
+                    )
+                    try:
+                        anti_value = int(sr.get("enhancement_unflinching_will_anti_value", 5) or 5)
+                    except Exception:
+                        anti_value = 5
+                    break
+                rules = list(rules or []) + [
+                    {
+                        "attack_type": "melee",
+                        "keyword": "PRECISION",
+                        "source": source,
+                    },
+                    {
+                        "attack_type": "melee",
+                        "keyword": f"ANTI-{anti_keyword} {int(max(2, anti_value))}+",
+                        "source": source,
+                    }
+                ]
+        except Exception:
+            pass
+        try:
+            atype = str(attack_type or "").strip().lower()
+            is_melee_attack = atype in ("", "any", "melee")
+            if is_melee_attack and self._attached_unit_model_is_enhancement_bearer(
+                model,
                 flag_key="enhancement_champion_of_the_deathwing",
                 enhancement_id="000008774002",
                 enhancement_name="champion of the deathwing",
@@ -7046,6 +7097,50 @@ class PositioningMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        atype = str(attack_type or "").strip().lower()
+        is_melee_attack = atype in ("", "any", "melee")
+        if (
+            is_melee_attack
+            and model is not None
+            and self._attached_unit_model_is_enhancement_bearer(
+                model,
+                flag_key="enhancement_unflinching_will",
+                enhancement_id="000008550003",
+                enhancement_name="unflinching will",
+                require_leading=False,
+            )
+        ):
+            source_name = "Unflinching Will"
+            anti_keyword = "INFANTRY"
+            anti_value = 5
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict) or not bool(member_sr.get("enhancement_unflinching_will")):
+                    continue
+                source_name = str(member_sr.get("enhancement_unflinching_will_source", "") or "").strip() or "Unflinching Will"
+                anti_keyword = (
+                    str(member_sr.get("enhancement_unflinching_will_anti_keyword", "INFANTRY") or "INFANTRY").strip().upper()
+                    or "INFANTRY"
+                )
+                anti_value = int(member_sr.get("enhancement_unflinching_will_anti_value", 5) or 5)
+                break
+            rules.extend(
+                [
+                    {
+                        "attack_type": "melee",
+                        "keyword": "PRECISION",
+                        "source": source_name,
+                    },
+                    {
+                        "attack_type": "melee",
+                        "keyword": f"ANTI-{anti_keyword} {int(max(2, anti_value))}+",
+                        "source": source_name,
+                    },
+                ]
+            )
         if isinstance(sr, dict) and bool(sr.get("master_of_mechanisms_weapon_keywords_active")) and model is not None:
             apply_bonus = True
             effect_attack_type = str(sr.get("master_of_mechanisms_weapon_attack_type", "any") or "any").strip().lower()

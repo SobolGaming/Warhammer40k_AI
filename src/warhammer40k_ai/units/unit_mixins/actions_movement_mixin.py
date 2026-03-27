@@ -6605,6 +6605,20 @@ class ActionsMovementMixin:
                 reroll_hit_values.add(1)
                 reroll_hit_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
 
+        eternal_conqueror_fn = getattr(ne_mgr, "eternal_conqueror_hit_reroll", None) if ne_mgr is not None else None
+        if callable(eternal_conqueror_fn) and target is not None:
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            reroll_full, source = eternal_conqueror_fn(
+                attacker_model,
+                target,
+                unit=root,
+                game=game_local,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Eternal Conqueror").strip() or "Eternal Conqueror"
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append(f"{source_name}: re-roll Hit roll vs targets within objective range")
+
         # Hallowed Martyrs: RIGHTEOUS VENGEANCE (melee hit re-rolls this phase).
         try:
             if atype in ("any", "melee"):
