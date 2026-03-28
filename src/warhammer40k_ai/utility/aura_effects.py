@@ -1300,7 +1300,7 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         return None
     m = re.search(
         r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
-        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"of (?P<src>(?:this model|this unit|the bearer|the bearer's unit)|one or more units with this ability), "
         r"subtract (?P<move>\d+) from the Move characteristic and subtract (?P<oc>\d+) "
         r"from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
@@ -1326,11 +1326,12 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
             "oc": -abs(int(oc)),
             "oc_minimum": int(max(0, oc_minimum)),
             "excluded_keywords": _parse_excluded_keywords(desc),
+            "use_source_root": "bearer's unit" in str(m.group("src") or "").lower(),
         }
 
     m = re.search(
         r"While an enemy unit(?: \(excluding [^)]+\))? is within Engagement Range "
-        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"of (?P<src>(?:this model|this unit|the bearer|the bearer's unit)|one or more units with this ability), "
         r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
         flags=re.IGNORECASE,
@@ -1354,11 +1355,12 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
             "oc": -abs(int(oc)),
             "oc_minimum": int(max(0, oc_minimum)),
             "excluded_keywords": _parse_excluded_keywords(desc),
+            "use_source_root": "bearer's unit" in str(m.group("src") or "").lower(),
         }
 
     m = re.search(
         r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
-        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"of (?P<src>(?:this model|this unit|the bearer|the bearer's unit)|one or more units with this ability), "
         r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
         flags=re.IGNORECASE,
@@ -1383,6 +1385,7 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         "oc": -abs(int(oc)),
         "oc_minimum": int(max(0, oc_minimum)),
         "excluded_keywords": _parse_excluded_keywords(desc),
+        "use_source_root": "bearer's unit" in str(m.group("src") or "").lower(),
     }
 
 
@@ -2614,17 +2617,25 @@ def _collect_enemy_aura_move_oc_penalty_state(unit, *, game_map=None) -> tuple[i
                 applied_aura_names.add(aura_key)
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
+            effective_source = source
+            if bool(spec.get("use_source_root", False)):
+                get_root = getattr(source, "get_attached_unit_root", None)
+                if callable(get_root):
+                    try:
+                        effective_source = get_root()
+                    except Exception:
+                        effective_source = source
             if bool(spec.get("requires_engagement_range")):
                 check_engagement = getattr(game_map, "is_within_engagement_range", None)
                 if not callable(check_engagement):
                     continue
                 try:
-                    if not bool(check_engagement(source, unit)):
+                    if not bool(check_engagement(effective_source, unit)):
                         continue
                 except Exception:
                     continue
             else:
-                if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                if not _unit_within_aura_range(effective_source, unit, float(spec["range"]), ability=ab):
                     continue
             move_penalty += int(spec["move"])
             oc_penalty += int(spec["oc"])

@@ -6651,6 +6651,54 @@ _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009075002": EnhancementToolDescriptor(
+        enhancement_id="000009075002",
+        name="Predatory Instincts",
+        timing="while_bearer_alive",
+        target="bearer_unit",
+        duration="constant_and_once_per_battle_round",
+        effect="grant_infiltrators_to_bearer_unit_models_and_heroic_intervention_zero_cp_once_per_battle_round",
+        effect_params={
+            "requires_bearer_alive": True,
+            "stratagem_names": ("HEROIC INTERVENTION",),
+            "usage_key": "PREDATORY_INSTINCTS_HEROIC_INTERVENTION",
+            "usage_scope": "battle_round",
+        },
+    ),
+    "000009075003": EnhancementToolDescriptor(
+        enhancement_id="000009075003",
+        name="Biomorph Adaptation",
+        timing="while_bearer_alive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_ap_damage_bonus",
+        effect_params={"ap_bonus": 1, "damage_bonus": 1, "requires_bearer_alive": True},
+    ),
+    "000009075004": EnhancementToolDescriptor(
+        enhancement_id="000009075004",
+        name="Mutagenic Regeneration",
+        timing="each_command_phase",
+        target="one_model_in_bearer_unit",
+        duration="instant",
+        effect="command_phase_one_model_in_bearer_unit_regains_lost_wound",
+        effect_params={"regain_wounds": 1, "requires_bearer_alive": True},
+    ),
+    "000009075005": EnhancementToolDescriptor(
+        enhancement_id="000009075005",
+        name="Alien Majesty",
+        timing="while_bearer_alive",
+        target="enemy_unit_within_engagement_range_of_bearer_unit",
+        duration="constant",
+        effect="enemy_objective_control_penalty_minimum",
+        effect_params={"objective_control_penalty": 1, "objective_control_minimum": 1, "requires_bearer_alive": True},
+    ),
+}
+
+_GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_DESCRIPTORS.values()
+}
+
 _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009084003": EnhancementToolDescriptor(
         enhancement_id="000009084003",
@@ -8721,6 +8769,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -8949,6 +9000,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)

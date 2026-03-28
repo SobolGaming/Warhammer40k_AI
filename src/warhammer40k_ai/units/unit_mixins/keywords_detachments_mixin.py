@@ -8416,6 +8416,26 @@ class KeywordsDetachmentsMixin:
                     "source": source,
                     "ability_key": "snarling_protector_heroic_intervention",
                 }
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_predatory_instincts", False)):
+                    usage_key = str(
+                        sr.get("enhancement_predatory_instincts_usage_key", "")
+                        or "PREDATORY_INSTINCTS_HEROIC_INTERVENTION"
+                    ).strip().upper()
+                    if usage_key:
+                        rule["usage_key"] = usage_key
+                    usage_scope = str(
+                        sr.get("enhancement_predatory_instincts_usage_scope", "")
+                        or "battle_round"
+                    ).strip().lower()
+                    if usage_scope:
+                        rule["usage_scope"] = usage_scope
+                    source_unit_id = str(get_entity_id(u) or "").strip()
+                    if source_unit_id:
+                        rule["source_unit_id"] = source_unit_id
+                    rule["requires_bearer_alive"] = bool(
+                        sr.get("enhancement_predatory_instincts_requires_bearer_alive", True)
+                    )
                 break
             if rule is not None:
                 break
@@ -8447,7 +8467,61 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
-        return bool(root.get_snarling_protector_heroic_intervention_rule())
+        rule = root.get_snarling_protector_heroic_intervention_rule()
+        if not isinstance(rule, dict):
+            return False
+
+        if bool(rule.get("requires_bearer_alive", False)):
+            source_unit_id = str(rule.get("source_unit_id", "") or "").strip()
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            source_unit = None
+            for member in members:
+                if member is None:
+                    continue
+                if source_unit_id and str(get_entity_id(member) or "").strip() != source_unit_id:
+                    continue
+                source_unit = member
+                break
+            if source_unit is None:
+                return False
+            bearer_alive_fn = getattr(root, "_enhancement_bearer_is_alive_for_unit", None)
+            if callable(bearer_alive_fn):
+                source_sr = getattr(source_unit, "special_rules", None)
+                if not bool(
+                    bearer_alive_fn(
+                        source_unit,
+                        source_sr if isinstance(source_sr, dict) else None,
+                    )
+                ):
+                    return False
+
+        usage_key = str(rule.get("usage_key", "") or "").strip().upper()
+        if usage_key:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            player = getattr(army, "player", None) if army is not None else None
+            if player is not None:
+                usage_scope = str(rule.get("usage_scope", "") or "turn").strip().lower()
+                if usage_scope == "battle_round":
+                    battle_round_fn = getattr(player, "_battle_round", None)
+                    battle_round = battle_round_fn() if callable(battle_round_fn) else 0
+                    used_rounds = getattr(player, "_ability_used_battle_round", None)
+                    if (
+                        isinstance(used_rounds, dict)
+                        and int(battle_round or 0) > 0
+                        and int(used_rounds.get(usage_key, 0) or 0) == int(battle_round or 0)
+                    ):
+                        return False
+                elif bool(getattr(player, "_ability_used_this_turn", lambda _k: False)(usage_key)):
+                    return False
+        return True
 
     def get_unit_contains_heroic_intervention_rule(self) -> Optional[dict]:
         """

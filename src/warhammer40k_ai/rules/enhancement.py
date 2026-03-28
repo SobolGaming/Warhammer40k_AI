@@ -2086,6 +2086,9 @@ class Enhancement:
             is_host_of_ascension = bool(gsc_mgr and gsc_mgr.is_host_of_ascension())
         except Exception:
             is_host_of_ascension = False
+        is_biosanctic_broodsurge = bool(
+            gsc_mgr and getattr(gsc_mgr, "is_biosanctic_broodsurge", lambda: False)()
+        )
         try:
             is_brood_brother_auxilia = bool(gsc_mgr and gsc_mgr.is_brood_brother_auxilia())
         except Exception:
@@ -2866,6 +2869,95 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_cursed_circlet_bearer_model_id"] = bearer_id
+
+        if name == "predatory instincts" or enh_id == "000009075002":
+            if not is_biosanctic_broodsurge:
+                return
+            unit.special_rules["enhancement_predatory_instincts"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Predatory Instincts").strip() or "Predatory Instincts"
+            usage_key = str(
+                params.get("usage_key", "PREDATORY_INSTINCTS_HEROIC_INTERVENTION")
+                or "PREDATORY_INSTINCTS_HEROIC_INTERVENTION"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "PREDATORY_INSTINCTS_HEROIC_INTERVENTION"
+            usage_scope = str(params.get("usage_scope", "battle_round") or "battle_round").strip().lower()
+            if usage_scope not in {"battle_round", "turn"}:
+                usage_scope = "battle_round"
+            unit.special_rules["enhancement_predatory_instincts_infiltrators"] = True
+            unit.special_rules["enhancement_predatory_instincts_usage_key"] = usage_key
+            unit.special_rules["enhancement_predatory_instincts_usage_scope"] = usage_scope
+            unit.special_rules["enhancement_predatory_instincts_source"] = source_name
+            unit.special_rules["enhancement_predatory_instincts_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_predatory_instincts_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "biomorph adaptation" or enh_id == "000009075003":
+            if not is_biosanctic_broodsurge:
+                return
+            unit.special_rules["enhancement_biomorph_adaptation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Biomorph Adaptation").strip() or "Biomorph Adaptation"
+            ap_bonus = int(max(0, _coerce_int(params.get("ap_bonus", 1) or 1, default=1)))
+            damage_bonus = int(max(0, _coerce_int(params.get("damage_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + ap_bonus
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + damage_bonus
+            unit.special_rules["enhancement_biomorph_adaptation_source"] = source_name
+            unit.special_rules["enhancement_biomorph_adaptation_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_biomorph_adaptation_bearer_model_id"] = bearer_id
+
+        if name == "mutagenic regeneration" or enh_id == "000009075004":
+            if not is_biosanctic_broodsurge:
+                return
+            unit.special_rules["enhancement_mutagenic_regeneration"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Mutagenic Regeneration").strip() or "Mutagenic Regeneration"
+            unit.special_rules["enhancement_mutagenic_regeneration_amount"] = int(
+                max(0, _coerce_int(params.get("regain_wounds", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_mutagenic_regeneration_source"] = source_name
+            unit.special_rules["enhancement_mutagenic_regeneration_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mutagenic_regeneration_bearer_model_id"] = bearer_id
+
+        if name == "alien majesty" or enh_id == "000009075005":
+            if not is_biosanctic_broodsurge:
+                return
+            unit.special_rules["enhancement_alien_majesty"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Alien Majesty").strip() or "Alien Majesty"
+            unit.special_rules["enhancement_alien_majesty_source"] = source_name
+            unit.special_rules["enhancement_alien_majesty_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_alien_majesty_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:

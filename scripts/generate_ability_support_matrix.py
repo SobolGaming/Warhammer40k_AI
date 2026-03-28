@@ -8639,7 +8639,7 @@ def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[
         return None
     m = re.fullmatch(
         r"while an enemy unit(?: excluding (?P<exclude>.+?))? is within (?P<rng>\d+) of "
-        r"(?P<src>this model|this unit|the bearer|one or more units with this ability) "
+        r"(?P<src>this model|this unit|the bearer|the bearer s unit|one or more units with this ability) "
         r"subtract (?P<amt>\d+) from the objective control characteristic of models in that (?:enemy unit|unit)"
         r"(?: to a minimum of (?P<ocmin>\d+))?",
         norm,
@@ -8658,7 +8658,7 @@ def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[
     else:
         m = re.fullmatch(
             r"while an enemy unit(?: excluding (?P<exclude>.+?))? is within engagement range of "
-            r"(?P<src>this model|this unit|the bearer|one or more units with this ability) "
+            r"(?P<src>this model|this unit|the bearer|the bearer s unit|one or more units with this ability) "
             r"subtract (?P<amt>\d+) from the objective control characteristic of models in that (?:enemy unit|unit)"
             r"(?: to a minimum of (?P<ocmin>\d+))?"
             r"(?: while this unit is within (?P<self_rng>\d+) of one or more friendly (?P<self_kw>[a-z0-9 '\-]+?) models "
@@ -19433,6 +19433,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009067003": "A Chink in Their Armour: when the bearer is set up as Reinforcements, ranged weapons in the bearer’s unit gain [LETHAL HITS] until the end of your next Fight phase.",
         "000009067004": "Our Time Is Nigh: once per battle, when the bearer’s unit declares a charge, optional yes/no activation grants +2 to that unit’s Charge rolls until end of phase.",
         "000009067005": "Assassination Edict: attacks made by models in the bearer’s unit gain +1 to hit when targeting CHARACTER units.",
+        "000009075002": "Predatory Instincts: models in the bearer's unit gain Infiltrators, and once per battle round the bearer's unit can use Heroic Intervention for 0CP even if another unit already used it that phase.",
+        "000009075003": "Biomorph Adaptation: while the bearer is alive, melee weapons equipped by the bearer gain +1 AP and +1 Damage.",
+        "000009075004": "Mutagenic Regeneration: in each Command phase, one damaged model in the bearer's combined attached unit regains 1 lost wound while the bearer is alive and on the battlefield.",
+        "000009075005": "Alien Majesty: while the bearer is alive, enemy units within Engagement Range of the bearer's unit suffer Objective Control -1 to a minimum of 1.",
         "000009899002": "Phoenix Gem: return on 2+ at end of phase after first destruction.",
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",

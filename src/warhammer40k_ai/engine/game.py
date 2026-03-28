@@ -1466,6 +1466,105 @@ class Game(
                     current_wounds = int(getattr(model, "wounds", 0) or 0)
                     model.wounds = min(base_wounds, current_wounds + amount)
 
+        processed_mutagenic_sources: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_mutagenic_regeneration", False)):
+                continue
+            source_id = str(get_entity_id(unit) or "").strip() or str(id(unit))
+            if source_id in processed_mutagenic_sources:
+                continue
+            processed_mutagenic_sources.add(source_id)
+
+            if not bool(getattr(unit, "deployed", True)):
+                continue
+            if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+                continue
+            if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+                continue
+            unit_in_reserves = False
+            unit_reserve_fn = getattr(unit, "is_in_reserves", None)
+            if callable(unit_reserve_fn):
+                unit_in_reserves = bool(unit_reserve_fn())
+            else:
+                unit_in_reserves = str(getattr(unit, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+            if unit_in_reserves:
+                continue
+
+            requires_bearer_alive = bool(sr.get("enhancement_mutagenic_regeneration_requires_bearer_alive", True))
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if requires_bearer_alive and bearer is None:
+                continue
+
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            root_in_reserves = False
+            root_reserve_fn = getattr(root, "is_in_reserves", None)
+            if callable(root_reserve_fn):
+                root_in_reserves = bool(root_reserve_fn())
+            else:
+                root_in_reserves = str(getattr(root, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+            if root_in_reserves:
+                continue
+
+            amount = int(sr.get("enhancement_mutagenic_regeneration_amount", 1) or 1)
+            if amount <= 0:
+                continue
+
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+
+            damaged_models: list[tuple[int, str, str, object, int, int]] = []
+            for member in list(members):
+                if member is None:
+                    continue
+                member_id = str(get_entity_id(member) or "").strip()
+                for model in list(getattr(member, "models", []) or []):
+                    alive_attr = getattr(model, "is_alive", True)
+                    model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if not model_alive:
+                        continue
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                    missing_wounds = int(base_wounds - current_wounds)
+                    if missing_wounds <= 0:
+                        continue
+                    model_id = str(get_entity_id(model) or "").strip()
+                    damaged_models.append(
+                        (
+                            -missing_wounds,
+                            member_id,
+                            model_id,
+                            model,
+                            base_wounds,
+                            current_wounds,
+                        )
+                    )
+
+            if not damaged_models:
+                continue
+
+            damaged_models.sort()
+            _missing_sort, _member_id, _model_id, target_model, base_wounds, current_wounds = damaged_models[0]
+            target_model.wounds = min(base_wounds, current_wounds + amount)
+
     def _maybe_prompt_shadow_in_the_warp(self) -> None:
         for player in list(getattr(self, "players", []) or []):
             if player is None:

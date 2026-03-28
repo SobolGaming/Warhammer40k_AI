@@ -11029,6 +11029,16 @@ class PositioningMixin:
                 pass
         if not found:
             try:
+                if self._attached_unit_has_active_enhancement(
+                    "enhancement_predatory_instincts_infiltrators",
+                    enhancement_id="000009075002",
+                    enhancement_name="predatory instincts",
+                ):
+                    found = True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if not found:
+            try:
                 if self._attached_unit_has_active_leading_enhancement(
                     "declare_battle_formations_selected_leading_infiltrators",
                     require_bearer_alive=True,

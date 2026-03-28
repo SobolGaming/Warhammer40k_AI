@@ -4817,11 +4817,15 @@ class Player:
         )
         if snarling and target_unit is not None:
             ability_name = "Snarling Protector"
+            usage_key = ""
+            usage_scope = "turn"
             try:
                 get_rule = getattr(target_unit, "get_snarling_protector_heroic_intervention_rule", None)
                 rule = get_rule() if callable(get_rule) else None
                 if isinstance(rule, dict):
                     ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+                    usage_key = str(rule.get("usage_key", "") or "").strip().upper()
+                    usage_scope = str(rule.get("usage_scope", "") or "turn").strip().lower()
             except Exception:
                 pass
             ctx = {
@@ -4850,6 +4854,13 @@ class Player:
                     "reasons": increase_reasons,
                     "stratagem_name": getattr(stratagem, "name", None) or "",
                 }
+                if usage_key:
+                    if usage_scope == "battle_round":
+                        battle_round = int(self._battle_round() or 0)
+                        if battle_round > 0:
+                            self._ability_used_battle_round[usage_key] = battle_round
+                    else:
+                        self._mark_ability_used_turn(usage_key)
                 return {
                     "base": base,
                     "discount": base,
