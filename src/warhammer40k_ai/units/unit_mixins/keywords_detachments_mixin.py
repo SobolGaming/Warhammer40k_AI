@@ -4393,6 +4393,25 @@ class KeywordsDetachmentsMixin:
         sr["orks_go_get_em_source"] = str(source or "GO GET 'EM!").strip() or "GO GET 'EM!"
         root.special_rules = sr
 
+    def activate_tyranids_synaptic_goading_horde_move(
+        self,
+        *,
+        game=None,
+        source: str = "SYNAPTIC GOADING",
+    ) -> None:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        phase = getattr(game, "phase", None) if game is not None else None
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        sr["tyranids_synaptic_goading_active"] = True
+        sr["tyranids_synaptic_goading_phase_key"] = root._horde_move_phase_key(game)
+        sr["tyranids_synaptic_goading_expires_phase"] = phase_name
+        sr["tyranids_synaptic_goading_source"] = str(source or "SYNAPTIC GOADING").strip() or "SYNAPTIC GOADING"
+        root.special_rules = sr
+
     def clear_go_get_em_horde_move(self) -> None:
         root_fn = getattr(self, "get_attached_unit_root", None)
         root = root_fn() if callable(root_fn) else self
@@ -4409,6 +4428,25 @@ class KeywordsDetachmentsMixin:
             "orks_go_get_em_attacker_unit_id",
             "orks_go_get_em_reroll_distance",
             "orks_go_get_em_source",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def clear_tyranids_synaptic_goading_horde_move(self) -> None:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in (
+            "tyranids_synaptic_goading_active",
+            "tyranids_synaptic_goading_phase_key",
+            "tyranids_synaptic_goading_expires_phase",
+            "tyranids_synaptic_goading_source",
         ):
             if key in sr:
                 sr.pop(key, None)
@@ -4446,6 +4484,31 @@ class KeywordsDetachmentsMixin:
             "use_once_per_phase": False,
             "closest_enemy_unit_exclude_keywords": (),
             "attacker_unit_id": str(sr.get("orks_go_get_em_attacker_unit_id", "") or ""),
+        }
+
+    def get_tyranids_synaptic_goading_horde_move_rule(self, game=None) -> Optional[dict]:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tyranids_synaptic_goading_active")):
+            return None
+        phase_key = str(sr.get("tyranids_synaptic_goading_phase_key", "") or "")
+        if game is not None and phase_key:
+            current_key = str(root._horde_move_phase_key(game) or "")
+            if current_key != phase_key:
+                return None
+        source = str(sr.get("tyranids_synaptic_goading_source", "") or "SYNAPTIC GOADING").strip()
+        if not source:
+            source = "SYNAPTIC GOADING"
+        return {
+            "source": source,
+            "distance_bonus": 0,
+            "distance_reroll": True,
+            "requires_not_engaged": False,
+            "use_once_per_phase": False,
+            "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+            "allow_closest_objective_marker_instead_of_closest_enemy_unit": True,
+            "closest_objective_marker_reason": source,
         }
 
     def go_get_em_horde_move_attacker_matches(self, attacker_unit=None, *, game=None) -> bool:
@@ -4539,6 +4602,9 @@ class KeywordsDetachmentsMixin:
         return dict(rule) if rule is not None else None
 
     def get_horde_move_rule(self, game=None) -> Optional[dict]:
+        synaptic_goading_rule = self.get_tyranids_synaptic_goading_horde_move_rule(game=game)
+        if synaptic_goading_rule is not None:
+            return dict(synaptic_goading_rule)
         go_get_em_rule = self.get_go_get_em_horde_move_rule(game=game)
         if go_get_em_rule is not None:
             return dict(go_get_em_rule)

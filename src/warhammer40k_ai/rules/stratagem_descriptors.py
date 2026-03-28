@@ -5370,6 +5370,100 @@ _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SUBTERRANEAN_ASSAULT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_UNENDING_SWARM_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008409002": StratagemToolDescriptor(
+        stratagem_id="000008409002",
+        name="Synaptic Goading",
+        timing="any_phase_before_surge_move",
+        target="friendly_endless_multitude_unit_within_synapse_about_to_make_surge_move",
+        duration="single_surge_move",
+        effect="horde_move_reroll_and_objective_override",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "requires_synapse_range": True,
+            "distance_reroll": True,
+            "allow_closest_objective_marker_instead_of_closest_enemy_unit": True,
+        },
+    ),
+    "000008409003": StratagemToolDescriptor(
+        stratagem_id="000008409003",
+        name="Unending Waves",
+        timing="any_phase_on_friendly_unit_destroyed",
+        target="friendly_endless_multitude_unit_just_destroyed",
+        duration="immediate",
+        effect="clone_unit_to_strategic_reserves",
+        cp_cost=2,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "clone_at_starting_strength": True,
+            "return_to": "strategic_reserves",
+            "once_per_battle": True,
+            "exclude_destroyed_attached_characters": True,
+        },
+    ),
+    "000008409004": StratagemToolDescriptor(
+        stratagem_id="000008409004",
+        name="Teeming Masses",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="friendly_endless_multitude_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="defensive_hit_penalty_vs_attacker",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "hit_modifier": -1,
+            "attack_type": "any",
+        },
+    ),
+    "000008409005": StratagemToolDescriptor(
+        stratagem_id="000008409005",
+        name="Swarming Masses",
+        timing="shooting_or_fight_phase_on_select",
+        target="friendly_endless_multitude_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="sustained_hits_and_conditional_crit_hit_threshold",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "sustained_hits_value": 1,
+            "crit_threshold": 5,
+            "crit_threshold_min_models": 15,
+        },
+    ),
+    "000008409006": StratagemToolDescriptor(
+        stratagem_id="000008409006",
+        name="Bounding Advance",
+        timing="movement_phase",
+        target="friendly_endless_multitude_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_plus_6",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "requires_not_selected_to_move": True,
+            "advance_distance": 6,
+        },
+    ),
+    "000008409007": StratagemToolDescriptor(
+        stratagem_id="000008409007",
+        name="Preservation Imperative",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="friendly_endless_multitude_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="blast_model_count_cap",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["ENDLESS MULTITUDE"],
+            "blast_model_count_cap": 4,
+        },
+    ),
+}
+
+_UNENDING_SWARM_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _UNENDING_SWARM_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008418007": StratagemToolDescriptor(
         stratagem_id="000008418007",
@@ -10222,6 +10316,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SUBTERRANEAN_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _UNENDING_SWARM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10468,6 +10565,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ASSIMILATION_SWARM_STRATAGEM_BY_NAME.get(key)
         or _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME.get(key)
+        or _UNENDING_SWARM_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)

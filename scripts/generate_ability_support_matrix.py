@@ -19986,6 +19986,12 @@ def _stratagem_support(
         "000010148005": "End of your Movement phase: selected TYRANIDS unit wholly within 9\" of a friendly Tunnel Marker and not within Engagement Range is removed and queued to be set up wholly within 9\" of another Tunnel Marker and more than 6\" from enemy units.",
         "000010148006": "Your Charge phase: selected TYRANIDS MONSTER unit that arrived from Reinforcements this turn projects a 6\" aura that lets friendly TYRANIDS units re-roll Charge rolls until end of phase.",
         "000010148007": "End of opponent Fight phase: select one TYRANIDS unit, or up to two BURROWER units, that are not within Engagement Range; the selected units enter Strategic Reserves.",
+        "000008409002": "Any phase, just before an eligible ENDLESS MULTITUDE unit within Synapse Range makes an Insurmountable Odds Surge move: that unit can re-roll the D6 distance and may end that move as close as possible to the closest objective marker instead of the closest enemy unit.",
+        "000008409003": "Any phase reaction when your ENDLESS MULTITUDE unit is just destroyed: add an identical replacement unit to your army in Strategic Reserves at Starting Strength, excluding destroyed attached CHARACTER units; once per battle.",
+        "000008409004": "Opponent Shooting phase or the Fight phase reaction after enemy targets are selected: selected ENDLESS MULTITUDE target imposes -1 to hit against attacks from that attacker until end of phase.",
+        "000008409005": "Your Shooting phase or the Fight phase: selected ENDLESS MULTITUDE unit that has not yet acted gains Sustained Hits 1 until end of phase, and while it contains 15 or more models it scores critical hits on unmodified Hit rolls of 5+.",
+        "000008409006": "Your Movement phase: selected ENDLESS MULTITUDE unit that has not been selected to move treats its Advance distance this phase as a fixed +6\" instead of rolling.",
+        "000008409007": "Opponent Shooting phase reaction after enemy targets are selected: selected ENDLESS MULTITUDE target is treated as containing fewer than five models for the purpose of Blast until end of phase.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20252,6 +20258,7 @@ def _stratagem_support(
         "UNWAVERING PHALANX": "Opponent Charge phase reaction after an enemy unit ends a Charge move: selected RUBRIC MARINES unit within Engagement Range of that enemy imposes -1 to Wound rolls for attacks that target it until end of turn.",
         "ABLATIVE CARAPACE": "Opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets: selected HARVESTER unit gains Feel No Pain 5+, or Feel No Pain 4+ while within range of a controlled objective, until end of phase.",
         "ADRENAL SURGE": "Fight phase: selected TYRANIDS unit gains melee critical hits on 5+ this phase; can target up to two eligible TYRANIDS units when both are within Synapse Range.",
+        "BOUNDING ADVANCE": "Your Movement phase: selected ENDLESS MULTITUDE unit that has not been selected to move treats its Advance distance this phase as a fixed +6\" instead of rolling.",
         "BROODGUARD IMPULSE": "Any phase: selected just-destroyed HARVESTER marks the enemy unit that destroyed it so friendly TYRANIDS attacks gain +1 to Wound rolls against that enemy until end of battle.",
         "DEATH FRENZY": "Fight phase defensive reaction after enemy targets are selected: selected TYRANIDS unit gains melee fight-on-death on 4+ after the attacker finishes its attacks this phase.",
         "ENDLESS SWARM": "Command phase: selected ENDLESS MULTITUDE unit with destroyed models returns up to D3+3 destroyed models, or target up to two such units when both are within Synapse Range.",
@@ -20563,6 +20570,15 @@ def _stratagem_support(
         "000008422007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008409002",
+        "000008409003",
+        "000008409004",
+        "000008409005",
+        "000008409006",
+        "000008409007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
     if stratagem_id in {
         "000010148002",
         "000010148003",

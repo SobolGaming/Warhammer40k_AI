@@ -51,6 +51,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A GRIM WARNING",
     "A DEADLY SNARE",
     "AUTOMATED REPAIR DRONES",
+    "BOUNDING ADVANCE",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "COMBAT MANIFESTATION",
@@ -97,11 +98,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
+    "PRESERVATION IMPERATIVE",
     "REINFORCED HIVE NODE",
     "IRRESISTIBLE WILL",
     "SYNAPTIC CHANNELLING",
+    "SYNAPTIC GOADING",
+    "SWARMING MASSES",
+    "TEEMING MASSES",
     "IMPERATIVE DOMINANCE",
     "THE SMOTHERING SHADOW",
+    "UNENDING WAVES",
     "OVERRIDE INSTINCTS",
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -2087,6 +2093,7 @@ class StratagemManager(
             "ENDLESS IRE",
             "MASS TRANSMOGRIFICATION",
             "PROTOCOL OF THE VENGEFUL STARS",
+            "UNENDING WAVES",
             "YOUR TIME IS NIGH",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
@@ -2176,6 +2183,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if names & {"GO GET 'EM!", "GO GET ’EM!"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_orks_green_tide)
+        if "SYNAPTIC GOADING" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_tyranids_unending_swarm)
         if "CATALYTIC STIMULUS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
         if "VENGEFUL SURGE" in names:
@@ -2465,6 +2474,7 @@ class StratagemManager(
             "BLIND GRENADES",
             "HYPERSTIMMS",
             "BRAZEN CONTEMPT",
+            "BOUNDING ADVANCE",
             "BERSERK FUGUE",
             "DEADLY DEBUT",
             "FAIL NOT THE BLOOD GOD",
@@ -5829,6 +5839,112 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and eligible VANGUARD INVADER or TYRANIDS INFANTRY units on the battlefield"
             return result
+        if name_u == "BOUNDING ADVANCE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_unending_swarm_bounding_advance_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a friendly ENDLESS MULTITUDE unit on the battlefield that has not been selected to move this phase"
+            return result
+        if name_u == "SYNAPTIC GOADING":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SYNAPTIC GOADING":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_unending_swarm_synaptic_goading_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an ENDLESS MULTITUDE unit within Synapse Range that is about to make an Insurmountable Odds Surge move"
+            return result
+        if name_u == "UNENDING WAVES":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNENDING WAVES":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("destroyed_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_unending_waves_candidates(destroyed_unit=destroyed_unit)
+            if candidates and not bool(getattr(self, "_tyr_unending_waves_used", False)):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase, a friendly ENDLESS MULTITUDE unit that was just destroyed, and this stratagem has not already been used this battle"
+            return result
+        if name_u == "TEEMING MASSES":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "TEEMING MASSES":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            if attacking_unit is not None and target_units:
+                candidates = self._tyr_unending_swarm_targeted_endless_multitude_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+                if candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires your opponent's Shooting phase or the Fight phase, just after an enemy unit selects targets including one of your ENDLESS MULTITUDE units"
+            return result
+        if name_u == "SWARMING MASSES":
+            candidates = list(context.get("candidates") or [])
+            phase_name = str(
+                context.get("phase_name")
+                or getattr(self, "_current_phase_name", "")
+                or ""
+            ).strip()
+            if not candidates:
+                candidates = self._tyr_unending_swarm_swarming_masses_candidates(phase_name=phase_name)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and a friendly ENDLESS MULTITUDE unit that has not yet been selected this phase"
+            return result
+        if name_u == "PRESERVATION IMPERATIVE":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PRESERVATION IMPERATIVE":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            if attacking_unit is not None and target_units:
+                candidates = self._tyr_unending_swarm_targeted_endless_multitude_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+                if candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires your opponent's Shooting phase, just after an enemy unit selects targets including one of your ENDLESS MULTITUDE units"
+            return result
         if name_u == "OVERRIDE INSTINCTS":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -6743,6 +6859,12 @@ class StratagemManager(
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "SULPHUROUS VEIL": "Target: your THOUSAND SONS or SCINTILLATING LEGIONS unit selected as an enemy shooting/fight target; incoming attacks suffer -1 to Hit this phase",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
+            "BOUNDING ADVANCE": "Movement phase: target your ENDLESS MULTITUDE unit that has not been selected to move; if it Advances this phase, add 6\" to its Move instead of making an Advance roll",
+            "SYNAPTIC GOADING": "Any phase, just before an ENDLESS MULTITUDE unit within Synapse Range makes an Insurmountable Odds Surge move: that move can re-roll its distance and can end as close as possible to the closest objective marker instead of the closest enemy unit",
+            "UNENDING WAVES": "Any phase: target your ENDLESS MULTITUDE unit that was just destroyed; add an identical replacement unit to Strategic Reserves at Starting Strength (once per battle)",
+            "TEEMING MASSES": "Opponent Shooting phase or the Fight phase, just after an enemy unit selects targets: target your ENDLESS MULTITUDE unit selected by that attacker; attacks from that enemy suffer -1 to hit it this phase",
+            "SWARMING MASSES": "Your Shooting phase or the Fight phase: target your ENDLESS MULTITUDE unit that has not yet shot/fought; it gains Sustained Hits 1 this phase, and critical hits on 5+ while it has 15+ models",
+            "PRESERVATION IMPERATIVE": "Opponent Shooting phase, just after an enemy unit selects targets: target your ENDLESS MULTITUDE unit selected by that attacker; it counts as containing fewer than five models for Blast this phase",
             "REINFORCED HIVE NODE": "Opponent Shooting phase or the Fight phase, just after an enemy unit selects targets: selected friendly SYNAPSE unit worsens incoming AP by 1 from that attacker until it finishes its attacks",
             "IRRESISTIBLE WILL": "Your Shooting phase or the Fight phase: select one friendly SYNAPSE unit that has not yet shot/fought and one visible enemy within 24\"; friendly TYRANIDS units within 6\" of the selected SYNAPSE unit re-roll Hit and Wound rolls of 1 against that enemy this phase",
             "SYNAPTIC CHANNELLING": "Command phase: selected friendly SYNAPSE unit projects Synapse Range to friendly TYRANIDS units within 9\" until end of turn",
@@ -9496,6 +9618,30 @@ class StratagemManager(
                                 "tau_aggressive_mobility_source",
                             ):
                                 sr.pop(key, None)
+                        exp = str(sr.get("tyranids_bounding_advance_expires_phase", "") or "").strip().upper()
+                        if sr.get("tyranids_bounding_advance_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            effects = list(sr.get("advance_no_roll_effects", []) or [])
+                            kept = [
+                                entry
+                                for entry in effects
+                                if not (
+                                    isinstance(entry, dict)
+                                    and str(entry.get("tag", "") or "") == "stratagem:tyranids_bounding_advance"
+                                )
+                            ]
+                            if kept:
+                                sr["advance_no_roll_effects"] = kept
+                            else:
+                                sr.pop("advance_no_roll_effects", None)
+                            for key in (
+                                "tyranids_bounding_advance_active",
+                                "tyranids_bounding_advance_distance",
+                                "tyranids_bounding_advance_expires_phase",
+                                "tyranids_bounding_advance_turn_owner",
+                                "tyranids_bounding_advance_turn",
+                                "tyranids_bounding_advance_source",
+                            ):
+                                sr.pop(key, None)
                         exp = str(sr.get("full_tilt_expires_phase", "") or "").strip().upper()
                         if sr.get("full_tilt_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             root.remove_characteristic_modifiers_by_source("stratagem:imperial_knights_full_tilt")
@@ -11757,6 +11903,15 @@ class StratagemManager(
     def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
         self._queue_orks_more_dakka_call_dat_dakka_reactions(attacker_unit=attacker_unit)
 
+    def _on_unit_shooting_resolved_tyranids_unending_swarm(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_tyranids_unending_swarm_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_catalytic_stimulus(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_emperors_children_court_shooting_resolved_reactions(
@@ -12375,6 +12530,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_invasion_fleet_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_unending_swarm_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13225,6 +13387,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_synaptic_nexus_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_unending_swarm_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15972,6 +16141,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_assimilation_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_unending_waves_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

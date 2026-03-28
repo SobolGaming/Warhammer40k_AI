@@ -2696,6 +2696,9 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             clear_go_get_em = getattr(member, "clear_go_get_em_horde_move", None)
             if callable(clear_go_get_em):
                 clear_go_get_em()
+            clear_synaptic_goading = getattr(member, "clear_tyranids_synaptic_goading_horde_move", None)
+            if callable(clear_synaptic_goading):
+                clear_synaptic_goading()
         if movement_type == "unhinged_vengeance":
             member.mark_unhinged_vengeance_used(game)
         if movement_type == "blistering_assault":

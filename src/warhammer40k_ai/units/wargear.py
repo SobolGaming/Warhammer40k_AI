@@ -7027,10 +7027,42 @@ class WargearProfile:
                         break
 
         if has_blast:
-            try:
-                target_model_count = len(target.models)
-            except Exception:
-                target_model_count = 0
+            target_unit = target
+            get_root = getattr(target_unit, "get_attached_unit_root", None)
+            if callable(get_root):
+                resolved_target = get_root()
+                if resolved_target is not None:
+                    target_unit = resolved_target
+            get_models = getattr(target_unit, "get_attached_unit_models", None)
+            if callable(get_models):
+                target_models = list(get_models() or [])
+            else:
+                target_models = list(getattr(target_unit, "models", []) or [])
+            target_model_count = 0
+            for model in target_models:
+                is_alive = getattr(model, "is_alive", None)
+                if callable(is_alive):
+                    if not bool(is_alive()):
+                        continue
+                target_model_count += 1
+            sr = getattr(target_unit, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("tyranids_preservation_imperative_active")):
+                exp = str(sr.get("tyranids_preservation_imperative_expires_phase", "") or "").strip().upper()
+                phase_name = self._current_phase_name(attacker)
+                owner_ok = True
+                marked_turn = int(sr.get("tyranids_preservation_imperative_turn", 0) or 0)
+                current_turn = 0
+                army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                if player is not None:
+                    owner = str(sr.get("tyranids_preservation_imperative_turn_owner", "") or "").strip()
+                    if owner:
+                        owner_ok = owner == str(getattr(player, "id", "") or "").strip()
+                if game is not None:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                if owner_ok and (not exp or exp == phase_name) and not (marked_turn and current_turn and marked_turn != current_turn):
+                    target_model_count = min(int(target_model_count), 4)
             num_attacks_modifier = int(target_model_count / 5)
             if blast_source and blast_source.lower() != "weapon":
                 attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier} ({blast_source})")
@@ -15935,6 +15967,55 @@ class WargearProfile:
                     threshold = int(sr.get("tyranids_adrenal_surge_crit_threshold", 5) or 5)
                     crit_threshold = min(int(crit_threshold), int(threshold))
                     crit_hit_reasons.append(f"Adrenal Surge: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            if isinstance(sr, dict) and sr.get("tyranids_swarming_masses_active"):
+                phase_name = self._current_phase_name(attacker)
+                attack_type = str(sr.get("tyranids_swarming_masses_attack_type", "") or "").strip().lower()
+                matches_attack_type = bool(
+                    (attack_type == "melee" and is_melee)
+                    or (attack_type == "ranged" and not is_melee)
+                )
+                exp = str(sr.get("tyranids_swarming_masses_expires_phase", "") or "").strip().upper()
+                current_turn = 0
+                marked_turn = int(sr.get("tyranids_swarming_masses_turn", 0) or 0)
+                owner_ok = True
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                if game is not None:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                if player is not None:
+                    owner = str(sr.get("tyranids_swarming_masses_turn_owner", "") or "").strip()
+                    if owner:
+                        owner_ok = owner == str(getattr(player, "id", "") or "").strip()
+                if owner_ok and matches_attack_type and (not exp or exp == phase_name) and not (
+                    marked_turn and current_turn and marked_turn != current_turn
+                ):
+                    get_models = getattr(unit, "get_attached_unit_models", None)
+                    if callable(get_models):
+                        unit_models = list(get_models() or [])
+                    else:
+                        unit_models = list(getattr(unit, "models", []) or [])
+                    alive_model_count = 0
+                    for model in unit_models:
+                        is_alive = getattr(model, "is_alive", None)
+                        if callable(is_alive):
+                            if not bool(is_alive()):
+                                continue
+                        alive_model_count += 1
+                    required_models = int(sr.get("tyranids_swarming_masses_crit_model_threshold", 15) or 15)
+                    if alive_model_count >= required_models:
+                        threshold = int(sr.get("tyranids_swarming_masses_crit_threshold", 5) or 5)
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        crit_hit_reasons.append(
+                            f"Swarming Masses: critical hit on {int(threshold)}+ while unit has {int(required_models)}+ models"
+                        )
         except Exception:
             pass
         try:

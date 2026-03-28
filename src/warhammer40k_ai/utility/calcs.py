@@ -1085,24 +1085,32 @@ def get_validation_rules(
                 base_rules["closest_enemy_unit_exclude_keywords"] = exclude_keywords
             elif "closest_enemy_unit_exclude_keywords" in base_rules:
                 base_rules.pop("closest_enemy_unit_exclude_keywords", None)
+            if horde_move_rule is not None and bool(
+                horde_move_rule.get("allow_closest_objective_marker_instead_of_closest_enemy_unit", False)
+            ):
+                base_rules["allow_closest_objective_marker_instead_of_closest_enemy_unit"] = True
+                base_rules["closest_objective_marker_reason"] = str(
+                    horde_move_rule.get("closest_objective_marker_reason", "") or reason
+                ).strip() or reason
             sm_mgr = None
             try:
                 army = moving_unit.get_parent_army()
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             except Exception:
                 sm_mgr = None
-            objective_override_fn = (
-                getattr(sm_mgr, "purge_and_sanctify_righteous_zeal_objective_override_applies", None)
-                if sm_mgr is not None
-                else None
-            )
-            if callable(objective_override_fn):
-                try:
-                    if bool(objective_override_fn(moving_unit)):
-                        base_rules["allow_closest_objective_marker_instead_of_closest_enemy_unit"] = True
-                        base_rules["closest_objective_marker_reason"] = "Purge and Sanctify"
-                except Exception:
-                    pass
+            if not bool(base_rules.get("allow_closest_objective_marker_instead_of_closest_enemy_unit", False)):
+                objective_override_fn = (
+                    getattr(sm_mgr, "purge_and_sanctify_righteous_zeal_objective_override_applies", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(objective_override_fn):
+                    try:
+                        if bool(objective_override_fn(moving_unit)):
+                            base_rules["allow_closest_objective_marker_instead_of_closest_enemy_unit"] = True
+                            base_rules["closest_objective_marker_reason"] = "Purge and Sanctify"
+                    except Exception:
+                        pass
 
     elif movement_type == MovementType.CAREEN:
         base_rules.update({
