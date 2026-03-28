@@ -12550,6 +12550,12 @@ class ActionsMovementMixin:
             bonus, source = necrons_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Annihilation Protocol")))
+        necrons_spreading_fn = getattr(necrons_mgr, "cursed_legion_spreading_madness_charge_roll_bonus", None) if necrons_mgr is not None else None
+        if callable(necrons_spreading_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = necrons_spreading_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Spreading Madness")))
 
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         gsc_bonus_fn = (
@@ -18239,6 +18245,17 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            driven_fn = getattr(mgr, "cursed_legion_driven_to_butchery_can_shoot_after_advance", None) if mgr is not None else None
+            if callable(driven_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(driven_fn(self, profile, game=game)):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_assault_ranged"):
                 if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
@@ -19122,6 +19139,16 @@ class ActionsMovementMixin:
                 turn_key="thousand_sons_touched_by_tzeentch_turn",
             ):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            driven_fn = getattr(mgr, "cursed_legion_driven_to_butchery_can_charge_after_advance", None) if mgr is not None else None
+            if callable(driven_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(driven_fn(self, game=game)):
+                    return True
         except Exception:
             pass
         try:

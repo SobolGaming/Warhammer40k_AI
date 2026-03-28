@@ -7194,6 +7194,19 @@ class PositioningMixin:
                     or []
                 )
             )
+        cursed_necrons_bonus_fn = getattr(necrons_mgr, "cursed_legion_attack_keyword_bonus_rules", None) if necrons_mgr is not None else None
+        if callable(cursed_necrons_bonus_fn):
+            rules.extend(
+                list(
+                    cursed_necrons_bonus_fn(
+                        model,
+                        target,
+                        attack_type=attack_type or "",
+                        weapon_profile=weapon_profile,
+                    )
+                    or []
+                )
+            )
         try:
             target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
         except Exception:

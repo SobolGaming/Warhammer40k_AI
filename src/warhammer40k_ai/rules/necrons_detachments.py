@@ -1332,6 +1332,146 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             )
         return requests
 
+    def _cursed_legion_flag_active(self, unit, *, base_key: str, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key_base = str(base_key or "").strip()
+        if not key_base or not bool(sr.get(f"{key_base}_active")):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return True
+        expires_phase = str(sr.get(f"{key_base}_expires_phase", "") or "").strip().upper()
+        if expires_phase and expires_phase != self._current_phase_name(game):
+            return False
+        try:
+            effect_turn = int(sr.get(f"{key_base}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = self._current_turn(game)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        owner_id = str(sr.get(f"{key_base}_turn_owner", "") or "").strip()
+        if owner_id:
+            player = getattr(self.army, "player", None)
+            if owner_id != str(getattr(player, "id", "") or "").strip():
+                return False
+        return True
+
+    def cursed_legion_driven_to_butchery_can_shoot_after_advance(self, unit, weapon_profile, *, game=None) -> bool:
+        if not self.is_cursed_legion():
+            return False
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return False
+        return self._cursed_legion_flag_active(root, base_key="cursed_legion_driven_to_butchery", game=game)
+
+    def cursed_legion_driven_to_butchery_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        if not self.is_cursed_legion():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return False
+        return self._cursed_legion_flag_active(root, base_key="cursed_legion_driven_to_butchery", game=game)
+
+    def cursed_legion_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "",
+        weapon_profile=None,
+        game=None,
+    ) -> list[dict]:
+        if not self.is_cursed_legion():
+            return []
+        if attacker_model is None:
+            return []
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return []
+        if not self.unit_is_necrons(root):
+            return []
+        if not self._cursed_legion_flag_active(root, base_key="cursed_legion_methodical_murder", game=game):
+            return []
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        attack_kind = str(attack_type or "").strip().lower()
+        resolved_attack_type = attack_kind
+        if resolved_attack_type not in {"melee", "ranged"}:
+            resolved_attack_type = "ranged" if self._weapon_profile_is_ranged(weapon_profile) else "melee"
+        allowed_attack_type = str(sr.get("cursed_legion_methodical_murder_attack_type", "") or "").strip().lower()
+        if allowed_attack_type not in {"melee", "ranged", "any"}:
+            allowed_attack_type = "any"
+        if allowed_attack_type not in {"any", resolved_attack_type}:
+            return []
+        source_name = str(sr.get("cursed_legion_methodical_murder_source", "") or "METHODICAL MURDER").strip()
+        return [
+            {
+                "attack_type": allowed_attack_type if allowed_attack_type != "any" else resolved_attack_type,
+                "keyword": "SUSTAINED HITS 1",
+                "source": source_name or "METHODICAL MURDER",
+            }
+        ]
+
+    def cursed_legion_spreading_madness_charge_roll_bonus(
+        self,
+        unit,
+        *,
+        target_units=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_cursed_legion():
+            return (0, "")
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return (0, "")
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if not self._cursed_legion_flag_active(root, base_key="cursed_legion_spreading_madness", game=game):
+            return (0, "")
+        game_map = getattr(game, "map", None) if game is not None else None
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(is_within_engagement):
+            return (0, "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return (0, "")
+        try:
+            bonus = int(sr.get("cursed_legion_spreading_madness_charge_bonus", 2) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return (0, "")
+        source = (
+            str(sr.get("cursed_legion_spreading_madness_source", "") or "SPREADING MADNESS").strip()
+            or "SPREADING MADNESS"
+        )
+        friendly_units = self._iter_unique_army_roots()
+        for target in list(target_units or []):
+            target_root = self._unit_root(target)
+            if target_root is None or not self._unit_has_any_alive_models(target_root):
+                continue
+            for friendly_root in list(friendly_units or []):
+                if friendly_root is None or friendly_root is root:
+                    continue
+                if not self._unit_is_active(friendly_root):
+                    continue
+                if bool(is_within_engagement(friendly_root, target_root)):
+                    return (int(bonus), source)
+        return (0, "")
+
     def _iter_unique_army_roots(self) -> list:
         if self.army is None:
             return []

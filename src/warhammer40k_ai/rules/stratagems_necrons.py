@@ -87,6 +87,12 @@ class NecronsStratagemMixin:
             return False
         return bool(mgr.is_canoptek_court())
 
+    def _is_cursed_legion(self) -> bool:
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        return bool(mgr.is_cursed_legion())
+
     def _is_cryptek_conclave(self) -> bool:
         mgr = self._get_necrons_mgr()
         if mgr is None:
@@ -137,6 +143,34 @@ class NecronsStratagemMixin:
         if callable(get_models):
             return [model for model in list(get_models() or []) if model is not None]
         return [model for model in list(getattr(root, "models", []) or []) if model is not None]
+
+    def _necrons_units_within_distance(self, source_unit: Any, target_unit: Any, *, range_inches: float) -> bool:
+        source_root = self._necrons_root(source_unit)
+        target_root = self._necrons_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        get_distance = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if callable(get_distance):
+            try:
+                return float(get_distance(source_root, target_root)) <= float(range_inches) + 1e-6
+            except (TypeError, ValueError):
+                pass
+        source_models = self._necrons_iter_unit_models(source_root)
+        target_models = self._necrons_iter_unit_models(target_root)
+        for source_model in list(source_models or []):
+            if not bool(getattr(source_model, "is_alive", True)):
+                continue
+            for target_model in list(target_models or []):
+                if not bool(getattr(target_model, "is_alive", True)):
+                    continue
+                if float(distance_between_models_bases_3d(source_model, target_model)) <= float(range_inches) + 1e-6:
+                    return True
+        return False
+
+    @staticmethod
+    def _necrons_selected_to_charge_this_phase(unit: Any) -> bool:
+        return bool(getattr(getattr(unit, "round_state", None), "attempted_charge_this_round", False))
 
     def _annihilation_legion_unit_eligible(
         self,
@@ -1259,7 +1293,10 @@ class NecronsStratagemMixin:
             ]
             possible_units.extend(list(reaction.get("candidates") or []))
             for candidate in list(possible_units or []):
-                if str(get_entity_id(self._necrons_root(candidate)) or "") == target_unit_id:
+                candidate_root = self._necrons_root(candidate)
+                if candidate_root is None:
+                    continue
+                if str(get_entity_id(candidate_root) or "") == target_unit_id:
                     return reaction
         return None
 
@@ -1390,7 +1427,10 @@ class NecronsStratagemMixin:
             ]
             possible_units.extend(list(reaction.get("candidates") or []))
             for candidate in list(possible_units or []):
-                if str(get_entity_id(self._necrons_root(candidate)) or "") == target_unit_id:
+                candidate_root = self._necrons_root(candidate)
+                if candidate_root is None:
+                    continue
+                if str(get_entity_id(candidate_root) or "") == target_unit_id:
                     return reaction
         return None
 
@@ -1479,6 +1519,181 @@ class NecronsStratagemMixin:
             if candidate_id and candidate_id == selected_id:
                 return candidate
         return None
+
+    def _cursed_legion_unit_is_eligible(
+        self,
+        unit: Any,
+        *,
+        require_destroyer_cult: bool = False,
+        exclude_monster_vehicle: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_selected_to_charge: bool = False,
+        require_reanimation: bool = False,
+        require_targetable: bool = True,
+    ) -> bool:
+        if not self._is_cursed_legion():
+            return False
+        root = self._necrons_root(unit)
+        mgr = self._get_necrons_mgr()
+        if root is None or mgr is None:
+            return False
+        if not self._necrons_owned_by_player(root):
+            return False
+        if not self._necrons_on_battlefield(root, require_targetable=require_targetable):
+            return False
+        if not bool(getattr(mgr, "unit_is_necrons", lambda _unit: False)(root)):
+            return False
+        if require_destroyer_cult and not self._necrons_unit_contains_keyword(root, "DESTROYER CULT"):
+            return False
+        if exclude_monster_vehicle and (
+            self._necrons_unit_contains_keyword(root, "MONSTER")
+            or self._necrons_unit_contains_keyword(root, "VEHICLE")
+        ):
+            return False
+        round_state = getattr(root, "round_state", None)
+        if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+            return False
+        if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+            return False
+        if require_not_selected_to_charge and self._necrons_selected_to_charge_this_phase(root):
+            return False
+        if require_reanimation:
+            has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+            if not callable(has_rp) or not bool(has_rp()):
+                return False
+        return True
+
+    def _cursed_legion_candidates(
+        self,
+        *,
+        require_destroyer_cult: bool = False,
+        exclude_monster_vehicle: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_not_selected_to_charge: bool = False,
+        require_reanimation: bool = False,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_cursed_legion():
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._cursed_legion_unit_is_eligible(
+                root,
+                require_destroyer_cult=require_destroyer_cult,
+                exclude_monster_vehicle=exclude_monster_vehicle,
+                require_not_shot=require_not_shot,
+                require_not_fought=require_not_fought,
+                require_not_selected_to_charge=require_not_selected_to_charge,
+                require_reanimation=require_reanimation,
+                require_targetable=require_targetable,
+            ):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _cursed_legion_unit_in_candidates(self, unit: Any, candidates: list[Any]) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        return any(str(get_entity_id(self._necrons_root(candidate)) or "") == unit_id for candidate in list(candidates or []))
+
+    def _cursed_legion_pending_context(self, stratagem_name: str, *, unit: Any = None) -> Optional[dict[str, Any]]:
+        target_name = str(stratagem_name or "").strip().upper()
+        target_unit_id = str(get_entity_id(self._necrons_root(unit)) or "") if unit is not None else ""
+        for reaction in reversed(list(self._pending_reactions or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if not target_unit_id:
+                return reaction
+            possible_units = [
+                reaction.get("unit"),
+                reaction.get("target_unit"),
+                reaction.get("destroyed_unit"),
+            ]
+            possible_units.extend(list(reaction.get("candidates") or []))
+            for candidate in list(possible_units or []):
+                candidate_root = self._necrons_root(candidate)
+                if candidate_root is None:
+                    continue
+                if str(get_entity_id(candidate_root) or "") == target_unit_id:
+                    return reaction
+        return None
+
+    def _cursed_legion_unnatural_aggression_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_cursed_legion():
+            return ([], {})
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if not callable(get_enemy_units):
+            return ([], {})
+        candidates: list[Any] = []
+        enemy_candidates_by_unit: dict[str, list[Any]] = {}
+        for root in self._cursed_legion_candidates(exclude_monster_vehicle=True):
+            enemy_candidates: list[Any] = []
+            for enemy in list(get_enemy_units(root) or []):
+                enemy_root = self._necrons_root(enemy)
+                if enemy_root is None or self._necrons_owned_by_player(enemy_root):
+                    continue
+                if not self._necrons_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                if not self._necrons_units_within_distance(root, enemy_root, range_inches=6.0):
+                    continue
+                can_charge = getattr(root, "can_declare_charge_against", None)
+                if not callable(can_charge) or not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+                    continue
+                enemy_candidates.append(enemy_root)
+            enemy_candidates.sort(key=lambda enemy_unit: str(get_entity_id(enemy_unit) or ""))
+            if not enemy_candidates:
+                continue
+            candidates.append(root)
+            enemy_candidates_by_unit[str(get_entity_id(root) or "")] = enemy_candidates
+        candidates.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return (candidates, enemy_candidates_by_unit)
+
+    def _cursed_legion_mortis_protocols_candidates(self, trigger_unit: Any) -> list[Any]:
+        trigger_root = self._necrons_root(trigger_unit)
+        if trigger_root is None:
+            return []
+        results: list[Any] = []
+        for root in self._cursed_legion_candidates(exclude_monster_vehicle=True, require_reanimation=True):
+            if not self._necrons_units_within_distance(trigger_root, root, range_inches=9.0):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _cursed_legion_mortis_protocols_turn_key(self) -> str:
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        active_player_id = str(getattr(active_player, "id", "") or "")
+        return f"{int(self._necrons_current_turn())}:{active_player_id}"
+
+    def _cursed_legion_mortis_protocols_used_turn_keys(self) -> set[str]:
+        used = getattr(self, "_cursed_legion_mortis_protocols_used_turn_keys_set", None)
+        if not isinstance(used, set):
+            used = set()
+            self._cursed_legion_mortis_protocols_used_turn_keys_set = used
+        return used
+
+    def _cursed_legion_mortis_protocols_used_this_turn(self) -> bool:
+        key = self._cursed_legion_mortis_protocols_turn_key()
+        return bool(key) and key in self._cursed_legion_mortis_protocols_used_turn_keys()
+
+    def _mark_cursed_legion_mortis_protocols_triggered(self) -> None:
+        key = self._cursed_legion_mortis_protocols_turn_key()
+        if key:
+            self._cursed_legion_mortis_protocols_used_turn_keys().add(key)
 
     def _queue_canoptek_court_countertemporal_shift_reactions(
         self,
@@ -2440,6 +2655,123 @@ class NecronsStratagemMixin:
             event_name="fight_attacks_resolved",
         )
 
+    def _queue_cursed_legion_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        if self.game is None or destroyed_unit is None or destroyed_by_unit is None or not self._is_cursed_legion():
+            return
+        phase_name_l = str(self._current_phase_name or "").strip().lower()
+        if phase_name_l not in {"shooting phase", "fight phase"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name_l == "shooting phase" and active_player is not self.player:
+            return
+        destroyed_root = self._necrons_root(destroyed_unit)
+        attacker_root = self._necrons_root(destroyed_by_unit)
+        if destroyed_root is None or attacker_root is None:
+            return
+        if self._necrons_owned_by_player(destroyed_root) or not self._necrons_owned_by_player(attacker_root):
+            return
+        if not self._cursed_legion_unit_is_eligible(
+            attacker_root,
+            require_destroyer_cult=True,
+            require_targetable=False,
+        ):
+            return
+        if self._cursed_legion_mortis_protocols_used_this_turn():
+            return
+        self._mark_cursed_legion_mortis_protocols_triggered()
+        stratagem = self.get_by_name("MORTIS PROTOCOLS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._cursed_legion_mortis_protocols_candidates(attacker_root)
+        if not candidates:
+            return
+        phase_label = "Shooting phase" if phase_name_l == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            destroyed_unit=destroyed_root,
+            destroyed_by_unit=attacker_root,
+            phase_name=phase_label,
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "unit_destroyed":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MORTIS PROTOCOLS":
+                continue
+            if reaction.get("destroyed_by_unit") is attacker_root and reaction.get("destroyed_unit") is destroyed_root:
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": destroyed_root,
+            "destroyed_by_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "enemy_unit": destroyed_root,
+            "trigger_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_cursed_legion_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if self.game is None or not self._is_cursed_legion():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "CHARGE_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("UNNATURAL AGGRESSION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates, enemy_candidates_by_unit = self._cursed_legion_unnatural_aggression_candidates()
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            phase_name="Charge phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "phase_end":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "UNNATURAL AGGRESSION":
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().upper() == "CHARGE PHASE":
+                return
+        payload = {
+            "event": "phase_end",
+            "phase_name": "Charge phase",
+            "phase": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "enemy_candidates_by_unit": enemy_candidates_by_unit,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            unit_enemy_candidates = list(enemy_candidates_by_unit.get(str(get_entity_id(candidates[0]) or "")) or [])
+            if len(unit_enemy_candidates) == 1:
+                payload["enemy_unit"] = unit_enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _use_cryptek_conclave_molecular_targeting(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -2852,6 +3184,309 @@ class NecronsStratagemMixin:
         logger.info(
             "INFO: ANIMUS CURSE: friendly NECRONS models can re-roll Hit rolls against %s for the rest of the battle.",
             getattr(enemy_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_cursed_legion_driven_to_butchery(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DRIVEN TO BUTCHERY: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cursed_legion():
+            return False
+        phase_name_l = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name_l not in {"shooting phase", "charge phase"}:
+            logger.error("ERROR: DRIVEN TO BUTCHERY: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: DRIVEN TO BUTCHERY: only usable in your turn")
+            return False
+        candidates = candidates or self._cursed_legion_candidates(require_destroyer_cult=True)
+        if not self._cursed_legion_unit_is_eligible(root, require_destroyer_cult=True):
+            logger.error("ERROR: DRIVEN TO BUTCHERY: target must be a friendly DESTROYER CULT unit")
+            return False
+        if candidates and not self._cursed_legion_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DRIVEN TO BUTCHERY: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name_l == "shooting phase" else "Charge phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: DRIVEN TO BUTCHERY: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["cursed_legion_driven_to_butchery_active"] = True
+        special_rules["cursed_legion_driven_to_butchery_turn"] = int(self._necrons_current_turn())
+        special_rules["cursed_legion_driven_to_butchery_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["cursed_legion_driven_to_butchery_source"] = (
+            str(getattr(stratagem, "name", "") or "DRIVEN TO BUTCHERY").strip() or "DRIVEN TO BUTCHERY"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DRIVEN TO BUTCHERY: %s can shoot and declare a charge this turn after Advancing.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_cursed_legion_methodical_murder(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: METHODICAL MURDER: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cursed_legion():
+            return False
+        phase_name_l = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name_l not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: METHODICAL MURDER: wrong phase")
+            return False
+        if phase_name_l == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: METHODICAL MURDER: only usable in your Shooting phase")
+            return False
+        candidates = candidates or self._cursed_legion_candidates(
+            exclude_monster_vehicle=True,
+            require_not_shot=phase_name_l == "shooting phase",
+            require_not_fought=phase_name_l == "fight phase",
+        )
+        if not self._cursed_legion_unit_is_eligible(
+            root,
+            exclude_monster_vehicle=True,
+            require_not_shot=phase_name_l == "shooting phase",
+            require_not_fought=phase_name_l == "fight phase",
+        ):
+            logger.error("ERROR: METHODICAL MURDER: target must be an eligible NECRONS non-MONSTER/non-VEHICLE unit that has not acted this phase")
+            return False
+        if candidates and not self._cursed_legion_unit_in_candidates(root, candidates):
+            logger.error("ERROR: METHODICAL MURDER: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name_l == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: METHODICAL MURDER: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["cursed_legion_methodical_murder_active"] = True
+        special_rules["cursed_legion_methodical_murder_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name_l == "shooting phase" else "FIGHT_PHASE"
+        )
+        special_rules["cursed_legion_methodical_murder_turn"] = int(self._necrons_current_turn())
+        special_rules["cursed_legion_methodical_murder_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["cursed_legion_methodical_murder_source"] = (
+            str(getattr(stratagem, "name", "") or "METHODICAL MURDER").strip() or "METHODICAL MURDER"
+        )
+        special_rules["cursed_legion_methodical_murder_attack_type"] = "ranged" if phase_name_l == "shooting phase" else "melee"
+        root.special_rules = special_rules
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: METHODICAL MURDER: %s gains [SUSTAINED HITS 1] on %s attacks until end of phase.",
+            getattr(root, "name", "Unit"),
+            "ranged" if phase_name_l == "shooting phase" else "melee",
+        )
+        return True
+
+    def _use_cursed_legion_mortis_protocols(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._cursed_legion_pending_context("MORTIS PROTOCOLS", unit=unit)
+        if isinstance(pending, dict) and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MORTIS PROTOCOLS: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cursed_legion():
+            return False
+        phase_name_l = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name_l not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MORTIS PROTOCOLS: wrong phase")
+            return False
+        if phase_name_l == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: MORTIS PROTOCOLS: only usable in your Shooting phase")
+            return False
+        if not self._cursed_legion_unit_is_eligible(root, exclude_monster_vehicle=True, require_reanimation=True):
+            logger.error("ERROR: MORTIS PROTOCOLS: target must be an eligible NECRONS non-MONSTER/non-VEHICLE unit with Reanimation Protocols")
+            return False
+        if candidates and not self._cursed_legion_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MORTIS PROTOCOLS: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name_l == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: MORTIS PROTOCOLS: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        roll = int(dice_module.get_roll("D3") or 0)
+        if roll > 0:
+            game_map = getattr(self.game, "map", None)
+            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            is_human = bool(getattr(self.player, "has_control", lambda: False)())
+            root.apply_reanimation_protocols(
+                roll,
+                game_map=game_map,
+                is_human=is_human,
+                provider=provider,
+                roll_expr="D3",
+            )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MORTIS PROTOCOLS: %s triggers Reanimation Protocols for %d wound(s).",
+            getattr(root, "name", "Unit"),
+            int(roll),
+        )
+        return True
+
+    def _use_cursed_legion_spreading_madness(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SPREADING MADNESS: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cursed_legion():
+            return False
+        phase_name_l = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name_l != "charge phase":
+            logger.error("ERROR: SPREADING MADNESS: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: SPREADING MADNESS: only usable in your Charge phase")
+            return False
+        candidates = candidates or self._cursed_legion_candidates(
+            exclude_monster_vehicle=True,
+            require_not_selected_to_charge=True,
+        )
+        if not self._cursed_legion_unit_is_eligible(
+            root,
+            exclude_monster_vehicle=True,
+            require_not_selected_to_charge=True,
+        ):
+            logger.error("ERROR: SPREADING MADNESS: target must be an eligible NECRONS non-MONSTER/non-VEHICLE unit that has not declared a charge this phase")
+            return False
+        if candidates and not self._cursed_legion_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SPREADING MADNESS: target unit is not a valid candidate")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: SPREADING MADNESS: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["cursed_legion_spreading_madness_active"] = True
+        special_rules["cursed_legion_spreading_madness_expires_phase"] = "CHARGE_PHASE"
+        special_rules["cursed_legion_spreading_madness_turn"] = int(self._necrons_current_turn())
+        special_rules["cursed_legion_spreading_madness_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["cursed_legion_spreading_madness_source"] = (
+            str(getattr(stratagem, "name", "") or "SPREADING MADNESS").strip() or "SPREADING MADNESS"
+        )
+        special_rules["cursed_legion_spreading_madness_charge_bonus"] = 2
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SPREADING MADNESS: %s gains +2 to charge rolls against enemies already in Engagement Range of friendly units.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_cursed_legion_unnatural_aggression(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_candidates_by_unit = dict(kwargs.get("enemy_candidates_by_unit") or {})
+        pending = self._cursed_legion_pending_context("UNNATURAL AGGRESSION", unit=unit)
+        if isinstance(pending, dict):
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not enemy_candidates_by_unit:
+                enemy_candidates_by_unit = dict(pending.get("enemy_candidates_by_unit") or {})
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNNATURAL AGGRESSION: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cursed_legion():
+            return False
+        phase_name_l = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if isinstance(pending, dict) else "")
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name_l != "charge phase":
+            logger.error("ERROR: UNNATURAL AGGRESSION: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: UNNATURAL AGGRESSION: only usable in your opponent's Charge phase")
+            return False
+        if not self._cursed_legion_unit_is_eligible(root, exclude_monster_vehicle=True):
+            logger.error("ERROR: UNNATURAL AGGRESSION: target must be an eligible NECRONS non-MONSTER/non-VEHICLE unit")
+            return False
+        if candidates and not self._cursed_legion_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNNATURAL AGGRESSION: target unit is not a valid candidate")
+            return False
+        unit_enemy_candidates = list(enemy_candidates_by_unit.get(str(get_entity_id(root) or "")) or [])
+        if enemy_unit is None and len(unit_enemy_candidates) == 1:
+            enemy_unit = unit_enemy_candidates[0]
+        enemy_root = self._necrons_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: UNNATURAL AGGRESSION: no eligible enemy target provided")
+            return False
+        if unit_enemy_candidates and all(
+            str(get_entity_id(self._necrons_root(candidate)) or "") != str(get_entity_id(enemy_root) or "")
+            for candidate in list(unit_enemy_candidates or [])
+        ):
+            logger.error("ERROR: UNNATURAL AGGRESSION: selected enemy unit is not a valid charge target")
+            return False
+        if not self._necrons_units_within_distance(root, enemy_root, range_inches=6.0):
+            logger.error("ERROR: UNNATURAL AGGRESSION: target enemy is not within 6\"")
+            return False
+        can_charge = getattr(root, "can_declare_charge_against", None)
+        if not callable(can_charge) or not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+            logger.error("ERROR: UNNATURAL AGGRESSION: target unit cannot declare a charge against the selected enemy")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            enemy_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: UNNATURAL AGGRESSION: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        ok = bool(self.game.attempt_charge(root, enemy_root, out_of_turn=True, count_as_charged=False))
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if not ok:
+            logger.error("ERROR: UNNATURAL AGGRESSION: charge failed")
+        logger.info(
+            "INFO: UNNATURAL AGGRESSION: %s declares an out-of-turn charge against %s.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "enemy unit"),
         )
         return True
 
@@ -3852,10 +4487,56 @@ class NecronsStratagemMixin:
                 if callable(invalidate):
                     invalidate()
 
+    def _cleanup_cursed_legion_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_cursed_legion():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"SHOOTING_PHASE", "FIGHT_PHASE", "CHARGE_PHASE"}:
+            return
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            root_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            invalidate_cache = False
+            if phase_name in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                expires_phase = str(special_rules.get("cursed_legion_methodical_murder_expires_phase", "") or "").strip().upper()
+                if bool(special_rules.get("cursed_legion_methodical_murder_active")) and (not expires_phase or expires_phase == phase_name):
+                    for key in list(special_rules.keys()):
+                        if key.startswith("cursed_legion_methodical_murder_"):
+                            special_rules.pop(key, None)
+                    invalidate_cache = True
+            if phase_name == "CHARGE_PHASE":
+                for key in list(special_rules.keys()):
+                    if key.startswith("cursed_legion_spreading_madness_") or key.startswith("cursed_legion_driven_to_butchery_"):
+                        special_rules.pop(key, None)
+            root.special_rules = special_rules
+            if invalidate_cache:
+                invalidate = getattr(root, "_invalidate_ability_cache", None)
+                if callable(invalidate):
+                    invalidate()
+
     def _use_necrons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DRIVEN TO BUTCHERY" and self._is_cursed_legion():
+            return self._use_cursed_legion_driven_to_butchery(stratagem, **kwargs)
+        if name_u == "METHODICAL MURDER" and self._is_cursed_legion():
+            return self._use_cursed_legion_methodical_murder(stratagem, **kwargs)
+        if name_u == "MORTIS PROTOCOLS" and self._is_cursed_legion():
+            return self._use_cursed_legion_mortis_protocols(stratagem, **kwargs)
+        if name_u == "SPREADING MADNESS" and self._is_cursed_legion():
+            return self._use_cursed_legion_spreading_madness(stratagem, **kwargs)
+        if name_u == "UNNATURAL AGGRESSION" and self._is_cursed_legion():
+            return self._use_cursed_legion_unnatural_aggression(stratagem, **kwargs)
         if name_u == "MOLECULAR TARGETING" and self._is_cryptek_conclave():
             return self._use_cryptek_conclave_molecular_targeting(stratagem, **kwargs)
         if name_u == "POTENTIALITY SYPHON" and self._is_cryptek_conclave():

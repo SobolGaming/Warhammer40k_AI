@@ -109,11 +109,17 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COUNTERTEMPORAL SHIFT",
     "CURSE OF THE CRYPTEK",
     "CYNOSURE OF ERADICATION",
+    "DRIVEN TO BUTCHERY",
+    "IMAGE OF DEATH",
+    "METHODICAL MURDER",
+    "MORTIS PROTOCOLS",
     "ANIMUS CURSE",
     "MICROSCARAB SWARM",
     "MOLECULAR TARGETING",
     "POTENTIALITY SYPHON",
+    "SPREADING MADNESS",
     "SYNERGISTIC EMPOWERMENT",
+    "UNNATURAL AGGRESSION",
     "UNTAPPED POWER",
     "REACTIVE SUBROUTINES",
     "SOLAR PULSE",
@@ -2052,6 +2058,7 @@ class StratagemManager(
             "INESCAPABLE JUSTICE",
             "BLOODY EXAMPLE",
             "EYE OF THE GODS",
+            "MORTIS PROTOCOLS",
             "SADISTIC DISPLAY",
             "ENDLESS IRE",
             "PROTOCOL OF THE VENGEFUL STARS",
@@ -2384,6 +2391,7 @@ class StratagemManager(
             "WEAVERS' COILS",
             "WEAVERS\u2019 COILS",
             "EXIT THE STAGE",
+            "UNNATURAL AGGRESSION",
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
             "PROFANE SYMBIOSIS",
@@ -4587,6 +4595,80 @@ class StratagemManager(
                 return result
             result["reason"] = (
                 "Requires opponent Shooting phase trigger after an enemy unit destroys a nearby friendly NECRONS unit and one of your NECRONS CHARACTER units can shoot it"
+            )
+            return result
+        if name_u == "DRIVEN TO BUTCHERY":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l not in {"shooting phase", "charge phase"}:
+                result["reason"] = "Requires your Shooting phase or Charge phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            if self._cursed_legion_candidates(require_destroyer_cult=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a friendly DESTROYER CULT unit on the battlefield"
+            return result
+        if name_u == "METHODICAL MURDER":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l not in {"shooting phase", "fight phase"}:
+                result["reason"] = "Requires your Shooting phase or the Fight phase"
+                return result
+            if phase_name_l == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                if active_player is not self.player:
+                    result["reason"] = "Only usable in your Shooting phase"
+                    return result
+            candidates = self._cursed_legion_candidates(
+                exclude_monster_vehicle=True,
+                require_not_shot=phase_name_l == "shooting phase",
+                require_not_fought=phase_name_l == "fight phase",
+            )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a friendly NECRONS non-MONSTER/non-VEHICLE unit that has not been selected this phase"
+            return result
+        if name_u == "MORTIS PROTOCOLS":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase or the Fight phase trigger after the first time this turn a friendly DESTROYER CULT unit destroys an enemy unit"
+            )
+            return result
+        if name_u == "SPREADING MADNESS":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "charge phase":
+                result["reason"] = "Requires your Charge phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Charge phase"
+                return result
+            if self._cursed_legion_candidates(exclude_monster_vehicle=True, require_not_selected_to_charge=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Charge phase and a friendly NECRONS non-MONSTER/non-VEHICLE unit that has not declared a charge this phase"
+            )
+            return result
+        if name_u == "UNNATURAL AGGRESSION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list((self._cursed_legion_unnatural_aggression_candidates() or ([], {}))[0] or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires end of your opponent's Charge phase and a friendly NECRONS non-MONSTER/non-VEHICLE unit within 6\" of an enemy unit it could charge"
             )
             return result
         if name_u == "ANIMUS CURSE":
@@ -9517,6 +9599,11 @@ class StratagemManager(
         try:
             self._resolve_awakened_dynasty_phase_end_effects(phase=phase)
             self._cleanup_awakened_dynasty_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_cursed_legion_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_cursed_legion_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -15384,6 +15471,13 @@ class StratagemManager(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
                 last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_cursed_legion_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
         except Exception:
             raise

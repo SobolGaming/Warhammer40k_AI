@@ -9296,6 +9296,82 @@ _AWAKENED_DYNASTY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CURSED_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010669003": StratagemToolDescriptor(
+        stratagem_id="000010669003",
+        name="Image of Death",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="friendly_destroyer_cult_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="defensive_hit_penalty",
+        cp_cost=1,
+        effect_params={"hit_roll_modifier": -1},
+    ),
+    "000010669005": StratagemToolDescriptor(
+        stratagem_id="000010669005",
+        name="Driven to Butchery",
+        timing="your_shooting_or_charge_phase",
+        target="friendly_destroyer_cult_unit",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance",
+        cp_cost=1,
+        effect_params={"advance_and_shoot": True, "advance_and_charge": True},
+    ),
+    "000010669002": StratagemToolDescriptor(
+        stratagem_id="000010669002",
+        name="Methodical Murder",
+        timing="your_shooting_or_fight_phase_on_select",
+        target="friendly_necrons_non_monster_non_vehicle_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="grant_sustained_hits_all_weapons",
+        cp_cost=1,
+        effect_params={"granted_keyword": "SUSTAINED HITS", "keyword_value": 1},
+    ),
+    "000010669004": StratagemToolDescriptor(
+        stratagem_id="000010669004",
+        name="Mortis Protocols",
+        timing="your_shooting_or_fight_phase_after_first_friendly_destroyer_cult_unit_destroys_enemy",
+        target="friendly_necrons_non_monster_non_vehicle_unit_within_9_with_reanimation_protocols",
+        duration="immediate",
+        effect="trigger_reanimation_protocols",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "reanimation_roll": "D3",
+            "requires_reanimation_protocols": True,
+            "trigger_condition": "first_friendly_destroyer_cult_unit_destroyed_enemy_this_turn",
+        },
+    ),
+    "000010669006": StratagemToolDescriptor(
+        stratagem_id="000010669006",
+        name="Spreading Madness",
+        timing="your_charge_phase",
+        target="friendly_necrons_non_monster_non_vehicle_unit_not_yet_selected_to_charge",
+        duration="until_end_of_phase",
+        effect="conditional_charge_roll_bonus_if_charge_target_engaged",
+        cp_cost=1,
+        effect_params={
+            "charge_roll_modifier": 2,
+            "condition": "charge_target_within_engagement_range_of_friendly_unit",
+        },
+    ),
+    "000010669007": StratagemToolDescriptor(
+        stratagem_id="000010669007",
+        name="Unnatural Aggression",
+        timing="end_of_opponent_charge_phase",
+        target="friendly_necrons_non_monster_non_vehicle_unit_within_6_of_enemy_it_can_charge",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={"count_as_charged": False},
+    ),
+}
+
+_CURSED_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CURSED_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CRYPTEK_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010665004": StratagemToolDescriptor(
         stratagem_id="000010665004",
@@ -9879,6 +9955,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CURSED_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CRYPTEK_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10014,6 +10093,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)
+        or _CURSED_LEGION_STRATAGEM_BY_NAME.get(key)
         or _CRYPTEK_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _CANOPTEK_COURT_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
