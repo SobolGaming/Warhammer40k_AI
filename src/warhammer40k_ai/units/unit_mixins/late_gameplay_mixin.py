@@ -3216,6 +3216,54 @@ class LateGameplayMixin:
         return self.reserve_status == 'strategic_reserves'
     
 
+    def _hyperphasing_round_one_arrival_allowed(
+        self,
+        current_turn: int,
+        *,
+        require_deep_strike: bool = True,
+        game: Optional['Game'] = None,
+    ) -> bool:
+        """Return True when Hyperphasing permits a round-one arrival this Movement phase."""
+        if int(current_turn or 0) != 1:
+            return False
+        if not self.is_in_strategic_reserves():
+            return False
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("hyperphasing_arrival_pending", False)):
+            return False
+        try:
+            arrival_turn = int(sr.get("hyperphasing_arrival_turn", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if arrival_turn != int(current_turn):
+            return False
+        if require_deep_strike and not bool(getattr(self, "has_deep_strike", lambda: False)()):
+            return False
+        if game is None:
+            army = self.get_parent_army()
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        owner_id = str(sr.get("hyperphasing_arrival_turn_owner", "") or "").strip()
+        if game is None:
+            return True
+        phase = getattr(game, "phase", None)
+        phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
+        if phase_name:
+            if not phase_name.endswith("MOVEMENT_PHASE"):
+                return False
+        else:
+            is_movement_phase = getattr(game, "is_movement_phase", None)
+            if callable(is_movement_phase) and not bool(is_movement_phase()):
+                return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if current_player is None:
+            return False
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        if owner_id and current_owner and owner_id != current_owner:
+            return False
+        return True
+    
+
     def can_arrive_from_reserves(self, current_turn: int) -> bool:
         """Check if the unit can arrive from reserves this turn.
         
@@ -3290,6 +3338,13 @@ class LateGameplayMixin:
             allow_turn1 = bool(self._strategic_reserves_round_bonus())
         except Exception:
             allow_turn1 = False
+        if not allow_turn1:
+            allow_turn1 = bool(
+                self._hyperphasing_round_one_arrival_allowed(
+                    int(current_turn or 0),
+                    require_deep_strike=True,
+                )
+            )
         if not allow_turn1:
             try:
                 sr = getattr(self, "special_rules", None)

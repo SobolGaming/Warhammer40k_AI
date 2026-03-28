@@ -519,6 +519,51 @@ def test_undying_legions_queues_after_enemy_shooting_and_uses_snapshotted_bonus(
     assert str(mocked_reanimation.call_args.kwargs.get("roll_expr", "") or "") == "D3"
 
 
+def test_undying_legions_does_not_queue_when_attached_bodyguard_models_are_all_destroyed():
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    bodyguard = _make_unit(
+        "Necron Warriors",
+        keywords=["INFANTRY", "BATTLELINE"],
+        faction_keywords=["NECRONS"],
+        abilities=_reanimation_ability(),
+        model_count=2,
+    )
+    leader = _make_unit(
+        "Overlord",
+        keywords=["CHARACTER", "INFANTRY"],
+        faction_keywords=["NECRONS"],
+    )
+    enemy = _make_unit(
+        "Enemy Shooters",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(bodyguard)
+    necron_army.add_unit(leader)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, bodyguard, 10.0, 10.0)
+    _set_unit_location(leader, 10.0, 10.0)
+    _attach_leader(bodyguard, leader)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player])
+
+    for model in list(bodyguard.models or []):
+        model.wounds = 0
+        model._wounds = 0
+
+    assert bodyguard.attached_unit_has_reanimation_protocols() is False
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish(
+        "unit_shooting_resolved",
+        attacker_unit=enemy,
+        killing_models_by_target={bodyguard: [object()]},
+    )
+
+    assert _pending_by_name(necron_player.stratagems, "PROTOCOL OF THE UNDYING LEGIONS") is None
+
+
 def test_vengeful_stars_queues_after_unit_destroyed_and_restricts_reactive_target():
     game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
     destroyed_unit = _make_unit(

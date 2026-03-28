@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -179,6 +180,23 @@ class TestNecronsHypercryptLegionDetachment(unittest.TestCase):
         self.assertFalse(eligible.is_in_strategic_reserves())
         game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=enemy_player)
         self.assertEqual(len(_hyperphasing_requests(game)), 0)
+
+    def test_hyperphasing_deep_strike_unit_can_arrive_round_one_when_owner_turn_begins(self):
+        game, necron_army, _enemy_army, necron_player, _enemy_player = _build_game()
+        reserve_unit = _make_unit("Hyperphased Immortals", keywords=["INFANTRY"], faction_keywords=["NECRONS"])
+        reserve_unit.deployed = True
+        reserve_unit.reserve_status = "strategic_reserves"
+        reserve_unit.special_rules["bearer_unit_deep_strike"] = True
+        reserve_unit.special_rules["hyperphasing_arrival_pending"] = True
+        reserve_unit.special_rules["hyperphasing_arrival_turn_owner"] = str(necron_player.id)
+        reserve_unit.special_rules["hyperphasing_arrival_turn"] = 1
+        necron_army.add_unit(reserve_unit)
+
+        game.turn = 1
+        game.current_player_index = 0
+        game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+
+        self.assertTrue(reserve_unit.can_arrive_from_reserves(1))
 
 
 if __name__ == "__main__":

@@ -772,6 +772,116 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         self.assertEqual(str(sr.get("eternity_gate_no_charge_turn_owner", "") or ""), player_one.id)
         self.assertEqual(int(sr.get("eternity_gate_no_charge_turn", 0) or 0), 2)
 
+    def test_eternity_gate_allows_hyperphased_reserve_unit_on_battle_round_one(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Eternity Gate",
+            "description": (
+                "In the Reinforcements step of your Movement phase, you can select one NECRONS INFANTRY unit from your "
+                "army either in Reserves or on the battlefield. If that unit is on the battlefield, remove that unit "
+                "from the battlefield and place it into Reserves. Set up that unit wholly within 6\" of this model and "
+                "not within Engagement Range of any enemy models. That unit cannot declare a charge this turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        monolith = _make_unit("Monolith", abilities=[ability], keywords=["NECRONS", "VEHICLE"])
+        infantry = _make_unit("Necron Warriors", keywords=["NECRONS", "INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Hypercrypt Legion")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+
+        army_one.add_unit(monolith)
+        army_one.add_unit(infantry)
+
+        monolith.deployed = True
+        monolith.reserve_status = "deployed"
+        infantry.deployed = True
+        infantry.reserve_status = "strategic_reserves"
+        infantry.special_rules["hyperphasing_arrival_pending"] = True
+        infantry.special_rules["hyperphasing_arrival_turn_owner"] = str(player_one.id)
+        infantry.special_rules["hyperphasing_arrival_turn"] = 1
+
+        monolith.models[0].set_location(20.0, 20.0, 0.0, 0.0)
+        game.map.units = [monolith]
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+        game.rebuild_entity_registry()
+
+        game.process_player_reserves_arrivals(player_one)
+
+        choose_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "eternity_gate_target":
+                continue
+            choose_req = req
+            break
+        self.assertIsNotNone(choose_req)
+
+        infantry_id = str(get_entity_id(infantry) or "")
+        option_id = None
+        for option in list(choose_req.options or []):
+            if str((option.payload or {}).get("target_unit_id", "") or "") == infantry_id:
+                option_id = option.option_id
+                break
+        self.assertIsNotNone(option_id)
+
+        selected = resolve_decision_command(
+            game,
+            choose_req,
+            option_id,
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(selected, "ok", False)))
+
+        move_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_MOVE_UNIT:
+                continue
+            ctx = dict(req.context or {})
+            if str(ctx.get("placement_kind", "") or "") != "reserves_arrival":
+                continue
+            if str(ctx.get("unit_id", "") or "") != infantry_id:
+                continue
+            if str(ctx.get("reserves_arrival_source_ability", "") or "") != "eternity_gate":
+                continue
+            move_req = req
+            break
+        self.assertIsNotNone(move_req)
+        self.assertTrue(bool((move_req.context or {}).get("reserves_arrival_ignore_turn_requirement", False)))
+
+        confirm_option = list(move_req.options or [None])[0]
+        self.assertIsNotNone(confirm_option)
+        model_id = str(get_entity_id(infantry.models[0]) or "")
+        legal = resolve_decision_command(
+            game,
+            move_req,
+            confirm_option.option_id,
+            result_payload={
+                "model_positions": [
+                    {"model_id": model_id, "position": [24.0, 20.0, 0.0], "facing": 0.0},
+                ]
+            },
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(legal, "ok", False)))
+        self.assertEqual(str(getattr(infantry, "reserve_status", "") or ""), "deployed")
+
     def test_infectious_murder_madness_aura_grants_conditional_sustained_hits(self):
         from types import SimpleNamespace
 

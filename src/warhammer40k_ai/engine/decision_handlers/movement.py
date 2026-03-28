@@ -2134,6 +2134,9 @@ def _evaluate_reserves_arrival_positions(
     strategic_ok = False
     strategic_used_edge_touch = False
     selected_edge: str | None = None
+    ignore_battlefield_edge_requirement = bool(
+        context.get("reserves_arrival_ignore_battlefield_edge_requirement", False)
+    )
 
     if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
         for edge in ("own", "left", "right", "enemy"):
@@ -2212,7 +2215,12 @@ def _evaluate_reserves_arrival_positions(
                 or bool(sr.get("dread_talons_screaming_descent_temp_deep_strike", False))
             ):
                 deep_strike_ok = True
-        if not strategic_ok and not deep_strike_ok and tunnel_marker is None:
+        if (
+            not strategic_ok
+            and not deep_strike_ok
+            and tunnel_marker is None
+            and not ignore_battlefield_edge_requirement
+        ):
             has_tunnel_rule = bool(tyr_mgr is not None and getattr(tyr_mgr, "is_subterranean_assault", lambda: False)())
             if has_tunnel_rule:
                 return {"errors": ["Reserves arrival must be within 6\" of a battlefield edge or wholly within 9\" of a Tunnel Marker."]}
@@ -2785,6 +2793,15 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             raise RuntimeError("Wraithlike Retreat transport cannot embark units.")
         if not bool(add_passenger(unit, game_map=game_map)):
             raise RuntimeError("Wraithlike Retreat failed: transport could not embark unit at move end.")
+    move_end_action = ""
+    if movement_type in ("move", "advance", "fall_back", "charge"):
+        move_end_action = str(movement_type)
+    elif movement_type == "reactive" and reactive_movement_type in ("move", "advance", "fall_back"):
+        move_end_action = str(reactive_movement_type)
+    if move_end_action:
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish("unit_move_ended", unit=unit, action=move_end_action)
     return None
 
 

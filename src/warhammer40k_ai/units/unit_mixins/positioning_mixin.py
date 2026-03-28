@@ -7846,8 +7846,20 @@ class PositioningMixin:
         root.special_rules = sr
 
     def attached_unit_has_reanimation_protocols(self) -> bool:
-        """Attached unit eligibility: true if any attached member has Reanimation Protocols."""
-        for u in self.get_attached_unit_members():
+        """Attached-unit RP rules require a surviving bodyguard model while a Leader remains attached."""
+        root = self.get_attached_unit_root()
+        attached_leaders = list(getattr(root, "attached_leaders", []) or []) if root is not None else []
+        if attached_leaders:
+            bodyguard_models = list(getattr(root, "models", []) or []) if root is not None else []
+            bodyguard_alive = False
+            for model in list(bodyguard_models or []):
+                alive_attr = getattr(model, "is_alive", False)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    bodyguard_alive = True
+                    break
+            if not bodyguard_alive:
+                return False
+        for u in root.get_attached_unit_members():
             try:
                 if u.has_reanimation_protocols():
                     return True

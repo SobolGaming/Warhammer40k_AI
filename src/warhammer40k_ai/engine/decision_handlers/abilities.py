@@ -4568,11 +4568,21 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not allow_in_reserves:
                 return ("Eternity Gate cannot target units in reserves.",)
             can_arrive = getattr(target_root, "can_arrive_from_reserves", None)
+            hyperphasing_turn_one_allowed = False
+            hyperphasing_round_one_fn = getattr(target_root, "_hyperphasing_round_one_arrival_allowed", None)
             try:
                 current_turn = int(getattr(game, "turn", 0) or 0)
             except (TypeError, ValueError):
                 current_turn = 0
-            if callable(can_arrive) and not bool(can_arrive(int(current_turn))):
+            if callable(hyperphasing_round_one_fn):
+                hyperphasing_turn_one_allowed = bool(
+                    hyperphasing_round_one_fn(
+                        int(current_turn),
+                        require_deep_strike=False,
+                        game=game,
+                    )
+                )
+            if callable(can_arrive) and not bool(can_arrive(int(current_turn))) and not hyperphasing_turn_one_allowed:
                 return ("Eternity Gate target cannot arrive from reserves this turn.",)
         elif on_battlefield:
             if not allow_on_battlefield:
@@ -12194,6 +12204,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             turn_value = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
         except (TypeError, ValueError):
             turn_value = int(getattr(game, "turn", 0) or 0)
+        hyperphasing_turn_one_allowed = False
+        hyperphasing_round_one_fn = getattr(target_root, "_hyperphasing_round_one_arrival_allowed", None)
+        if target_in_reserves and callable(hyperphasing_round_one_fn):
+            hyperphasing_turn_one_allowed = bool(
+                hyperphasing_round_one_fn(
+                    int(turn_value),
+                    require_deep_strike=False,
+                    game=game,
+                )
+            )
         owner_id = str(ctx.get("turn_owner_id", "") or getattr(player, "id", "") or "")
         move_context = {
             "unit_id": target_id,
@@ -12207,9 +12227,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "reserves_arrival_anchor_range": float(range_inches),
             "reserves_arrival_anchor_wholly_within": True,
             "reserves_arrival_anchor_source": ability_name,
+            "reserves_arrival_ignore_battlefield_edge_requirement": True,
             "reserves_arrival_require_not_engagement": True,
             "reserves_arrival_min_enemy_distance_override": 0.0,
-            "reserves_arrival_ignore_turn_requirement": bool(target_on_battlefield),
+            "reserves_arrival_ignore_turn_requirement": bool(target_on_battlefield or hyperphasing_turn_one_allowed),
             "reserves_arrival_source_ability": "eternity_gate",
             "reserves_arrival_source_name": ability_name,
         }

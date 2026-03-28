@@ -328,6 +328,91 @@ def test_reactive_subroutines_queues_reactive_move():
     assert int(captured["range_value"]) == 9
 
 
+def test_reactive_subroutines_move_triggers_wraith_form_queue_via_decision_move_unit():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+    from warhammer40k_ai.engine.decision_handlers.movement import _apply_move_unit
+    from warhammer40k_ai.engine.decisions import DecisionResult
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+    wraith_form = {
+        "name": "Wraith Form",
+        "description": (
+            "Each time this unit ends a Normal move, you can select one enemy unit it moved over during that move and "
+            "roll one D6 for each model in this unit: for each 4+, that enemy unit suffers 1 mortal wound."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
+    canoptek = _make_unit(
+        "Canoptek Wraiths",
+        keywords=["CANOPTEK", "INFANTRY", "FLY"],
+        faction_keywords=["NECRONS"],
+        abilities=[*_reanimation_ability(), wraith_form],
+    )
+    enemy = _make_unit(
+        "Enemy Infantry",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    necron_army.add_unit(canoptek)
+    enemy_army.add_unit(enemy)
+    _deploy_unit(game, canoptek, 10.0, 10.0)
+    _deploy_unit(game, enemy, 13.0, 10.0)
+    _finalize_game(game, necron_army, enemy_army, players=[necron_player, enemy_player])
+
+    _set_phase(game, enemy_player, "MOVEMENT_PHASE", 1)
+    game.event_system.publish("unit_move_ended", unit=enemy, action="normal_move")
+    assert _pending_by_name(necron_player.stratagems, "REACTIVE SUBROUTINES") is not None
+
+    ok = necron_player.stratagems.use(
+        "REACTIVE SUBROUTINES",
+        unit=canoptek,
+        enemy_unit=enemy,
+        action="normal_move",
+        phase_name="Movement phase",
+        dequeue=True,
+    )
+    assert ok is True
+
+    move_req = None
+    for req in list(game.decision_queue.list() or []):
+        if str(getattr(req, "decision_type", "") or "") != DECISION_MOVE_UNIT:
+            continue
+        move_req = req
+        break
+    assert move_req is not None
+
+    confirm_option = next(
+        opt for opt in list(move_req.options or []) if str((opt.payload or {}).get("action", "")) == "confirm"
+    )
+    model_id = str(get_entity_id(canoptek.models[0]) or "")
+    canoptek.models[0].last_move_path = [(10.0, 10.0, 0.0), (17.0, 10.0, 0.0)]
+    _apply_move_unit(
+        game,
+        move_req,
+        DecisionResult(
+            decision_id=str(move_req.decision_id),
+            player_id=necron_player.id,
+            option_id=str(confirm_option.option_id),
+            payload={
+                "model_positions": [
+                    {"model_id": model_id, "position": [17.0, 10.0, 0.0], "facing": 0.0},
+                ]
+            },
+        ),
+    )
+
+    quarry_requests = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+        and str((getattr(req, "context", {}) or {}).get("mortal_wounds_kind", "") or "") == "move_over"
+    ]
+    assert len(quarry_requests) == 1
+
+
 def test_suboptimal_facade_queues_and_triggers_reanimation(monkeypatch):
     game, necron_player, enemy_player, necron_army, enemy_army = _build_game()
     canoptek = _make_unit(

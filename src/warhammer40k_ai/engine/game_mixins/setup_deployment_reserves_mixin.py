@@ -2618,7 +2618,17 @@ class GameSetupDeploymentReservesMixin:
                     if not allow_target_in_reserves:
                         continue
                     can_arrive = getattr(target_root, "can_arrive_from_reserves", None)
-                    if callable(can_arrive) and not bool(can_arrive(current_turn)):
+                    hyperphasing_turn_one_allowed = False
+                    hyperphasing_round_one_fn = getattr(target_root, "_hyperphasing_round_one_arrival_allowed", None)
+                    if callable(hyperphasing_round_one_fn):
+                        hyperphasing_turn_one_allowed = bool(
+                            hyperphasing_round_one_fn(
+                                int(current_turn),
+                                require_deep_strike=False,
+                                game=self,
+                            )
+                        )
+                    if callable(can_arrive) and not bool(can_arrive(current_turn)) and not hyperphasing_turn_one_allowed:
                         continue
                 elif target_on_battlefield:
                     if not allow_target_on_battlefield:
