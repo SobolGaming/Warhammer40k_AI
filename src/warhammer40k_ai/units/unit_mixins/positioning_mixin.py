@@ -8948,7 +8948,10 @@ class PositioningMixin:
                 owner = str(sr.get("eternity_gate_no_charge_turn_owner") or "")
                 turn = int(sr.get("eternity_gate_no_charge_turn", 0) or 0)
                 if owner and game is not None:
-                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                    override_owner = str(sr.get("hypercrypt_dimensional_corridor_turn_owner", "") or "")
+                    override_turn = int(sr.get("hypercrypt_dimensional_corridor_turn", 0) or 0)
+                    has_override = bool(sr.get("hypercrypt_dimensional_corridor_active")) and override_owner == owner and override_turn == turn
+                    if not has_override and game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
         except Exception:
             pass

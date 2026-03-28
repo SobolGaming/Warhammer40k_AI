@@ -190,7 +190,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         if str(getattr(request, "decision_type", "") or "") != DECISION_MOVE_UNIT:
             return False
         context = dict(getattr(request, "context", {}) or {})
-        if str(context.get("placement_kind", "") or "") != "reserves_arrival":
+        if str(context.get("placement_kind", "") or "") not in {"reserves_arrival", "hyperphasic_recall"}:
             return False
 
         options = list(getattr(request, "options", []) or [])

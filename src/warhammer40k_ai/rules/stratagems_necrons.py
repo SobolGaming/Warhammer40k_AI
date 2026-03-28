@@ -4527,6 +4527,16 @@ class NecronsStratagemMixin:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DIMENSIONAL CORRIDOR" and self._is_hypercrypt_legion():
+            return self._use_hypercrypt_dimensional_corridor(stratagem, **kwargs)
+        if name_u == "ENTROPIC DAMPING" and self._is_hypercrypt_legion():
+            return self._use_hypercrypt_entropic_damping(stratagem, **kwargs)
+        if name_u == "HYPERPHASIC RECALL" and self._is_hypercrypt_legion():
+            return self._use_hypercrypt_hyperphasic_recall(stratagem, **kwargs)
+        if name_u == "QUANTUM DEFLECTION" and self._is_hypercrypt_legion():
+            return self._use_hypercrypt_quantum_deflection(stratagem, **kwargs)
+        if name_u == "REANIMATION CRYPTS" and self._is_hypercrypt_legion():
+            return self._use_hypercrypt_reanimation_crypts(stratagem, **kwargs)
         if name_u == "DRIVEN TO BUTCHERY" and self._is_cursed_legion():
             return self._use_cursed_legion_driven_to_butchery(stratagem, **kwargs)
         if name_u == "METHODICAL MURDER" and self._is_cursed_legion():
@@ -4724,3 +4734,888 @@ class NecronsStratagemMixin:
             candidates.append(root)
         candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
         return candidates
+
+    def _hypercrypt_pending_context(self, stratagem_name: str, *, unit: Any = None) -> Optional[dict[str, Any]]:
+        target_name = str(stratagem_name or "").strip().upper()
+        target_unit_id = str(get_entity_id(self._necrons_root(unit)) or "") if unit is not None else ""
+        for reaction in reversed(list(self._pending_reactions or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if not target_unit_id:
+                return reaction
+            possible_units = [
+                reaction.get("unit"),
+                reaction.get("target_unit"),
+                reaction.get("monolith_unit"),
+                reaction.get("source_unit"),
+            ]
+            possible_units.extend(list(reaction.get("candidates") or []))
+            possible_units.extend(list(reaction.get("monolith_candidates") or []))
+            for candidate in list(possible_units or []):
+                candidate_root = self._necrons_root(candidate)
+                if candidate_root is None:
+                    continue
+                if str(get_entity_id(candidate_root) or "") == target_unit_id:
+                    return reaction
+        return None
+
+    def _hypercrypt_started_battlefield_monolith(self, unit: Any) -> bool:
+        if not self._is_hypercrypt_legion():
+            return False
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(mgr.unit_is_necrons(root)):
+            return False
+        if not self._necrons_on_battlefield(root):
+            return False
+        if not self._necrons_unit_contains_keyword(root, "MONOLITH"):
+            return False
+        current_turn = int(self._necrons_current_turn())
+        try:
+            deployed_turn = int(getattr(root, "reserve_turn_deployed", 0) or 0)
+        except (TypeError, ValueError):
+            deployed_turn = 0
+        return not bool(current_turn and deployed_turn and deployed_turn == current_turn)
+
+    def _hypercrypt_dimensional_corridor_candidates(self) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        owner_id = str(getattr(self.player, "id", "") or "")
+        current_turn = int(self._necrons_current_turn())
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        resolve_unit = getattr(getattr(self, "game", None), "_resolve_unit_by_id", None)
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._necrons_on_battlefield(root):
+                continue
+            if not bool(mgr.unit_is_necrons(root)):
+                continue
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if str(special_rules.get("eternity_gate_no_charge_turn_owner", "") or "") != owner_id:
+                continue
+            try:
+                no_charge_turn = int(special_rules.get("eternity_gate_no_charge_turn", 0) or 0)
+            except (TypeError, ValueError):
+                no_charge_turn = 0
+            if current_turn and no_charge_turn != current_turn:
+                continue
+            anchor_id = str(special_rules.get("eternity_gate_anchor_unit_id", "") or "").strip()
+            if anchor_id and callable(resolve_unit):
+                anchor_unit = resolve_unit(anchor_id)
+                if not self._hypercrypt_started_battlefield_monolith(anchor_unit):
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return candidates
+
+    def _hypercrypt_reanimation_crypts_warlord(self) -> Any:
+        if not self._is_hypercrypt_legion():
+            return None
+        army = self.player.get_army()
+        warlord = getattr(army, "warlord", None) if army is not None else None
+        if warlord is None:
+            for unit in list(getattr(army, "units", []) or []):
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        if warlord is None:
+            return None
+        if self._unit_cannot_be_target_of_stratagem(warlord):
+            return None
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(mgr.unit_is_necrons(warlord)):
+            return None
+        return warlord
+
+    def _hypercrypt_reanimation_crypts_reserve_candidates(self) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not bool(mgr.unit_is_necrons(root)):
+                continue
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            if not callable(is_in_reserves) or not bool(is_in_reserves()):
+                continue
+            has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+            if not callable(has_rp) or not bool(has_rp()):
+                continue
+            results.append(root)
+        results.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return results
+
+    def _hypercrypt_entropic_damping_candidates(self, *, attacking_unit: Any, target_units: list[Any]) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._necrons_on_battlefield(root):
+                continue
+            if not bool(mgr.unit_is_necrons(root)) or not bool(mgr.unit_is_titanic(root)):
+                continue
+            if not self._necrons_units_within_distance(attacker_root, root, range_inches=18.0):
+                continue
+            results.append(root)
+        results.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return results
+
+    def _hypercrypt_quantum_deflection_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._necrons_on_battlefield(root):
+                continue
+            if not bool(mgr.unit_is_necrons(root)) or not self._necrons_unit_contains_keyword(root, "VEHICLE"):
+                continue
+            results.append(root)
+        results.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return results
+
+    def _hypercrypt_monolith_candidates(self) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._necrons_on_battlefield(root):
+                continue
+            if not self._necrons_unit_contains_keyword(root, "MONOLITH"):
+                continue
+            results.append(root)
+        results.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return results
+
+    def _hypercrypt_hyperphasic_recall_candidates(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> list[Any]:
+        if not self._is_hypercrypt_legion():
+            return []
+        attacker_root = self._necrons_root(attacker_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit, destroyed_models in dict(killing_models_by_target or {}).items():
+            if not list(destroyed_models or []):
+                continue
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._necrons_on_battlefield(root):
+                continue
+            if not bool(mgr.unit_is_necrons(root)):
+                continue
+            if not self._necrons_unit_contains_keyword(root, "INFANTRY"):
+                continue
+            results.append(root)
+        results.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        return results
+
+    def _queue_hypercrypt_entropic_damping_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_hypercrypt_legion():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("ENTROPIC DAMPING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._hypercrypt_entropic_damping_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Shooting phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "ENTROPIC DAMPING":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_hypercrypt_quantum_deflection_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_hypercrypt_legion():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("QUANTUM DEFLECTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._hypercrypt_quantum_deflection_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Shooting phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "QUANTUM DEFLECTION":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_hypercrypt_quantum_deflection_fight_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_hypercrypt_legion():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("QUANTUM DEFLECTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._hypercrypt_quantum_deflection_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Fight phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "QUANTUM DEFLECTION":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_hypercrypt_shooting_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        if attacker_unit is None or self.game is None or not self._is_hypercrypt_legion():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        if getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            return
+        attacker_root = self._necrons_root(attacker_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("HYPERPHASIC RECALL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._hypercrypt_hyperphasic_recall_candidates(
+            attacker_unit=attacker_root,
+            killing_models_by_target=killing_models_by_target,
+        )
+        monolith_candidates = self._hypercrypt_monolith_candidates()
+        if not candidates or not monolith_candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "HYPERPHASIC RECALL":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": list(candidates),
+            "monolith_candidates": list(monolith_candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        if len(monolith_candidates) == 1:
+            payload["monolith_unit"] = monolith_candidates[0]
+            payload["source_unit"] = monolith_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_hypercrypt_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        if unit is None or self.game is None or not self._is_hypercrypt_legion():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("HYPERPHASIC RECALL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._hypercrypt_hyperphasic_recall_candidates(
+            attacker_unit=attacker_root,
+            killing_models_by_target=killing_models_by_target,
+        )
+        monolith_candidates = self._hypercrypt_monolith_candidates()
+        if not candidates or not monolith_candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_unit=target_unit,
+            phase_name="Fight phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "fight_attacks_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "HYPERPHASIC RECALL":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "fight_attacks_resolved",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_unit": self._necrons_root(target_unit),
+            "candidates": list(candidates),
+            "monolith_candidates": list(monolith_candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+        if len(monolith_candidates) == 1:
+            payload["monolith_unit"] = monolith_candidates[0]
+            payload["source_unit"] = monolith_candidates[0]
+        self._queue_reaction(payload)
+
+    def _use_hypercrypt_dimensional_corridor(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DIMENSIONAL CORRIDOR: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_hypercrypt_legion():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "charge phase":
+            logger.error("ERROR: DIMENSIONAL CORRIDOR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DIMENSIONAL CORRIDOR: not your turn")
+            return False
+        candidates = candidates or self._hypercrypt_dimensional_corridor_candidates()
+        if root not in list(candidates or []):
+            logger.error("ERROR: DIMENSIONAL CORRIDOR: target was not set up this turn via Eternity Gate")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: DIMENSIONAL CORRIDOR: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["hypercrypt_dimensional_corridor_active"] = True
+        special_rules["hypercrypt_dimensional_corridor_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["hypercrypt_dimensional_corridor_turn"] = int(self._necrons_current_turn())
+        special_rules["hypercrypt_dimensional_corridor_source"] = (
+            str(getattr(stratagem, "name", "") or "DIMENSIONAL CORRIDOR").strip() or "DIMENSIONAL CORRIDOR"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DIMENSIONAL CORRIDOR: %s can declare a charge after using Eternity Gate this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hypercrypt_reanimation_crypts(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        if unit is None:
+            unit = self._hypercrypt_reanimation_crypts_warlord()
+        if unit is None:
+            logger.error("ERROR: REANIMATION CRYPTS: no warlord target available")
+            return False
+        warlord = unit
+        reserve_units = self._hypercrypt_reanimation_crypts_reserve_candidates()
+        if not reserve_units:
+            logger.error("ERROR: REANIMATION CRYPTS: no eligible NECRONS units in reserves")
+            return False
+        if warlord is not self._hypercrypt_reanimation_crypts_warlord():
+            logger.error("ERROR: REANIMATION CRYPTS: target must be your NECRONS WARLORD")
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "command phase":
+            logger.error("ERROR: REANIMATION CRYPTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: REANIMATION CRYPTS: not your turn")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=warlord, target_unit=warlord, phase_name="Command phase"):
+            logger.error("ERROR: REANIMATION CRYPTS: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=warlord):
+            return False
+        game_map = getattr(self.game, "map", None)
+        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        is_human = bool(getattr(self.player, "has_control", lambda: False)())
+        triggered = 0
+        for reserve_unit in list(reserve_units or []):
+            roll = int(dice_module.get_roll("D3") or 0)
+            if roll <= 0:
+                continue
+            reserve_unit.apply_reanimation_protocols(
+                roll,
+                game_map=game_map,
+                is_human=is_human,
+                provider=provider,
+                roll_expr="D3",
+            )
+            triggered += 1
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REANIMATION CRYPTS: triggered Reanimation Protocols for %d reserve unit(s).",
+            int(triggered),
+        )
+        return True
+
+    def _use_hypercrypt_entropic_damping(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._hypercrypt_pending_context("ENTROPIC DAMPING", unit=unit)
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENTROPIC DAMPING: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        attacker_root = self._necrons_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_hypercrypt_legion():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "shooting phase":
+            logger.error("ERROR: ENTROPIC DAMPING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ENTROPIC DAMPING: only usable in your opponent's Shooting phase")
+            return False
+        candidates = candidates or self._hypercrypt_entropic_damping_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        )
+        if root not in list(candidates or []):
+            logger.error("ERROR: ENTROPIC DAMPING: target must be a friendly TITANIC model targeted by that attacker within 18\"")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            target_unit=root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: ENTROPIC DAMPING: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        owner_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        owner_player = getattr(owner_army, "player", None)
+        owner_id = str(getattr(owner_player, "id", "") or getattr(active_player, "id", "") or "")
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["shooting_phase_ranged_hazardous_active"] = True
+        special_rules["shooting_phase_ranged_hazardous_owner"] = owner_id
+        special_rules["shooting_phase_ranged_hazardous_turn"] = int(self._necrons_current_turn())
+        special_rules["shooting_phase_ranged_hazardous_source"] = (
+            str(getattr(stratagem, "name", "") or "ENTROPIC DAMPING").strip() or "ENTROPIC DAMPING"
+        )
+        special_rules["shooting_phase_ranged_hazardous_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ENTROPIC DAMPING: attacks from %s against %s are Hazardous this phase.",
+            getattr(attacker_root, "name", "Attacker"),
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hypercrypt_quantum_deflection(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._hypercrypt_pending_context("QUANTUM DEFLECTION", unit=unit)
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: QUANTUM DEFLECTION: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        attacker_root = self._necrons_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_hypercrypt_legion():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: QUANTUM DEFLECTION: wrong phase")
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: QUANTUM DEFLECTION: not opponent's Shooting phase")
+            return False
+        candidates = candidates or self._hypercrypt_quantum_deflection_candidates(target_units=list(target_units or []))
+        if root not in list(candidates or []):
+            logger.error("ERROR: QUANTUM DEFLECTION: target must be a friendly NECRONS VEHICLE unit selected by that attacker")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            attacking_unit=attacker_root,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: QUANTUM DEFLECTION: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        current_phase = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        source_name = str(getattr(stratagem, "name", "") or "QUANTUM DEFLECTION").strip() or "QUANTUM DEFLECTION"
+        for model in self._necrons_iter_unit_models(root):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            setter = getattr(model, "set_temporary_invulnerable_save", None)
+            if callable(setter):
+                setter(
+                    key=f"hypercrypt_quantum_deflection:{get_entity_id(root)}:{get_entity_id(model)}",
+                    value=4,
+                    source=source_name,
+                    expires_phase=current_phase,
+                )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: QUANTUM DEFLECTION: %s gains a 4+ invulnerable save until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hypercrypt_hyperphasic_recall(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        monolith_unit = kwargs.get("monolith_unit") or kwargs.get("source_unit") or kwargs.get("anchor_unit")
+        pending = self._hypercrypt_pending_context("HYPERPHASIC RECALL", unit=unit or monolith_unit)
+        candidates = list(kwargs.get("candidates") or [])
+        monolith_candidates = list(kwargs.get("monolith_candidates") or [])
+        if isinstance(pending, dict):
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not monolith_candidates:
+                monolith_candidates = list(pending.get("monolith_candidates") or [])
+            if unit is None:
+                unit = pending.get("unit") or pending.get("target_unit")
+            if monolith_unit is None:
+                monolith_unit = pending.get("monolith_unit") or pending.get("source_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if monolith_unit is None and len(monolith_candidates) == 1:
+            monolith_unit = monolith_candidates[0]
+        if unit is None or monolith_unit is None:
+            logger.error("ERROR: HYPERPHASIC RECALL: target unit and Monolith must both be selected")
+            return False
+        root = self._necrons_root(unit)
+        monolith_root = self._necrons_root(monolith_unit)
+        if root is None or monolith_root is None or not self._is_hypercrypt_legion():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: HYPERPHASIC RECALL: wrong phase")
+            return False
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: HYPERPHASIC RECALL: target must be a friendly NECRONS INFANTRY unit that lost models to the attacker")
+            return False
+        if monolith_candidates and monolith_root not in list(monolith_candidates or []):
+            logger.error("ERROR: HYPERPHASIC RECALL: selected Monolith is not a valid anchor")
+            return False
+        if not self._necrons_unit_contains_keyword(monolith_root, "MONOLITH") or not self._necrons_on_battlefield(monolith_root):
+            logger.error("ERROR: HYPERPHASIC RECALL: second target must be a friendly MONOLITH on the battlefield")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            source_unit=monolith_root,
+            phase_name="Fight phase" if phase_name == "fight phase" else "Shooting phase",
+        ):
+            logger.error("ERROR: HYPERPHASIC RECALL: cannot be used in current state")
+            return False
+        game = getattr(self, "game", None)
+        request_decision = getattr(game, "request_decision", None)
+        if not callable(request_decision):
+            logger.error("ERROR: HYPERPHASIC RECALL: move decision queue unavailable")
+            return False
+        from ..engine.decision_kinds import DECISION_MOVE_UNIT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        unit_id = str(get_entity_id(root) or "")
+        monolith_id = str(get_entity_id(monolith_root) or "")
+        if not unit_id or not monolith_id:
+            logger.error("ERROR: HYPERPHASIC RECALL: unit ids are required for placement")
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("placement_kind", "") or "") != "hyperphasic_recall":
+                    continue
+                if str(req_ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                logger.error("ERROR: HYPERPHASIC RECALL: placement decision already queued for target unit")
+                return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        allowed_model_ids = [
+            str(get_entity_id(model) or "")
+            for model in list(getattr(root, "models", []) or [])
+            if model is not None and str(get_entity_id(model) or "")
+        ]
+        if not allowed_model_ids:
+            logger.error("ERROR: HYPERPHASIC RECALL: target unit has no models to place")
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is not None and isinstance(getattr(game_map, "units", None), list) and root in list(game_map.units or []):
+            game_map.units.remove(root)
+        root.deployed = False
+        root.embarked_in = None
+        for model in list(getattr(root, "models", []) or []):
+            model._pending_placement = True
+            model._pending_placement_source = str(getattr(stratagem, "name", "") or "HYPERPHASIC RECALL")
+        request = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"{getattr(stratagem, 'name', 'HYPERPHASIC RECALL')}: set up {getattr(root, 'name', 'Unit')} wholly within 6\" of {getattr(monolith_root, 'name', 'Monolith')}",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    "Confirm",
+                    payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+                )
+            ],
+            context={
+                "unit_id": unit_id,
+                "movement_type": "deploy",
+                "placement_kind": "hyperphasic_recall",
+                "allowed_model_ids": allowed_model_ids,
+                "allow_skip": False,
+                "ability_name": str(getattr(stratagem, "name", "HYPERPHASIC RECALL") or "HYPERPHASIC RECALL"),
+                "reserves_arrival_anchor_unit_id": monolith_id,
+                "reserves_arrival_anchor_range": 6.0,
+                "reserves_arrival_anchor_wholly_within": True,
+                "reserves_arrival_anchor_source": str(getattr(stratagem, "name", "HYPERPHASIC RECALL") or "HYPERPHASIC RECALL"),
+                "reserves_arrival_require_not_engagement": True,
+                "reserves_arrival_min_enemy_distance_override": 0.0,
+            },
+        )
+        request_decision(request)
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HYPERPHASIC RECALL: %s must be set up again wholly within 6\" of %s.",
+            getattr(root, "name", "Unit"),
+            getattr(monolith_root, "name", "Monolith"),
+        )
+        return True

@@ -1545,7 +1545,7 @@ def _validate_placement_positions(
         deployment_errors = _validate_deployment_positions(game, unit, model_positions)
         if deployment_errors:
             return deployment_errors
-    if str(placement_kind or "") == "reserves_arrival":
+    if str(placement_kind or "") in ("reserves_arrival", "hyperphasic_recall"):
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions, ctx=ctx)
         if reserves_errors:
             return reserves_errors
@@ -2020,12 +2020,14 @@ def _evaluate_reserves_arrival_positions(
 ) -> dict:
     errors: list[str] = []
     context = dict(ctx or {})
+    placement_kind = str(context.get("placement_kind", "") or "").strip().lower()
+    is_hyperphasic_recall = placement_kind == "hyperphasic_recall"
     if unit is None:
         return {"errors": ["Reserves arrival requires a unit."]}
-    if not bool(getattr(unit, "is_in_reserves", lambda: False)()):
+    if not is_hyperphasic_recall and not bool(getattr(unit, "is_in_reserves", lambda: False)()):
         return {"errors": ["Unit is not in reserves."]}
     ignore_turn_requirement = bool(context.get("reserves_arrival_ignore_turn_requirement", False))
-    if not ignore_turn_requirement:
+    if not ignore_turn_requirement and not is_hyperphasic_recall:
         try:
             if not unit.can_arrive_from_reserves(getattr(game, "turn", 0)):
                 return {"errors": ["Unit cannot arrive from reserves this turn."]}
@@ -2476,7 +2478,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     if bool(result.payload.get("skipped", False)):
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
-        if placement_kind == "reserves_arrival":
+        if placement_kind in ("reserves_arrival", "hyperphasic_recall"):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -2516,6 +2518,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 "eternity_gate_no_charge_turn_owner",
                 "eternity_gate_no_charge_turn",
                 "eternity_gate_no_charge_source",
+                "eternity_gate_anchor_unit_id",
             ):
                 sr.pop(k, None)
             unit.special_rules = sr
@@ -2526,6 +2529,11 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             ):
                 if hasattr(unit, attr):
                     delattr(unit, attr)
+            if placement_kind == "hyperphasic_recall":
+                try:
+                    unit.deployed = True
+                except Exception:
+                    pass
         return None
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
@@ -2545,6 +2553,8 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         _finalize_deployment_move(game, unit, model_positions)
     if placement_kind == "reserves_arrival":
         _finalize_reserves_arrival_move(game, unit, model_positions, ctx=ctx)
+    if placement_kind == "hyperphasic_recall":
+        _finalize_hyperphasic_recall_move(game, unit, model_positions, ctx=ctx)
     if placement_kind in ("advance_redeploy_9h", "normal_move_redeploy_9h"):
         event_system = getattr(game, "event_system", None)
         if event_system is not None:
@@ -2995,12 +3005,19 @@ def _finalize_reserves_arrival_move(
         if source:
             sr["eternity_gate_no_charge_source"] = source
         unit.special_rules = sr
+    if str(context.get("reserves_arrival_source_ability", "") or "").strip().lower() == "eternity_gate":
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        anchor_unit_id = str(context.get("reserves_arrival_anchor_unit_id", "") or "").strip()
+        if anchor_unit_id:
+            sr["eternity_gate_anchor_unit_id"] = anchor_unit_id
+        unit.special_rules = sr
 
     get_drop_pod_rule = getattr(unit, "get_drop_pod_assault_rule", None)
     drop_pod_rule = get_drop_pod_rule() if callable(get_drop_pod_rule) else None
     if not isinstance(drop_pod_rule, dict):
         return
-
     ability_name = str(drop_pod_rule.get("source", "") or "Drop Pod Assault").strip() or "Drop Pod Assault"
     try:
         min_enemy_distance = float(drop_pod_rule.get("disembark_min_enemy_distance", 9.0) or 9.0)
@@ -3057,6 +3074,69 @@ def _finalize_reserves_arrival_move(
             unit,
             ability_name=ability_name,
             min_enemy_distance=float(min_enemy_distance),
+        )
+
+
+def _finalize_hyperphasic_recall_move(
+    game: object,
+    unit: object,
+    model_positions: list[dict],
+    *,
+    ctx: dict | None = None,
+) -> None:
+    if unit is None:
+        return
+    positions: list[tuple[float, float, float]] = []
+    for entry in list(model_positions or []):
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        positions.append((x, y, z))
+    if positions:
+        unit.position = (
+            sum(p[0] for p in positions) / len(positions),
+            sum(p[1] for p in positions) / len(positions),
+            sum(p[2] for p in positions) / len(positions),
+        )
+
+    game_map = getattr(game, "map", None)
+    if game_map is not None and hasattr(game_map, "units"):
+        try:
+            if unit not in game_map.units:
+                game_map.units.append(unit)
+        except Exception:
+            pass
+
+    try:
+        unit.deployed = True
+    except Exception:
+        pass
+    try:
+        set_reserve_status = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve_status):
+            set_reserve_status("deployed")
+        else:
+            unit.reserve_status = "deployed"
+    except Exception:
+        pass
+    for attr, value in (("embarked_in", None), ("is_embarked", False)):
+        try:
+            setattr(unit, attr, value)
+        except Exception:
+            pass
+
+    event_system = getattr(game, "event_system", None)
+    if event_system is not None:
+        event_system.publish(
+            "unit_set_up",
+            unit=unit,
+            set_up_as_reinforcements=False,
         )
 
 

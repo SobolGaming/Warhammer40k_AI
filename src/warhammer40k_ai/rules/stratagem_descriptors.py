@@ -9528,6 +9528,50 @@ _CANOPTEK_COURT_STRATAGEM_BY_NAME = {
 }
 
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008555002": StratagemToolDescriptor(
+        stratagem_id="000008555002",
+        name="Hyperphasic Recall",
+        timing="opponent_shooting_or_fight_phase_after_enemy_attacks_resolved",
+        target="necrons_infantry_unit_that_lost_models_and_friendly_monolith",
+        duration="immediate",
+        effect="remove_and_set_up_within_monolith_range",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_any": ["INFANTRY"],
+            "anchor_required_keywords_any": ["MONOLITH"],
+            "setup_wholly_within_anchor": True,
+            "requires_destroyed_models_from_attacker": True,
+            "require_not_engagement": True,
+        },
+    ),
+    "000008555003": StratagemToolDescriptor(
+        stratagem_id="000008555003",
+        name="Quantum Deflection",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="necrons_vehicle_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="grant_invulnerable_save",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "invulnerable_save": 4,
+        },
+    ),
+    "000008555004": StratagemToolDescriptor(
+        stratagem_id="000008555004",
+        name="Reanimation Crypts",
+        timing="command_phase",
+        target="necrons_warlord",
+        duration="immediate",
+        effect="trigger_reanimation_protocols_for_all_reserve_units",
+        cp_cost=1,
+        effect_params={
+            "reserve_status": "reserves",
+            "reanimation_roll": "D3",
+            "target_scope": "all_friendly_necrons_units_in_reserves",
+        },
+    ),
     "000008555005": StratagemToolDescriptor(
         stratagem_id="000008555005",
         name="Cosmic Precision",
@@ -9541,6 +9585,34 @@ _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "distance_type": "horizontal",
             "no_charge_this_turn": True,
             "allow_hyperphasing_arrivals": True,
+        },
+    ),
+    "000008555006": StratagemToolDescriptor(
+        stratagem_id="000008555006",
+        name="Dimensional Corridor",
+        timing="charge_phase",
+        target="necrons_unit_set_up_via_eternity_gate_this_turn",
+        duration="until_end_of_phase",
+        effect="allow_charge_after_eternity_gate",
+        cp_cost=2,
+        effect_params={
+            "requires_setup_source": "eternity_gate",
+            "requires_anchor_keywords_any": ["MONOLITH"],
+            "requires_anchor_started_turn_on_battlefield": True,
+        },
+    ),
+    "000008555007": StratagemToolDescriptor(
+        stratagem_id="000008555007",
+        name="Entropic Damping",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="friendly_titanic_model_targeted_by_enemy_within_18",
+        duration="until_end_of_phase",
+        effect="attacker_ranged_weapons_become_hazardous_against_target",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={
+            "required_keywords_any": ["TITANIC"],
+            "grant_ranged_hazardous": True,
         },
     ),
 }

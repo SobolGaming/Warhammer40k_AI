@@ -481,6 +481,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DIMENSIONAL TUNNEL",
     "CHRONOSHIFT",
     "COSMIC PRECISION",
+    "DIMENSIONAL CORRIDOR",
+    "ENTROPIC DAMPING",
+    "HYPERPHASIC RECALL",
+    "QUANTUM DEFLECTION",
+    "REANIMATION CRYPTS",
     "ENDLESS SERVITUDE",
     "PITILESS HUNTERS",
     "ENSNARING TRAP",
@@ -2111,6 +2116,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
         if "PROTOCOL OF THE UNDYING LEGIONS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
+        if "HYPERPHASIC RECALL" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
         if "UNRELENTING ADVANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unrelenting_advance)
         if "MEET FORCE WITH FORCE" in names:
@@ -2243,6 +2250,7 @@ class StratagemManager(
             "VOID HARDENED",
             "HYPERSTIMMS",
             "ORBITAL OVERSIGHT",
+            "ENTROPIC DAMPING",
             "SHIELD NODES",
             "PSYCHIC SHIELD",
             "PSYCHIC DOMINION",
@@ -2355,6 +2363,7 @@ class StratagemManager(
             "TERRITORIAL ADVANTAGE",
             "MURDEROUS REANIMATION",
             "PROTOCOL OF THE UNDYING LEGIONS",
+            "HYPERPHASIC RECALL",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
@@ -4896,6 +4905,58 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires Hypercrypt Legion and a non-MONSTER NECRONS unit arriving via Deep Strike or Hyperphasing this phase"
+            return result
+        if name_u == "DIMENSIONAL CORRIDOR":
+            if self._hypercrypt_dimensional_corridor_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Charge phase and a friendly NECRONS unit that was set up this turn via Eternity Gate"
+            return result
+        if name_u == "ENTROPIC DAMPING":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._hypercrypt_entropic_damping_candidates(
+                    attacking_unit=context.get("attacking_unit") or context.get("enemy_unit"),
+                    target_units=list(context.get("target_units") or []),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase trigger after an enemy unit selects a friendly TITANIC NECRONS target within 18\""
+            )
+            return result
+        if name_u == "HYPERPHASIC RECALL":
+            candidates = list(context.get("candidates") or [])
+            monolith_candidates = list(context.get("monolith_candidates") or [])
+            if candidates and monolith_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or Fight phase trigger after an enemy unit destroys models in a friendly NECRONS INFANTRY unit while a friendly MONOLITH is on the battlefield"
+            )
+            return result
+        if name_u == "QUANTUM DEFLECTION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._hypercrypt_quantum_deflection_candidates(target_units=list(context.get("target_units") or []))
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or Fight phase trigger after an enemy unit selects a friendly NECRONS VEHICLE target"
+            )
+            return result
+        if name_u == "REANIMATION CRYPTS":
+            if self._hypercrypt_reanimation_crypts_warlord() is not None and self._hypercrypt_reanimation_crypts_reserve_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase, your NECRONS WARLORD, and at least one friendly NECRONS unit in Reserves with Reanimation Protocols"
             return result
         if name_u == "BLOOD-FUELLED CRUELTY":
             candidates = list(context.get("candidates") or [])
@@ -10958,6 +11019,10 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 killing_models_by_target=killing_models_by_target,
             )
+            self._queue_hypercrypt_shooting_reactions(
+                attacker_unit=attacker_unit,
+                killing_models_by_target=killing_models_by_target,
+            )
         except Exception:
             raise
 
@@ -12084,6 +12149,20 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_hypercrypt_entropic_damping_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hypercrypt_quantum_deflection_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -12831,6 +12910,13 @@ class StratagemManager(
             raise
         try:
             self._queue_cryptek_conclave_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hypercrypt_quantum_deflection_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -14022,6 +14108,11 @@ class StratagemManager(
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             self._queue_cryptek_conclave_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._queue_hypercrypt_fight_attacks_resolved_reactions(
                 unit=unit,
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
