@@ -165,17 +165,23 @@ def _validate_predatory_pursuit_positions(
 ) -> Sequence[str]:
     context = dict(ctx or {})
     reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
-    if reactive_kind != "predatory_pursuit":
+    rule_config = {
+        "predatory_pursuit": ("predatory_pursuit_target_unit_id", "Predatory Pursuit"),
+        "annihilation_blood_fuelled_cruelty": ("annihilation_legion_target_unit_id", "Blood-Fuelled Cruelty"),
+        "annihilation_insanitys_ire": ("annihilation_legion_target_unit_id", "Insanity's Ire"),
+    }
+    if reactive_kind not in rule_config:
         return ()
     if unit is None:
-        return ("Move unit: Predatory Pursuit requires a valid unit.",)
+        return ("Move unit: reactive pursuit requires a valid unit.",)
 
-    target_unit_id = str(context.get("predatory_pursuit_target_unit_id", "") or "").strip()
+    target_key, source_name = rule_config[reactive_kind]
+    target_unit_id = str(context.get(target_key, "") or "").strip()
     if not target_unit_id:
-        return ("Move unit: Predatory Pursuit target unit is missing.",)
+        return (f"Move unit: {source_name} target unit is missing.",)
     target_unit = get_unit(game, target_unit_id)
     if target_unit is None:
-        return ("Move unit: Predatory Pursuit target unit could not be resolved.",)
+        return (f"Move unit: {source_name} target unit could not be resolved.",)
 
     try:
         from ...utility.aura_utils import distance_between_bases_3d
@@ -271,7 +277,7 @@ def _validate_predatory_pursuit_positions(
     if final_distance > (min_possible + tolerance):
         target_name = str(getattr(target_unit, "name", "") or "target unit")
         return (
-            f'Move unit: Predatory Pursuit must end as close as possible to {target_name}: '
+            f'Move unit: {source_name} must end as close as possible to {target_name}: '
             f'{final_distance:.2f}" > {min_possible:.2f}".',
         )
     return ()

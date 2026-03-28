@@ -449,11 +449,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
+    "BLOOD-FUELLED CRUELTY",
+    "INSANITY'S IRE",
+    "MURDEROUS REANIMATION",
+    "THE SPOOR OF FRAILTY",
     "MERCILESS RECLAMATION",
     "DIMENSIONAL TUNNEL",
     "CHRONOSHIFT",
     "COSMIC PRECISION",
     "ENDLESS SERVITUDE",
+    "PITILESS HUNTERS",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
     "ORBITAL OVERSIGHT",
@@ -852,6 +857,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
+    "BLOOD-FUELLED CRUELTY",
+    "INSANITY'S IRE",
+    "MURDEROUS REANIMATION",
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
     "RED WRATH",
@@ -1971,6 +1979,7 @@ class StratagemManager(
             "CYBERSPIRIT MACHINATIONS",
             "WARPFLAME GARGOYLES",
             "MUTATE LANDSCAPE",
+            "BLOOD-FUELLED CRUELTY",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2066,6 +2075,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fury_unleashed)
         if "REACTIVE REPOSITION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
+        if "INSANITY'S IRE" in names or "INSANITY’S IRE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
         if "SWIFT AS THE EAGLE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
         if "UNRELENTING ADVANCE" in names:
@@ -2304,7 +2315,14 @@ class StratagemManager(
         if needs_attacker_cleanup_shooting:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
 
-        if names & {"A WORTHY SKULL", "GLUT OF SOULS", "GUIDED DISRUPTION", "SHOCK BOMBARDMENT", "TERRITORIAL ADVANTAGE"}:
+        if names & {
+            "A WORTHY SKULL",
+            "GLUT OF SOULS",
+            "GUIDED DISRUPTION",
+            "SHOCK BOMBARDMENT",
+            "TERRITORIAL ADVANTAGE",
+            "MURDEROUS REANIMATION",
+        }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
         if has_consolidate_spec:
@@ -4516,6 +4534,65 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires Hypercrypt Legion and a non-MONSTER NECRONS unit arriving via Deep Strike or Hyperphasing this phase"
+            return result
+        if name_u == "BLOOD-FUELLED CRUELTY":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                enemy_unit = context.get("enemy_unit") or context.get("moving_unit")
+                if enemy_unit is not None:
+                    candidates = list(self._annihilation_legion_start_phase_engaged_candidates_for_enemy(enemy_unit) or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Movement phase trigger after an enemy unit Falls Back from one of your DESTROYER CULT or FLAYED ONES units"
+            )
+            return result
+        if name_u in {"INSANITY'S IRE", "INSANITY’S IRE"}:
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase trigger after an enemy unit destroys one or more models in one of your DESTROYER CULT or FLAYED ONES units"
+            )
+            return result
+        if name_u == "MURDEROUS REANIMATION":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires Fight phase trigger after a friendly DESTROYER CULT or FLAYED ONES unit destroys an enemy unit or makes one go Below Half-strength"
+            )
+            return result
+        if name_u == "PITILESS HUNTERS":
+            if self._annihilation_legion_candidates(require_not_fought=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and a friendly DESTROYER CULT or FLAYED ONES unit that has not fought this phase"
+            return result
+        if name_u == "THE SPOOR OF FRAILTY":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l not in {"shooting phase", "fight phase"}:
+                result["reason"] = "Requires Shooting phase or Fight phase"
+                return result
+            if phase_name_l == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                if active_player is not self.player:
+                    result["reason"] = "Only usable in your Shooting phase"
+                    return result
+            candidates = self._annihilation_legion_candidates(
+                require_not_shot=phase_name_l == "shooting phase",
+                require_not_fought=phase_name_l == "fight phase",
+            )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a friendly DESTROYER CULT or FLAYED ONES unit that has not been selected this phase"
             return result
         if name_u == "SOULSEEKERS":
             if self._cabal_soulseekers_candidates():
@@ -7049,6 +7126,7 @@ class StratagemManager(
         try:
             self._capture_aeldari_corsair_movement_phase_start_engagements(player=player, phase=phase)
             self._capture_orks_opponent_movement_phase_start_engagements(player=player, phase=phase)
+            self._capture_annihilation_legion_opponent_movement_phase_start_engagements(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9152,6 +9230,10 @@ class StratagemManager(
             self._cleanup_emperors_children_court_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._cleanup_annihilation_legion_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -10119,6 +10201,7 @@ class StratagemManager(
         self._queue_dread_talons_move_end_reactions(unit=unit, action=action)
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
+        self._queue_annihilation_legion_move_end_reactions(unit=unit, action=action)
         self._queue_veterans_move_end_reactions(unit=unit, action=action)
         self._queue_death_guard_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
@@ -10466,6 +10549,21 @@ class StratagemManager(
             self._queue_reaction(payload)
         except Exception:
             raise
+
+    def _on_unit_shooting_resolved_annihilation_legion(
+        self,
+        attacker_unit=None,
+        killing_models_by_target=None,
+        **_kwargs,
+    ):
+        try:
+            self._queue_annihilation_legion_shooting_reactions(
+                attacker_unit=attacker_unit,
+                killing_models_by_target=killing_models_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_swift_as_the_eagle(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         """
         Reaction window for SWIFT AS THE EAGLE:
@@ -12314,6 +12412,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._capture_annihilation_legion_fight_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_guardian_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -13480,6 +13585,11 @@ class StratagemManager(
             )
             self._queue_space_marines_saga_of_the_hunter_fight_attacks_resolved_reactions(
                 attacker_unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._queue_annihilation_legion_fight_attacks_resolved_reactions(
+                unit=unit,
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
@@ -18089,6 +18199,9 @@ class StratagemManager(
         saga_beastslayer_result = self._use_space_marines_saga_of_the_beastslayer_stratagem(s, **kwargs)
         if saga_beastslayer_result is not None:
             return saga_beastslayer_result
+        necrons_result = self._use_necrons_stratagem(s, **kwargs)
+        if necrons_result is not None:
+            return necrons_result
         cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
         if cabal_result is not None:
             return cabal_result

@@ -9125,6 +9125,78 @@ _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ANNIHILATION_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008405006": StratagemToolDescriptor(
+        stratagem_id="000008405006",
+        name="Blood-Fuelled Cruelty",
+        timing="opponent_movement_phase_after_enemy_fall_back",
+        target="necrons_destroyer_cult_or_flayed_ones_unit_that_started_phase_engaged_with_enemy",
+        duration="immediate",
+        effect="reactive_normal_move_toward_trigger_unit_with_pre_move_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "must_end_as_close_as_possible_to_trigger_unit": True,
+            "pre_move_roll": "D6",
+            "mortal_wounds_on_2_to_5": "D3",
+            "mortal_wounds_on_6": 3,
+        },
+    ),
+    "000008405007": StratagemToolDescriptor(
+        stratagem_id="000008405007",
+        name="Insanity's Ire",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved",
+        target="necrons_destroyer_cult_or_flayed_ones_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_normal_move_toward_trigger_unit",
+        cp_cost=1,
+        effect_params={
+            "must_end_as_close_as_possible_to_trigger_unit": True,
+        },
+    ),
+    "000008405004": StratagemToolDescriptor(
+        stratagem_id="000008405004",
+        name="Murderous Reanimation",
+        timing="fight_phase_after_friendly_attacks_resolved",
+        target="necrons_destroyer_cult_or_flayed_ones_unit_that_destroyed_enemy_or_made_enemy_below_half_strength",
+        duration="immediate",
+        effect="conditional_trigger_reanimation_protocols",
+        cp_cost=1,
+        effect_params={
+            "reanimation_roll": "D3",
+            "trigger_conditions": ["destroyed_enemy_unit", "caused_enemy_below_half_strength"],
+        },
+    ),
+    "000008405005": StratagemToolDescriptor(
+        stratagem_id="000008405005",
+        name="Pitiless Hunters",
+        timing="fight_phase_on_select_to_fight",
+        target="necrons_destroyer_cult_or_flayed_ones_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="extend_pile_in_and_consolidate_to_six",
+        cp_cost=1,
+        effect_params={"pile_in_distance": 6, "consolidate_distance": 6},
+    ),
+    "000008405003": StratagemToolDescriptor(
+        stratagem_id="000008405003",
+        name="The Spoor of Frailty",
+        timing="shooting_or_fight_phase_on_select",
+        target="necrons_destroyer_cult_or_flayed_ones_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="hit_bonus_vs_targets_below_starting_strength_and_wound_bonus_vs_targets_below_half_strength",
+        cp_cost=1,
+        effect_params={
+            "hit_bonus": 1,
+            "hit_target_condition": "below_starting_strength",
+            "wound_bonus": 1,
+            "wound_target_condition": "below_half_strength",
+        },
+    ),
+}
+
+_ANNIHILATION_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ANNIHILATION_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008555005": StratagemToolDescriptor(
         stratagem_id="000008555005",
@@ -9547,6 +9619,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ANNIHILATION_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9674,6 +9749,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

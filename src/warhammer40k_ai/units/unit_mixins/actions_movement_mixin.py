@@ -7035,6 +7035,42 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if target is not None:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("annihilation_spoor_of_frailty_active"):
+                    applies = True
+                    owner_id = str(sr.get("annihilation_spoor_of_frailty_owner", "") or "")
+                    army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    player = getattr(army, "player", None) if army is not None else None
+                    attacker_owner = str(getattr(player, "id", "") or "") if player is not None else ""
+                    game_local = getattr(player, "game", None) if player is not None else None
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    exp_phase = str(sr.get("annihilation_spoor_of_frailty_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    if applies and exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(sr.get("annihilation_spoor_of_frailty_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game_local, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    if applies:
+                        source = str(
+                            sr.get("annihilation_spoor_of_frailty_source", "") or "THE SPOOR OF FRAILTY"
+                        ).strip() or "THE SPOOR OF FRAILTY"
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        if target_root is not None and bool(target_root.is_below_starting_strength()):
+                            mods["hit"] += 1
+                            hit_reasons.append(f"+1 to hit from {source} (vs targets below Starting Strength)")
+        except Exception:
+            pass
+        try:
             applies, source = self._court_prideful_superiority_active(target=target)
             if applies:
                 mods["reroll_hit_full"] = True
@@ -8676,6 +8712,39 @@ class ActionsMovementMixin:
                 if target_root is not None and bool(target_root.is_below_half_strength()):
                     mods["wound"] += 1
                     wound_reasons.append("+1 to wound from Steeped in Suffering (vs targets below Half-strength)")
+        except Exception:
+            pass
+        try:
+            if target is not None:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("annihilation_spoor_of_frailty_active"):
+                    applies = True
+                    owner_id = str(sr.get("annihilation_spoor_of_frailty_owner", "") or "")
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    exp_phase = str(sr.get("annihilation_spoor_of_frailty_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if applies and exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(sr.get("annihilation_spoor_of_frailty_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    if applies:
+                        source = str(
+                            sr.get("annihilation_spoor_of_frailty_source", "") or "THE SPOOR OF FRAILTY"
+                        ).strip() or "THE SPOOR OF FRAILTY"
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        if target_root is not None and bool(target_root.is_below_half_strength()):
+                            mods["wound"] += 1
+                            wound_reasons.append(f"+1 to wound from {source} (vs targets below Half-strength)")
         except Exception:
             pass
         try:
