@@ -5286,6 +5286,90 @@ _ASSIMILATION_SWARM_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ASSIMILATION_SWARM_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SUBTERRANEAN_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010148002": StratagemToolDescriptor(
+        stratagem_id="000010148002",
+        name="Adaptive Optimisation",
+        timing="command_phase",
+        target="mawloc_or_trygon_unit_from_your_army",
+        duration="until_start_of_your_next_command_phase",
+        effect="grant_synapse_keyword",
+        cp_cost=1,
+    ),
+    "000010148003": StratagemToolDescriptor(
+        stratagem_id="000010148003",
+        name="Replenishing Swarms",
+        timing="movement_phase",
+        target="tyranids_unit_wholly_within_9_of_tunnel_marker",
+        duration="immediate",
+        effect="heal_or_return_destroyed_wounds_one_models",
+        cp_cost=1,
+        effect_params={
+            "heal_roll": "D3+1",
+            "return_roll": "D3+1",
+            "returned_model_wounds_characteristic": 1,
+        },
+    ),
+    "000010148004": StratagemToolDescriptor(
+        stratagem_id="000010148004",
+        name="Enfilading Emergence",
+        timing="end_of_movement_phase",
+        target="tyranids_unit_set_up_as_reinforcements_this_turn",
+        duration="until_end_of_fight_phase",
+        effect="grant_keywords_to_all_weapons",
+        cp_cost=1,
+        effect_params={
+            "keywords": ["SUSTAINED HITS 1", "IGNORES COVER"],
+            "attack_type": "any",
+        },
+    ),
+    "000010148005": StratagemToolDescriptor(
+        stratagem_id="000010148005",
+        name="Tunnel Network",
+        timing="end_of_movement_phase",
+        target="tyranids_unit_wholly_within_9_of_tunnel_marker_not_in_engagement_range",
+        duration="immediate",
+        effect="redeploy_via_other_tunnel_marker",
+        cp_cost=1,
+        effect_params={
+            "setup_wholly_within_tunnel_marker": True,
+            "min_enemy_distance": 6.0,
+            "requires_other_marker": True,
+        },
+    ),
+    "000010148006": StratagemToolDescriptor(
+        stratagem_id="000010148006",
+        name="Swarming Assault",
+        timing="charge_phase",
+        target="tyranids_monster_unit_set_up_as_reinforcements_this_turn",
+        duration="until_end_of_phase",
+        effect="grant_charge_reroll_aura",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "aura_range": 6.0,
+            "aura_target_keyword": "TYRANIDS",
+        },
+    ),
+    "000010148007": StratagemToolDescriptor(
+        stratagem_id="000010148007",
+        name="Retreat Below",
+        timing="end_of_opponent_fight_phase",
+        target="one_tyranids_unit_or_up_to_two_burrower_units_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "two_units_require_keyword": "BURROWER",
+        },
+    ),
+}
+
+_SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SUBTERRANEAN_ASSAULT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008418007": StratagemToolDescriptor(
         stratagem_id="000008418007",
@@ -10060,6 +10144,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ASSIMILATION_SWARM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SUBTERRANEAN_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10305,6 +10392,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ASSIMILATION_SWARM_STRATAGEM_BY_NAME.get(key)
+        or _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)

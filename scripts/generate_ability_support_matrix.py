@@ -19980,6 +19980,12 @@ def _stratagem_support(
         "000010673005": "Your Shooting phase or the Fight phase: selected friendly non-MONSTER NECRONS unit that has not yet acted re-rolls Hit rolls of 1, and also re-rolls Wound rolls of 1 when targeting unravelling enemies, until end of phase.",
         "000010673006": "Fight phase reaction after an enemy unit selects its targets: selected friendly NECRONS unit fights on death this phase on a 4+, improving to 3+ when the destroying attacker is unravelling.",
         "000010673007": "Opponent Movement phase reaction when an unravelling enemy unit is selected to Fall Back: selected friendly NECRONS unit within Engagement Range forces that enemy to take Desperate Escape tests, with battle-shocked models suffering an extra -1 on those tests.",
+        "000010148002": "Command phase: selected MAWLOC or TRYGON unit gains the SYNAPSE keyword until the start of your next Command phase, adding it only where the unit and its models do not already have it.",
+        "000010148003": "Your Movement phase: selected TYRANIDS unit wholly within 9\" of one or more friendly Tunnel Markers either heals one damaged model for D3+1 wounds or returns up to D3+1 destroyed Wounds 1 models.",
+        "000010148004": "End of your Movement phase: selected TYRANIDS unit that arrived from Reinforcements this turn gains [SUSTAINED HITS 1] and [IGNORES COVER] on its weapons until the end of the Fight phase.",
+        "000010148005": "End of your Movement phase: selected TYRANIDS unit wholly within 9\" of a friendly Tunnel Marker and not within Engagement Range is removed and queued to be set up wholly within 9\" of another Tunnel Marker and more than 6\" from enemy units.",
+        "000010148006": "Your Charge phase: selected TYRANIDS MONSTER unit that arrived from Reinforcements this turn projects a 6\" aura that lets friendly TYRANIDS units re-roll Charge rolls until end of phase.",
+        "000010148007": "End of opponent Fight phase: select one TYRANIDS unit, or up to two BURROWER units, that are not within Engagement Range; the selected units enter Strategic Reserves.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20552,6 +20558,15 @@ def _stratagem_support(
         "000008422007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000010148002",
+        "000010148003",
+        "000010148004",
+        "000010148005",
+        "000010148006",
+        "000010148007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
     if name_u in {
         "CORROSIVE VISCERA",
         "MASSIVE IMPACT",

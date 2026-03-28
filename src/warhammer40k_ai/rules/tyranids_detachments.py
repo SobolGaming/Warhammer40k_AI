@@ -2439,12 +2439,112 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 return False
         return True
 
+    def get_tunnel_marker_by_id(self, marker_id: str) -> Optional[TunnelMarker]:
+        target = str(marker_id or "").strip()
+        if not target:
+            return None
+        for marker in list(self.get_active_tunnel_markers() or []):
+            if str(getattr(marker, "marker_id", "") or "").strip() == target:
+                return marker
+        return None
+
+    def subterranean_assault_tunnel_marker_ids_for_unit(self, unit) -> list[str]:
+        if not self.is_subterranean_assault():
+            return []
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        if not self._unit_in_army(root):
+            return []
+        if not self._unit_on_battlefield(root):
+            return []
+        placements: list[tuple[float, float, float, float]] = []
+        for model in list(getattr(root, "models", []) or []):
+            if not self._model_is_alive(model):
+                continue
+            get_location = getattr(model, "get_location", None)
+            if not callable(get_location):
+                continue
+            try:
+                location = get_location()
+            except Exception:
+                continue
+            if not isinstance(location, (list, tuple)) or len(location) < 2:
+                continue
+            try:
+                x = float(location[0])
+                y = float(location[1])
+                z = float(location[2]) if len(location) > 2 else 0.0
+                facing = float(location[3]) if len(location) > 3 else 0.0
+            except (TypeError, ValueError):
+                continue
+            placements.append((x, y, z, facing))
+        if not placements:
+            return []
+        marker_ids: list[str] = []
+        for marker in list(self.get_active_tunnel_markers() or []):
+            if self._placements_wholly_within_tunnel_marker(
+                root,
+                list(placements),
+                marker=marker,
+                max_distance=_TUNNEL_MARKER_HORIZONTAL_RANGE,
+            ):
+                marker_id = str(getattr(marker, "marker_id", "") or "").strip()
+                if marker_id:
+                    marker_ids.append(marker_id)
+        return sorted(set(marker_ids))
+
+    def subterranean_assault_swarming_assault_reroll_charge_applies(self, unit, *, game=None) -> bool:
+        if not self.is_subterranean_assault():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        game_obj = game
+        if game_obj is None:
+            army = getattr(self, "army", None)
+            game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        current_player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if game_obj is not None:
+            active_player = getattr(game_obj, "get_current_player", lambda: None)()
+            active_player_id = str(getattr(active_player, "id", "") or "").strip()
+            if current_player_id and active_player_id and active_player_id != current_player_id:
+                return False
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if current_phase and current_phase != "CHARGE_PHASE":
+                return False
+        for source_root in list(self._iter_army_roots() or []):
+            if source_root is None:
+                continue
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("tyranids_subterranean_swarming_assault_active", False)):
+                continue
+            owner_id = str(sr.get("tyranids_subterranean_swarming_assault_turn_owner", "") or "").strip()
+            if current_player_id and owner_id and owner_id != current_player_id:
+                continue
+            if game_obj is not None:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+                effect_turn = int(sr.get("tyranids_subterranean_swarming_assault_turn", 0) or 0)
+                if current_turn and effect_turn and effect_turn != current_turn:
+                    continue
+            if not self._unit_on_battlefield(source_root):
+                continue
+            if unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True):
+                return True
+        return False
+
     def subterranean_assault_arrival_marker_for_positions(
         self,
         unit,
         placements: list[tuple[float, float, float, float]],
         *,
         game=None,
+        allowed_marker_ids: tuple[str, ...] = (),
+        excluded_marker_ids: tuple[str, ...] = (),
     ) -> Optional[TunnelMarker]:
         if not self.is_subterranean_assault():
             return None
@@ -2459,7 +2559,14 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return None
         if not self._unit_is_tyranids(root):
             return None
+        allowed = {str(item or "").strip() for item in tuple(allowed_marker_ids or ()) if str(item or "").strip()}
+        excluded = {str(item or "").strip() for item in tuple(excluded_marker_ids or ()) if str(item or "").strip()}
         for marker in list(self.get_active_tunnel_markers() or []):
+            marker_id = str(getattr(marker, "marker_id", "") or "").strip()
+            if allowed and marker_id not in allowed:
+                continue
+            if excluded and marker_id in excluded:
+                continue
             if self._placements_wholly_within_tunnel_marker(
                 root,
                 list(placements),

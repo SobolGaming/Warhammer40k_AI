@@ -190,7 +190,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         if str(getattr(request, "decision_type", "") or "") != DECISION_MOVE_UNIT:
             return False
         context = dict(getattr(request, "context", {}) or {})
-        if str(context.get("placement_kind", "") or "") not in {"reserves_arrival", "hyperphasic_recall"}:
+        if str(context.get("placement_kind", "") or "") not in {
+            "reserves_arrival",
+            "hyperphasic_recall",
+            "subterranean_tunnel_network",
+        }:
             return False
 
         options = list(getattr(request, "options", []) or [])
@@ -362,6 +366,40 @@ class HeadlessPolicyDecisionController(DecisionController):
                         for deg in range(0, 360, 45):
                             rad = math.radians(float(deg))
                             _add(ax + math.cos(rad) * float(radius), ay + math.sin(rad) * float(radius))
+
+        tunnel_allowed_ids = {
+            str(item or "").strip()
+            for item in list(ctx.get("tunnel_marker_allowed_ids") or [])
+            if str(item or "").strip()
+        }
+        tunnel_excluded_ids = {
+            str(item or "").strip()
+            for item in list(ctx.get("tunnel_marker_excluded_ids") or [])
+            if str(item or "").strip()
+        }
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        get_markers = getattr(tyr_mgr, "get_active_tunnel_markers", None) if tyr_mgr is not None else None
+        if callable(get_markers):
+            for marker in list(get_markers() or []):
+                marker_id = str(getattr(marker, "marker_id", "") or "").strip()
+                if tunnel_allowed_ids and marker_id not in tunnel_allowed_ids:
+                    continue
+                if tunnel_excluded_ids and marker_id in tunnel_excluded_ids:
+                    continue
+                try:
+                    mx = float(getattr(marker, "x", 0.0) or 0.0)
+                    my = float(getattr(marker, "y", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                _add(mx, my)
+                for radius in (3.0, 6.0, 9.0):
+                    for deg in range(0, 360, 45):
+                        rad = math.radians(float(deg))
+                        _add(mx + math.cos(rad) * float(radius), my + math.sin(rad) * float(radius))
 
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False

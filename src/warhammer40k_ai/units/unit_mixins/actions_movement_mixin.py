@@ -12172,6 +12172,15 @@ class ActionsMovementMixin:
         if callable(webway_walker_charge):
             if bool(webway_walker_charge(self, game=game)):
                 return True
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        subterranean_reroll_charge = (
+            getattr(tyr_mgr, "subterranean_assault_swarming_assault_reroll_charge_applies", None)
+            if tyr_mgr is not None
+            else None
+        )
+        if callable(subterranean_reroll_charge):
+            if bool(subterranean_reroll_charge(self, game=game)):
+                return True
         try:
             if self._spearhead_striker_charge_reroll_active(game=game):
                 return True

@@ -1545,7 +1545,7 @@ def _validate_placement_positions(
         deployment_errors = _validate_deployment_positions(game, unit, model_positions)
         if deployment_errors:
             return deployment_errors
-    if str(placement_kind or "") in ("reserves_arrival", "hyperphasic_recall"):
+    if str(placement_kind or "") in ("reserves_arrival", "hyperphasic_recall", "subterranean_tunnel_network"):
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions, ctx=ctx)
         if reserves_errors:
             return reserves_errors
@@ -2022,12 +2022,13 @@ def _evaluate_reserves_arrival_positions(
     context = dict(ctx or {})
     placement_kind = str(context.get("placement_kind", "") or "").strip().lower()
     is_hyperphasic_recall = placement_kind == "hyperphasic_recall"
+    is_subterranean_tunnel_network = placement_kind == "subterranean_tunnel_network"
     if unit is None:
         return {"errors": ["Reserves arrival requires a unit."]}
-    if not is_hyperphasic_recall and not bool(getattr(unit, "is_in_reserves", lambda: False)()):
+    if not is_hyperphasic_recall and not is_subterranean_tunnel_network and not bool(getattr(unit, "is_in_reserves", lambda: False)()):
         return {"errors": ["Unit is not in reserves."]}
     ignore_turn_requirement = bool(context.get("reserves_arrival_ignore_turn_requirement", False))
-    if not ignore_turn_requirement and not is_hyperphasic_recall:
+    if not ignore_turn_requirement and not is_hyperphasic_recall and not is_subterranean_tunnel_network:
         try:
             if not unit.can_arrive_from_reserves(getattr(game, "turn", 0)):
                 return {"errors": ["Unit cannot arrive from reserves this turn."]}
@@ -2188,7 +2189,15 @@ def _evaluate_reserves_arrival_positions(
     tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
     marker_fn = getattr(tyr_mgr, "subterranean_assault_arrival_marker_for_positions", None) if tyr_mgr is not None else None
     if callable(marker_fn):
-        tunnel_marker = marker_fn(unit, list(prospective), game=game)
+        allowed_marker_ids = tuple(str(item or "").strip() for item in list(context.get("tunnel_marker_allowed_ids") or []) if str(item or "").strip())
+        excluded_marker_ids = tuple(str(item or "").strip() for item in list(context.get("tunnel_marker_excluded_ids") or []) if str(item or "").strip())
+        tunnel_marker = marker_fn(
+            unit,
+            list(prospective),
+            game=game,
+            allowed_marker_ids=allowed_marker_ids,
+            excluded_marker_ids=excluded_marker_ids,
+        )
 
     deep_strike_ok = True
     if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
@@ -2478,7 +2487,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     if bool(result.payload.get("skipped", False)):
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
-        if placement_kind in ("reserves_arrival", "hyperphasic_recall"):
+        if placement_kind in ("reserves_arrival", "hyperphasic_recall", "subterranean_tunnel_network"):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -2529,7 +2538,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             ):
                 if hasattr(unit, attr):
                     delattr(unit, attr)
-            if placement_kind == "hyperphasic_recall":
+            if placement_kind in ("hyperphasic_recall", "subterranean_tunnel_network"):
                 try:
                     unit.deployed = True
                 except Exception:
@@ -2553,7 +2562,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         _finalize_deployment_move(game, unit, model_positions)
     if placement_kind == "reserves_arrival":
         _finalize_reserves_arrival_move(game, unit, model_positions, ctx=ctx)
-    if placement_kind == "hyperphasic_recall":
+    if placement_kind in ("hyperphasic_recall", "subterranean_tunnel_network"):
         _finalize_hyperphasic_recall_move(game, unit, model_positions, ctx=ctx)
     if placement_kind in ("advance_redeploy_9h", "normal_move_redeploy_9h"):
         event_system = getattr(game, "event_system", None)
