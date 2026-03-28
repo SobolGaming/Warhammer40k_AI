@@ -19974,6 +19974,12 @@ def _stratagem_support(
         "000008547005": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of a friendly CANOPTEK unit: selected CANOPTEK unit can make a reactive Normal move up to 6\".",
         "000008547004": "Start of your Shooting phase: select a friendly CRYPTEK unit and one objective marker within 18\" of one of its CRYPTEK models; friendly NECRONS models gain [IGNORES COVER] when targeting units within range of that objective until end of phase.",
         "000008547007": "Opponent Charge phase reaction after an enemy unit declares a charge against a friendly CANOPTEK unit wholly within the Power Matrix: that unit immediately triggers Reanimation Protocols for D3 wounds.",
+        "000010673002": "Any phase reaction before removal: a just-destroyed friendly NECRONS MONSTER model with Deadly Demise rolls its explosion on 3+ instead of 6 for that resolution.",
+        "000010673003": "Command phase: selected friendly NECRONS MONSTER chooses one visible unravelling enemy to take a Battle-shock test at -1, and that enemy suffers D3+1 mortal wounds if it fails; once per battle round.",
+        "000010673004": "Your Shooting phase or the Fight phase reaction after a friendly NECRONS MONSTER destroys an enemy unit: selected friendly non-MONSTER NECRONS unit within 6\" triggers Reanimation Protocols for D3 wounds if the destroyed enemy was unravelling at the start of the phase; once per turn.",
+        "000010673005": "Your Shooting phase or the Fight phase: selected friendly non-MONSTER NECRONS unit that has not yet acted re-rolls Hit rolls of 1, and also re-rolls Wound rolls of 1 when targeting unravelling enemies, until end of phase.",
+        "000010673006": "Fight phase reaction after an enemy unit selects its targets: selected friendly NECRONS unit fights on death this phase on a 4+, improving to 3+ when the destroying attacker is unravelling.",
+        "000010673007": "Opponent Movement phase reaction when an unravelling enemy unit is selected to Fall Back: selected friendly NECRONS unit within Engagement Range forces that enemy to take Desperate Escape tests, with battle-shocked models suffering an extra -1 on those tests.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",

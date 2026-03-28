@@ -1008,6 +1008,58 @@ class KeywordsDetachmentsMixin:
             self.special_rules = sr
         return None
 
+    def _necrons_pantheon_chronodistortion_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        _ = model
+        sr = getattr(self, "special_rules", None)
+        if not (isinstance(sr, dict) and sr.get("pantheon_chronodistortion_active")):
+            return None
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            marked_turn = int(sr.get("pantheon_chronodistortion_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        exp = str(sr.get("pantheon_chronodistortion_expires_phase", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+            if not (marked_turn and current_turn and marked_turn != current_turn):
+                source = str(sr.get("pantheon_chronodistortion_source", "") or "CHRONODISTORTION").strip()
+                source = source or "CHRONODISTORTION"
+                try:
+                    threshold = int(sr.get("pantheon_chronodistortion_threshold", 4) or 4)
+                except (TypeError, ValueError):
+                    threshold = 4
+                try:
+                    bonus = int(sr.get("pantheon_chronodistortion_bonus_if_attacker_unravelling", 0) or 0)
+                except (TypeError, ValueError):
+                    bonus = 0
+                if bonus > 0:
+                    mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+                    is_unravelling_fn = getattr(mgr, "pantheon_unit_is_unravelling", None) if mgr is not None else None
+                    attacker = getattr(self, "_last_destroyed_by_unit", None)
+                    if attacker is not None and callable(is_unravelling_fn):
+                        if bool(is_unravelling_fn(attacker, game=game)):
+                            threshold -= int(bonus)
+                return {
+                    "threshold": max(2, min(6, int(threshold))),
+                    "source": source,
+                }
+        if phase_name and phase_name != "FIGHT_PHASE":
+            for key in (
+                "pantheon_chronodistortion_active",
+                "pantheon_chronodistortion_threshold",
+                "pantheon_chronodistortion_bonus_if_attacker_unravelling",
+                "pantheon_chronodistortion_expires_phase",
+                "pantheon_chronodistortion_turn",
+                "pantheon_chronodistortion_source",
+            ):
+                sr.pop(key, None)
+            self.special_rules = sr
+        return None
+
     def _space_marines_lost_brethren_final_retribution_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         _ = model
         sr = getattr(self, "special_rules", None)
@@ -1976,6 +2028,10 @@ class KeywordsDetachmentsMixin:
             return rule
 
         rule = self._necrons_obeisance_sentinels_of_eternity_rule(model=model)
+        if rule is not None:
+            return rule
+
+        rule = self._necrons_pantheon_chronodistortion_rule(model=model)
         if rule is not None:
             return rule
 

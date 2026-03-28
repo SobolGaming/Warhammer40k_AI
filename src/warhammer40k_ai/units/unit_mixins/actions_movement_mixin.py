@@ -7580,6 +7580,49 @@ class ActionsMovementMixin:
                 return None
         return {"crit_threshold": threshold, "source": source}
 
+    def _pantheon_entrophasic_aura_targeting_context(self, *, target=None, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("pantheon_entrophasic_aura_targeting_active")):
+            return None
+        source = (
+            str(sr.get("pantheon_entrophasic_aura_targeting_source", "") or "ENTROPHASIC AURA TARGETING").strip()
+            or "ENTROPHASIC AURA TARGETING"
+        )
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            expected_phase = str(sr.get("pantheon_entrophasic_aura_targeting_expires_phase", "") or "").strip().upper()
+            if expected_phase and phase_name and expected_phase != phase_name:
+                return None
+            try:
+                effect_turn = int(sr.get("pantheon_entrophasic_aura_targeting_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return None
+            effect_owner = str(sr.get("pantheon_entrophasic_aura_targeting_turn_owner", "") or "")
+            if effect_owner:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                if current_owner and effect_owner != current_owner:
+                    return None
+        reroll_wound_ones = False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        if target is not None and mgr is not None and callable(getattr(mgr, "pantheon_unit_is_unravelling", None)):
+            reroll_wound_ones = bool(mgr.pantheon_unit_is_unravelling(target, game=game))
+        return {
+            "reroll_hit_ones": True,
+            "reroll_wound_ones": reroll_wound_ones,
+            "source": source,
+        }
+
     def _gsc_coordinated_trap_context(self, *, game=None) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()

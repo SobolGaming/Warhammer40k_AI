@@ -9615,6 +9615,104 @@ _OBEISANCE_PHALANX_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _OBEISANCE_PHALANX_STRATAGEM_DESCRIPTORS.values()
 }
 
+_PANTHEON_OF_WOE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010673002": StratagemToolDescriptor(
+        stratagem_id="000010673002",
+        name="Disharmonisation Cascade",
+        timing="any_phase_after_friendly_monster_model_destroyed_before_deadly_demise",
+        target="just_destroyed_friendly_necrons_monster_model",
+        duration="this_phase",
+        effect="deadly_demise_on_3_plus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["MONSTER"],
+            "deadly_demise_trigger_threshold": 3,
+        },
+    ),
+    "000010673003": StratagemToolDescriptor(
+        stratagem_id="000010673003",
+        name="Molecular Erosion",
+        timing="command_phase",
+        target="friendly_necrons_monster_unit_and_visible_unravelling_enemy",
+        duration="immediate",
+        effect="force_battle_shock_then_mortal_wounds_on_fail",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["MONSTER"],
+            "requires_visible_unravelling_enemy": True,
+            "battle_shock_test_modifier": -1,
+            "mortal_wounds_on_fail": "D3+1",
+            "usage_limit": "once_per_battle_round",
+        },
+    ),
+    "000010673004": StratagemToolDescriptor(
+        stratagem_id="000010673004",
+        name="Mass Transmogrification",
+        timing="your_shooting_or_fight_phase_after_friendly_monster_destroys_enemy_unit",
+        target="friendly_necrons_non_monster_unit_within_6_of_friendly_monster",
+        duration="immediate",
+        effect="trigger_reanimation_protocols_if_destroyed_enemy_was_unravelling_at_phase_start",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "required_keywords_any": ["NECRONS"],
+            "excluded_keywords_any": ["MONSTER"],
+            "trigger_source_required_keywords_any": ["MONSTER"],
+            "requires_destroyed_enemy_unravelling_at_phase_start": True,
+            "reanimation_roll": "D3",
+            "usage_limit": "once_per_turn",
+        },
+    ),
+    "000010673005": StratagemToolDescriptor(
+        stratagem_id="000010673005",
+        name="Entrophasic Aura Targeting",
+        timing="your_shooting_or_fight_phase_on_select",
+        target="friendly_necrons_non_monster_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="reroll_hit_ones_and_reroll_wound_ones_vs_unravelling_targets",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["NECRONS"],
+            "excluded_keywords_any": ["MONSTER"],
+            "reroll_hit_values": [1],
+            "reroll_wound_values_if_target_unravelling": [1],
+        },
+    ),
+    "000010673006": StratagemToolDescriptor(
+        stratagem_id="000010673006",
+        name="Chronodistortion",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="friendly_necrons_unit_selected_as_target_of_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_on_4_plus_add_one_if_attacker_unravelling",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["NECRONS"],
+            "threshold": 4,
+            "attacker_unravelling_modifier": 1,
+        },
+    ),
+    "000010673007": StratagemToolDescriptor(
+        stratagem_id="000010673007",
+        name="Phase Melding",
+        timing="opponent_movement_phase_when_unravelling_enemy_selected_to_fall_back",
+        target="friendly_necrons_unit_within_engagement_range_of_triggering_enemy",
+        duration="until_end_of_phase",
+        effect="force_desperate_escape_on_falling_back_enemy",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["NECRONS"],
+            "requires_enemy_unravelling": True,
+            "force_desperate_escape": True,
+            "battle_shocked_desperate_escape_modifier": -1,
+        },
+    ),
+}
+
+_PANTHEON_OF_WOE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PANTHEON_OF_WOE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008555002": StratagemToolDescriptor(
         stratagem_id="000008555002",
@@ -10127,6 +10225,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _OBEISANCE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _PANTHEON_OF_WOE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10260,6 +10361,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CRYPTEK_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _CANOPTEK_COURT_STRATAGEM_BY_NAME.get(key)
         or _OBEISANCE_PHALANX_STRATAGEM_BY_NAME.get(key)
+        or _PANTHEON_OF_WOE_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

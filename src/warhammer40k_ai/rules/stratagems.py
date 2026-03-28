@@ -109,14 +109,20 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COUNTERTEMPORAL SHIFT",
     "CURSE OF THE CRYPTEK",
     "CYNOSURE OF ERADICATION",
+    "CHRONODISTORTION",
+    "DISHARMONISATION CASCADE",
     "DRIVEN TO BUTCHERY",
+    "ENTROPHASIC AURA TARGETING",
     "ENSLAVED ARTIFICE",
     "IMAGE OF DEATH",
+    "MASS TRANSMOGRIFICATION",
     "METHODICAL MURDER",
     "MORTIS PROTOCOLS",
     "ANIMUS CURSE",
     "MICROSCARAB SWARM",
+    "MOLECULAR EROSION",
     "MOLECULAR TARGETING",
+    "PHASE MELDING",
     "POTENTIALITY SYPHON",
     "SPREADING MADNESS",
     "SENTINELS OF ETERNITY",
@@ -1932,6 +1938,7 @@ class StratagemManager(
             "OVERWATCH",
             "FIRE OVERWATCH",
             "APOPLECTIC FRENZY",
+            "PHASE MELDING",
             "PUNISH THE CRAVEN",
             "CUT'EM DOWN",
             "CUT’EM DOWN",
@@ -2071,6 +2078,7 @@ class StratagemManager(
             "MORTIS PROTOCOLS",
             "SADISTIC DISPLAY",
             "ENDLESS IRE",
+            "MASS TRANSMOGRIFICATION",
             "PROTOCOL OF THE VENGEFUL STARS",
             "YOUR TIME IS NIGH",
         }:
@@ -2094,6 +2102,7 @@ class StratagemManager(
             "STAGED DEATH",
             "VENGEFUL ANIMUS",
             "DETONATOR",
+            "DISHARMONISATION CASCADE",
             "GIFT OF CHANGE",
             "PROTOCOL OF THE ETERNAL REVENANT",
         }:
@@ -2283,6 +2292,7 @@ class StratagemManager(
             "SPEEDIEST FREEKS",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
+            "CHRONODISTORTION",
             "DEATH FRENZY",
             "RAPID REGENERATION",
             "REACTIVE IMPACT DAMPENERS",
@@ -2483,6 +2493,9 @@ class StratagemManager(
             "POINT-BLANK DESTRUCTION",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
+            "CHRONODISTORTION",
+            "ENTROPHASIC AURA TARGETING",
+            "PHASE MELDING",
             "PROTOCOL OF THE CONQUERING TYRANT",
             "PROTOCOL OF THE HUNGRY VOID",
             "PROTOCOL OF THE SUDDEN STORM",
@@ -4953,6 +4966,84 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires any phase trigger after your opponent's WARLORD is destroyed and your NECRONS WARLORD is still available"
+            return result
+        if name_u == "CHRONODISTORTION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                pending = self._pantheon_pending_context("CHRONODISTORTION", unit=context.get("unit") or context.get("target_unit"))
+                if isinstance(pending, dict):
+                    candidates = list(pending.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase trigger after an enemy unit selects one of your NECRONS units as a target"
+            return result
+        if name_u == "DISHARMONISATION CASCADE":
+            pending = self._pantheon_pending_context(
+                "DISHARMONISATION CASCADE",
+                unit=context.get("unit") or context.get("target_unit") or context.get("destroyed_unit"),
+                destroyed_model=context.get("destroyed_model") or context.get("target_model"),
+            )
+            if isinstance(pending, dict) or context.get("destroyed_model") is not None or context.get("target_model") is not None:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase trigger after a friendly NECRONS MONSTER model is destroyed and before its Deadly Demise roll"
+            return result
+        if name_u == "ENTROPHASIC AURA TARGETING":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+                candidates = self._pantheon_non_monster_candidates(
+                    require_not_shot=phase_name_l == "shooting phase",
+                    require_not_fought=phase_name_l == "fight phase",
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and a friendly non-MONSTER NECRONS unit that has not acted this phase"
+            return result
+        if name_u == "MASS TRANSMOGRIFICATION":
+            if self._pantheon_mass_transmogrification_used_this_turn():
+                result["reason"] = "Already used this turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                pending = self._pantheon_pending_context("MASS TRANSMOGRIFICATION", unit=context.get("unit") or context.get("target_unit"))
+                if isinstance(pending, dict):
+                    candidates = list(pending.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase after a friendly NECRONS MONSTER destroys an enemy unit that was unravelling at phase start, with an eligible friendly non-MONSTER NECRONS unit within 6\""
+            return result
+        if name_u == "MOLECULAR EROSION":
+            if self._pantheon_molecular_erosion_used_this_battle_round():
+                result["reason"] = "Already used this battle round"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._pantheon_monster_candidates(require_visible_unravelling_enemy=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Command phase and a friendly NECRONS MONSTER with a visible unravelling enemy unit"
+            return result
+        if name_u == "PHASE MELDING":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                pending = self._pantheon_pending_context("PHASE MELDING", unit=context.get("unit") or context.get("target_unit"))
+                if isinstance(pending, dict):
+                    candidates = list(pending.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Movement phase trigger when an unravelling enemy unit is selected to Fall Back from one of your NECRONS units"
             return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
@@ -7718,6 +7809,10 @@ class StratagemManager(
             self._queue_obeisance_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_pantheon_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -9753,6 +9848,10 @@ class StratagemManager(
             self._cleanup_obeisance_phalanx_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._cleanup_pantheon_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -10660,6 +10759,7 @@ class StratagemManager(
         self._queue_hurons_marauders_move_started_reactions(unit=unit, action=action)
         self._queue_soulforged_move_start_reactions(unit=unit, action=action)
         self._queue_death_guard_move_start_reactions(unit=unit, action=action)
+        self._queue_pantheon_move_started_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -13002,6 +13102,13 @@ class StratagemManager(
             raise
         try:
             self._queue_obeisance_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_pantheon_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15418,6 +15525,10 @@ class StratagemManager(
             self._queue_thousand_sons_warpmeld_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
+        try:
+            self._queue_pantheon_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
 
         # Death Guard (Virulent Vectorium): PUTRID DETONATION
         try:
@@ -15659,6 +15770,13 @@ class StratagemManager(
             raise
         try:
             self._queue_obeisance_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_pantheon_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

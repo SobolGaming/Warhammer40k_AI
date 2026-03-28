@@ -2232,6 +2232,10 @@ class DamageDeathMixin:
                 if destroyed_units >= 1:
                     damage_expr = str(sr.get("enhancement_gateway_unto_damnation_damage_dice", "") or "D3+3")
                     damage_dice = DiceCollection.from_string(damage_expr)
+        pantheon_trigger_threshold = int(getattr(dying_model, "_pantheon_disharmonisation_trigger_threshold_once", 0) or 0)
+        if pantheon_trigger_threshold > 0:
+            trigger_threshold = int(min(int(trigger_threshold), int(pantheon_trigger_threshold)))
+            setattr(dying_model, "_pantheon_disharmonisation_trigger_threshold_once", 0)
         trigger_threshold = int(max(2, min(6, int(trigger_threshold or 6))))
 
         # Thousand Sons (Warpforged Cabal): Warpfire Infusion.

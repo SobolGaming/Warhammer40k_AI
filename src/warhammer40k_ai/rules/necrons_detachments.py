@@ -125,6 +125,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self.worthy_foes_target_name: str = ""
         self._cosmic_distortion_phase_key: str = ""
         self._cosmic_distortion_surged_unit_ids: set[str] = set()
+        self._pantheon_unravelling_phase_key: str = ""
+        self._pantheon_unravelling_start_unit_ids: set[str] = set()
         self._canoptek_court_solar_pulse_phase_key: tuple[int, str] | None = None
         self._canoptek_court_solar_pulse_objective_point: dict[str, float] | None = None
         self._canoptek_court_solar_pulse_source: str = ""
@@ -1914,19 +1916,86 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self.is_pantheon_of_woe():
             self._cosmic_distortion_phase_key = ""
             self._cosmic_distortion_surged_unit_ids = set()
+            self._pantheon_unravelling_phase_key = ""
+            self._pantheon_unravelling_start_unit_ids = set()
             return ""
         phase_key = self._cosmic_distortion_phase_key_for_game(game=game)
         if not phase_key:
             self._cosmic_distortion_phase_key = ""
             self._cosmic_distortion_surged_unit_ids = set()
+            self._pantheon_unravelling_phase_key = ""
+            self._pantheon_unravelling_start_unit_ids = set()
             return ""
         if phase_key != self._cosmic_distortion_phase_key:
             self._cosmic_distortion_phase_key = phase_key
             self._cosmic_distortion_surged_unit_ids = set()
+            self._pantheon_unravelling_phase_key = ""
+            self._pantheon_unravelling_start_unit_ids = set()
         return phase_key
 
     def current_cosmic_distortion_phase_key(self, *, game=None) -> str:
         return str(self._sync_cosmic_distortion_phase_state(game=game) or "")
+
+    def pantheon_unit_is_unravelling(self, unit, *, game=None) -> bool:
+        if not self.is_pantheon_of_woe():
+            return False
+        target_root = self._unit_root(unit)
+        if target_root is None:
+            return False
+        if self._unit_belongs_to_army(target_root):
+            return False
+        self._sync_cosmic_distortion_phase_state(game=game)
+        surged_unit_ids = set(self._cosmic_distortion_surged_unit_ids or set())
+        for source_unit in list(self.cosmic_distortion_phase_surge_candidates(game=game) or []):
+            source_id = str(get_entity_id(source_unit) or "").strip()
+            aura_range = float(self._COSMIC_DISTORTION_DEFAULT_RANGE)
+            if source_id and source_id in surged_unit_ids:
+                aura_range = float(self._COSMIC_DISTORTION_SURGED_RANGE)
+            if self._source_in_range_of_target(source_unit, target_root, aura_range):
+                return True
+        return False
+
+    def _snapshot_pantheon_unravelling_phase_state(self, *, game=None) -> set[str]:
+        phase_key = self._sync_cosmic_distortion_phase_state(game=game)
+        if not phase_key:
+            self._pantheon_unravelling_phase_key = ""
+            self._pantheon_unravelling_start_unit_ids = set()
+            return set()
+        snapshot_ids: set[str] = set()
+        game_map = getattr(game, "map", None) if game is not None else None
+        enemy_units = list(getattr(game_map, "units", []) or []) if game_map is not None else []
+        for unit in list(enemy_units or []):
+            root = self._unit_root(unit)
+            if root is None or self._unit_belongs_to_army(root):
+                continue
+            unit_id = str(get_entity_id(root) or "").strip()
+            if not unit_id:
+                continue
+            if self.pantheon_unit_is_unravelling(root, game=game):
+                snapshot_ids.add(unit_id)
+        self._pantheon_unravelling_phase_key = phase_key
+        self._pantheon_unravelling_start_unit_ids = set(snapshot_ids)
+        if self.army is not None:
+            setattr(self.army, "pantheon_unravelling_phase_key", self._pantheon_unravelling_phase_key)
+            setattr(self.army, "pantheon_unravelling_start_unit_ids", sorted(self._pantheon_unravelling_start_unit_ids))
+        return set(snapshot_ids)
+
+    def snapshot_pantheon_unravelling_phase_state(self, *, game=None) -> set[str]:
+        return self._snapshot_pantheon_unravelling_phase_state(game=game)
+
+    def pantheon_unit_was_unravelling_at_phase_start(self, unit, *, game=None) -> bool:
+        if not self.is_pantheon_of_woe():
+            return False
+        target_root = self._unit_root(unit)
+        if target_root is None:
+            return False
+        phase_key = self._sync_cosmic_distortion_phase_state(game=game)
+        if not phase_key:
+            return False
+        if phase_key != self._pantheon_unravelling_phase_key:
+            self._snapshot_pantheon_unravelling_phase_state(game=game)
+        unit_id = str(get_entity_id(target_root) or "").strip()
+        return bool(unit_id and unit_id in set(self._pantheon_unravelling_start_unit_ids or set()))
 
     def _pantheon_monster_unit_is_eligible(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -2077,6 +2146,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
 
         self._cosmic_distortion_phase_key = current_phase_key
         self._cosmic_distortion_surged_unit_ids = set(surged_unit_ids)
+        self._snapshot_pantheon_unravelling_phase_state(game=game)
         if self.army is not None:
             setattr(self.army, "cosmic_distortion_phase_key", self._cosmic_distortion_phase_key)
             setattr(self.army, "cosmic_distortion_surged_unit_ids", sorted(self._cosmic_distortion_surged_unit_ids))

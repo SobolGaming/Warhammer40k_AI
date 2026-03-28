@@ -13974,6 +13974,22 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Necrons: Pantheon of Woe (Entrophasic Aura Targeting).
+        unit = getattr(attacker, "parent_unit", None)
+        root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+        context_fn = getattr(root, "_pantheon_entrophasic_aura_targeting_context", None) if root is not None else None
+        if callable(context_fn):
+            get_parent_army = getattr(root, "get_parent_army", None)
+            army_now = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+            game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+            ctx = context_fn(target=target, game=game_now)
+            if isinstance(ctx, dict) and bool(ctx.get("reroll_hit_ones", False)):
+                reroll_hit_values.add(1)
+                source_name = (
+                    str(ctx.get("source", "") or "ENTROPHASIC AURA TARGETING").strip()
+                    or "ENTROPHASIC AURA TARGETING"
+                )
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         # Space Marines: Companions of Vehemence (Pious Enmity).
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -19923,6 +19939,21 @@ class WargearProfile:
                     reroll_value_reasons.append(source_name)
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+        context_fn = getattr(root, "_pantheon_entrophasic_aura_targeting_context", None) if root is not None else None
+        if callable(context_fn):
+            get_parent_army = getattr(root, "get_parent_army", None)
+            army_now = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+            game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+            ctx = context_fn(target=target, game=game_now)
+            if isinstance(ctx, dict) and bool(ctx.get("reroll_wound_ones", False)):
+                reroll_wound_values.add(1)
+                source_name = (
+                    str(ctx.get("source", "") or "ENTROPHASIC AURA TARGETING").strip()
+                    or "ENTROPHASIC AURA TARGETING"
+                )
+                reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         if rerolls_allowed and bool(attack_instance.get("hexwarp_flow_reroll_wound_ones", False)):
             reroll_wound_values.add(1)
             source_name = str(
