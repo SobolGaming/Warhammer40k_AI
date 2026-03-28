@@ -21471,6 +21471,42 @@ def _stratagem_support(
             "Your Movement phase after a friendly HERETIC ASTARTES unit arrives from Reserves: select one visible enemy non-MONSTER, non-VEHICLE unit within 12\" to take a Battle-shock test at -1.",
             name_u,
         )
+    if stratagem_id == "000009738002":
+        return (
+            "Implemented",
+            "Your Shooting phase or Fight phase: selected TYRANIDS unit re-rolls wound rolls of 1 this phase, and Tyranid Warriors units also re-roll hit rolls of 1 with an optional ENDLESS MULTITUDE secondary unit within 6\" also re-rolling wound rolls of 1.",
+            name_u,
+        )
+    if stratagem_id == "000009738003":
+        return (
+            "Implemented",
+            "Your Shooting phase or Fight phase: selected TYRANIDS unit gains +2 Strength on ranged weapons this phase, and Tyranid Warriors and Winged Tyranid Prime models in that unit also gain +1 Strength on melee weapons.",
+            name_u,
+        )
+    if stratagem_id == "000009738004":
+        return (
+            "Implemented",
+            "Your Command phase: selected Tyranid Warriors unit below Starting Strength can return 1 destroyed model, excluding CHARACTER models.",
+            name_u,
+        )
+    if stratagem_id == "000009738005":
+        return (
+            "Implemented",
+            "Your Movement phase: selected Tyranid Warriors unit makes a controlled objective sticky until your opponent's Level of Control is greater at the end of a phase.",
+            name_u,
+        )
+    if stratagem_id == "000009738006":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected Tyranid Warriors with Ranged Bio-weapons gain ignores cover on ranged weapons this phase, then one hit enemy unit cannot gain Benefit of Cover until end of turn.",
+            name_u,
+        )
+    if stratagem_id == "000009738007":
+        return (
+            "Implemented",
+            "Opponent Shooting phase reaction: selected Tyranid Warriors unit, and optionally one ENDLESS MULTITUDE unit within 6\", subtract 1 from the wound roll for stronger ranged attacks this phase.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", _note("Implemented in engine."), name_u)

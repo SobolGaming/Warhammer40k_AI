@@ -14129,6 +14129,29 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Tyranids: Warrior Bioform Onslaught (Synaptic Amplification).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(tyr_mgr, "warrior_bioform_synaptic_amplification_reroll_hit_wound_ones", None)
+                if tyr_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, _reroll_wound_ones, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    game=game,
+                )
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Synaptic Amplification").strip() or "Synaptic Amplification"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
         # Imperial Knights: Questor Forgepact (Cogbound Alliance - Divine Inspiration).
         unit = getattr(attacker, "parent_unit", None)
         army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
@@ -20214,6 +20237,29 @@ class WargearProfile:
                 if bool(reroll_wound_ones):
                     reroll_wound_values.add(1)
                     source_name = str(source or "Irresistible Will").strip() or "Irresistible Will"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Tyranids: Warrior Bioform Onslaught (Synaptic Amplification).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(tyr_mgr, "warrior_bioform_synaptic_amplification_reroll_hit_wound_ones", None)
+                if tyr_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _reroll_hit_ones, reroll_wound_ones, source = reroll_fn(
+                    attacker,
+                    target_unit=target,
+                    game=game,
+                )
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Synaptic Amplification").strip() or "Synaptic Amplification"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass

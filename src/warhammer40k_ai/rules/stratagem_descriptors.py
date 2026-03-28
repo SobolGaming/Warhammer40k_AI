@@ -5559,6 +5559,104 @@ _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WARRIOR_BIOFORM_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009738002": StratagemToolDescriptor(
+        stratagem_id="000009738002",
+        name="Synaptic Amplification",
+        timing="your_shooting_or_fight_phase_before_selecting_unit",
+        target="friendly_tyranids_unit_not_yet_selected_with_optional_endless_multitude_within_6_if_tyranid_warriors",
+        duration="until_end_of_phase",
+        effect="reroll_wound_rolls_of_1_and_conditional_tyranid_warriors_reroll_hit_rolls_of_1",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TYRANIDS"],
+            "reroll_wound_values": [1],
+            "tyranid_warriors_reroll_hit_values": [1],
+            "secondary_required_keyword": "ENDLESS MULTITUDE",
+            "secondary_max_range_in": 6.0,
+            "secondary_optional": True,
+            "secondary_exclude_battle_shocked": True,
+        },
+    ),
+    "000009738003": StratagemToolDescriptor(
+        stratagem_id="000009738003",
+        name="Spontaneous Hypercorrosion",
+        timing="your_shooting_or_fight_phase_before_selecting_unit",
+        target="friendly_tyranids_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="ranged_plus_two_strength_and_conditional_melee_plus_one_strength",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TYRANIDS"],
+            "ranged_strength_bonus": 2,
+            "melee_strength_bonus": 1,
+            "melee_bonus_model_keywords_any": ["TYRANID WARRIORS", "WINGED TYRANID PRIME"],
+        },
+    ),
+    "000009738004": StratagemToolDescriptor(
+        stratagem_id="000009738004",
+        name="Restorative Impulse",
+        timing="your_command_phase",
+        target="friendly_tyranid_warriors_unit_below_starting_strength",
+        duration="immediate",
+        effect="return_one_destroyed_non_character_model",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TYRANID WARRIORS"],
+            "return_count": 1,
+            "exclude_character": True,
+        },
+    ),
+    "000009738005": StratagemToolDescriptor(
+        stratagem_id="000009738005",
+        name="Synaptic Micronodes",
+        timing="your_movement_phase",
+        target="friendly_tyranid_warriors_unit_within_controlled_objective_range",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={"required_keywords_all": ["TYRANID WARRIORS"]},
+    ),
+    "000009738006": StratagemToolDescriptor(
+        stratagem_id="000009738006",
+        name="Parasitic Payload",
+        timing="your_shooting_phase_before_selecting_unit",
+        target="friendly_tyranid_warriors_with_ranged_bio_weapons_not_yet_selected_to_shoot",
+        duration="this_phase_and_until_end_of_turn_for_selected_enemy",
+        effect="ranged_ignores_cover_and_post_shoot_no_cover",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TYRANID WARRIORS"],
+            "requires_ranged_bio_weapons": True,
+            "grant_keyword": "IGNORES COVER",
+            "post_shoot_no_cover_duration": "turn_end",
+        },
+    ),
+    "000009738007": StratagemToolDescriptor(
+        stratagem_id="000009738007",
+        name="Synaptic Shield",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="friendly_tyranid_warriors_unit_targeted_by_attacker_with_optional_endless_multitude_within_6",
+        duration="until_end_of_phase",
+        effect="conditional_minus_one_to_wound_from_ranged_attacks",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["TYRANID WARRIORS"],
+            "attack_type": "ranged",
+            "wound_modifier": -1,
+            "requires_strength_gt_toughness": True,
+            "secondary_required_keyword": "ENDLESS MULTITUDE",
+            "secondary_max_range_in": 6.0,
+            "secondary_optional": True,
+            "secondary_exclude_battle_shocked": True,
+        },
+    ),
+}
+
+_WARRIOR_BIOFORM_ONSLAUGHT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARRIOR_BIOFORM_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008556002": StratagemToolDescriptor(
         stratagem_id="000008556002",
@@ -10396,6 +10494,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WARRIOR_BIOFORM_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10641,6 +10742,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _UNENDING_SWARM_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _WARRIOR_BIOFORM_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _FIRST_COMPANY_TASK_FORCE_STRATAGEM_BY_NAME.get(key)

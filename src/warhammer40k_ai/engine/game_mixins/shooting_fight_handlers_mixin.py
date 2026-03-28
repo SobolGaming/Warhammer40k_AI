@@ -4560,6 +4560,9 @@ class GameShootingFightHandlersMixin:
             if duration == "owner_next_shooting_start":
                 expires_phase = ""
                 expires_timing = "OWNER_NEXT_SHOOTING_START"
+            elif duration == "turn_end":
+                expires_phase = ""
+                expires_timing = "TURN_END"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
                 f"{ability_name}: select a unit.",

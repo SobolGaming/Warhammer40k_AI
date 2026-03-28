@@ -155,6 +155,44 @@ class TyranidsStratagemMixin:
                 out.append(model)
         return out
 
+    def _tyr_unit_is_battle_shocked(self, unit: Any) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked):
+            return bool(is_battle_shocked())
+        return bool(getattr(root, "battle_shocked", False))
+
+    @staticmethod
+    def _tyr_normalize_weapon_name(value: str) -> str:
+        return " ".join(str(value or "").strip().lower().split())
+
+    def _tyr_model_weapon_names(self, model: Any, *, attack_type: str) -> list[str]:
+        if model is None:
+            return []
+        mode = str(attack_type or "").strip().lower()
+        if mode not in {"melee", "ranged"}:
+            return []
+        names: list[str] = []
+        seen: set[str] = set()
+        for wargear in list(getattr(model, "wargear", []) or []):
+            if wargear is None:
+                continue
+            is_match = getattr(wargear, f"is_{mode}", None)
+            if not callable(is_match) or not bool(is_match()):
+                continue
+            weapon_name = str(getattr(wargear, "name", "") or "").strip()
+            if not weapon_name:
+                continue
+            key = self._tyr_normalize_weapon_name(weapon_name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            names.append(weapon_name)
+        names.sort(key=self._tyr_normalize_weapon_name)
+        return names
+
     def _tyr_is_monster_unit(self, unit: Any) -> bool:
         root = self._tyr_root(unit)
         if root is None:
@@ -946,6 +984,224 @@ class TyranidsStratagemMixin:
             candidates.append(root)
             objective_map[uid] = objectives
         return sorted(candidates, key=self._tyr_sort_key), objective_map
+
+    def _tyr_unit_has_destroyed_non_character_models(self, unit: Any) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        can_return = getattr(root, "_horrors_can_return_model", None)
+
+        def _pool_has_returnable(pool: list[Any]) -> bool:
+            for model in list(pool or []):
+                if bool(getattr(model, "is_character", False)):
+                    continue
+                if callable(can_return) and not bool(can_return(model)):
+                    continue
+                return True
+            return False
+
+        if _pool_has_returnable(list(getattr(root, "models_lost", []) or [])):
+            return True
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        if callable(members_fn):
+            for member in list(members_fn() or []):
+                if member is None or member is root:
+                    continue
+                if _pool_has_returnable(list(getattr(member, "models_lost", []) or [])):
+                    return True
+        return False
+
+    def _tyr_warrior_bioform_warrior_candidates(self) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        mgr = self._tyr_detachment_mgr()
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_warrior = bool(
+                getattr(mgr, "_leader_beasts_unit_is_tyranid_warrior_datasheet", lambda *_a, **_k: False)(root)
+            )
+            if not is_warrior:
+                is_warrior = bool(getattr(mgr, "_attached_unit_has_keyword", lambda *_a, **_k: False)(root, "TYRANID WARRIORS"))
+            if not is_warrior:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_warrior_bioform_secondary_endless_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        source_root = self._tyr_root(source_unit)
+        if source_root is None:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if root is source_root:
+                continue
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_is_endless_multitude_unit(root):
+                continue
+            if self._tyr_unit_is_battle_shocked(root):
+                continue
+            if not bool(unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_warrior_bioform_synaptic_micronodes_candidates(self) -> tuple[list[Any], dict[str, list[Any]]]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return [], {}
+        phase_name = self._tyr_phase_name(getattr(self, "_current_phase_name", ""))
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name != "movement phase" or active_player is not self.player:
+            return [], {}
+        candidates: list[Any] = []
+        objective_map: dict[str, list[Any]] = {}
+        for root in list(self._tyr_warrior_bioform_warrior_candidates() or []):
+            objectives = self._tyr_objective_candidates_you_control(root)
+            if not objectives:
+                continue
+            candidates.append(root)
+            objective_map[self._tyr_sort_key(root)] = objectives
+        return sorted(candidates, key=self._tyr_sort_key), objective_map
+
+    def _tyr_warrior_bioform_synaptic_amplification_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        phase_key = self._tyr_phase_name(phase_name)
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_key):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_warrior_bioform_restorative_impulse_candidates(self) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        if not self._tyr_is_own_command_phase(phase_name=self._tyr_phase_name(getattr(self, "_current_phase_name", ""))):
+            return []
+        out: list[Any] = []
+        for root in list(self._tyr_warrior_bioform_warrior_candidates() or []):
+            if not self._tyr_unit_has_destroyed_non_character_models(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_warrior_bioform_parasitic_payload_candidates(self) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        phase_key = self._tyr_phase_name(getattr(self, "_current_phase_name", ""))
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key != "shooting phase" or active_player is not self.player:
+            return []
+        mgr = self._tyr_detachment_mgr()
+        out: list[Any] = []
+        for root in list(self._tyr_warrior_bioform_warrior_candidates() or []):
+            if not bool(getattr(mgr, "_warrior_bioform_unit_is_ranged_tyranid_warrior_datasheet", lambda *_a, **_k: False)(root)):
+                continue
+            if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="shooting phase"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_warrior_bioform_spontaneous_hypercorrosion_candidates(self, *, phase_name: str) -> list[Any]:
+        return self._tyr_warrior_bioform_synaptic_amplification_candidates(phase_name=phase_name)
+
+    def _tyr_warrior_bioform_synaptic_shield_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        warrior_ids = {self._tyr_sort_key(root) for root in list(self._tyr_warrior_bioform_warrior_candidates() or [])}
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            if uid not in warrior_ids:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
 
     def _tyr_death_frenzy_candidates(
         self,
@@ -3292,6 +3548,62 @@ class TyranidsStratagemMixin:
                 payload["target_unit"] = candidates[0]
             queue_reaction(payload, use_timer=False)
 
+    def _queue_tyranids_warrior_bioform_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_tyranids_warrior_bioform_onslaught_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SYNAPTIC SHIELD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_warrior_bioform_synaptic_shield_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     def _queue_tyranids_synaptic_nexus_shooting_target_reactions(
         self,
         *,
@@ -3753,6 +4065,19 @@ class TyranidsStratagemMixin:
                 return self._use_tyranids_unseen_lurkers(stratagem, **kwargs)
             if name_u == "INVISIBLE HUNTER":
                 return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
+        if self._is_tyranids_warrior_bioform_onslaught_detachment():
+            if name_u == "SYNAPTIC MICRONODES":
+                return self._use_tyranids_synaptic_micronodes(stratagem, **kwargs)
+            if name_u == "SYNAPTIC AMPLIFICATION":
+                return self._use_tyranids_synaptic_amplification(stratagem, **kwargs)
+            if name_u == "RESTORATIVE IMPULSE":
+                return self._use_tyranids_restorative_impulse(stratagem, **kwargs)
+            if name_u == "SYNAPTIC SHIELD":
+                return self._use_tyranids_synaptic_shield(stratagem, **kwargs)
+            if name_u == "PARASITIC PAYLOAD":
+                return self._use_tyranids_parasitic_payload(stratagem, **kwargs)
+            if name_u == "SPONTANEOUS HYPERCORROSION":
+                return self._use_tyranids_spontaneous_hypercorrosion(stratagem, **kwargs)
         if self._is_tyranids_synaptic_nexus_detachment():
             if name_u == "REINFORCED HIVE NODE":
                 return self._use_tyranids_reinforced_hive_node(stratagem, **kwargs)
@@ -4133,6 +4458,637 @@ class TyranidsStratagemMixin:
         root.special_rules = sr
 
         self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        return True
+
+    def _use_tyranids_synaptic_micronodes(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        objective_candidates_by_unit = dict(kwargs.get("objective_candidates_by_unit") or {})
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: SYNAPTIC MICRONODES: no target unit provided")
+            return False
+
+        root = self._tyr_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "movement phase":
+            logger.error("ERROR: SYNAPTIC MICRONODES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SYNAPTIC MICRONODES: not your Movement phase")
+            return False
+
+        eligible, objective_map = self._tyr_warrior_bioform_synaptic_micronodes_candidates()
+        if not eligible or not self._tyr_unit_in_candidates(root, candidates or eligible):
+            logger.error("ERROR: SYNAPTIC MICRONODES: selected unit is not currently eligible")
+            return False
+        if not objective_candidates and objective_candidates_by_unit:
+            objective_candidates = list(objective_candidates_by_unit.get(self._tyr_sort_key(root)) or [])
+        if not objective_candidates:
+            objective_candidates = list(objective_map.get(self._tyr_sort_key(root)) or self._tyr_objective_candidates_you_control(root))
+        if not objective_candidates:
+            logger.error("ERROR: SYNAPTIC MICRONODES: no eligible objective markers")
+            return False
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if isinstance(objective, str):
+            for candidate in list(objective_candidates or []):
+                objective_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+                location = getattr(candidate, "location", None)
+                location_id = str(getattr(location, "id", "") or get_entity_id(location) or "")
+                if objective == objective_id or objective == location_id:
+                    objective = candidate
+                    break
+
+        phase_label = "Movement phase"
+        source_name = str(getattr(stratagem, "name", "") or "SYNAPTIC MICRONODES").strip() or "SYNAPTIC MICRONODES"
+        if objective is None:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            if not callable(request_decision):
+                logger.error("ERROR: SYNAPTIC MICRONODES: decision queue unavailable")
+                return False
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            unit_id = self._tyr_sort_key(root)
+            candidate_objective_ids = [
+                str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+                for candidate in list(objective_candidates)
+                if str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+            ]
+            if not unit_id or not candidate_objective_ids:
+                logger.error("ERROR: SYNAPTIC MICRONODES: source unit or objective candidates missing stable ids")
+                return False
+            if self._tyr_pending_choose_quarry_request(
+                ability="tyranids_synaptic_micronodes_objective",
+                source_unit_id=unit_id,
+            ):
+                logger.error("ERROR: SYNAPTIC MICRONODES: objective selection already queued")
+                return False
+            if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+                logger.error("ERROR: SYNAPTIC MICRONODES: cannot be used in current state")
+                return False
+            if not self._tyr_spend_cp(stratagem, target_unit=root):
+                return False
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: select one objective marker within range of {getattr(root, 'name', 'Unit')}.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        str(getattr(candidate, "name", "Objective") or "Objective"),
+                        payload={
+                            "unit_id": unit_id,
+                            "source_unit_id": unit_id,
+                            "objective_id": str(getattr(candidate, "id", "") or get_entity_id(candidate) or ""),
+                        },
+                    )
+                    for candidate in list(objective_candidates)
+                    if str(getattr(candidate, "id", "") or get_entity_id(candidate) or "")
+                ],
+                context={
+                    "ability": "tyranids_synaptic_micronodes_objective",
+                    "ability_name": source_name,
+                    "phase": phase_label,
+                    "phase_name": phase_label,
+                    "unit_id": unit_id,
+                    "source_unit_id": unit_id,
+                    "candidate_objective_ids": list(candidate_objective_ids),
+                    "optional": False,
+                },
+            )
+            request_decision(request)
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info("INFO: SYNAPTIC MICRONODES: queued objective selection for %s.", getattr(root, "name", "Unit"))
+            return True
+
+        if objective not in list(objective_candidates or []):
+            logger.error("ERROR: SYNAPTIC MICRONODES: objective selection is not eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: SYNAPTIC MICRONODES: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        location = getattr(objective, "location", None) or objective
+        set_sticky = getattr(location, "set_sticky_control", None)
+        if not callable(set_sticky):
+            logger.error("ERROR: SYNAPTIC MICRONODES: selected objective cannot become sticky")
+            return False
+        set_sticky(self.player, source="synaptic_micronodes")
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYNAPTIC MICRONODES: %s makes %s sticky.",
+            getattr(root, "name", "Unit"),
+            getattr(objective, "name", "Objective"),
+        )
+        return True
+
+    def _use_tyranids_synaptic_amplification(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: target must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: target must be a TYRANIDS unit")
+            return False
+        if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: target has already been selected this phase")
+            return False
+
+        eligible = candidates or self._tyr_warrior_bioform_synaptic_amplification_candidates(phase_name=phase_name)
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: selected unit is not currently eligible")
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        is_warrior = bool(getattr(mgr, "_leader_beasts_unit_is_tyranid_warrior_datasheet", lambda *_a, **_k: False)(root))
+        secondary_candidates = self._tyr_warrior_bioform_secondary_endless_candidates(root) if is_warrior else []
+        secondary_roots = self._tyr_resolve_units(kwargs.get("secondary_unit"))
+        secondary_root = secondary_roots[0] if secondary_roots else None
+        if secondary_root is not None and not self._tyr_unit_in_candidates(secondary_root, secondary_candidates):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: selected secondary unit is not eligible")
+            return False
+
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        source_name = str(getattr(stratagem, "name", "") or "SYNAPTIC AMPLIFICATION").strip() or "SYNAPTIC AMPLIFICATION"
+        request_decision = None
+        unit_id = self._tyr_sort_key(root)
+        candidate_unit_ids: list[str] = []
+        if secondary_root is None and secondary_candidates:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            if not callable(request_decision):
+                logger.error("ERROR: SYNAPTIC AMPLIFICATION: decision queue unavailable")
+                return False
+            candidate_unit_ids = [self._tyr_sort_key(candidate) for candidate in list(secondary_candidates) if self._tyr_sort_key(candidate)]
+            if self._tyr_pending_choose_quarry_request(
+                ability="tyranids_synaptic_amplification_secondary",
+                source_unit_id=unit_id,
+            ):
+                logger.error("ERROR: SYNAPTIC AMPLIFICATION: secondary selection already queued")
+                return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+        outcome = getattr(mgr, "activate_warrior_bioform_synaptic_amplification", lambda *_a, **_k: {"ok": False})(
+            root,
+            phase_name=phase_label,
+            game=self.game,
+            player=self.player,
+            source=source_name,
+            reroll_hit_ones=is_warrior,
+            reroll_wound_ones=True,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: SYNAPTIC AMPLIFICATION: failed to apply primary effect")
+            return False
+
+        if secondary_root is None and secondary_candidates:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: optionally select one ENDLESS MULTITUDE unit within 6\" of {getattr(root, 'name', 'Unit')}.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create("None", payload={"action": "skip", "source_unit_id": unit_id}),
+                    *[
+                        DecisionOption.create(
+                            str(getattr(candidate, "name", "Unit") or "Unit"),
+                            payload={
+                                "source_unit_id": unit_id,
+                                "unit_id": unit_id,
+                                "target_unit_id": self._tyr_sort_key(candidate),
+                            },
+                        )
+                        for candidate in list(secondary_candidates)
+                        if self._tyr_sort_key(candidate)
+                    ],
+                ],
+                context={
+                    "ability": "tyranids_synaptic_amplification_secondary",
+                    "ability_name": source_name,
+                    "phase": phase_label,
+                    "phase_name": phase_label,
+                    "source_unit_id": unit_id,
+                    "unit_id": unit_id,
+                    "candidate_unit_ids": list(candidate_unit_ids),
+                    "optional": True,
+                },
+            )
+            request_decision(request)
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: SYNAPTIC AMPLIFICATION: %s gains re-roll Wound rolls of 1 and queued optional secondary selection.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        if secondary_root is not None:
+            secondary_outcome = getattr(mgr, "activate_warrior_bioform_synaptic_amplification", lambda *_a, **_k: {"ok": False})(
+                secondary_root,
+                phase_name=phase_label,
+                game=self.game,
+                player=self.player,
+                source=source_name,
+                reroll_hit_ones=False,
+                reroll_wound_ones=True,
+            )
+            if not isinstance(secondary_outcome, dict) or not bool(secondary_outcome.get("ok", False)):
+                logger.error("ERROR: SYNAPTIC AMPLIFICATION: failed to apply secondary effect")
+                return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYNAPTIC AMPLIFICATION: %s gains re-roll Wound rolls of 1%s.",
+            getattr(root, "name", "Unit"),
+            " and re-roll Hit rolls of 1" if is_warrior else "",
+        )
+        return True
+
+    def _use_tyranids_restorative_impulse(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: RESTORATIVE IMPULSE: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "command phase":
+            logger.error("ERROR: RESTORATIVE IMPULSE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RESTORATIVE IMPULSE: not your Command phase")
+            return False
+        eligible = candidates or self._tyr_warrior_bioform_restorative_impulse_candidates()
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RESTORATIVE IMPULSE: selected unit is not currently eligible")
+            return False
+        if not self._tyr_unit_has_destroyed_non_character_models(root):
+            logger.error("ERROR: RESTORATIVE IMPULSE: selected unit has no destroyed non-CHARACTER models")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: RESTORATIVE IMPULSE: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+        returned = self._tyr_return_destroyed_models(root, amount=1)
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RESTORATIVE IMPULSE: returned %d model(s) to %s.",
+            int(returned),
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_synaptic_shield(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        if target_unit is None or not candidates or attacking_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SYNAPTIC SHIELD":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: SYNAPTIC SHIELD: no target unit provided")
+            return False
+
+        root = self._tyr_root(target_unit)
+        attacker_root = self._tyr_root(attacking_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SYNAPTIC SHIELD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SYNAPTIC SHIELD: not the opponent's Shooting phase")
+            return False
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: SYNAPTIC SHIELD: attacking unit must be an enemy unit")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SYNAPTIC SHIELD: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SYNAPTIC SHIELD: target must be on the battlefield")
+            return False
+
+        eligible = candidates or self._tyr_warrior_bioform_synaptic_shield_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SYNAPTIC SHIELD: selected unit is not currently eligible")
+            return False
+
+        secondary_roots = self._tyr_resolve_units(kwargs.get("secondary_unit"))
+        secondary_root = secondary_roots[0] if secondary_roots else None
+        secondary_candidates = self._tyr_warrior_bioform_secondary_endless_candidates(root)
+        if secondary_root is not None and not self._tyr_unit_in_candidates(secondary_root, secondary_candidates):
+            logger.error("ERROR: SYNAPTIC SHIELD: selected secondary unit is not eligible")
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SYNAPTIC SHIELD").strip() or "SYNAPTIC SHIELD"
+        request_decision = None
+        unit_id = self._tyr_sort_key(root)
+        candidate_unit_ids: list[str] = []
+        if secondary_root is None and secondary_candidates:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            candidate_unit_ids = [self._tyr_sort_key(candidate) for candidate in list(secondary_candidates) if self._tyr_sort_key(candidate)]
+            if not callable(request_decision):
+                logger.error("ERROR: SYNAPTIC SHIELD: decision queue unavailable")
+                return False
+            if self._tyr_pending_choose_quarry_request(
+                ability="tyranids_synaptic_shield_secondary",
+                source_unit_id=unit_id,
+            ):
+                logger.error("ERROR: SYNAPTIC SHIELD: secondary selection already queued")
+                return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            enemy_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: SYNAPTIC SHIELD: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "ranged",
+            "expires_phase": "SHOOTING_PHASE",
+            "source": source_name,
+            "requires_strength_gt_toughness": True,
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_wound_mods", dict(entry))
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_wound_mods", []) or [])
+            items.append(dict(entry))
+            sr["defensive_wound_mods"] = items
+            root.special_rules = sr
+
+        if secondary_root is None and secondary_candidates:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: optionally select one ENDLESS MULTITUDE unit within 6\" of {getattr(root, 'name', 'Unit')}.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create("None", payload={"action": "skip", "source_unit_id": unit_id}),
+                    *[
+                        DecisionOption.create(
+                            str(getattr(candidate, "name", "Unit") or "Unit"),
+                            payload={
+                                "source_unit_id": unit_id,
+                                "unit_id": unit_id,
+                                "target_unit_id": self._tyr_sort_key(candidate),
+                            },
+                        )
+                        for candidate in list(secondary_candidates)
+                        if self._tyr_sort_key(candidate)
+                    ],
+                ],
+                context={
+                    "ability": "tyranids_synaptic_shield_secondary",
+                    "ability_name": source_name,
+                    "phase": "Opponent Shooting phase",
+                    "phase_name": "Shooting phase",
+                    "source_unit_id": unit_id,
+                    "unit_id": unit_id,
+                    "candidate_unit_ids": list(candidate_unit_ids),
+                    "optional": True,
+                },
+            )
+            request_decision(request)
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: SYNAPTIC SHIELD: %s gains defensive protection and queued optional secondary selection.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        if secondary_root is not None:
+            if callable(append_defensive_effect):
+                append_defensive_effect(secondary_root, "defensive_wound_mods", dict(entry))
+            else:
+                sr = getattr(secondary_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                items = list(sr.get("defensive_wound_mods", []) or [])
+                items.append(dict(entry))
+                sr["defensive_wound_mods"] = items
+                secondary_root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYNAPTIC SHIELD: %s gains -1 to wound from stronger ranged attacks this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_parasitic_payload(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: PARASITIC PAYLOAD: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PARASITIC PAYLOAD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PARASITIC PAYLOAD: not your Shooting phase")
+            return False
+        eligible = candidates or self._tyr_warrior_bioform_parasitic_payload_candidates()
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PARASITIC PAYLOAD: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: PARASITIC PAYLOAD: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "PARASITIC PAYLOAD").strip() or "PARASITIC PAYLOAD"
+        for model in list(self._tyr_iter_unit_models(root) or []):
+            model_id = str(get_entity_id(model) or "")
+            for weapon_index, weapon_name in enumerate(self._tyr_model_weapon_names(model, attack_type="ranged")):
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                set_keywords(
+                    key=f"tyranids_parasitic_payload:{model_id}:{weapon_index}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=["IGNORES COVER"],
+                    source=source_name,
+                    expires_phase="SHOOTING_PHASE",
+                    attack_type="ranged",
+                )
+
+        mgr = self._tyr_detachment_mgr()
+        outcome = getattr(mgr, "activate_warrior_bioform_parasitic_payload", lambda *_a, **_k: {"ok": False})(
+            root,
+            phase_name="Shooting phase",
+            game=self.game,
+            player=self.player,
+            source=source_name,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: PARASITIC PAYLOAD: failed to activate post-shoot effect")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PARASITIC PAYLOAD: %s gains [IGNORES COVER] on ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_spontaneous_hypercorrosion(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: SPONTANEOUS HYPERCORROSION: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SPONTANEOUS HYPERCORROSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SPONTANEOUS HYPERCORROSION: not your turn")
+            return False
+        eligible = candidates or self._tyr_warrior_bioform_spontaneous_hypercorrosion_candidates(phase_name=phase_name)
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SPONTANEOUS HYPERCORROSION: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+        ):
+            logger.error("ERROR: SPONTANEOUS HYPERCORROSION: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        expires_phase = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source_name = str(getattr(stratagem, "name", "") or "SPONTANEOUS HYPERCORROSION").strip() or "SPONTANEOUS HYPERCORROSION"
+        mgr = self._tyr_detachment_mgr()
+        for model in list(self._tyr_iter_unit_models(root) or []):
+            model_id = str(get_entity_id(model) or "")
+            for weapon_index, weapon_name in enumerate(self._tyr_model_weapon_names(model, attack_type="ranged")):
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                set_bonus(
+                    key=f"tyranids_spontaneous_hypercorrosion:ranged:{model_id}:{weapon_index}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    strength_bonus=2,
+                    source=source_name,
+                    expires_phase=expires_phase,
+                )
+            member_unit = getattr(model, "parent_unit", None)
+            grants_melee = bool(getattr(mgr, "_leader_beasts_unit_is_tyranid_warrior_datasheet", lambda *_a, **_k: False)(member_unit))
+            if not grants_melee:
+                grants_melee = bool(getattr(mgr, "_leader_beasts_unit_is_winged_tyranid_prime_datasheet", lambda *_a, **_k: False)(member_unit))
+            if not grants_melee:
+                continue
+            for weapon_index, weapon_name in enumerate(self._tyr_model_weapon_names(model, attack_type="melee")):
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                set_bonus(
+                    key=f"tyranids_spontaneous_hypercorrosion:melee:{model_id}:{weapon_index}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    strength_bonus=1,
+                    source=source_name,
+                    expires_phase=expires_phase,
+                )
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SPONTANEOUS HYPERCORROSION: %s gains +2 Strength on ranged weapons and eligible models gain +1 Strength on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
         return True
 
     def _use_tyranids_tyrannoformed(self, stratagem: Any, **kwargs) -> bool:

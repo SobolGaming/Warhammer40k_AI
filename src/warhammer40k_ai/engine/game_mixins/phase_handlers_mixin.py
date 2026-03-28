@@ -20630,6 +20630,19 @@ class GamePhaseHandlersMixin:
                             ):
                                 sr.pop(k, None)
                 if pname == "FIGHT_PHASE":
+                    timing = str(sr.get("post_shoot_no_cover_expires_timing", "") or "").strip().upper()
+                    if timing == "TURN_END":
+                        effect_owner = str(sr.get("post_shoot_no_cover_owner", "") or "")
+                        if (not effect_owner) or (not active_name) or effect_owner == active_name:
+                            for k in (
+                                "post_shoot_no_cover_active",
+                                "post_shoot_no_cover_expires_phase",
+                                "post_shoot_no_cover_expires_timing",
+                                "post_shoot_no_cover_source",
+                                "post_shoot_no_cover_owner",
+                                "post_shoot_no_cover_turn",
+                            ):
+                                sr.pop(k, None)
                     timing = str(sr.get("post_shoot_ap_bonus_expires_timing", "") or "").strip().upper()
                     if timing == "TURN_END":
                         effect_owner = str(sr.get("post_shoot_ap_bonus_owner", "") or "")

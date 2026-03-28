@@ -108,6 +108,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SURPRISE ASSAULT",
     "SEEDED BROODS",
     "HYPERSENSORY SCILLIA",
+    "SYNAPTIC AMPLIFICATION",
+    "SYNAPTIC MICRONODES",
+    "RESTORATIVE IMPULSE",
+    "SYNAPTIC SHIELD",
+    "PARASITIC PAYLOAD",
+    "SPONTANEOUS HYPERCORROSION",
     "UNSEEN LURKERS",
     "SWARMING MASSES",
     "TEEMING MASSES",
@@ -802,6 +808,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
+    "SYNAPTIC SHIELD",
     "GLIMMERSHIFT PORTAL",
     "CYBERSPIRIT MACHINATIONS",
     "STRANDS OF TIME",
@@ -5851,6 +5858,82 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and eligible VANGUARD INVADER or TYRANIDS INFANTRY units on the battlefield"
             return result
+        if name_u == "SYNAPTIC MICRONODES":
+            candidates = list(context.get("candidates") or [])
+            objective_candidates_by_unit = dict(context.get("objective_candidates_by_unit") or {})
+            if not candidates:
+                candidates, objective_candidates_by_unit = self._tyr_warrior_bioform_synaptic_micronodes_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a friendly Tyranid Warriors unit within range of an objective marker you control"
+            return result
+        if name_u == "SYNAPTIC AMPLIFICATION":
+            phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_warrior_bioform_synaptic_amplification_candidates(phase_name=phase_name)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or Fight phase and a friendly TYRANIDS unit that has not yet been selected to shoot or fight"
+            return result
+        if name_u == "RESTORATIVE IMPULSE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_warrior_bioform_restorative_impulse_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly Tyranid Warriors unit with one or more destroyed non-CHARACTER models"
+            return result
+        if name_u == "SYNAPTIC SHIELD":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SYNAPTIC SHIELD":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            candidates = list(context.get("candidates") or [])
+            if not candidates and attacking_unit is not None and target_units:
+                candidates = self._tyr_warrior_bioform_synaptic_shield_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase, just after an enemy unit selects targets including one of your Tyranid Warriors units"
+            return result
+        if name_u == "PARASITIC PAYLOAD":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_warrior_bioform_parasitic_payload_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a friendly Tyranid Warriors with Ranged Bio-weapons unit that has not yet been selected to shoot"
+            return result
+        if name_u == "SPONTANEOUS HYPERCORROSION":
+            phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_warrior_bioform_spontaneous_hypercorrosion_candidates(phase_name=phase_name)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or Fight phase and a friendly TYRANIDS unit that has not yet been selected to shoot or fight"
+            return result
         if name_u == "SURPRISE ASSAULT":
             for reaction in list(getattr(self, "_pending_reactions", []) or []):
                 if str(reaction.get("stratagem", "") or "").strip().upper() != "SURPRISE ASSAULT":
@@ -6970,6 +7053,12 @@ class StratagemManager(
             "REINFORCED HIVE NODE": "Opponent Shooting phase or the Fight phase, just after an enemy unit selects targets: selected friendly SYNAPSE unit worsens incoming AP by 1 from that attacker until it finishes its attacks",
             "IRRESISTIBLE WILL": "Your Shooting phase or the Fight phase: select one friendly SYNAPSE unit that has not yet shot/fought and one visible enemy within 24\"; friendly TYRANIDS units within 6\" of the selected SYNAPSE unit re-roll Hit and Wound rolls of 1 against that enemy this phase",
             "SYNAPTIC CHANNELLING": "Command phase: selected friendly SYNAPSE unit projects Synapse Range to friendly TYRANIDS units within 9\" until end of turn",
+            "SYNAPTIC MICRONODES": "Movement phase: selected Tyranid Warriors unit chooses one objective marker you control within its range; that objective becomes sticky until your opponent's Level of Control is greater at the end of a phase",
+            "SYNAPTIC AMPLIFICATION": "Your Shooting phase or Fight phase: selected TYRANIDS unit re-rolls Wound rolls of 1 this phase, and if it is a Tyranid Warriors unit it also re-rolls Hit rolls of 1 and can choose one ENDLESS MULTITUDE unit within 6\" to also re-roll Wound rolls of 1",
+            "RESTORATIVE IMPULSE": "Command phase: selected Tyranid Warriors unit below Starting Strength returns one destroyed non-CHARACTER model",
+            "SYNAPTIC SHIELD": "Opponent Shooting phase reaction after an enemy unit selects targets: selected Tyranid Warriors unit suffers -1 to wound from ranged attacks with Strength greater than its Toughness this phase, and can also choose one ENDLESS MULTITUDE unit within 6\" to gain the same protection",
+            "PARASITIC PAYLOAD": "Shooting phase: selected Tyranid Warriors with Ranged Bio-weapons unit gains [IGNORES COVER] on ranged weapons this phase, and after it shoots one hit enemy unit cannot gain Benefit of Cover until the end of turn",
+            "SPONTANEOUS HYPERCORROSION": "Your Shooting phase or Fight phase: selected TYRANIDS unit gains +2 Strength on ranged weapons this phase, and Tyranid Warriors and Winged Tyranid Prime models in that unit also gain +1 Strength on melee weapons",
             "IMPERATIVE DOMINANCE": "Your Command phase: selected TYRANIDS unit within Synapse Range chooses one Synaptic Imperative to use until the start of your next Command phase",
             "THE SMOTHERING SHADOW": "Any phase, just after an enemy unit fails a Battle-shock test: selected friendly SYNAPSE unit within 12\" rolls 6D6 and inflicts 1 mortal wound for each 3+",
             "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
@@ -12364,6 +12453,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_synaptic_nexus_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_warrior_bioform_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

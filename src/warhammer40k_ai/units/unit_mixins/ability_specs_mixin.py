@@ -4743,7 +4743,7 @@ class AbilitySpecsMixin:
             - weapon_key: Optional[str] (normalized; None means any weapon)
             - weapon_name: str (display)
             - any_weapon: bool
-            - duration: str ("phase_end" | "owner_next_shooting_start")
+            - duration: str ("phase_end" | "turn_end" | "owner_next_shooting_start")
         """
         try:
             root = self.get_attached_unit_root()
@@ -4912,7 +4912,7 @@ class AbilitySpecsMixin:
             if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_warp_tracer")):
                 source = str(source_sr.get("enhancement_warp_tracer_source", "") or "Warp Tracer").strip() or "Warp Tracer"
                 duration = str(source_sr.get("enhancement_warp_tracer_expires_timing", "") or "phase_end").strip().lower()
-                if duration not in {"phase_end", "owner_next_shooting_start"}:
+                if duration not in {"phase_end", "turn_end", "owner_next_shooting_start"}:
                     duration = "phase_end"
                 key = (source.lower(), "any", duration)
                 if key in seen:
@@ -4961,6 +4961,21 @@ class AbilitySpecsMixin:
                         or "SCOURING WARPFLAME",
                         any_weapon=True,
                         duration="phase_end",
+                    )
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            active_fn = getattr(tyr_mgr, "warrior_bioform_parasitic_payload_active", None) if tyr_mgr is not None else None
+            if callable(active_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                active, source = active_fn(root, game=game)
+                if active:
+                    _append_spec(
+                        source=str(source or "PARASITIC PAYLOAD").strip() or "PARASITIC PAYLOAD",
+                        any_weapon=True,
+                        duration="turn_end",
                     )
         except Exception:
             pass

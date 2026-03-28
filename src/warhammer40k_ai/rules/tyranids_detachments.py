@@ -107,6 +107,8 @@ _SURPRISE_ASSAULT_SOURCE = "Surprise Assault"
 _ASSASSIN_BEASTS_SOURCE = "Assassin Beasts"
 _SEEDED_BROODS_SOURCE = "Seeded Broods"
 _UNSEEN_LURKERS_SOURCE = "Unseen Lurkers"
+_WARRIOR_BIOFORM_SYNAPTIC_AMPLIFICATION_SOURCE = "Synaptic Amplification"
+_WARRIOR_BIOFORM_PARASITIC_PAYLOAD_SOURCE = "Parasitic Payload"
 _SUBTERRANEAN_ASSAULT_TRYGON_SELECTION_ABILITY = "subterranean_assault_trygon_character_selection"
 _SUBTERRANEAN_ASSAULT_TUNNEL_MARKER_PLACEMENT_ABILITY = "subterranean_assault_tunnel_marker_placement"
 _TUNNEL_MARKER_HORIZONTAL_RANGE = 9.0
@@ -806,6 +808,185 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if self._attached_unit_has_keyword(root, "WINGED TYRANID PRIME"):
             return 5, "Leader-beasts"
         return 0, ""
+
+    def _clear_expired_warrior_bioform_effects(self, *, game=None) -> None:
+        if not self.is_warrior_bioform_onslaught():
+            return
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        for root in list(self._iter_army_roots() or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            invalidate_cache = False
+            if bool(sr.get("tyranids_warrior_bioform_synaptic_amplification_active")) and not self._timed_unit_effect_is_active(
+                root,
+                "tyranids_warrior_bioform_synaptic_amplification_active",
+                expires_phase_key="tyranids_warrior_bioform_synaptic_amplification_expires_phase",
+                turn_key="tyranids_warrior_bioform_synaptic_amplification_turn",
+                owner_key="tyranids_warrior_bioform_synaptic_amplification_turn_owner",
+                game=resolved_game,
+            ):
+                for key in (
+                    "tyranids_warrior_bioform_synaptic_amplification_active",
+                    "tyranids_warrior_bioform_synaptic_amplification_expires_phase",
+                    "tyranids_warrior_bioform_synaptic_amplification_turn",
+                    "tyranids_warrior_bioform_synaptic_amplification_turn_owner",
+                    "tyranids_warrior_bioform_synaptic_amplification_source",
+                    "tyranids_warrior_bioform_synaptic_amplification_reroll_hit_ones",
+                    "tyranids_warrior_bioform_synaptic_amplification_reroll_wound_ones",
+                ):
+                    sr.pop(key, None)
+                changed = True
+            if bool(sr.get("tyranids_warrior_bioform_parasitic_payload_active")) and not self._timed_unit_effect_is_active(
+                root,
+                "tyranids_warrior_bioform_parasitic_payload_active",
+                expires_phase_key="tyranids_warrior_bioform_parasitic_payload_expires_phase",
+                turn_key="tyranids_warrior_bioform_parasitic_payload_turn",
+                owner_key="tyranids_warrior_bioform_parasitic_payload_turn_owner",
+                game=resolved_game,
+            ):
+                for key in (
+                    "tyranids_warrior_bioform_parasitic_payload_active",
+                    "tyranids_warrior_bioform_parasitic_payload_expires_phase",
+                    "tyranids_warrior_bioform_parasitic_payload_turn",
+                    "tyranids_warrior_bioform_parasitic_payload_turn_owner",
+                    "tyranids_warrior_bioform_parasitic_payload_source",
+                ):
+                    sr.pop(key, None)
+                changed = True
+                invalidate_cache = True
+            if changed:
+                root.special_rules = sr
+                if invalidate_cache:
+                    invalidate = getattr(root, "_invalidate_ability_cache", None)
+                    if callable(invalidate):
+                        invalidate()
+
+    def activate_warrior_bioform_synaptic_amplification(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+        reroll_hit_ones: bool = False,
+        reroll_wound_ones: bool = True,
+    ) -> dict[str, object]:
+        if not self.is_warrior_bioform_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        self._clear_expired_warrior_bioform_effects(game=game)
+        return self._activate_timed_unit_effect(
+            unit,
+            flag_key="tyranids_warrior_bioform_synaptic_amplification_active",
+            source_key="tyranids_warrior_bioform_synaptic_amplification_source",
+            source=str(source or _WARRIOR_BIOFORM_SYNAPTIC_AMPLIFICATION_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_warrior_bioform_synaptic_amplification_expires_phase",
+            turn_key="tyranids_warrior_bioform_synaptic_amplification_turn",
+            owner_key="tyranids_warrior_bioform_synaptic_amplification_turn_owner",
+            game=game,
+            player=player,
+            extra_updates={
+                "tyranids_warrior_bioform_synaptic_amplification_reroll_hit_ones": bool(reroll_hit_ones),
+                "tyranids_warrior_bioform_synaptic_amplification_reroll_wound_ones": bool(reroll_wound_ones),
+            },
+        )
+
+    def warrior_bioform_synaptic_amplification_reroll_hit_wound_ones(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+    ) -> tuple[bool, bool, str]:
+        _ = target_unit
+        if not self.is_warrior_bioform_onslaught():
+            return False, False, ""
+        if attacker_model is None:
+            return False, False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, False, ""
+        self._clear_expired_warrior_bioform_effects(game=game)
+        if not self._timed_unit_effect_is_active(
+            attacker_root,
+            "tyranids_warrior_bioform_synaptic_amplification_active",
+            expires_phase_key="tyranids_warrior_bioform_synaptic_amplification_expires_phase",
+            turn_key="tyranids_warrior_bioform_synaptic_amplification_turn",
+            owner_key="tyranids_warrior_bioform_synaptic_amplification_turn_owner",
+            game=game,
+        ):
+            return False, False, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, False, ""
+        source_name = str(
+            sr.get("tyranids_warrior_bioform_synaptic_amplification_source", "")
+            or _WARRIOR_BIOFORM_SYNAPTIC_AMPLIFICATION_SOURCE
+        ).strip() or _WARRIOR_BIOFORM_SYNAPTIC_AMPLIFICATION_SOURCE
+        return (
+            bool(sr.get("tyranids_warrior_bioform_synaptic_amplification_reroll_hit_ones")),
+            bool(sr.get("tyranids_warrior_bioform_synaptic_amplification_reroll_wound_ones")),
+            source_name,
+        )
+
+    def activate_warrior_bioform_parasitic_payload(
+        self,
+        unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_warrior_bioform_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        self._clear_expired_warrior_bioform_effects(game=game)
+        outcome = self._activate_timed_unit_effect(
+            unit,
+            flag_key="tyranids_warrior_bioform_parasitic_payload_active",
+            source_key="tyranids_warrior_bioform_parasitic_payload_source",
+            source=str(source or _WARRIOR_BIOFORM_PARASITIC_PAYLOAD_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_warrior_bioform_parasitic_payload_expires_phase",
+            turn_key="tyranids_warrior_bioform_parasitic_payload_turn",
+            owner_key="tyranids_warrior_bioform_parasitic_payload_turn_owner",
+            game=game,
+            player=player,
+        )
+        if bool(outcome.get("ok", False)):
+            root = self._unit_root(unit)
+            invalidate = getattr(root, "_invalidate_ability_cache", None) if root is not None else None
+            if callable(invalidate):
+                invalidate()
+        return outcome
+
+    def warrior_bioform_parasitic_payload_active(self, unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_warrior_bioform_onslaught():
+            return False, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False, ""
+        self._clear_expired_warrior_bioform_effects(game=game)
+        if not self._timed_unit_effect_is_active(
+            root,
+            "tyranids_warrior_bioform_parasitic_payload_active",
+            expires_phase_key="tyranids_warrior_bioform_parasitic_payload_expires_phase",
+            turn_key="tyranids_warrior_bioform_parasitic_payload_turn",
+            owner_key="tyranids_warrior_bioform_parasitic_payload_turn_owner",
+            game=game,
+        ):
+            return False, ""
+        source_name = str(
+            getattr(root, "special_rules", {}).get("tyranids_warrior_bioform_parasitic_payload_source", "")
+            or _WARRIOR_BIOFORM_PARASITIC_PAYLOAD_SOURCE
+        ).strip() or _WARRIOR_BIOFORM_PARASITIC_PAYLOAD_SOURCE
+        return True, source_name
 
     def _activate_timed_unit_effect(
         self,

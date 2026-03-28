@@ -83,6 +83,7 @@ from ..decision_kinds import (
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ...utility.entity_ids import get_entity_id
+from ...utility.aura_utils import unit_within_range_of_unit as aura_unit_within_range_of_unit
 from ._helpers import (
     get_objective,
     is_skip_choice,
@@ -5971,6 +5972,137 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         }
         if candidate_ids and str(get_entity_id(target_root) or "") not in candidate_ids:
             return ("Surprise Assault target is not in this request's candidate list.",)
+        return ()
+    if ability == "tyranids_synaptic_micronodes_objective":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("Synaptic Micronodes selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Synaptic Micronodes army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_warrior_bioform_onslaught", lambda: False)()):
+            return ("Synaptic Micronodes requires Warrior Bioform Onslaught.",)
+        unit = resolve_unit(game, payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if unit is None:
+            return ("Synaptic Micronodes source unit was not found.",)
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        if unit_root is None or unit_root.get_parent_army() is not army:
+            return ("Synaptic Micronodes source must be a friendly TYRANIDS unit.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Synaptic Micronodes selection requires objective_id.",)
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return ("Synaptic Micronodes objective was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Synaptic Micronodes objective is not in this request's candidate list.",)
+        return ()
+    if ability == "tyranids_synaptic_amplification_secondary":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Synaptic Amplification army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_warrior_bioform_onslaught", lambda: False)()):
+            return ("Synaptic Amplification requires Warrior Bioform Onslaught.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None or target_unit is None:
+            return ("Synaptic Amplification source or target unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if source_root is None or target_root is None:
+            return ("Synaptic Amplification source or target unit was not found.",)
+        if source_root.get_parent_army() is not army or target_root.get_parent_army() is not army:
+            return ("Synaptic Amplification secondary target must be friendly.",)
+        is_warrior = bool(getattr(mgr, "_leader_beasts_unit_is_tyranid_warrior_datasheet", lambda *_a, **_k: False)(source_root))
+        if not is_warrior:
+            return ("Synaptic Amplification secondary selection requires a Tyranid Warriors source unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and str(get_entity_id(target_root) or "") not in candidate_ids:
+            return ("Synaptic Amplification target is not in this request's candidate list.",)
+        has_any = getattr(target_root, "has_any_keyword", None)
+        has_keyword = getattr(target_root, "has_keyword", None)
+        if not (
+            (callable(has_any) and bool(has_any("ENDLESS MULTITUDE")))
+            or (callable(has_keyword) and bool(has_keyword("ENDLESS MULTITUDE")))
+        ):
+            return ("Synaptic Amplification secondary target must be an ENDLESS MULTITUDE unit.",)
+        is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return ("Synaptic Amplification secondary target cannot be Battle-shocked.",)
+        if not bool(aura_unit_within_range_of_unit(source_root, target_root, 6.0, use_attached_aggregate=True)):
+            return ("Synaptic Amplification secondary target must be within 6\" of the source unit.",)
+        return ()
+    if ability == "tyranids_synaptic_shield_secondary":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Synaptic Shield army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_warrior_bioform_onslaught", lambda: False)()):
+            return ("Synaptic Shield requires Warrior Bioform Onslaught.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None or target_unit is None:
+            return ("Synaptic Shield source or target unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if source_root is None or target_root is None:
+            return ("Synaptic Shield source or target unit was not found.",)
+        if source_root.get_parent_army() is not army or target_root.get_parent_army() is not army:
+            return ("Synaptic Shield secondary target must be friendly.",)
+        is_warrior = bool(getattr(mgr, "_leader_beasts_unit_is_tyranid_warrior_datasheet", lambda *_a, **_k: False)(source_root))
+        if not is_warrior:
+            return ("Synaptic Shield secondary selection requires a Tyranid Warriors source unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and str(get_entity_id(target_root) or "") not in candidate_ids:
+            return ("Synaptic Shield target is not in this request's candidate list.",)
+        has_any = getattr(target_root, "has_any_keyword", None)
+        has_keyword = getattr(target_root, "has_keyword", None)
+        if not (
+            (callable(has_any) and bool(has_any("ENDLESS MULTITUDE")))
+            or (callable(has_keyword) and bool(has_keyword("ENDLESS MULTITUDE")))
+        ):
+            return ("Synaptic Shield secondary target must be an ENDLESS MULTITUDE unit.",)
+        is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return ("Synaptic Shield secondary target cannot be Battle-shocked.",)
+        if not bool(aura_unit_within_range_of_unit(source_root, target_root, 6.0, use_attached_aggregate=True)):
+            return ("Synaptic Shield secondary target must be within 6\" of the source unit.",)
         return ()
     if ability == "tyranids_vanguard_seeded_broods":
         payload = _option_payload(request, result)
@@ -14336,6 +14468,135 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": str(get_entity_id(unit_root) or ""),
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "failed_battle_shock": bool(applied.get("failed_battle_shock", False)),
+        }
+    if ability == "tyranids_synaptic_micronodes_objective":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        unit = resolve_unit(game, payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        objective = get_objective(game, objective_id) if objective_id else None
+        if unit is None or objective is None:
+            return None
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        if unit_root is None:
+            return None
+        loc = getattr(objective, "location", None) or objective
+        set_sticky = getattr(loc, "set_sticky_control", None)
+        if not callable(set_sticky):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Synaptic Micronodes").strip() or "Synaptic Micronodes"
+        set_sticky(player, source="synaptic_micronodes")
+        objective_name = str(getattr(objective, "name", "") or f"objective {objective_id}").strip() or f"objective {objective_id}"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(unit_root, 'name', 'Unit')} makes {objective_name} sticky under your control.",
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "unit_id": str(get_entity_id(unit_root) or ""),
+            "objective_id": str(objective_id),
+        }
+    if ability == "tyranids_synaptic_amplification_secondary":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Synaptic Amplification").strip() or "Synaptic Amplification"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: no secondary ENDLESS MULTITUDE unit selected.")
+            return {"action": "skip", "applied": False}
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+        phase_name = str(ctx.get("phase_name", "") or ctx.get("phase", "") or "Shooting phase").strip() or "Shooting phase"
+        applied = mgr.activate_warrior_bioform_synaptic_amplification(
+            target_root,
+            phase_name=phase_name,
+            game=game,
+            player=player,
+            source=ability_name,
+            reroll_hit_ones=False,
+            reroll_wound_ones=True,
+        )
+        if not isinstance(applied, dict) or not bool(applied.get("ok", False)):
+            return applied
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} re-rolls Wound rolls of 1 this phase.",
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
+    if ability == "tyranids_synaptic_shield_secondary":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Synaptic Shield").strip() or "Synaptic Shield"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: no secondary ENDLESS MULTITUDE unit selected.")
+            return {"action": "skip", "applied": False}
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = list(sr.get("defensive_wound_mods", []) or [])
+        entries.append(
+            {
+                "value": 1,
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "requires_strength_gt_toughness": True,
+                "source": ability_name,
+            }
+        )
+        sr["defensive_wound_mods"] = entries
+        target_root.special_rules = sr
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gets -1 to wound from stronger ranged attacks this phase.",
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "target_unit_id": str(get_entity_id(target_root) or ""),
         }
     if ability == "tyranids_vanguard_seeded_broods":
         payload = _option_payload(request, result)
@@ -24668,6 +24929,9 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             elif expires_timing == "OWNER_NEXT_COMMAND_START":
                 sr.pop("post_shoot_no_cover_expires_phase", None)
                 sr["post_shoot_no_cover_expires_timing"] = "OWNER_NEXT_COMMAND_START"
+            elif expires_timing == "TURN_END":
+                sr.pop("post_shoot_no_cover_expires_phase", None)
+                sr["post_shoot_no_cover_expires_timing"] = "TURN_END"
             else:
                 sr["post_shoot_no_cover_expires_phase"] = expires_phase
                 sr.pop("post_shoot_no_cover_expires_timing", None)
@@ -24688,6 +24952,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                         game,
                         player,
                         f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover until the start of your next Command phase.",
+                    )
+                elif expires_timing == "TURN_END":
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover until the end of turn.",
                     )
                 else:
                     _log_action_for_players(
