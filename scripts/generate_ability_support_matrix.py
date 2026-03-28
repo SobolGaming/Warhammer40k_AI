@@ -19945,6 +19945,12 @@ def _stratagem_support(
         "000008371005": "Your Movement phase: selected NECRONS unit gains [ASSAULT] on ranged weapons until end of turn, and also re-rolls Advance rolls for that phase if a NECRONS CHARACTER was leading it when activated.",
         "000008371003": "Opponent Shooting phase or the Fight phase reaction after an enemy unit finishes its attacks: selected NECRONS unit that lost models to that attacker triggers Reanimation Protocols for D3 wounds, or D3+1 if a NECRONS CHARACTER was leading it when the reaction was created.",
         "000008371007": "Opponent Shooting phase reaction after an enemy unit destroys a friendly NECRONS unit: selected nearby NECRONS CHARACTER unit within 6\" can shoot out of phase and must target only that attacking enemy unit.",
+        "000008547006": "Opponent Shooting phase reaction after an enemy unit selects targets: selected friendly CANOPTEK unit targeted by that attacker can only be selected as the target of ranged attacks by attacking models within 18\" until end of phase.",
+        "000008547002": "Opponent Shooting phase or the Fight phase reaction after an enemy unit destroys a friendly CRYPTEK model: that attacker is marked until end of battle so friendly CANOPTEK models gain +1 to hit and +1 to wound against it.",
+        "000008547003": "Start of your Shooting phase or Fight phase: selected friendly CRYPTEK or CANOPTEK unit wholly within the Power Matrix grants its CRYPTEK and CANOPTEK models [DEVASTATING WOUNDS] until end of phase.",
+        "000008547005": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of a friendly CANOPTEK unit: selected CANOPTEK unit can make a reactive Normal move up to 6\".",
+        "000008547004": "Start of your Shooting phase: select a friendly CRYPTEK unit and one objective marker within 18\" of one of its CRYPTEK models; friendly NECRONS models gain [IGNORES COVER] when targeting units within range of that objective until end of phase.",
+        "000008547007": "Opponent Charge phase reaction after an enemy unit declares a charge against a friendly CANOPTEK unit wholly within the Power Matrix: that unit immediately triggers Reanimation Protocols for D3 wounds.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",

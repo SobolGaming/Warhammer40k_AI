@@ -9296,6 +9296,75 @@ _AWAKENED_DYNASTY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CANOPTEK_COURT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008547006": StratagemToolDescriptor(
+        stratagem_id="000008547006",
+        name="COUNTERTEMPORAL SHIFT",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="friendly_canoptek_unit_selected_as_ranged_target",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        effect_params={"targeting_range": 18},
+    ),
+    "000008547002": StratagemToolDescriptor(
+        stratagem_id="000008547002",
+        name="CURSE OF THE CRYPTEK",
+        timing="opponent_shooting_or_fight_phase_after_enemy_attacks_resolved",
+        target="just_destroyed_friendly_cryptek_model",
+        duration="until_end_of_battle",
+        effect="mark_enemy_for_canoptek_hit_and_wound_bonus",
+        cp_cost=1,
+        effect_params={"hit_bonus": 1, "wound_bonus": 1, "attacker_keyword": "CANOPTEK"},
+    ),
+    "000008547003": StratagemToolDescriptor(
+        stratagem_id="000008547003",
+        name="CYNOSURE OF ERADICATION",
+        timing="start_of_your_shooting_or_fight_phase",
+        target="friendly_cryptek_or_canoptek_unit_wholly_within_power_matrix",
+        duration="until_end_of_phase",
+        effect="grant_devastating_wounds_to_cryptek_or_canoptek_models",
+        cp_cost=2,
+        effect_params={"granted_keyword": "DEVASTATING WOUNDS"},
+    ),
+    "000008547005": StratagemToolDescriptor(
+        stratagem_id="000008547005",
+        name="REACTIVE SUBROUTINES",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="friendly_canoptek_unit_within_9_of_enemy",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"max_distance": 6},
+    ),
+    "000008547004": StratagemToolDescriptor(
+        stratagem_id="000008547004",
+        name="SOLAR PULSE",
+        timing="start_of_your_shooting_phase",
+        target="friendly_cryptek_model_and_objective_within_18",
+        duration="until_end_of_phase",
+        effect="grant_ignores_cover_vs_units_within_selected_objective",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={"granted_keyword": "IGNORES COVER"},
+    ),
+    "000008547007": StratagemToolDescriptor(
+        stratagem_id="000008547007",
+        name="SUBOPTIMAL FACADE",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="friendly_canoptek_unit_selected_as_charge_target_wholly_within_power_matrix",
+        duration="immediate",
+        effect="trigger_reanimation_protocols",
+        cp_cost=1,
+        effect_params={"reanimation_roll": "D3", "requires_power_matrix": True},
+    ),
+}
+
+_CANOPTEK_COURT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008555005": StratagemToolDescriptor(
         stratagem_id="000008555005",
@@ -9724,6 +9793,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9853,6 +9925,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)
+        or _CANOPTEK_COURT_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

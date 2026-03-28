@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+from types import SimpleNamespace
 
 from ..utility.aura_utils import distance_between_models_bases_3d
 from ..utility.dice import get_roll
@@ -124,6 +125,9 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self.worthy_foes_target_name: str = ""
         self._cosmic_distortion_phase_key: str = ""
         self._cosmic_distortion_surged_unit_ids: set[str] = set()
+        self._canoptek_court_solar_pulse_phase_key: tuple[int, str] | None = None
+        self._canoptek_court_solar_pulse_objective_point: dict[str, float] | None = None
+        self._canoptek_court_solar_pulse_source: str = ""
 
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -2020,6 +2024,273 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             "reroll_full": False,
             "reroll_full_reasons": (),
         }
+
+    def _canoptek_court_phase_flag_active(self, unit, *, base_key: str, game=None) -> bool:
+        if not self.is_canoptek_court():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        base = str(base_key or "").strip()
+        if not base or not bool(sr.get(f"{base}_active")):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return True
+        expires_phase = str(sr.get(f"{base}_expires_phase", "") or "").strip().upper()
+        current_phase = self._current_phase_name(game)
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return False
+        try:
+            effect_turn = int(sr.get(f"{base}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = self._current_turn(game)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def canoptek_court_countertemporal_ranged_targeting_cap(self, unit, *, game=None) -> tuple[float, str]:
+        if not self.is_canoptek_court():
+            return 0.0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return 0.0, ""
+        if not self._canoptek_court_phase_flag_active(
+            root,
+            base_key="canoptek_court_countertemporal_shift",
+            game=game,
+        ):
+            return 0.0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0.0, ""
+        try:
+            dist = float(sr.get("canoptek_court_countertemporal_shift_targeting_range", 18) or 18)
+        except (TypeError, ValueError):
+            dist = 18.0
+        if dist <= 0.0:
+            return 0.0, ""
+        source = (
+            str(sr.get("canoptek_court_countertemporal_shift_source", "") or "COUNTERTEMPORAL SHIFT").strip()
+            or "COUNTERTEMPORAL SHIFT"
+        )
+        return float(dist), source
+
+    def _canoptek_court_curse_effect_for_target(self, target_unit) -> dict | None:
+        root = self._unit_root(target_unit)
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        effects = list(sr.get("canoptek_court_curse_of_the_cryptek_effects") or [])
+        for effect in list(effects or []):
+            if not isinstance(effect, dict):
+                continue
+            effect_owner = str(effect.get("owner_id", "") or "").strip()
+            if owner_id and effect_owner and effect_owner != owner_id:
+                continue
+            return dict(effect)
+        return None
+
+    def canoptek_court_mark_curse_of_the_cryptek_target(self, target_unit, *, source: str = "CURSE OF THE CRYPTEK") -> bool:
+        if not self.is_canoptek_court():
+            return False
+        root = self._unit_root(target_unit)
+        if root is None or self._unit_belongs_to_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effects = [effect for effect in list(sr.get("canoptek_court_curse_of_the_cryptek_effects") or []) if isinstance(effect, dict)]
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        filtered_effects = []
+        for effect in effects:
+            effect_owner = str(effect.get("owner_id", "") or "").strip()
+            if owner_id and effect_owner == owner_id:
+                continue
+            filtered_effects.append(effect)
+        filtered_effects.append(
+            {
+                "owner_id": owner_id,
+                "hit_bonus": 1,
+                "wound_bonus": 1,
+                "source": str(source or "CURSE OF THE CRYPTEK").strip() or "CURSE OF THE CRYPTEK",
+            }
+        )
+        sr["canoptek_court_curse_of_the_cryptek_effects"] = filtered_effects
+        root.special_rules = sr
+        return True
+
+    def canoptek_court_curse_of_the_cryptek_attack_roll_bonuses(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+    ) -> tuple[int, int, str]:
+        del game
+        if not self.is_canoptek_court():
+            return 0, 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return 0, 0, ""
+        if not self._entity_has_keyword(attacker_model, "CANOPTEK") and not self._entity_has_keyword(attacker_unit, "CANOPTEK"):
+            return 0, 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, 0, ""
+        effect = self._canoptek_court_curse_effect_for_target(target_root)
+        if not isinstance(effect, dict):
+            return 0, 0, ""
+        try:
+            hit_bonus = int(effect.get("hit_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            hit_bonus = 0
+        try:
+            wound_bonus = int(effect.get("wound_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            wound_bonus = 0
+        if hit_bonus == 0 and wound_bonus == 0:
+            return 0, 0, ""
+        source = str(effect.get("source", "") or "CURSE OF THE CRYPTEK").strip() or "CURSE OF THE CRYPTEK"
+        return int(hit_bonus), int(wound_bonus), source
+
+    def _canoptek_court_solar_pulse_active(self, *, game=None) -> bool:
+        if not self.is_canoptek_court():
+            return False
+        if self._canoptek_court_solar_pulse_phase_key is None or not self._canoptek_court_solar_pulse_objective_point:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return False
+        return self._phase_key_for_game(game) == self._canoptek_court_solar_pulse_phase_key
+
+    def record_canoptek_court_solar_pulse(self, objective, *, game=None, source: str = "SOLAR PULSE") -> bool:
+        if not self.is_canoptek_court():
+            return False
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            loc = objective
+        if loc is None:
+            return False
+        try:
+            x = float(getattr(loc, "x", 0.0) or 0.0)
+            y = float(getattr(loc, "y", 0.0) or 0.0)
+            control_radius = float(getattr(loc, "control_radius", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return False
+        self._canoptek_court_solar_pulse_phase_key = self._phase_key_for_game(game)
+        self._canoptek_court_solar_pulse_objective_point = {
+            "x": float(x),
+            "y": float(y),
+            "control_radius": float(control_radius),
+        }
+        self._canoptek_court_solar_pulse_source = str(source or "SOLAR PULSE").strip() or "SOLAR PULSE"
+        return True
+
+    def clear_canoptek_court_solar_pulse(self) -> None:
+        self._canoptek_court_solar_pulse_phase_key = None
+        self._canoptek_court_solar_pulse_objective_point = None
+        self._canoptek_court_solar_pulse_source = ""
+
+    def canoptek_court_attack_keyword_bonus_rules(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "",
+        weapon_profile=None,
+        game=None,
+    ) -> list[dict]:
+        if not self.is_canoptek_court():
+            return []
+        if attacker_model is None:
+            return []
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self._unit_is_active(root):
+            return []
+        rules: list[dict] = []
+        attack_kind = str(attack_type or "").strip().lower()
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+
+        if self._canoptek_court_solar_pulse_active(game=game) and self.unit_is_necrons(root):
+            point_data = dict(self._canoptek_court_solar_pulse_objective_point or {})
+            if point_data:
+                target_root = self._unit_root(target_unit)
+                point = SimpleNamespace(
+                    x=float(point_data.get("x", 0.0) or 0.0),
+                    y=float(point_data.get("y", 0.0) or 0.0),
+                    control_radius=float(point_data.get("control_radius", 3.0) or 3.0),
+                )
+                if target_root is not None and bool(getattr(target_root, "is_within_objective_range", lambda _point: False)(point)):
+                    if not attack_kind or attack_kind in {"any", "ranged"}:
+                        rules.append(
+                            {
+                                "attack_type": "ranged",
+                                "keyword": "IGNORES COVER",
+                                "source": self._canoptek_court_solar_pulse_source or "SOLAR PULSE",
+                            }
+                        )
+
+        if self._canoptek_court_phase_flag_active(root, base_key="canoptek_court_cynosure", game=game):
+            model_unit = getattr(attacker_model, "parent_unit", None)
+            is_cryptek_or_canoptek = any(
+                self._entity_has_keyword(entity, keyword)
+                for entity in (attacker_model, model_unit)
+                for keyword in ("CRYPTEK", "CANOPTEK")
+                if entity is not None
+            )
+            if is_cryptek_or_canoptek:
+                resolved_attack_type = attack_kind
+                if resolved_attack_type not in {"melee", "ranged"}:
+                    resolved_attack_type = "ranged" if self._weapon_profile_is_ranged(weapon_profile) else "melee"
+                sr = getattr(root, "special_rules", None)
+                source = "CYNOSURE OF ERADICATION"
+                if isinstance(sr, dict):
+                    source = str(sr.get("canoptek_court_cynosure_source", "") or source).strip() or source
+                rules.append(
+                    {
+                        "attack_type": resolved_attack_type,
+                        "keyword": "DEVASTATING WOUNDS",
+                        "source": source,
+                    }
+                )
+
+        if not rules:
+            return []
+        deduped: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for rule in list(rules or []):
+            attack_scope = str(rule.get("attack_type", "any") or "any").strip().lower() or "any"
+            keyword = str(rule.get("keyword", "") or "").strip().upper()
+            source = str(rule.get("source", "") or "").strip()
+            key = (attack_scope, keyword, source)
+            if not keyword or key in seen:
+                continue
+            seen.add(key)
+            deduped.append({"attack_type": attack_scope, "keyword": keyword, "source": source})
+        return deduped
 
     def unit_is_necrons(self, unit) -> bool:
         if unit is None:

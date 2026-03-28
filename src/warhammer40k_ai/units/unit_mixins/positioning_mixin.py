@@ -7179,6 +7179,21 @@ class PositioningMixin:
                             "source": source_name,
                         }
                     )
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        necrons_bonus_fn = getattr(necrons_mgr, "canoptek_court_attack_keyword_bonus_rules", None) if necrons_mgr is not None else None
+        if callable(necrons_bonus_fn):
+            rules.extend(
+                list(
+                    necrons_bonus_fn(
+                        model,
+                        target,
+                        attack_type=attack_type or "",
+                        weapon_profile=weapon_profile,
+                    )
+                    or []
+                )
+            )
         try:
             target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
         except Exception:

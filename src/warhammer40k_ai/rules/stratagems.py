@@ -106,6 +106,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "POUNCE ON THE PREY",
     "PREY ON THE WEAK",
     "PULSE ONSLAUGHT",
+    "COUNTERTEMPORAL SHIFT",
+    "CURSE OF THE CRYPTEK",
+    "CYNOSURE OF ERADICATION",
+    "REACTIVE SUBROUTINES",
+    "SOLAR PULSE",
+    "SUBOPTIMAL FACADE",
     "RELENTLESS PURSUIT",
     "PROFANE ZEAL",
     "REAVERS' HASTE",
@@ -4575,6 +4581,97 @@ class StratagemManager(
                 return result
             result["reason"] = (
                 "Requires opponent Shooting phase trigger after an enemy unit destroys a nearby friendly NECRONS unit and one of your NECRONS CHARACTER units can shoot it"
+            )
+            return result
+        if name_u == "COUNTERTEMPORAL SHIFT":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(
+                    self._canoptek_court_countertemporal_candidates(
+                        attacking_unit=context.get("attacking_unit") or context.get("enemy_unit"),
+                        target_units=list(context.get("target_units") or []),
+                    )
+                    or []
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase trigger after an enemy unit selects one or more of your CANOPTEK units as ranged targets"
+            )
+            return result
+        if name_u == "CURSE OF THE CRYPTEK":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or the Fight phase trigger after an enemy unit destroys a friendly CRYPTEK model"
+            )
+            return result
+        if name_u == "CYNOSURE OF ERADICATION":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            candidates = self._canoptek_court_candidates(
+                require_any_keywords=("CRYPTEK", "CANOPTEK"),
+                require_power_matrix=True,
+                require_not_shot=phase_name_l == "shooting phase",
+                require_not_fought=phase_name_l == "fight phase",
+            )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase or Fight phase and a friendly CRYPTEK or CANOPTEK unit wholly within the Power Matrix"
+            )
+            return result
+        if name_u == "REACTIVE SUBROUTINES":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(
+                    self._canoptek_court_reactive_subroutines_candidates(
+                        enemy_unit=context.get("moving_unit") or context.get("enemy_unit"),
+                        action=context.get("action"),
+                    )
+                    or []
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Movement phase trigger after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of one of your CANOPTEK units"
+            )
+            return result
+        if name_u == "SOLAR PULSE":
+            candidate = context.get("unit") or context.get("target_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._canoptek_court_candidates(require_any_keywords=("CRYPTEK",), require_not_shot=True) or [])
+            if candidate is not None and not list(context.get("objective_candidates") or []):
+                objective_candidates = list(self._canoptek_court_solar_pulse_objective_candidates(candidate) or [])
+            else:
+                objective_candidates = list(context.get("objective_candidates") or [])
+            if not objective_candidates:
+                for cryptek_unit in list(candidates or []):
+                    objective_candidates = list(self._canoptek_court_solar_pulse_objective_candidates(cryptek_unit) or [])
+                    if objective_candidates:
+                        break
+            if candidates and objective_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase, a friendly CRYPTEK unit, and an objective marker within 18\" of one of its CRYPTEK models"
+            return result
+        if name_u == "SUBOPTIMAL FACADE":
+            candidates = list(context.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Charge phase trigger after an enemy unit declares a charge against one of your CANOPTEK units wholly within the Power Matrix"
             )
             return result
         if name_u == "MERCILESS RECLAMATION":
@@ -9303,6 +9400,10 @@ class StratagemManager(
             self._cleanup_awakened_dynasty_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._cleanup_canoptek_court_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -10271,6 +10372,7 @@ class StratagemManager(
         self._queue_nightmare_hunt_move_end_reactions(unit=unit, action=action)
         self._queue_soulforged_move_end_reactions(unit=unit, action=action)
         self._queue_annihilation_legion_move_end_reactions(unit=unit, action=action)
+        self._queue_canoptek_court_move_end_reactions(unit=unit, action=action)
         self._queue_veterans_move_end_reactions(unit=unit, action=action)
         self._queue_death_guard_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
@@ -10306,6 +10408,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_thousand_sons_changehost_charge_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_canoptek_court_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -10631,6 +10737,10 @@ class StratagemManager(
                 killing_models_by_target=killing_models_by_target,
             )
             self._queue_awakened_dynasty_shooting_reactions(
+                attacker_unit=attacker_unit,
+                killing_models_by_target=killing_models_by_target,
+            )
+            self._queue_canoptek_court_shooting_reactions(
                 attacker_unit=attacker_unit,
                 killing_models_by_target=killing_models_by_target,
             )
@@ -11741,6 +11851,13 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_knights_spearhead_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_canoptek_court_countertemporal_shift_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13667,6 +13784,11 @@ class StratagemManager(
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             self._queue_awakened_dynasty_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._queue_canoptek_court_fight_attacks_resolved_reactions(
                 unit=unit,
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),

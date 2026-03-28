@@ -4689,6 +4689,20 @@ class LateGameplayMixin:
             pass
 
         try:
+            necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            range_limit_fn = (
+                getattr(necrons_mgr, "canoptek_court_countertemporal_ranged_targeting_cap", None)
+                if necrons_mgr is not None
+                else None
+            )
+            if callable(range_limit_fn):
+                dist, source = range_limit_fn(root)
+                if float(dist or 0.0) > 0.0:
+                    _consider(float(dist), source or "COUNTERTEMPORAL SHIFT")
+        except Exception:
+            pass
+
+        try:
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("aeldari_cloak_and_shadow_active"):
                 applies = True

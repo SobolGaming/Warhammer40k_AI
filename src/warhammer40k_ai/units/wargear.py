@@ -12478,6 +12478,25 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Necrons: Canoptek Court (Curse of the Cryptek).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "canoptek_court_curse_of_the_cryptek_attack_roll_bonuses", None) if mgr is not None else None
+            if callable(bonus_fn):
+                hit_bonus, _wound_bonus, source = bonus_fn(attacker, target, game=game)
+                if hit_bonus:
+                    source_name = str(source or "CURSE OF THE CRYPTEK").strip() or "CURSE OF THE CRYPTEK"
+                    _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
+        except Exception:
+            pass
         # Space Marines: Heroes of the Chapter.
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -18924,6 +18943,14 @@ class WargearProfile:
             if wound_bonus:
                 dice_modifier += int(wound_bonus)
                 source_name = str(source or "Worthy Foes").strip() or "Worthy Foes"
+                wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
+        canoptek_curse_bonus_fn = getattr(necrons_mgr, "canoptek_court_curse_of_the_cryptek_attack_roll_bonuses", None) if necrons_mgr is not None else None
+        if callable(canoptek_curse_bonus_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            _hit_bonus, wound_bonus, source = canoptek_curse_bonus_fn(attacker, target, game=game)
+            if wound_bonus:
+                dice_modifier += int(wound_bonus)
+                source_name = str(source or "CURSE OF THE CRYPTEK").strip() or "CURSE OF THE CRYPTEK"
                 wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
 
         # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")

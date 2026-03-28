@@ -81,6 +81,12 @@ class NecronsStratagemMixin:
             return False
         return bool(mgr.is_awakened_dynasty())
 
+    def _is_canoptek_court(self) -> bool:
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        return bool(mgr.is_canoptek_court())
+
     def _necrons_entity_has_keyword(self, entity: Any, keyword: str) -> bool:
         mgr = self._get_necrons_mgr()
         if mgr is not None and callable(getattr(mgr, "_entity_has_keyword", None)):
@@ -1013,6 +1019,976 @@ class NecronsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _necrons_unit_is_engaged(self, unit: Any) -> bool:
+        root = self._necrons_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(is_within_engagement):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._necrons_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._necrons_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if bool(is_within_engagement(root, enemy_root)):
+                return True
+        return False
+
+    def _canoptek_court_unit_eligible(
+        self,
+        unit: Any,
+        *,
+        require_any_keywords: tuple[str, ...] = (),
+        require_power_matrix: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_reanimation: bool = False,
+    ) -> bool:
+        if not self._is_canoptek_court():
+            return False
+        root = self._necrons_root(unit)
+        mgr = self._get_necrons_mgr()
+        if root is None or mgr is None:
+            return False
+        if not self._necrons_owned_by_player(root):
+            return False
+        if not self._necrons_on_battlefield(root):
+            return False
+        if not bool(getattr(mgr, "unit_is_necrons", lambda _unit: False)(root)):
+            return False
+        if require_any_keywords and not any(
+            self._necrons_unit_contains_keyword(root, keyword) for keyword in list(require_any_keywords or ())
+        ):
+            return False
+        if require_power_matrix and not bool(
+            getattr(mgr, "unit_wholly_within_power_matrix", lambda *_args, **_kwargs: False)(
+                root,
+                game=self.game,
+            )
+        ):
+            return False
+        round_state = getattr(root, "round_state", None)
+        if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+            return False
+        if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+            return False
+        if require_reanimation:
+            has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+            if not callable(has_rp) or not bool(has_rp()):
+                return False
+        return True
+
+    def _canoptek_court_candidates(
+        self,
+        *,
+        require_any_keywords: tuple[str, ...] = (),
+        require_power_matrix: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_reanimation: bool = False,
+    ) -> list[Any]:
+        if not self._is_canoptek_court():
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._canoptek_court_unit_eligible(
+                root,
+                require_any_keywords=require_any_keywords,
+                require_power_matrix=require_power_matrix,
+                require_not_shot=require_not_shot,
+                require_not_fought=require_not_fought,
+                require_reanimation=require_reanimation,
+            ):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _canoptek_court_unit_in_candidates(self, unit: Any, candidates: list[Any]) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        return any(str(get_entity_id(self._necrons_root(candidate)) or "") == unit_id for candidate in list(candidates or []))
+
+    def _necrons_distance_between_units(self, unit_a: Any, unit_b: Any) -> Optional[float]:
+        root_a = self._necrons_root(unit_a)
+        root_b = self._necrons_root(unit_b)
+        if root_a is None or root_b is None:
+            return None
+        min_distance: Optional[float] = None
+        for model_a in self._necrons_iter_unit_models(root_a):
+            if not bool(getattr(model_a, "is_alive", True)):
+                continue
+            for model_b in self._necrons_iter_unit_models(root_b):
+                if not bool(getattr(model_b, "is_alive", True)):
+                    continue
+                distance = float(distance_between_models_bases_3d(model_a, model_b))
+                if min_distance is None or distance < min_distance:
+                    min_distance = distance
+        return min_distance
+
+    def _necrons_model_within_distance_of_objective(self, model: Any, objective: Any, *, distance: float) -> bool:
+        if model is None or objective is None:
+            return False
+        location = getattr(objective, "location", None)
+        if location is None:
+            location = objective
+        get_location = getattr(model, "get_location", None)
+        if location is None or not callable(get_location):
+            return False
+        model_location = get_location()
+        if model_location is None or len(model_location) < 2:
+            return False
+        base = getattr(model, "model_base", None)
+        base_radius = float(getattr(base, "get_radius", lambda: 0.0)() or 0.0) if base is not None else 0.0
+        dx = float(model_location[0] or 0.0) - float(getattr(location, "x", 0.0) or 0.0)
+        dy = float(model_location[1] or 0.0) - float(getattr(location, "y", 0.0) or 0.0)
+        return ((dx * dx) + (dy * dy)) ** 0.5 <= float(distance) + base_radius + 1e-6
+
+    def _canoptek_court_countertemporal_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> list[Any]:
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for target_unit in list(target_units or []):
+            root = self._necrons_root(target_unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._canoptek_court_unit_eligible(root, require_any_keywords=("CANOPTEK",)):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _canoptek_court_reactive_subroutines_candidates(self, *, enemy_unit: Any, action: Any = None) -> list[Any]:
+        enemy_root = self._necrons_root(enemy_unit)
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return []
+        if enemy_root is None or self._necrons_owned_by_player(enemy_root):
+            return []
+        if not self._necrons_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        results: list[Any] = []
+        for root in self._canoptek_court_candidates(require_any_keywords=("CANOPTEK",)):
+            if self._necrons_unit_is_engaged(root):
+                continue
+            distance = self._necrons_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _canoptek_court_solar_pulse_objective_candidates(self, unit: Any) -> list[Any]:
+        if not self._is_canoptek_court():
+            return []
+        root = self._necrons_root(unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if root is None or game_map is None:
+            return []
+        if not self._canoptek_court_unit_eligible(root, require_any_keywords=("CRYPTEK",)):
+            return []
+        cryptek_models = [
+            model
+            for model in self._necrons_iter_unit_models(root)
+            if self._necrons_entity_has_keyword(model, "CRYPTEK")
+            or self._necrons_unit_contains_keyword(getattr(model, "parent_unit", None), "CRYPTEK")
+        ]
+        if not cryptek_models:
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            if not any(
+                self._necrons_model_within_distance_of_objective(model, objective, distance=18.0)
+                for model in list(cryptek_models or [])
+            ):
+                continue
+            objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+            if objective_id and objective_id in seen:
+                continue
+            if objective_id:
+                seen.add(objective_id)
+            results.append(objective)
+        results.sort(key=lambda objective: str(getattr(objective, "id", "") or get_entity_id(objective) or ""))
+        return results
+
+    def _canoptek_court_pending_context(self, stratagem_name: str, *, unit: Any = None) -> Optional[dict[str, Any]]:
+        target_name = str(stratagem_name or "").strip().upper()
+        target_unit_id = str(get_entity_id(self._necrons_root(unit)) or "") if unit is not None else ""
+        for reaction in reversed(list(self._pending_reactions or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if not target_unit_id:
+                return reaction
+            possible_units = [
+                reaction.get("unit"),
+                reaction.get("target_unit"),
+                reaction.get("destroyed_unit"),
+            ]
+            possible_units.extend(list(reaction.get("candidates") or []))
+            for candidate in list(possible_units or []):
+                if str(get_entity_id(self._necrons_root(candidate)) or "") == target_unit_id:
+                    return reaction
+        return None
+
+    def _queue_canoptek_court_countertemporal_shift_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or not self._is_canoptek_court():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("COUNTERTEMPORAL SHIFT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._canoptek_court_countertemporal_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Shooting phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "COUNTERTEMPORAL SHIFT":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_canoptek_court_move_end_reactions(self, *, unit: Any, action: Any = None) -> None:
+        if self.game is None or unit is None or not self._is_canoptek_court():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "movement phase":
+            return
+        enemy_root = self._necrons_root(unit)
+        if enemy_root is None or self._necrons_owned_by_player(enemy_root):
+            return
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            return
+        stratagem = self.get_by_name("REACTIVE SUBROUTINES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._canoptek_court_reactive_subroutines_candidates(enemy_unit=enemy_root, action=action_key)
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            moving_unit=enemy_root,
+            action=action_key,
+            phase_name="Movement phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "REACTIVE SUBROUTINES":
+                continue
+            if reaction.get("enemy_unit") is enemy_root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "moving_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_canoptek_court_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or charging_unit is None or not self._is_canoptek_court():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "charge phase":
+            return
+        enemy_root = self._necrons_root(charging_unit)
+        if enemy_root is None or self._necrons_owned_by_player(enemy_root):
+            return
+        stratagem = self.get_by_name("SUBOPTIMAL FACADE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target_unit in list(target_units or []):
+            root = self._necrons_root(target_unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._canoptek_court_unit_eligible(
+                root,
+                require_any_keywords=("CANOPTEK",),
+                require_power_matrix=True,
+                require_reanimation=True,
+            ):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            charging_unit=enemy_root,
+            target_units=list(target_units or []),
+            phase_name="Charge phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "charge_declared":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "SUBOPTIMAL FACADE":
+                continue
+            if reaction.get("enemy_unit") is enemy_root:
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "charging_unit": enemy_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_canoptek_court_curse_of_the_cryptek_reaction(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if self.game is None or attacker_unit is None or not self._is_canoptek_court():
+            return
+        attacker_root = self._necrons_root(attacker_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        if not self._necrons_on_battlefield(attacker_root, require_targetable=False):
+            return
+        stratagem = self.get_by_name("CURSE OF THE CRYPTEK")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        destroyed_model_by_unit_id: dict[str, Any] = {}
+        seen: set[str] = set()
+        for target_unit, destroyed_models in dict(killing_models_by_target or {}).items():
+            if not destroyed_models:
+                continue
+            for destroyed_model in list(destroyed_models or []):
+                model_unit = getattr(destroyed_model, "parent_unit", None)
+                candidate_root = self._necrons_root(model_unit or target_unit)
+                if candidate_root is None or not self._necrons_owned_by_player(candidate_root):
+                    continue
+                if not (
+                    self._necrons_entity_has_keyword(destroyed_model, "CRYPTEK")
+                    or self._necrons_unit_contains_keyword(model_unit or candidate_root, "CRYPTEK")
+                ):
+                    continue
+                unit_id = str(get_entity_id(candidate_root) or "")
+                if not unit_id or unit_id in seen:
+                    continue
+                seen.add(unit_id)
+                candidates.append(candidate_root)
+                destroyed_model_by_unit_id[unit_id] = destroyed_model
+        candidates.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacker_unit=attacker_root,
+            phase_name=phase_name,
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != event_name:
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "CURSE OF THE CRYPTEK":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "candidates": candidates,
+            "destroyed_model_by_unit_id": destroyed_model_by_unit_id,
+        }
+        if len(candidates) == 1:
+            unit = candidates[0]
+            unit_id = str(get_entity_id(unit) or "")
+            payload["unit"] = unit
+            payload["target_unit"] = unit
+            payload["destroyed_unit"] = unit
+            payload["destroyed_model"] = destroyed_model_by_unit_id.get(unit_id)
+        self._queue_reaction(payload)
+
+    def _queue_canoptek_court_shooting_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        self._queue_canoptek_court_curse_of_the_cryptek_reaction(
+            attacker_unit=attacker_unit,
+            killing_models_by_target=killing_models_by_target,
+            phase_name="Shooting phase",
+            event_name="unit_shooting_resolved",
+        )
+
+    def _queue_canoptek_court_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        del target_unit
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        self._queue_canoptek_court_curse_of_the_cryptek_reaction(
+            attacker_unit=attacker_root,
+            killing_models_by_target=killing_models_by_target,
+            phase_name="Fight phase",
+            event_name="fight_attacks_resolved",
+        )
+
+    def _use_canoptek_court_countertemporal_shift(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._canoptek_court_pending_context("COUNTERTEMPORAL SHIFT", unit=unit)
+        if isinstance(pending, dict):
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        attacker_root = self._necrons_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_canoptek_court():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: not opponent's Shooting phase")
+            return False
+        if self._necrons_owned_by_player(attacker_root):
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: attacking unit must be enemy")
+            return False
+        candidates = candidates or self._canoptek_court_countertemporal_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not self._canoptek_court_unit_eligible(root, require_any_keywords=("CANOPTEK",)):
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: target must be a friendly CANOPTEK unit on the battlefield")
+            return False
+        if not self._canoptek_court_unit_in_candidates(root, candidates):
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: target unit is not a valid candidate")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: COUNTERTEMPORAL SHIFT: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["canoptek_court_countertemporal_shift_active"] = True
+        special_rules["canoptek_court_countertemporal_shift_targeting_range"] = 18.0
+        special_rules["canoptek_court_countertemporal_shift_expires_phase"] = "SHOOTING_PHASE"
+        special_rules["canoptek_court_countertemporal_shift_turn"] = int(self._necrons_current_turn())
+        special_rules["canoptek_court_countertemporal_shift_source"] = (
+            str(getattr(stratagem, "name", "") or "COUNTERTEMPORAL SHIFT").strip() or "COUNTERTEMPORAL SHIFT"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COUNTERTEMPORAL SHIFT: %s can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_canoptek_court_curse_of_the_cryptek(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._canoptek_court_pending_context("CURSE OF THE CRYPTEK", unit=unit)
+        destroyed_model_by_unit_id = dict(kwargs.get("destroyed_model_by_unit_id") or {})
+        if isinstance(pending, dict):
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("attacking_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not destroyed_model_by_unit_id:
+                destroyed_model_by_unit_id = dict(pending.get("destroyed_model_by_unit_id") or {})
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CURSE OF THE CRYPTEK: no destroyed CRYPTEK unit provided")
+            return False
+        destroyed_root = self._necrons_root(unit)
+        enemy_root = self._necrons_root(enemy_unit)
+        if destroyed_root is None or enemy_root is None or not self._is_canoptek_court():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CURSE OF THE CRYPTEK: wrong phase")
+            return False
+        if self._necrons_owned_by_player(enemy_root):
+            logger.error("ERROR: CURSE OF THE CRYPTEK: attacking unit must be enemy")
+            return False
+        if not self._necrons_owned_by_player(destroyed_root):
+            logger.error("ERROR: CURSE OF THE CRYPTEK: target must be from your army")
+            return False
+        if candidates and not self._canoptek_court_unit_in_candidates(destroyed_root, candidates):
+            logger.error("ERROR: CURSE OF THE CRYPTEK: target unit is not a valid candidate")
+            return False
+        if not self._necrons_unit_contains_keyword(destroyed_root, "CRYPTEK"):
+            unit_id = str(get_entity_id(destroyed_root) or "")
+            destroyed_model = destroyed_model_by_unit_id.get(unit_id)
+            if not self._necrons_entity_has_keyword(destroyed_model, "CRYPTEK"):
+                logger.error("ERROR: CURSE OF THE CRYPTEK: target must contain the destroyed CRYPTEK model")
+                return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            destroyed_unit=destroyed_root,
+            attacker_unit=enemy_root,
+            phase_name=phase_label,
+            candidates=list(candidates),
+        ):
+            logger.error("ERROR: CURSE OF THE CRYPTEK: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=destroyed_root):
+            return False
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(
+            getattr(mgr, "canoptek_court_mark_curse_of_the_cryptek_target", lambda *_args, **_kwargs: False)(
+                enemy_root,
+                source=str(getattr(stratagem, "name", "") or "CURSE OF THE CRYPTEK").strip(),
+            )
+        ):
+            logger.error("ERROR: CURSE OF THE CRYPTEK: failed to record cursed enemy unit")
+            return False
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CURSE OF THE CRYPTEK: friendly CANOPTEK models gain +1 to hit and wound against %s for the rest of the battle.",
+            getattr(enemy_root, "name", "enemy unit"),
+        )
+        return True
+
+    def _use_canoptek_court_cynosure_of_eradication(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        require_not_shot = phase_name == "shooting phase"
+        require_not_fought = phase_name == "fight phase"
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._canoptek_court_candidates(
+                require_any_keywords=("CRYPTEK", "CANOPTEK"),
+                require_power_matrix=True,
+                require_not_shot=require_not_shot,
+                require_not_fought=require_not_fought,
+            )
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CYNOSURE OF ERADICATION: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_canoptek_court():
+            return False
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CYNOSURE OF ERADICATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CYNOSURE OF ERADICATION: only usable in your turn")
+            return False
+        if not self._canoptek_court_unit_eligible(
+            root,
+            require_any_keywords=("CRYPTEK", "CANOPTEK"),
+            require_power_matrix=True,
+            require_not_shot=require_not_shot,
+            require_not_fought=require_not_fought,
+        ):
+            logger.error(
+                "ERROR: CYNOSURE OF ERADICATION: target must be a friendly CRYPTEK or CANOPTEK unit wholly within the Power Matrix"
+            )
+            return False
+        if not self._canoptek_court_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CYNOSURE OF ERADICATION: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: CYNOSURE OF ERADICATION: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["canoptek_court_cynosure_active"] = True
+        special_rules["canoptek_court_cynosure_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        special_rules["canoptek_court_cynosure_turn"] = int(self._necrons_current_turn())
+        special_rules["canoptek_court_cynosure_source"] = (
+            str(getattr(stratagem, "name", "") or "CYNOSURE OF ERADICATION").strip() or "CYNOSURE OF ERADICATION"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CYNOSURE OF ERADICATION: CRYPTEK and CANOPTEK models in %s gain [DEVASTATING WOUNDS] this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_canoptek_court_reactive_subroutines(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._canoptek_court_pending_context("REACTIVE SUBROUTINES", unit=unit)
+        if isinstance(pending, dict):
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("moving_unit")
+            if action is None:
+                action = pending.get("action")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REACTIVE SUBROUTINES: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        enemy_root = self._necrons_root(enemy_unit)
+        if root is None or enemy_root is None or not self._is_canoptek_court():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: REACTIVE SUBROUTINES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: REACTIVE SUBROUTINES: not opponent's Movement phase")
+            return False
+        action_key = str(action or "").strip().lower().replace(" ", "_")
+        if action_key not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+            logger.error("ERROR: REACTIVE SUBROUTINES: missing or invalid enemy move action")
+            return False
+        if self._necrons_owned_by_player(enemy_root):
+            logger.error("ERROR: REACTIVE SUBROUTINES: moving unit must be enemy")
+            return False
+        candidates = candidates or self._canoptek_court_reactive_subroutines_candidates(enemy_unit=enemy_root, action=action_key)
+        if not self._canoptek_court_unit_eligible(root, require_any_keywords=("CANOPTEK",)):
+            logger.error("ERROR: REACTIVE SUBROUTINES: target must be a friendly CANOPTEK unit on the battlefield")
+            return False
+        if not self._canoptek_court_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REACTIVE SUBROUTINES: target must be within 9\" of the enemy unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            moving_unit=enemy_root,
+            action=action_key,
+            phase_name="Movement phase",
+        ):
+            logger.error("ERROR: REACTIVE SUBROUTINES: cannot be used in current state")
+            return False
+        queue_move = getattr(getattr(self, "game", None), "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: REACTIVE SUBROUTINES: reactive move queue is unavailable")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="canoptek_court_reactive_subroutines",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "REACTIVE SUBROUTINES"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: REACTIVE SUBROUTINES: failed to queue reactive move")
+            return False
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REACTIVE SUBROUTINES: %s can make a reactive Normal move up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_canoptek_court_solar_pulse(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        candidates = list(kwargs.get("candidates") or [])
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if not candidates:
+            candidates = self._canoptek_court_candidates(require_any_keywords=("CRYPTEK",), require_not_shot=True)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SOLAR PULSE: no CRYPTEK unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_canoptek_court():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SOLAR PULSE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SOLAR PULSE: only usable in your Shooting phase")
+            return False
+        if not self._canoptek_court_unit_eligible(root, require_any_keywords=("CRYPTEK",), require_not_shot=True):
+            logger.error("ERROR: SOLAR PULSE: target must be a friendly CRYPTEK unit")
+            return False
+        if not self._canoptek_court_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SOLAR PULSE: target unit is not a valid candidate")
+            return False
+        if not objective_candidates:
+            objective_candidates = self._canoptek_court_solar_pulse_objective_candidates(root)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: SOLAR PULSE: no objective marker provided")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: SOLAR PULSE: selected objective is not within 18\" of the CRYPTEK model")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            objective=objective,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: SOLAR PULSE: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(
+            getattr(mgr, "record_canoptek_court_solar_pulse", lambda *_args, **_kwargs: False)(
+                objective,
+                game=self.game,
+                source=str(getattr(stratagem, "name", "") or "SOLAR PULSE").strip(),
+            )
+        ):
+            logger.error("ERROR: SOLAR PULSE: failed to record selected objective")
+            return False
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SOLAR PULSE: friendly NECRONS models gain [IGNORES COVER] against units within the selected objective this phase."
+        )
+        return True
+
+    def _use_canoptek_court_suboptimal_facade(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._canoptek_court_pending_context("SUBOPTIMAL FACADE", unit=unit)
+        if isinstance(pending, dict):
+            if charging_unit is None:
+                charging_unit = pending.get("charging_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SUBOPTIMAL FACADE: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        enemy_root = self._necrons_root(charging_unit)
+        if root is None or enemy_root is None or not self._is_canoptek_court():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: SUBOPTIMAL FACADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SUBOPTIMAL FACADE: not opponent's Charge phase")
+            return False
+        if self._necrons_owned_by_player(enemy_root):
+            logger.error("ERROR: SUBOPTIMAL FACADE: charging unit must be enemy")
+            return False
+        if not self._canoptek_court_unit_eligible(
+            root,
+            require_any_keywords=("CANOPTEK",),
+            require_power_matrix=True,
+            require_reanimation=True,
+        ):
+            logger.error(
+                "ERROR: SUBOPTIMAL FACADE: target must be a friendly CANOPTEK unit wholly within the Power Matrix"
+            )
+            return False
+        if candidates and not self._canoptek_court_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SUBOPTIMAL FACADE: target unit is not a valid candidate")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            charging_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: SUBOPTIMAL FACADE: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        roll = int(dice_module.get_roll("D3") or 0)
+        if roll > 0:
+            game_map = getattr(self.game, "map", None)
+            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            is_human = bool(getattr(self.player, "has_control", lambda: False)())
+            root.apply_reanimation_protocols(
+                roll,
+                game_map=game_map,
+                is_human=is_human,
+                provider=provider,
+                roll_expr="D3",
+            )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUBOPTIMAL FACADE: %s triggers Reanimation Protocols for %d wound(s).",
+            getattr(root, "name", "Unit"),
+            int(roll),
+        )
+        return True
+
     def _use_awakened_dynasty_conquering_tyrant(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
         candidates = list(kwargs.get("candidates") or [])
@@ -1904,6 +2880,40 @@ class NecronsStratagemMixin:
                     special_rules.pop(key, None)
                 root.special_rules = special_rules
 
+    def _cleanup_canoptek_court_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_canoptek_court():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            root_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            for key_base in ("canoptek_court_countertemporal_shift", "canoptek_court_cynosure"):
+                expires_phase = str(special_rules.get(f"{key_base}_expires_phase", "") or "").strip().upper()
+                if not bool(special_rules.get(f"{key_base}_active")):
+                    continue
+                if expires_phase and expires_phase != phase_name:
+                    continue
+                for key in list(special_rules.keys()):
+                    if key.startswith(f"{key_base}_"):
+                        special_rules.pop(key, None)
+            root.special_rules = special_rules
+        if phase_name == "SHOOTING_PHASE":
+            mgr = self._get_necrons_mgr()
+            clear_fn = getattr(mgr, "clear_canoptek_court_solar_pulse", None) if mgr is not None else None
+            if callable(clear_fn):
+                clear_fn()
+
     def _use_necrons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -1920,6 +2930,18 @@ class NecronsStratagemMixin:
             return self._use_awakened_dynasty_undying_legions(stratagem, **kwargs)
         if name_u == "PROTOCOL OF THE VENGEFUL STARS" and self._is_awakened_dynasty():
             return self._use_awakened_dynasty_vengeful_stars(stratagem, **kwargs)
+        if name_u == "COUNTERTEMPORAL SHIFT" and self._is_canoptek_court():
+            return self._use_canoptek_court_countertemporal_shift(stratagem, **kwargs)
+        if name_u == "CURSE OF THE CRYPTEK" and self._is_canoptek_court():
+            return self._use_canoptek_court_curse_of_the_cryptek(stratagem, **kwargs)
+        if name_u == "CYNOSURE OF ERADICATION" and self._is_canoptek_court():
+            return self._use_canoptek_court_cynosure_of_eradication(stratagem, **kwargs)
+        if name_u == "REACTIVE SUBROUTINES" and self._is_canoptek_court():
+            return self._use_canoptek_court_reactive_subroutines(stratagem, **kwargs)
+        if name_u == "SOLAR PULSE" and self._is_canoptek_court():
+            return self._use_canoptek_court_solar_pulse(stratagem, **kwargs)
+        if name_u == "SUBOPTIMAL FACADE" and self._is_canoptek_court():
+            return self._use_canoptek_court_suboptimal_facade(stratagem, **kwargs)
         if name_u == "BLOOD-FUELLED CRUELTY" and self._is_annihilation_legion():
             return self._use_annihilation_legion_blood_fuelled_cruelty(stratagem, **kwargs)
         if name_u in {"INSANITY'S IRE", "INSANITY’S IRE"} and self._is_annihilation_legion():
