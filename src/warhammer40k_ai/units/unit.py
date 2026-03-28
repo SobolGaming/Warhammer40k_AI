@@ -453,6 +453,62 @@ class Unit(
                         return True
             return False
 
+        def _bearer_unit_enhancement_bonus(rule_key: str) -> tuple[int, int, str]:
+            root_unit = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            if root_unit is None:
+                return 0, 0, ""
+            get_members = getattr(root_unit, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root_unit]
+            if not members:
+                members = [root_unit]
+            best_leadership = 0
+            best_objective_control = 0
+            source_name = ""
+            for member in members:
+                if member is None:
+                    continue
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict) or not bool(sr_member.get(rule_key, False)):
+                    continue
+                requires_bearer_alive = bool(
+                    sr_member.get(f"{rule_key}_requires_bearer_alive", sr_member.get("enhancement_the_hero_returned_requires_bearer_alive", False))
+                )
+                bearer_id = str(
+                    sr_member.get(f"{rule_key}_bearer_model_id", "") or sr_member.get("enhancement_bearer_model_id", "") or ""
+                )
+                bearer_alive = False
+                if bearer_id:
+                    for leader_model in list(getattr(member, "models", []) or []):
+                        if leader_model is None or not getattr(leader_model, "is_alive", True):
+                            continue
+                        if str(get_entity_id(leader_model) or "") == bearer_id:
+                            bearer_alive = True
+                            break
+                else:
+                    bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                    bearer_alive = bearer is not None
+                if requires_bearer_alive and not bearer_alive:
+                    continue
+                try:
+                    leadership_bonus = int(sr_member.get(f"{rule_key}_leadership_improvement", 0) or 0)
+                except Exception:
+                    leadership_bonus = 0
+                try:
+                    objective_control_bonus = int(sr_member.get(f"{rule_key}_objective_control_bonus", 0) or 0)
+                except Exception:
+                    objective_control_bonus = 0
+                if leadership_bonus > best_leadership:
+                    best_leadership = int(leadership_bonus)
+                if objective_control_bonus > best_objective_control:
+                    best_objective_control = int(objective_control_bonus)
+                if not source_name:
+                    source_name = str(
+                        sr_member.get(f"{rule_key}_source", "")
+                        or sr_member.get("enhancement_the_hero_returned_source", "")
+                        or rule_key.replace("_", " ").title()
+                    ).strip()
+            return best_leadership, best_objective_control, source_name
+
         # Waaagh!-conditional bearer-unit move bonuses parsed from datasheet text.
         if ckey == "movement":
             sr = getattr(self, "special_rules", None)
@@ -874,6 +930,12 @@ class Unit(
                 mods.append(Modifier(ModifierOp.ADD, int(rites_bearer_bonus), source="enhancement:rites_of_war_bearer"))
             if rites_other_bonus:
                 mods.append(Modifier(ModifierOp.ADD, int(rites_other_bonus), source="enhancement:rites_of_war_other_models"))
+
+            hero_returned_leadership, hero_returned_oc, _hero_returned_source = _bearer_unit_enhancement_bonus(
+                "enhancement_the_hero_returned"
+            )
+            if hero_returned_oc:
+                mods.append(Modifier(ModifierOp.ADD, int(hero_returned_oc), source="enhancement:the_hero_returned"))
 
             # Mandulian Reliquary (Warpbane Task Force): while the bearer's unit is not
             # Battle-shocked, add 3 to the bearer's Objective Control characteristic.
@@ -2006,6 +2068,17 @@ class Unit(
                     mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:towering_arrogance"))
             except Exception:
                 pass
+            hero_returned_leadership, _hero_returned_oc, _hero_returned_source = _bearer_unit_enhancement_bonus(
+                "enhancement_the_hero_returned"
+            )
+            if hero_returned_leadership:
+                mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        -int(hero_returned_leadership),
+                        source="enhancement:the_hero_returned",
+                    )
+                )
             try:
                 army = self.get_parent_army()
             except Exception:
@@ -4184,8 +4257,8 @@ class Unit(
         re.IGNORECASE,
     )
     _OVERWATCH_HIT_THRESHOLD_RE = re.compile(
-        r"each time you target this unit with the fire overwatch stratagem "
-        r"(?:"
+        r"each time you target (?:this unit|the bearer s unit) with the fire overwatch stratagem "
+        r"(?:" 
         r"(?:while|when) resolving that stratagem "
         r"hits are scored on unmodified hit rolls of (?P<threshold_pre>\d)(?:\+)?"
         r"|"

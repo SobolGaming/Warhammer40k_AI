@@ -51,6 +51,13 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         "tech priest enginseer",
         "ministorum priest",
     )
+    _MARTIAL_ESPIONAGE_RULE_NAME = "Martial Espionage"
+    _MARTIAL_ESPIONAGE_ACTIVE_KEY = "enhancement_martial_espionage"
+    _MARTIAL_ESPIONAGE_RANGE_KEY = "enhancement_martial_espionage_range"
+    _MARTIAL_ESPIONAGE_AP_KEY = "enhancement_martial_espionage_ap_bonus"
+    _MARTIAL_ESPIONAGE_SOURCE_KEY = "enhancement_martial_espionage_source"
+    _MARTIAL_ESPIONAGE_LAST_USED_TURN_KEY = "enhancement_martial_espionage_last_used_turn"
+    _MARTIAL_ESPIONAGE_LAST_USED_OWNER_KEY = "enhancement_martial_espionage_last_used_turn_owner"
     _FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME = "Psionic Parasitism"
     _FINAL_DAY_PSIONIC_ACTIVE_KEY = "gsc_final_day_psionic_parasitism_active"
     _FINAL_DAY_PSIONIC_BONUS_KEY = "gsc_final_day_psionic_parasitism_hit_bonus"
@@ -201,6 +208,22 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if game is None:
             return None
         return getattr(game, "map", None)
+
+    @staticmethod
+    def _current_turn(*, game=None) -> int:
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _current_turn_owner_id(*, game=None, player=None) -> str:
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if current_player is not None:
+            owner_id = str(getattr(current_player, "id", "") or "")
+            if owner_id:
+                return owner_id
+        return str(getattr(player, "id", "") or "")
 
     @classmethod
     def _is_phase_owner_turn_active(
@@ -589,6 +612,203 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                 continue
             unique[target_id] = root
         return [unique[k] for k in sorted(unique.keys())]
+
+    def _martial_espionage_source_records(self) -> list[tuple]:
+        if not self.is_brood_brother_auxilia():
+            return []
+        out: list[tuple] = []
+        for source_root in self._iter_unit_roots():
+            if source_root is None:
+                continue
+            if not self._unit_in_army(source_root):
+                continue
+            if not self._unit_is_on_battlefield(source_root):
+                continue
+            if not self._unit_is_genestealer_cults(source_root):
+                continue
+            members = list(getattr(source_root, "get_attached_unit_members", lambda: [source_root])() or [])
+            if not members:
+                members = [source_root]
+            members = sorted(
+                [member for member in members if member is not None],
+                key=lambda member: (str(get_entity_id(member) or ""), str(get_entity_id(source_root) or "")),
+            )
+            for source_member in members:
+                source_sr = getattr(source_member, "special_rules", None)
+                if not isinstance(source_sr, dict):
+                    continue
+                if not bool(source_sr.get(self._MARTIAL_ESPIONAGE_ACTIVE_KEY, False)):
+                    continue
+                get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None:
+                    continue
+                out.append((source_root, source_member, source_sr, bearer))
+        return out
+
+    def _martial_espionage_source_record(self, source_unit, *, source_member=None) -> tuple | None:
+        source_root = self._attached_root(source_unit)
+        if source_root is None:
+            return None
+        member = source_member if source_member is not None else source_root
+        if member is None:
+            return None
+        source_sr = getattr(member, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            return None
+        if not bool(source_sr.get(self._MARTIAL_ESPIONAGE_ACTIVE_KEY, False)):
+            return None
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        bearer = get_bearer() if callable(get_bearer) else None
+        if bearer is None:
+            return None
+        return source_root, member, source_sr, bearer
+
+    def _martial_espionage_usage_key(self, *, game=None, player=None) -> tuple[int, str]:
+        return self._current_turn(game=game), self._current_turn_owner_id(game=game, player=player)
+
+    def _martial_espionage_source_used_this_turn(self, source_unit, *, game=None, player=None) -> bool:
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            return False
+        current_turn, current_owner = self._martial_espionage_usage_key(game=game, player=player)
+        try:
+            used_turn = int(source_sr.get(self._MARTIAL_ESPIONAGE_LAST_USED_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            used_turn = 0
+        used_owner = str(source_sr.get(self._MARTIAL_ESPIONAGE_LAST_USED_OWNER_KEY, "") or "")
+        return bool(used_turn and used_turn == int(current_turn) and used_owner == str(current_owner))
+
+    def _mark_martial_espionage_used(self, source_unit, *, game=None, player=None) -> None:
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        current_turn, current_owner = self._martial_espionage_usage_key(game=game, player=player)
+        source_sr[self._MARTIAL_ESPIONAGE_LAST_USED_TURN_KEY] = int(current_turn)
+        source_sr[self._MARTIAL_ESPIONAGE_LAST_USED_OWNER_KEY] = str(current_owner)
+        source_unit.special_rules = source_sr
+
+    def martial_espionage_target_eligible(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        source_member=None,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        source_record = self._martial_espionage_source_record(source_unit, source_member=source_member)
+        if source_record is None:
+            return False
+        source_root, _source_member, source_sr, bearer = source_record
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        if not self._unit_in_army(target_root):
+            return False
+        if not self._unit_is_on_battlefield(target_root):
+            return False
+        if not self._unit_is_astra_militarum(target_root):
+            return False
+        if not (self._unit_has_keyword(target_root, "INFANTRY") or self._unit_has_keyword(target_root, "MOUNTED")):
+            return False
+        try:
+            range_in = float(source_sr.get(self._MARTIAL_ESPIONAGE_RANGE_KEY, 9.0) or 9.0)
+        except (TypeError, ValueError):
+            range_in = 9.0
+        if range_in < 0.0:
+            range_in = 0.0
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        return bool(model_within_range_of_unit(bearer, target_root, range_in, use_attached_aggregate=True))
+
+    def martial_espionage_source_candidates_for_shooting_unit(self, target_unit, *, game=None, game_map=None) -> list[tuple]:
+        if not self.is_brood_brother_auxilia():
+            return []
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return []
+        local_map = self._resolve_game_map(game=game, game_map=game_map)
+        out: list[tuple] = []
+        for source_root, source_member, source_sr, bearer in self._martial_espionage_source_records():
+            if self._martial_espionage_source_used_this_turn(source_member, game=game):
+                continue
+            if not self.martial_espionage_target_eligible(
+                source_root,
+                target_root,
+                source_member=source_member,
+                game=game,
+                game_map=local_map,
+            ):
+                continue
+            out.append((source_root, source_member, source_sr, bearer))
+        out.sort(key=lambda item: (str(get_entity_id(item[1]) or ""), str(get_entity_id(item[0]) or "")))
+        return out
+
+    def apply_martial_espionage_choice(
+        self,
+        source_unit,
+        *,
+        source_member=None,
+        target_unit=None,
+        game=None,
+        player=None,
+    ) -> dict | None:
+        if target_unit is None:
+            return None
+        source_record = self._martial_espionage_source_record(source_unit, source_member=source_member)
+        if source_record is None:
+            return None
+        source_root, source_member_unit, source_sr, _bearer = source_record
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return None
+        if self._martial_espionage_source_used_this_turn(source_member_unit, game=game, player=player):
+            return None
+        if not self.martial_espionage_target_eligible(
+            source_root,
+            target_root,
+            source_member=source_member_unit,
+            game=game,
+        ):
+            return None
+        apply_bonus = getattr(target_root, "apply_selected_to_shoot_unit_ranged_weapon_bonuses", None)
+        if not callable(apply_bonus):
+            return None
+        try:
+            ap_bonus = int(source_sr.get(self._MARTIAL_ESPIONAGE_AP_KEY, 1) or 1)
+        except (TypeError, ValueError):
+            ap_bonus = 1
+        ap_bonus = max(1, int(ap_bonus))
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() or "SHOOTING_PHASE"
+        source_name = str(source_sr.get(self._MARTIAL_ESPIONAGE_SOURCE_KEY, "") or self._MARTIAL_ESPIONAGE_RULE_NAME).strip()
+        current_turn, current_owner = self._martial_espionage_usage_key(game=game, player=player)
+        source_id = str(get_entity_id(source_member_unit) or get_entity_id(source_root) or "")
+        target_id = str(get_entity_id(target_root) or "")
+        applied = int(
+            apply_bonus(
+                key_prefix=f"martial_espionage:{source_id}:{target_id}:{current_turn}:{current_owner}",
+                source=(source_name or self._MARTIAL_ESPIONAGE_RULE_NAME),
+                ap_bonus=int(ap_bonus),
+                expires_phase=phase_name,
+                target_root=target_root,
+            )
+            or 0
+        )
+        if applied <= 0:
+            return None
+        self._mark_martial_espionage_used(source_member_unit, game=game, player=player)
+        return {
+            "action": "apply",
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "source_member_unit_id": str(get_entity_id(source_member_unit) or ""),
+            "target_unit_id": target_id,
+            "source_model_id": str(get_entity_id(getattr(source_member_unit, "_get_enhancement_bearer_model", lambda: None)() or "") or ""),
+            "ap_bonus": int(ap_bonus),
+            "source": source_name or self._MARTIAL_ESPIONAGE_RULE_NAME,
+            "applied_weapon_count": int(applied),
+            "expires_phase": phase_name,
+        }
 
     def _clear_integrated_tactics_source_lock(self, unit) -> None:
         root = self._attached_root(unit)

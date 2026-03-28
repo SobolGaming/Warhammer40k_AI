@@ -5672,6 +5672,7 @@ class GameReactiveDecisionsMixin:
             "leechbite_plate",
             "enhancement_charge_after_advance_once",
             "mist_wreathed_shadow_realms",
+            "martial_espionage",
         ):
             return
         selected = None
@@ -8115,6 +8116,34 @@ class GameReactiveDecisionsMixin:
                 ap_bonus=int(payload.get("ap_bonus") or ctx.get("ap_bonus") or 0),
                 expires_phase="SHOOTING_PHASE",
                 target_root=root,
+            )
+            return
+
+        if ability_key == "martial_espionage":
+            if not choice:
+                return
+            source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "")
+            target_unit_id = str(payload.get("target_unit_id") or ctx.get("target_unit_id") or ctx.get("unit_id") or "")
+            if not source_unit_id or not target_unit_id:
+                return
+            source_unit = self._resolve_unit_by_id(source_unit_id)
+            target_unit = self._resolve_unit_by_id(target_unit_id)
+            if source_unit is None or target_unit is None:
+                return
+            source_member_unit_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member_unit = self._resolve_unit_by_id(source_member_unit_id) if source_member_unit_id else None
+            source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            detachment_mgr = getattr(source_army, "genestealer_cults_detachments", None) if source_army is not None else None
+            apply_fn = getattr(detachment_mgr, "apply_martial_espionage_choice", None) if detachment_mgr is not None else None
+            if not callable(apply_fn):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            apply_fn(
+                source_unit,
+                source_member=source_member_unit,
+                target_unit=target_unit,
+                game=self,
+                player=player,
             )
             return
 

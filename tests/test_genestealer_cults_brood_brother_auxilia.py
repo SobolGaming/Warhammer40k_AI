@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -16,6 +16,15 @@ from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
+class _DummyWargear:
+    def __init__(self, name: str, *, ranged: bool = True):
+        self.name = str(name)
+        self._ranged = bool(ranged)
+
+    def is_ranged(self) -> bool:
+        return bool(self._ranged)
+
+
 class _MockDatasheet:
     def __init__(
         self,
@@ -25,6 +34,9 @@ class _MockDatasheet:
         keywords: list[str] | None = None,
         faction_keywords: list[str] | None = None,
         points: int = 100,
+        leadership: int = 7,
+        objective_control: int = 1,
+        attached_to: list[str] | None = None,
     ):
         self.id = f"ds_{name.lower().replace(' ', '_')}"
         self.name = name
@@ -39,8 +51,8 @@ class _MockDatasheet:
                 "T": "4",
                 "Sv": "4",
                 "W": "2",
-                "Ld": "7",
-                "OC": "1",
+                "Ld": str(int(leadership)),
+                "OC": str(int(objective_control)),
                 "base_size": "32mm",
                 "inv_sv": "7",
                 "inv_sv_descr": "none",
@@ -51,7 +63,7 @@ class _MockDatasheet:
         self.datasheets_abilities = []
         self.loadout = "This model is equipped with: nothing"
         self.transport = ""
-        self.attached_to = []
+        self.attached_to = list(attached_to or [])
         self.attached_to_names = []
 
 
@@ -63,6 +75,9 @@ def _make_unit(
     faction_keywords: list[str] | None = None,
     points: int = 100,
     possible_abilities: list[str] | None = None,
+    leadership: int = 7,
+    objective_control: int = 1,
+    attached_to: list[str] | None = None,
 ) -> Unit:
     unit = Unit(
         _MockDatasheet(
@@ -71,6 +86,9 @@ def _make_unit(
             keywords=keywords,
             faction_keywords=faction_keywords,
             points=points,
+            leadership=leadership,
+            objective_control=objective_control,
+            attached_to=attached_to,
         )
     )
     unit.deployed = True
@@ -106,6 +124,11 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
         model.set_location(float(x) + (0.2 * idx), float(y), 0.0, 0.0)
 
 
+def _attach_ranged_weapons(unit: Unit, *, weapon_name: str) -> None:
+    for model in list(getattr(unit, "models", []) or []):
+        model.wargear = [_DummyWargear(weapon_name, ranged=True)]
+
+
 def _apply_brood_brother_auxilia_enhancement(
     unit: Unit,
     *,
@@ -136,6 +159,17 @@ def _get_integrated_tactics_request(game: Game):
     return None
 
 
+def _get_yes_no_request(game: Game, *, ability: str):
+    target = str(ability or "").strip().lower()
+    for req in list(game.decision_queue.list() or []):
+        if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+            continue
+        ctx = dict(getattr(req, "context", {}) or {})
+        if str(ctx.get("ability", "") or "").strip().lower() == target:
+            return req
+    return None
+
+
 def _target_option_id(request, target_unit: Unit | None) -> str:
     target_id = str(get_entity_id(target_unit) or "") if target_unit is not None else ""
     for opt in list(getattr(request, "options", []) or []):
@@ -145,6 +179,14 @@ def _target_option_id(request, target_unit: Unit | None) -> str:
                 return str(getattr(opt, "option_id", "") or "")
             continue
         if str(payload.get("target_unit_id", "") or "") == target_id:
+            return str(getattr(opt, "option_id", "") or "")
+    return ""
+
+
+def _yes_no_option_id(request, *, use: bool) -> str:
+    for opt in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        if bool(payload.get("choice", False)) == bool(use):
             return str(getattr(opt, "option_id", "") or "")
     return ""
 
@@ -396,6 +438,165 @@ def test_adaptive_reprisal_allows_heroic_intervention_for_zero_cp_once_per_turn_
         assume_optional_discounts=True,
     )
     assert int(preview_next_turn.get("cost", -1)) == 0
+
+
+def test_martial_espionage_queues_confirmation_and_applies_once_per_turn_owner():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+    game.current_player_index = 1
+
+    bearer = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    astra_unit = _make_unit(
+        "Brood Brothers Infantry",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    gsc_army.add_unit(bearer)
+    gsc_army.add_unit(astra_unit)
+    enemy_army.add_unit(enemy_target)
+    _set_unit_position(bearer, 10.0, 10.0)
+    _set_unit_position(astra_unit, 18.0, 10.0)
+    _set_unit_position(enemy_target, 28.0, 10.0)
+    _attach_ranged_weapons(astra_unit, weapon_name="Lasgun")
+
+    _apply_brood_brother_auxilia_enhancement(
+        bearer,
+        enhancement_id="000009084002",
+        name="Martial Espionage",
+        description=(
+            "Once per turn, when a friendly Astra Militarum Infantry or Astra Militarum Mounted unit within 9\" "
+            "of the bearer is selected to shoot, the bearer can use this Enhancement. If it does, until the end "
+            "of the phase, improve the Armour Penetration characteristic of ranged weapons equipped by models in "
+            "that unit by 1."
+        ),
+    )
+
+    game._on_shooting_targets_selected_martial_espionage(attacking_unit=astra_unit, target_units=[enemy_target])
+    request = _get_yes_no_request(game, ability="martial_espionage")
+    assert request is not None
+    assert str((request.context or {}).get("player_id", "") or "") == ""
+    assert str((request.context or {}).get("target_unit_id", "") or "") == str(get_entity_id(astra_unit) or "")
+    assert str((request.context or {}).get("turn_owner", "") or "") == str(enemy_player.id or "")
+
+    option_id = _yes_no_option_id(request, use=True)
+    assert option_id
+    result = resolve_decision_command(game, request, option_id, player_id=gsc_player.id)
+    assert bool(getattr(result, "ok", False))
+    assert int(astra_unit.models[0].get_temporary_weapon_ap_bonus("Lasgun")[0] or 0) == 1
+
+    game._on_shooting_targets_selected_martial_espionage(attacking_unit=astra_unit, target_units=[enemy_target])
+    assert _get_yes_no_request(game, ability="martial_espionage") is None
+
+    game.current_player_index = 0
+    game._on_shooting_targets_selected_martial_espionage(attacking_unit=astra_unit, target_units=[enemy_target])
+    request_next_owner = _get_yes_no_request(game, ability="martial_espionage")
+    assert request_next_owner is not None
+    assert str((request_next_owner.context or {}).get("turn_owner", "") or "") == str(gsc_player.id or "")
+
+
+def test_the_hero_returned_improves_bearers_unit_stats_while_bearer_is_alive():
+    _game, gsc_army, _enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    bodyguard = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+        leadership=7,
+        objective_control=1,
+    )
+    leader = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+        leadership=6,
+        objective_control=1,
+        attached_to=[bodyguard.get_datasheet_id()],
+    )
+    gsc_army.add_unit(bodyguard)
+    gsc_army.add_unit(leader)
+
+    _apply_brood_brother_auxilia_enhancement(
+        leader,
+        enhancement_id="000009084004",
+        name="The Hero Returned",
+        description="Improve the Leadership and Objective Control characteristics of models in the bearer's unit by 1.",
+    )
+
+    leader_model = leader.models[0]
+    assert int(leader.get_effective_model_characteristic(leader_model, "objective_control") or 0) == 2
+    assert int(leader.get_effective_model_characteristic(leader_model, "leadership") or 0) == 5
+
+    bodyguard_model = bodyguard.models[0]
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "objective_control") or 0) == 1
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "leadership") or 0) == 7
+
+    leader.attach_to_unit(bodyguard)
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "objective_control") or 0) == 2
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "leadership") or 0) == 6
+
+    leader.models[0].wounds = 0
+    invalidate_leader = getattr(leader, "_invalidate_ability_cache", None)
+    invalidate_bodyguard = getattr(bodyguard, "_invalidate_ability_cache", None)
+    if callable(invalidate_leader):
+        invalidate_leader()
+    if callable(invalidate_bodyguard):
+        invalidate_bodyguard()
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "objective_control") or 0) == 1
+    assert int(bodyguard.get_effective_model_characteristic(bodyguard_model, "leadership") or 0) == 7
+
+
+def test_firepoint_commander_sets_overwatch_threshold_to_five_while_bearer_lives():
+    game, gsc_army, enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    bearer = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    gsc_army.add_unit(bearer)
+    enemy_army.add_unit(enemy)
+    _set_unit_position(bearer, 10.0, 10.0)
+    _set_unit_position(enemy, 18.0, 10.0)
+
+    _apply_brood_brother_auxilia_enhancement(
+        bearer,
+        enhancement_id="000009084005",
+        name="Firepoint Commander",
+        description=(
+            "Each time you target the bearer's unit with the Fire Overwatch Stratagem, while resolving that "
+            "Stratagem, hits are scored on unmodified Hit rolls of 5+."
+        ),
+    )
+
+    assert int(bearer.get_destroyer_of_futures_overwatch_hit_threshold(enemy_unit=enemy, game=game) or 0) == 5
+
+    bearer.models[0].wounds = 0
+    invalidate = getattr(bearer, "_invalidate_ability_cache", None)
+    if callable(invalidate):
+        invalidate()
+    assert int(bearer.get_destroyer_of_futures_overwatch_hit_threshold(enemy_unit=enemy, game=game) or 0) == 0
 
 
 def test_suppress_and_overwhelm_descriptor_registered():

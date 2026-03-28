@@ -6700,6 +6700,22 @@ _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_BY_NAME = {
 }
 
 _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009084002": EnhancementToolDescriptor(
+        enhancement_id="000009084002",
+        name="Martial Espionage",
+        timing="when_friendly_astra_militarum_infantry_or_mounted_unit_within_range_of_bearer_is_selected_to_shoot",
+        target="friendly_astra_militarum_infantry_or_mounted_unit_within_range_of_bearer",
+        duration="until_end_of_phase_once_per_turn",
+        effect="optional_selected_to_shoot_ranged_ap_bonus_once_per_turn",
+        effect_params={
+            "range": 9.0,
+            "ap_bonus": 1,
+            "once_per_turn": True,
+            "requires_bearer_alive": True,
+            "required_target_keywords": ("ASTRA MILITARUM",),
+            "required_target_any_keywords": ("INFANTRY", "MOUNTED"),
+        },
+    ),
     "000009084003": EnhancementToolDescriptor(
         enhancement_id="000009084003",
         name="Adaptive Reprisal",
@@ -6713,6 +6729,31 @@ _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS: dict[str, EnhancementToolD
             "range": 9.0,
             "required_target_keywords": ("GENESTEALER CULTS",),
             "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000009084004": EnhancementToolDescriptor(
+        enhancement_id="000009084004",
+        name="The Hero Returned",
+        timing="while_bearer_alive",
+        target="models_in_bearers_unit",
+        duration="constant",
+        effect="improve_leadership_and_objective_control_of_bearers_unit",
+        effect_params={
+            "leadership_improvement": 1,
+            "objective_control_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009084005": EnhancementToolDescriptor(
+        enhancement_id="000009084005",
+        name="Firepoint Commander",
+        timing="while_targeting_bearers_unit_with_fire_overwatch",
+        target="bearers_unit",
+        duration="constant_while_bearer_alive",
+        effect="fire_overwatch_hits_on_threshold",
+        effect_params={
+            "fire_overwatch_hit_threshold": 5,
+            "requires_bearer_alive": True,
         },
     ),
 }

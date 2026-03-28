@@ -3031,6 +3031,85 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "martial espionage" or enh_id == "000009084002":
+            if not is_brood_brother_auxilia:
+                return
+            unit.special_rules["enhancement_martial_espionage"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                aura_range = float(params.get("range", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                aura_range = 9.0
+            if aura_range <= 0.0:
+                aura_range = 9.0
+            unit.special_rules["enhancement_martial_espionage_range"] = float(aura_range)
+            unit.special_rules["enhancement_martial_espionage_ap_bonus"] = int(
+                max(1, _coerce_int(params.get("ap_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_martial_espionage_source"] = "Martial Espionage"
+            unit.special_rules["enhancement_martial_espionage_once_per_turn"] = bool(
+                params.get("once_per_turn", True)
+            )
+            unit.special_rules["enhancement_martial_espionage_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_martial_espionage_last_used_turn"] = int(
+                unit.special_rules.get("enhancement_martial_espionage_last_used_turn", 0) or 0
+            )
+            unit.special_rules["enhancement_martial_espionage_last_used_turn_owner"] = str(
+                unit.special_rules.get("enhancement_martial_espionage_last_used_turn_owner", "") or ""
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_martial_espionage_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "the hero returned" or enh_id == "000009084004":
+            if not is_brood_brother_auxilia:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "The Hero Returned").strip() or "The Hero Returned"
+            unit.special_rules["enhancement_the_hero_returned"] = True
+            unit.special_rules["enhancement_the_hero_returned_source"] = source
+            unit.special_rules["enhancement_the_hero_returned_leadership_improvement"] = int(
+                max(1, _coerce_int(params.get("leadership_improvement", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_the_hero_returned_objective_control_bonus"] = int(
+                max(1, _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_the_hero_returned_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_the_hero_returned_bearer_model_id"] = bearer_id
+
+        if name == "firepoint commander" or enh_id == "000009084005":
+            if not is_brood_brother_auxilia:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_firepoint_commander"] = True
+            unit.special_rules["enhancement_firepoint_commander_source"] = str(
+                getattr(desc, "name", "") or "Firepoint Commander"
+            ).strip() or "Firepoint Commander"
+            unit.special_rules["enhancement_firepoint_commander_hit_threshold"] = int(
+                max(2, _coerce_int(params.get("fire_overwatch_hit_threshold", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_firepoint_commander_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_firepoint_commander_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
         if name == "supernova launcher" or enh_id == "000009983002":
             if not is_experimental_prototype_cadre:
                 return

@@ -12553,6 +12553,99 @@ class GameShootingFightHandlersMixin:
         )
         self.request_decision(request)
 
+    def _on_shooting_targets_selected_martial_espionage(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        get_root = getattr(attacking_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else attacking_unit
+        if root is None:
+            return
+        is_alive_fn = getattr(root, "is_alive", None)
+        if callable(is_alive_fn) and not bool(is_alive_fn()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+            return
+        embarked = getattr(root, "is_embarked", False)
+        if callable(embarked):
+            embarked = embarked()
+        if bool(embarked):
+            return
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        candidates_fn = getattr(mgr, "martial_espionage_source_candidates_for_shooting_unit", None) if mgr is not None else None
+        if not callable(candidates_fn):
+            return
+        candidates = list(candidates_fn(root, game=self) or [])
+        if not candidates:
+            return
+
+        target_unit_id = str(get_entity_id(root) or "")
+        if not target_unit_id:
+            return
+        current_player = self.get_current_player()
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+
+        for source_root, source_member, source_sr, bearer in candidates:
+            source_root_id = str(get_entity_id(source_root) or "")
+            source_member_id = str(get_entity_id(source_member) or source_root_id)
+            if not source_root_id or not source_member_id:
+                continue
+            try:
+                range_in = float(source_sr.get("enhancement_martial_espionage_range", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                range_in = 9.0
+            try:
+                ap_bonus = int(source_sr.get("enhancement_martial_espionage_ap_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                ap_bonus = 1
+            source_name = str(
+                source_sr.get("enhancement_martial_espionage_source", "")
+                or "Martial Espionage"
+            ).strip() or "Martial Espionage"
+            source_model_id = str(get_entity_id(bearer) or "")
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="martial_espionage",
+                ability_name="Martial Espionage",
+                message=f"Martial Espionage: use {source_name} for {getattr(root, 'name', 'Unit')}?",
+                context={
+                    "ability_name": "Martial Espionage",
+                    "phase_name": phase_name,
+                    "unit_id": target_unit_id,
+                    "target_unit_id": target_unit_id,
+                    "source_unit_id": source_root_id,
+                    "source_member_unit_id": source_member_id,
+                    "source_model_id": source_model_id,
+                    "range": float(range_in),
+                    "ap_bonus": int(max(1, ap_bonus)),
+                    "turn_owner": current_owner_id,
+                    "turn": int(turn or 0),
+                    "optional": True,
+                },
+                payload={
+                    "unit_id": target_unit_id,
+                    "target_unit_id": target_unit_id,
+                    "source_unit_id": source_root_id,
+                    "source_member_unit_id": source_member_id,
+                    "source_model_id": source_model_id,
+                    "range": float(range_in),
+                    "ap_bonus": int(max(1, ap_bonus)),
+                },
+                instance_key=f"{source_member_id}:{target_unit_id}:{phase_name}:{turn}:{current_owner_id}",
+            )
+
     @staticmethod
     def _clear_persecution_prospect_source_lock(unit) -> None:
         if unit is None:
