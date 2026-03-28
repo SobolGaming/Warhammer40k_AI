@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
@@ -1134,6 +1135,185 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_is_synapse_unit(self, unit: Any) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        return self._tyr_has_keyword(root, "SYNAPSE")
+
+    def _tyr_unit_visible_to_unit(self, source_unit: Any, target_unit: Any) -> bool:
+        source_root = self._tyr_root(source_unit)
+        target_root = self._tyr_root(target_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or target_root is None or game_map is None:
+            return False
+        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if not callable(has_los):
+            return False
+        for model in self._tyr_iter_unit_models(source_root):
+            if not self._tyr_model_is_alive(model):
+                continue
+            if bool(has_los(model, target_root, game_map)):
+                return True
+        return False
+
+    def _tyr_unit_already_selected_to_shoot_or_fight_this_phase(self, unit: Any, *, phase_name: str) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return True
+        phase_key = self._tyr_phase_name(phase_name)
+        if phase_key == "shooting phase":
+            return bool(getattr(getattr(root, "round_state", None), "shot_this_round", False))
+        if phase_key != "fight phase":
+            return True
+        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+        fought_units = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
+        return bool(root in fought_units or getattr(getattr(root, "round_state", None), "fought_this_round", False))
+
+    def _tyr_synaptic_nexus_synapse_candidates(self) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_is_synapse_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_reinforced_hive_node_candidates(self, *, attacking_unit: Any, target_units: Any) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_is_synapse_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_irresistible_will_source_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        out: list[Any] = []
+        for root in list(self._tyr_synaptic_nexus_synapse_candidates() or []):
+            if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_irresistible_will_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        source_root = self._tyr_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy_unit in list(get_enemy_units(source_root) or []):
+            enemy_root = self._tyr_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            enemy_id = self._tyr_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if self._tyr_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._tyr_on_battlefield(enemy_root, require_targetable=True):
+                continue
+            if not unit_within_range_of_unit(source_root, enemy_root, 24.0, use_attached_aggregate=True):
+                continue
+            if not self._tyr_unit_visible_to_unit(source_root, enemy_root):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_synaptic_channelling_candidates(self) -> list[Any]:
+        return list(self._tyr_synaptic_nexus_synapse_candidates() or [])
+
+    def _tyr_imperative_dominance_candidates(self) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_unit_in_synapse_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_smothering_shadow_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        enemy_root = self._tyr_root(enemy_unit)
+        if enemy_root is None or self._tyr_owned_by_player(enemy_root, self.player):
+            return []
+        out: list[Any] = []
+        for root in list(self._tyr_synaptic_nexus_synapse_candidates() or []):
+            if not unit_within_range_of_unit(root, enemy_root, 12.0, use_attached_aggregate=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
     def _tyr_adaptive_optimisation_candidates(self) -> list[Any]:
         if not self._is_tyranids_subterranean_assault_detachment():
             return []
@@ -2112,6 +2292,153 @@ class TyranidsStratagemMixin:
                 payload["target_unit"] = candidates[0]
             queue_reaction(payload, use_timer=False)
 
+    def _queue_tyranids_synaptic_nexus_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_tyranids_synaptic_nexus_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("REINFORCED HIVE NODE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_reinforced_hive_node_candidates(attacking_unit=attacker_root, target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tyranids_synaptic_nexus_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_tyranids_synaptic_nexus_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("REINFORCED HIVE NODE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_reinforced_hive_node_candidates(attacking_unit=attacker_root, target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tyranids_synaptic_nexus_failed_battleshock_reactions(
+        self,
+        *,
+        enemy_unit: Any,
+        passed: bool,
+    ) -> None:
+        if passed or enemy_unit is None or not self._is_tyranids_synaptic_nexus_detachment():
+            return
+        enemy_root = self._tyr_root(enemy_unit)
+        if enemy_root is None or self._tyr_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("THE SMOTHERING SHADOW")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_smothering_shadow_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        enemy_id = self._tyr_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("enemy_unit_id", "") or "") == enemy_id:
+                return
+        payload = {
+            "event": "battle_shock_test_resolved",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "enemy_unit_id": enemy_id,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _cleanup_tyranids_invasion_fleet_phase_start_effects(self, *, player: Any = None, phase: Any = None) -> None:
         if str(getattr(phase, "name", "") or "").strip().upper() != "COMMAND_PHASE":
             return
@@ -2350,6 +2677,16 @@ class TyranidsStratagemMixin:
             if name_u == "INVISIBLE HUNTER":
                 return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
         if self._is_tyranids_synaptic_nexus_detachment():
+            if name_u == "REINFORCED HIVE NODE":
+                return self._use_tyranids_reinforced_hive_node(stratagem, **kwargs)
+            if name_u == "IRRESISTIBLE WILL":
+                return self._use_tyranids_irresistible_will(stratagem, **kwargs)
+            if name_u == "SYNAPTIC CHANNELLING":
+                return self._use_tyranids_synaptic_channelling(stratagem, **kwargs)
+            if name_u == "IMPERATIVE DOMINANCE":
+                return self._use_tyranids_imperative_dominance(stratagem, **kwargs)
+            if name_u == "THE SMOTHERING SHADOW":
+                return self._use_tyranids_the_smothering_shadow(stratagem, **kwargs)
             if name_u == "OVERRIDE INSTINCTS":
                 return self._use_tyranids_override_instincts(stratagem, **kwargs)
         if self._is_tyranids_crusher_stampede_detachment():
@@ -4041,6 +4378,477 @@ class TyranidsStratagemMixin:
         self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         moved_units = ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
         logger.info("INFO: INVISIBLE HUNTER: %s entered Strategic Reserves.", moved_units)
+        return True
+
+    def _use_tyranids_reinforced_hive_node(self, stratagem: Any, **kwargs) -> bool:
+        target = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REINFORCED HIVE NODE":
+                    continue
+                if target is None:
+                    target = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(target)
+        attacker_root = self._tyr_root(attacking_unit)
+        if root is None:
+            logger.error("ERROR: REINFORCED HIVE NODE: no target unit provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: REINFORCED HIVE NODE: missing attacking unit context")
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: REINFORCED HIVE NODE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: REINFORCED HIVE NODE: not opponent's Shooting phase")
+            return False
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: REINFORCED HIVE NODE: attacking unit must be enemy")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: REINFORCED HIVE NODE: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: REINFORCED HIVE NODE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: REINFORCED HIVE NODE: target must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_synapse_unit(root):
+            logger.error("ERROR: REINFORCED HIVE NODE: target must be a SYNAPSE unit")
+            return False
+        if candidates and not self._tyr_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REINFORCED HIVE NODE: selected unit is not currently eligible")
+            return False
+        if target_units:
+            resolved_targets = self._tyr_resolve_units(target_units)
+            if resolved_targets and not self._tyr_unit_in_candidates(root, resolved_targets):
+                logger.error("ERROR: REINFORCED HIVE NODE: target was not selected by the attacking unit")
+                return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: REINFORCED HIVE NODE: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+        if not self._apply_generic_defensive_effect(
+            root,
+            {"effect_type": "ap_worsen", "duration": "attacker", "value": 1, "attack_type": "any"},
+            attacker_unit=attacker_root,
+            phase_name=phase_label,
+            source_name=str(getattr(stratagem, "name", "") or "REINFORCED HIVE NODE"),
+        ):
+            logger.error("ERROR: REINFORCED HIVE NODE: failed to apply AP modifier")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REINFORCED HIVE NODE: %s worsens incoming AP from %s by 1 until the attacker finishes its attacks.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Attacker"),
+        )
+        return True
+
+    def _use_tyranids_irresistible_will(self, stratagem: Any, **kwargs) -> bool:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if source_unit is None and len(candidates) == 1:
+            source_unit = candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: IRRESISTIBLE WILL: no source unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: IRRESISTIBLE WILL: no enemy unit provided")
+            return False
+
+        root = self._tyr_root(source_unit)
+        enemy_root = self._tyr_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: IRRESISTIBLE WILL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: IRRESISTIBLE WILL: not your Shooting phase")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: IRRESISTIBLE WILL: source unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: IRRESISTIBLE WILL: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: IRRESISTIBLE WILL: source unit must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_synapse_unit(root):
+            logger.error("ERROR: IRRESISTIBLE WILL: source unit must be a SYNAPSE unit")
+            return False
+        if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name=phase_name):
+            logger.error("ERROR: IRRESISTIBLE WILL: source unit has already been selected this phase")
+            return False
+        eligible = candidates or self._tyr_irresistible_will_source_candidates(phase_name=phase_name)
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: IRRESISTIBLE WILL: selected source unit is not currently eligible")
+            return False
+        if self._tyr_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: IRRESISTIBLE WILL: selected enemy must be enemy")
+            return False
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=True):
+            logger.error("ERROR: IRRESISTIBLE WILL: enemy unit must be on the battlefield and targetable")
+            return False
+        if not unit_within_range_of_unit(root, enemy_root, 24.0, use_attached_aggregate=True):
+            logger.error("ERROR: IRRESISTIBLE WILL: enemy unit must be within 24\"")
+            return False
+        if not self._tyr_unit_visible_to_unit(root, enemy_root):
+            logger.error("ERROR: IRRESISTIBLE WILL: enemy unit must be visible to the source unit")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: IRRESISTIBLE WILL: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_synaptic_nexus_irresistible_will", None) if mgr is not None else None
+        outcome = (
+            activate(
+                root,
+                enemy_root,
+                phase_name=phase_label,
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "IRRESISTIBLE WILL"),
+            )
+            if callable(activate)
+            else {"ok": False}
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: IRRESISTIBLE WILL: failed to apply attack reroll effect")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: IRRESISTIBLE WILL: attacks by friendly TYRANIDS units within 6\" of %s re-roll Hit and Wound rolls of 1 against %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_tyranids_synaptic_channelling(self, stratagem: Any, **kwargs) -> bool:
+        target = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target is None and len(candidates) == 1:
+            target = candidates[0]
+        if target is None:
+            logger.error("ERROR: SYNAPTIC CHANNELLING: no target unit provided")
+            return False
+
+        root = self._tyr_root(target)
+        if root is None:
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "command phase":
+            logger.error("ERROR: SYNAPTIC CHANNELLING: wrong phase")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: target must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: target must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_synapse_unit(root):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: target must be a SYNAPSE unit")
+            return False
+        eligible = candidates or self._tyr_synaptic_channelling_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_synaptic_nexus_synaptic_channelling", None) if mgr is not None else None
+        outcome = (
+            activate(
+                root,
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "SYNAPTIC CHANNELLING"),
+            )
+            if callable(activate)
+            else {"ok": False}
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: SYNAPTIC CHANNELLING: failed to apply Synapse projection")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYNAPTIC CHANNELLING: friendly TYRANIDS units within 9\" of %s are in Synapse Range until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_imperative_dominance(self, stratagem: Any, **kwargs) -> bool:
+        target = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target is None and len(candidates) == 1:
+            target = candidates[0]
+        if target is None:
+            logger.error("ERROR: IMPERATIVE DOMINANCE: no target unit provided")
+            return False
+
+        root = self._tyr_root(target)
+        if root is None:
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "command phase":
+            logger.error("ERROR: IMPERATIVE DOMINANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: IMPERATIVE DOMINANCE: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: target must be a TYRANIDS unit")
+            return False
+        if not self._tyr_unit_in_synapse_range(root):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: target must be within Synapse Range")
+            return False
+        eligible = candidates or self._tyr_imperative_dominance_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: selected unit is not currently eligible")
+            return False
+
+        imperative_key = str(kwargs.get("imperative_key") or kwargs.get("choice_key") or kwargs.get("key") or "").strip().upper()
+        if imperative_key:
+            if imperative_key not in {"SYNAPTIC_AUGMENTATION", "SURGING_VITALITY", "GOADED_TO_SLAUGHTER"}:
+                logger.error("ERROR: IMPERATIVE DOMINANCE: selected imperative is invalid")
+                return False
+            if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+                logger.error("ERROR: IMPERATIVE DOMINANCE: cannot be used in current state")
+                return False
+            if not self._tyr_spend_cp(stratagem, target_unit=root):
+                return False
+            mgr = self._tyr_detachment_mgr()
+            activate = getattr(mgr, "activate_synaptic_nexus_imperative_dominance", None) if mgr is not None else None
+            outcome = (
+                activate(
+                    root,
+                    imperative_key,
+                    game=self.game,
+                    player=self.player,
+                    source=str(getattr(stratagem, "name", "") or "IMPERATIVE DOMINANCE"),
+                )
+                if callable(activate)
+                else {"ok": False}
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: IMPERATIVE DOMINANCE: failed to apply selected imperative")
+                return False
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: IMPERATIVE DOMINANCE: %s now uses %s until the start of your next Command phase.",
+                getattr(root, "name", "Unit"),
+                str(outcome.get("choice_name", imperative_key) or imperative_key),
+            )
+            return True
+
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: cannot be used in current state")
+            return False
+        request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+        if not callable(request_decision):
+            logger.error("ERROR: IMPERATIVE DOMINANCE: decision queue unavailable")
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            logger.error("ERROR: IMPERATIVE DOMINANCE: target unit must have a stable id")
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != str(DECISION_CHOOSE_QUARRY):
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("ability", "") or "") != "tyranids_imperative_dominance":
+                    continue
+                if str(req_ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                logger.error("ERROR: IMPERATIVE DOMINANCE: imperative selection already queued for target unit")
+                return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        choices = (
+            ("SYNAPTIC_AUGMENTATION", "Synaptic Augmentation", "Models in this unit have a 5+ invulnerable save."),
+            ("SURGING_VITALITY", "Surging Vitality", "Add 1 to Advance and Charge rolls made for this unit."),
+            ("GOADED_TO_SLAUGHTER", "Goaded to Slaughter", "Each time a model in this unit makes a melee attack, add 1 to the Hit roll."),
+        )
+        options = [
+            DecisionOption.create(
+                label,
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": key,
+                    "summary": summary,
+                },
+            )
+            for key, label, summary in choices
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{getattr(stratagem, 'name', 'IMPERATIVE DOMINANCE')}: select one Synaptic Imperative for {getattr(root, 'name', 'Unit')}.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "tyranids_imperative_dominance",
+                "ability_name": str(getattr(stratagem, "name", "") or "IMPERATIVE DOMINANCE"),
+                "unit_id": unit_id,
+                "allowed_choice_keys": [key for key, _label, _summary in choices],
+                "battle_round": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+            },
+        )
+        request_decision(request)
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: IMPERATIVE DOMINANCE: queued imperative selection for %s.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_the_smothering_shadow(self, stratagem: Any, **kwargs) -> bool:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if source_unit is None or enemy_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE SMOTHERING SHADOW":
+                    continue
+                if source_unit is None:
+                    source_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(source_unit)
+        enemy_root = self._tyr_root(enemy_unit)
+        if root is None:
+            logger.error("ERROR: THE SMOTHERING SHADOW: no source unit provided")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: THE SMOTHERING SHADOW: missing enemy unit context")
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: THE SMOTHERING SHADOW: source unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: THE SMOTHERING SHADOW: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: THE SMOTHERING SHADOW: source unit must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_synapse_unit(root):
+            logger.error("ERROR: THE SMOTHERING SHADOW: source unit must be a SYNAPSE unit")
+            return False
+        if self._tyr_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: THE SMOTHERING SHADOW: selected enemy must be enemy")
+            return False
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: THE SMOTHERING SHADOW: enemy unit must be on the battlefield")
+            return False
+        if not unit_within_range_of_unit(root, enemy_root, 12.0, use_attached_aggregate=True):
+            logger.error("ERROR: THE SMOTHERING SHADOW: enemy unit must be within 12\" of the source unit")
+            return False
+        eligible = candidates or self._tyr_smothering_shadow_candidates(enemy_unit=enemy_root)
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THE SMOTHERING SHADOW: selected source unit is not currently eligible")
+            return False
+        phase_label = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip() or "Any phase"
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_label):
+            logger.error("ERROR: THE SMOTHERING SHADOW: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        mortal_wounds = sum(1 for roll in rolls if int(roll or 0) >= 3)
+        if mortal_wounds > 0:
+            apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                try:
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+                except TypeError:
+                    apply_mortals(
+                        target_unit=enemy_root,
+                        amount=int(mortal_wounds),
+                        game_map=getattr(self.game, "map", None),
+                    )
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THE SMOTHERING SHADOW: %s rolls %s against %s for %d mortal wounds.",
+            getattr(root, "name", "Unit"),
+            rolls,
+            getattr(enemy_root, "name", "Enemy"),
+            int(mortal_wounds),
+        )
         return True
 
     def _use_tyranids_override_instincts(self, stratagem: Any, **kwargs) -> bool:

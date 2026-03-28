@@ -97,6 +97,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PERSISTENT ASSAILANTS",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
+    "REINFORCED HIVE NODE",
+    "IRRESISTIBLE WILL",
+    "SYNAPTIC CHANNELLING",
+    "IMPERATIVE DOMINANCE",
+    "THE SMOTHERING SHADOW",
     "OVERRIDE INSTINCTS",
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -755,6 +760,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLAZING EARTH",
     "CALCULATED FEINT",
     "FOCUSED HATRED",
+    "REINFORCED HIVE NODE",
+    "THE SMOTHERING SHADOW",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
@@ -2359,11 +2366,13 @@ class StratagemManager(
         needs_attacker_cleanup_shooting = (
             "ARMOUR OF CONTEMPT" in names
             or "LET DUTY BE YOUR SHIELD" in names
+            or "REINFORCED HIVE NODE" in names
             or "THE FOE FORESEEN" in names
             or ("shooting" in defensive_attacker_phases)
         )
         needs_attacker_cleanup_fight = (
             "ARMOUR OF CONTEMPT" in names
+            or "REINFORCED HIVE NODE" in names
             or "THE FOE FORESEEN" in names
             or ("fight" in defensive_attacker_phases)
         )
@@ -5830,6 +5839,87 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase and a TYRANIDS unit within Synapse Range that Fell Back this phase"
             return result
+        if name_u == "REINFORCED HIVE NODE":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REINFORCED HIVE NODE":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            if attacking_unit is not None and target_units:
+                candidates = self._tyr_reinforced_hive_node_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+                if candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires opponent Shooting/Fight phase target-selection trigger for a friendly SYNAPSE unit selected by that attacker"
+            return result
+        if name_u == "IRRESISTIBLE WILL":
+            candidates = list(context.get("candidates") or [])
+            phase_name = str(
+                context.get("phase_name")
+                or getattr(self, "_current_phase_name", "")
+                or ""
+            ).strip()
+            if not candidates:
+                candidates = self._tyr_irresistible_will_source_candidates(phase_name=phase_name)
+            source_unit = context.get("unit") or context.get("target_unit") or context.get("source_unit")
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            enemy_candidates = []
+            if source_unit is not None:
+                enemy_candidates = self._tyr_irresistible_will_enemy_candidates(source_unit)
+            if candidates and enemy_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase, a friendly SYNAPSE unit that has not yet shot/fought, and a visible enemy within 24\""
+            return result
+        if name_u == "SYNAPTIC CHANNELLING":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_synaptic_channelling_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a Command phase and a friendly SYNAPSE unit on the battlefield"
+            return result
+        if name_u == "IMPERATIVE DOMINANCE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_imperative_dominance_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly TYRANIDS unit within Synapse Range"
+            return result
+        if name_u == "THE SMOTHERING SHADOW":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE SMOTHERING SHADOW":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            enemy_unit = context.get("enemy_unit")
+            if enemy_unit is not None:
+                candidates = self._tyr_smothering_shadow_candidates(enemy_unit=enemy_unit)
+                if candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires an enemy unit to have just failed a Battle-shock test within 12\" of a friendly SYNAPSE unit"
+            return result
         if name_u == "CORROSIVE VISCERA":
             for reaction in list(getattr(self, "_pending_reactions", []) or []):
                 if str(reaction.get("stratagem", "") or "").strip().upper() == "CORROSIVE VISCERA":
@@ -6653,6 +6743,11 @@ class StratagemManager(
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "SULPHUROUS VEIL": "Target: your THOUSAND SONS or SCINTILLATING LEGIONS unit selected as an enemy shooting/fight target; incoming attacks suffer -1 to Hit this phase",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
+            "REINFORCED HIVE NODE": "Opponent Shooting phase or the Fight phase, just after an enemy unit selects targets: selected friendly SYNAPSE unit worsens incoming AP by 1 from that attacker until it finishes its attacks",
+            "IRRESISTIBLE WILL": "Your Shooting phase or the Fight phase: select one friendly SYNAPSE unit that has not yet shot/fought and one visible enemy within 24\"; friendly TYRANIDS units within 6\" of the selected SYNAPSE unit re-roll Hit and Wound rolls of 1 against that enemy this phase",
+            "SYNAPTIC CHANNELLING": "Command phase: selected friendly SYNAPSE unit projects Synapse Range to friendly TYRANIDS units within 9\" until end of turn",
+            "IMPERATIVE DOMINANCE": "Your Command phase: selected TYRANIDS unit within Synapse Range chooses one Synaptic Imperative to use until the start of your next Command phase",
+            "THE SMOTHERING SHADOW": "Any phase, just after an enemy unit fails a Battle-shock test: selected friendly SYNAPSE unit within 12\" rolls 6D6 and inflicts 1 mortal wound for each 3+",
             "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
             "CORROSIVE VISCERA": "Target: just-destroyed non-FLY TYRANIDS MONSTER model with Deadly Demise",
             "MASSIVE IMPACT": "Charge phase, just after a TYRANIDS MONSTER model ends a Charge move: select that model and one enemy unit within its Engagement Range; roll six D6 and inflict 1 mortal wound for each 4+",
@@ -10621,6 +10716,13 @@ class StratagemManager(
                         'phase_name': phase_name,
                         'cp_cost': s.cp_cost,
                     })
+        try:
+            self._queue_tyranids_synaptic_nexus_failed_battleshock_reactions(
+                enemy_unit=unit,
+                passed=passed,
+            )
+        except Exception:
+            raise
 
         # Unleash Balefire: apply aflame on failed Battle-shock.
         try:
@@ -11999,6 +12101,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_tyranids_synaptic_nexus_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_orbital_assault_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -13109,6 +13218,13 @@ class StratagemManager(
             raise
         try:
             self._queue_pantheon_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_synaptic_nexus_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

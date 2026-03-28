@@ -457,4 +457,12 @@ class SynapseManager:
             return True
         if self.unit_within_synapse_sources(unit, game=game, game_map=game_map):
             return True
+        tyr_mgr = getattr(self.army, "tyranids_detachments", None) if self.army is not None else None
+        channelling_fn = (
+            getattr(tyr_mgr, "synaptic_nexus_channelling_unit_in_synapse_range", None)
+            if tyr_mgr is not None
+            else None
+        )
+        if callable(channelling_fn) and bool(channelling_fn(unit, game=game)):
+            return True
         return self.unit_within_synaptic_linchpin_sources(unit, game=game, game_map=game_map)

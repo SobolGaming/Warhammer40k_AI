@@ -5895,6 +5895,45 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in available:
             return ("Selected Synaptic Imperative has already been used or is not available.",)
         return ()
+    if ability == "tyranids_imperative_dominance":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("Imperative Dominance selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Imperative Dominance army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_synaptic_nexus", lambda: False)()):
+            return ("Imperative Dominance requires Synaptic Nexus.",)
+        unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if unit is None:
+            return ("Imperative Dominance target unit was not found.",)
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        if unit_root is None:
+            return ("Imperative Dominance target unit was not found.",)
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return ("Imperative Dominance selection requires choice_key.",)
+        choice_key = str(choice or "").strip().upper()
+        if not choice_key:
+            return ("Imperative Dominance selection requires a non-empty choice_key.",)
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Synaptic Imperative is not in this request's candidate list.",)
+        if choice_key not in {"SYNAPTIC_AUGMENTATION", "SURGING_VITALITY", "GOADED_TO_SLAUGHTER"}:
+            return ("Imperative Dominance requires a valid Synaptic Imperative choice.",)
+        if unit_root.get_parent_army() is not army:
+            return ("Imperative Dominance target must be a friendly TYRANIDS unit.",)
+        if not bool(getattr(mgr, "_unit_in_synapse_range", lambda *_a, **_k: False)(unit_root, game=game)):
+            return ("Imperative Dominance target must be within Synapse Range.",)
+        return ()
     if ability == "psychostatic_disruption":
         payload = _option_payload(request, result)
         arriving_unit = resolve_unit(game, payload.get("arriving_unit_id") or ctx.get("arriving_unit_id"))
@@ -13972,6 +14011,51 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: {label} (Battle Round {battle_round}).",
             )
         return applied
+    if ability == "tyranids_imperative_dominance":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if unit is None:
+            return None
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        if unit_root is None:
+            return None
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Imperative Dominance").strip() or "Imperative Dominance"
+        applied = mgr.activate_synaptic_nexus_imperative_dominance(
+            unit_root,
+            choice,
+            game=game,
+            player=player,
+            source=ability_name,
+        )
+        if not isinstance(applied, dict) or not bool(applied.get("ok", False)):
+            return applied
+        label = _option_label(request, result) or str(choice)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(unit_root, 'name', 'Unit')} gains {label} until the start of your next Command phase.",
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "choice_key": str(applied.get("choice_key", "") or str(choice)),
+            "unit_id": str(get_entity_id(unit_root) or ""),
+        }
     if ability == "psychostatic_disruption":
         payload = _option_payload(request, result)
         apply_fn = getattr(game, "_apply_psychostatic_disruption_choice", None)

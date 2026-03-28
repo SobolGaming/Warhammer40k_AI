@@ -815,14 +815,23 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             root = self._unit_root(unit)
             if root is None:
                 continue
-            root_id = str(get_entity_id(root) or "").strip()
+            root_id = str(
+                getattr(root, "id", None)
+                or getattr(root, "_id", None)
+                or ""
+            ).strip()
             if root_id:
                 if root_id not in roots:
                     roots[root_id] = root
                 continue
             no_id_roots.append(root)
         out = list(roots.values()) + list(no_id_roots)
-        out.sort(key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")))
+        out.sort(
+            key=lambda item: (
+                str(getattr(item, "id", None) or getattr(item, "_id", None) or ""),
+                str(getattr(item, "name", "") or ""),
+            )
+        )
         return out
 
     def _unit_on_battlefield(self, unit) -> bool:
@@ -1492,13 +1501,325 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return bool(synapse_mgr.unit_in_synapse_range(root, game=game))
 
+    def _current_turn_owner_id(self, *, game=None, player=None) -> str:
+        owner = player
+        if owner is None and game is not None:
+            get_current = getattr(game, "get_current_player", None)
+            owner = get_current() if callable(get_current) else None
+        if owner is None and self.army is not None:
+            owner = getattr(self.army, "player", None)
+        return str(getattr(owner, "id", "") or "")
+
+    @staticmethod
+    def _synaptic_nexus_effect_phase_key(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _synaptic_nexus_imperative_dominance_is_active(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tyranids_synaptic_nexus_imperative_dominance_active")):
+            return False
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        if resolved_game is None:
+            return True
+        effect_turn = int(sr.get("tyranids_synaptic_nexus_imperative_dominance_turn", 0) or 0)
+        current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+        if effect_turn and current_turn < effect_turn:
+            return False
+        if effect_turn and current_turn > effect_turn + 1:
+            return False
+        owner_id = str(sr.get("tyranids_synaptic_nexus_imperative_dominance_turn_owner", "") or "").strip()
+        if not owner_id:
+            return not effect_turn or current_turn == effect_turn
+        current_owner = self._current_turn_owner_id(game=resolved_game)
+        if effect_turn and current_turn > effect_turn and current_owner == owner_id:
+            return False
+        return True
+
+    def _clear_expired_synaptic_nexus_effects(self, *, game=None) -> None:
+        if not self.is_synaptic_nexus():
+            return
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        for root in list(self._iter_army_roots() or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if bool(sr.get("tyranids_synaptic_nexus_imperative_dominance_active")) and not self._synaptic_nexus_imperative_dominance_is_active(
+                root,
+                game=resolved_game,
+            ):
+                for key in (
+                    "tyranids_synaptic_nexus_imperative_dominance_active",
+                    "tyranids_synaptic_nexus_imperative_dominance_key",
+                    "tyranids_synaptic_nexus_imperative_dominance_turn",
+                    "tyranids_synaptic_nexus_imperative_dominance_turn_owner",
+                    "tyranids_synaptic_nexus_imperative_dominance_source",
+                ):
+                    sr.pop(key, None)
+                changed = True
+            if bool(sr.get("tyranids_synaptic_channelling_active")) and not self._timed_unit_effect_is_active(
+                root,
+                "tyranids_synaptic_channelling_active",
+                expires_phase_key="tyranids_synaptic_channelling_expires_phase",
+                turn_key="tyranids_synaptic_channelling_turn",
+                owner_key="tyranids_synaptic_channelling_turn_owner",
+                game=resolved_game,
+            ):
+                for key in (
+                    "tyranids_synaptic_channelling_active",
+                    "tyranids_synaptic_channelling_expires_phase",
+                    "tyranids_synaptic_channelling_turn",
+                    "tyranids_synaptic_channelling_turn_owner",
+                    "tyranids_synaptic_channelling_source",
+                ):
+                    sr.pop(key, None)
+                changed = True
+            if bool(sr.get("tyranids_synaptic_nexus_irresistible_will_active")) and not self._timed_unit_effect_is_active(
+                root,
+                "tyranids_synaptic_nexus_irresistible_will_active",
+                expires_phase_key="tyranids_synaptic_nexus_irresistible_will_expires_phase",
+                turn_key="tyranids_synaptic_nexus_irresistible_will_turn",
+                owner_key="tyranids_synaptic_nexus_irresistible_will_turn_owner",
+                game=resolved_game,
+            ):
+                for key in (
+                    "tyranids_synaptic_nexus_irresistible_will_active",
+                    "tyranids_synaptic_nexus_irresistible_will_expires_phase",
+                    "tyranids_synaptic_nexus_irresistible_will_turn",
+                    "tyranids_synaptic_nexus_irresistible_will_turn_owner",
+                    "tyranids_synaptic_nexus_irresistible_will_source",
+                    "tyranids_synaptic_nexus_irresistible_will_target_unit_id",
+                ):
+                    sr.pop(key, None)
+                changed = True
+            if changed:
+                root.special_rules = sr
+
+    def get_active_synaptic_imperative_for_unit(
+        self,
+        unit,
+        *,
+        game=None,
+        battle_round: Optional[int] = None,
+    ) -> Optional[SynapticImperative]:
+        if not self._army_has_synaptic_imperatives():
+            return None
+        self._clear_expired_synaptic_nexus_effects(game=game)
+        root = self._unit_root(unit)
+        if root is not None:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("tyranids_synaptic_nexus_imperative_dominance_active")):
+                key = str(sr.get("tyranids_synaptic_nexus_imperative_dominance_key", "") or "").strip().upper()
+                if key and self._synaptic_nexus_imperative_dominance_is_active(root, game=game):
+                    imperative = SYNAPTIC_IMPERATIVE_BY_KEY.get(key)
+                    if imperative is not None:
+                        return imperative
+        return self.get_active_synaptic_imperative(game=game, battle_round=battle_round)
+
+    def activate_synaptic_nexus_imperative_dominance(
+        self,
+        unit,
+        imperative,
+        *,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_synaptic_nexus():
+            return {"ok": False, "reason": "wrong_detachment"}
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {"ok": False, "reason": "invalid_unit"}
+        key = str(getattr(imperative, "key", imperative) or "").strip().upper()
+        selected = SYNAPTIC_IMPERATIVE_BY_KEY.get(key)
+        if selected is None:
+            return {"ok": False, "reason": "invalid_imperative"}
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        self._clear_expired_synaptic_nexus_effects(game=resolved_game)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_synaptic_nexus_imperative_dominance_active"] = True
+        sr["tyranids_synaptic_nexus_imperative_dominance_key"] = str(selected.key)
+        sr["tyranids_synaptic_nexus_imperative_dominance_source"] = str(source or "Imperative Dominance")
+        owner_id = self._current_turn_owner_id(game=resolved_game, player=player)
+        if owner_id:
+            sr["tyranids_synaptic_nexus_imperative_dominance_turn_owner"] = owner_id
+        turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        if turn:
+            sr["tyranids_synaptic_nexus_imperative_dominance_turn"] = int(turn)
+        root.special_rules = sr
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+            "choice_key": str(selected.key),
+            "choice_name": str(selected.name),
+        }
+
+    def activate_synaptic_nexus_synaptic_channelling(
+        self,
+        source_unit,
+        *,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_synaptic_nexus():
+            return {"ok": False, "reason": "wrong_detachment"}
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_in_army(root):
+            return {"ok": False, "reason": "invalid_unit"}
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        self._clear_expired_synaptic_nexus_effects(game=resolved_game)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_synaptic_channelling_active"] = True
+        sr["tyranids_synaptic_channelling_source"] = str(source or "Synaptic Channelling")
+        owner_id = self._current_turn_owner_id(game=resolved_game, player=player)
+        if owner_id:
+            sr["tyranids_synaptic_channelling_turn_owner"] = owner_id
+        turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        if turn:
+            sr["tyranids_synaptic_channelling_turn"] = int(turn)
+        root.special_rules = sr
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+        }
+
+    def activate_synaptic_nexus_irresistible_will(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_synaptic_nexus():
+            return {"ok": False, "reason": "wrong_detachment"}
+        root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None:
+            return {"ok": False, "reason": "invalid_target"}
+        if not self._unit_in_army(root):
+            return {"ok": False, "reason": "invalid_source"}
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        self._clear_expired_synaptic_nexus_effects(game=resolved_game)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_synaptic_nexus_irresistible_will_active"] = True
+        sr["tyranids_synaptic_nexus_irresistible_will_target_unit_id"] = str(get_entity_id(target_root) or "")
+        sr["tyranids_synaptic_nexus_irresistible_will_source"] = str(source or "Irresistible Will")
+        phase_key = self._synaptic_nexus_effect_phase_key(phase_name)
+        if phase_key:
+            sr["tyranids_synaptic_nexus_irresistible_will_expires_phase"] = phase_key
+        owner_id = self._current_turn_owner_id(game=resolved_game, player=player)
+        if owner_id:
+            sr["tyranids_synaptic_nexus_irresistible_will_turn_owner"] = owner_id
+        turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        if turn:
+            sr["tyranids_synaptic_nexus_irresistible_will_turn"] = int(turn)
+        root.special_rules = sr
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(root) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
+
+    def synaptic_nexus_channelling_unit_in_synapse_range(self, unit, *, game=None) -> bool:
+        if not self.is_synaptic_nexus():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_tyranids(root):
+            return False
+        self._clear_expired_synaptic_nexus_effects(game=game)
+        for source_root in list(self._iter_army_roots() or []):
+            source_sr = getattr(source_root, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get("tyranids_synaptic_channelling_active")):
+                continue
+            if not self._timed_unit_effect_is_active(
+                source_root,
+                "tyranids_synaptic_channelling_active",
+                expires_phase_key="tyranids_synaptic_channelling_expires_phase",
+                turn_key="tyranids_synaptic_channelling_turn",
+                owner_key="tyranids_synaptic_channelling_turn_owner",
+                game=game,
+            ):
+                continue
+            if not unit_within_range_of_unit(source_root, root, 9.0, use_attached_aggregate=True):
+                continue
+            return True
+        return False
+
+    def synaptic_nexus_irresistible_will_reroll_hit_wound_ones(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+    ) -> tuple[bool, bool, str]:
+        if not self.is_synaptic_nexus():
+            return False, False, ""
+        if attacker_model is None or target_unit is None:
+            return False, False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False, False, ""
+        if not self._unit_in_army(attacker_root):
+            return False, False, ""
+        self._clear_expired_synaptic_nexus_effects(game=game)
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return False, False, ""
+        for source_root in list(self._iter_army_roots() or []):
+            source_sr = getattr(source_root, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get("tyranids_synaptic_nexus_irresistible_will_active")):
+                continue
+            if str(source_sr.get("tyranids_synaptic_nexus_irresistible_will_target_unit_id", "") or "") != target_id:
+                continue
+            if not self._timed_unit_effect_is_active(
+                source_root,
+                "tyranids_synaptic_nexus_irresistible_will_active",
+                expires_phase_key="tyranids_synaptic_nexus_irresistible_will_expires_phase",
+                turn_key="tyranids_synaptic_nexus_irresistible_will_turn",
+                owner_key="tyranids_synaptic_nexus_irresistible_will_turn_owner",
+                game=game,
+            ):
+                continue
+            if not unit_within_range_of_unit(attacker_root, source_root, 6.0, use_attached_aggregate=True):
+                continue
+            source_name = str(
+                source_sr.get("tyranids_synaptic_nexus_irresistible_will_source", "") or "Irresistible Will"
+            ).strip() or "Irresistible Will"
+            return True, True, source_name
+        return False, False, ""
+
     def synaptic_imperatives_invulnerable_save(self, model, *, unit=None, game=None) -> tuple[int, str]:
         if model is None:
             return 0, ""
         source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
         if source_unit is None:
             return 0, ""
-        imperative = self.get_active_synaptic_imperative(game=game)
+        imperative = self.get_active_synaptic_imperative_for_unit(source_unit, game=game)
         if imperative is None or int(getattr(imperative, "invulnerable_save", 0) or 0) <= 0:
             return 0, ""
         if not self._unit_in_synapse_range(source_unit, game=game):
@@ -1507,7 +1828,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         return value, f"Synaptic Imperatives ({imperative.name})"
 
     def synaptic_imperatives_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
-        imperative = self.get_active_synaptic_imperative(game=game)
+        imperative = self.get_active_synaptic_imperative_for_unit(unit, game=game)
         if imperative is None:
             return 0, ""
         bonus = int(getattr(imperative, "advance_roll_bonus", 0) or 0)
@@ -1518,7 +1839,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         return bonus, f"Synaptic Imperatives ({imperative.name})"
 
     def synaptic_imperatives_charge_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
-        imperative = self.get_active_synaptic_imperative(game=game)
+        imperative = self.get_active_synaptic_imperative_for_unit(unit, game=game)
         if imperative is None:
             return 0, ""
         bonus = int(getattr(imperative, "charge_roll_bonus", 0) or 0)
@@ -1534,7 +1855,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
         if source_unit is None:
             return 0, ""
-        imperative = self.get_active_synaptic_imperative(game=game)
+        imperative = self.get_active_synaptic_imperative_for_unit(source_unit, game=game)
         if imperative is None:
             return 0, ""
         bonus = int(getattr(imperative, "melee_hit_bonus", 0) or 0)

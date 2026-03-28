@@ -5392,6 +5392,81 @@ _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME = {
 }
 
 _SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008556002": StratagemToolDescriptor(
+        stratagem_id="000008556002",
+        name="The Smothering Shadow",
+        timing="any_phase_after_enemy_fails_battle_shock",
+        target="friendly_synapse_unit_within_12_of_failed_enemy_unit",
+        duration="immediate",
+        effect="roll_6d6_mortal_wounds_on_3_plus",
+        cp_cost=1,
+        effect_params={
+            "range_in": 12.0,
+            "required_keywords_all": ["SYNAPSE"],
+            "dice_count": 6,
+            "success_on": 3,
+            "mortal_wounds_per_success": 1,
+        },
+    ),
+    "000008556003": StratagemToolDescriptor(
+        stratagem_id="000008556003",
+        name="Synaptic Channelling",
+        timing="command_phase",
+        target="friendly_synapse_unit",
+        duration="until_end_of_turn",
+        effect="project_synapse_range",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["SYNAPSE"],
+            "projected_range_in": 9.0,
+        },
+    ),
+    "000008556004": StratagemToolDescriptor(
+        stratagem_id="000008556004",
+        name="Irresistible Will",
+        timing="your_shooting_or_fight_phase_before_selecting_unit",
+        target="friendly_synapse_unit_not_yet_selected_and_visible_enemy_within_24",
+        duration="until_end_of_phase",
+        effect="mark_enemy_for_hit_and_wound_reroll_ones",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["SYNAPSE"],
+            "enemy_max_range_in": 24.0,
+            "friendly_attacker_range_in": 6.0,
+            "reroll_hit_values": [1],
+            "reroll_wound_values": [1],
+        },
+    ),
+    "000008556005": StratagemToolDescriptor(
+        stratagem_id="000008556005",
+        name="Reinforced Hive Node",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="friendly_synapse_unit_targeted_by_enemy_unit",
+        duration="until_attacker_finishes_attacks",
+        effect="worsen_incoming_ap",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_all": ["SYNAPSE"],
+            "ap_worsen": 1,
+        },
+    ),
+    "000008556006": StratagemToolDescriptor(
+        stratagem_id="000008556006",
+        name="Imperative Dominance",
+        timing="your_command_phase",
+        target="friendly_tyranids_unit_within_synapse_range",
+        duration="until_start_of_your_next_command_phase",
+        effect="unit_specific_synaptic_imperative_choice",
+        cp_cost=1,
+        effect_params={
+            "requires_synapse_range": True,
+            "choice_keys": [
+                "SYNAPTIC_AUGMENTATION",
+                "SURGING_VITALITY",
+                "GOADED_TO_SLAUGHTER",
+            ],
+        },
+    ),
     "000008556007": StratagemToolDescriptor(
         stratagem_id="000008556007",
         name="Override Instincts",
