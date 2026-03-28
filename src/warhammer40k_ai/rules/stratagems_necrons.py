@@ -87,6 +87,12 @@ class NecronsStratagemMixin:
             return False
         return bool(mgr.is_canoptek_court())
 
+    def _is_cryptek_conclave(self) -> bool:
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        return bool(mgr.is_cryptek_conclave())
+
     def _necrons_entity_has_keyword(self, entity: Any, keyword: str) -> bool:
         mgr = self._get_necrons_mgr()
         if mgr is not None and callable(getattr(mgr, "_entity_has_keyword", None)):
@@ -1257,6 +1263,223 @@ class NecronsStratagemMixin:
                     return reaction
         return None
 
+    def _cryptek_conclave_unit_has_cryptek_keyword(self, unit: Any) -> bool:
+        mgr = self._get_necrons_mgr()
+        helper = getattr(mgr, "cryptek_conclave_unit_has_cryptek_keyword", None) if mgr is not None else None
+        if callable(helper):
+            return bool(helper(unit))
+        return self._necrons_unit_contains_keyword(unit, "CRYPTEK")
+
+    def _cryptek_conclave_unit_is_eligible(
+        self,
+        unit: Any,
+        *,
+        require_cryptek: bool = False,
+        require_infantry: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_reanimation: bool = False,
+        require_within_objective: bool = False,
+        require_targetable: bool = True,
+    ) -> bool:
+        if not self._is_cryptek_conclave():
+            return False
+        root = self._necrons_root(unit)
+        mgr = self._get_necrons_mgr()
+        if root is None or mgr is None:
+            return False
+        if not self._necrons_owned_by_player(root):
+            return False
+        if not self._necrons_on_battlefield(root, require_targetable=require_targetable):
+            return False
+        if not bool(getattr(mgr, "unit_is_necrons", lambda _unit: False)(root)):
+            return False
+        if require_cryptek and not self._cryptek_conclave_unit_has_cryptek_keyword(root):
+            return False
+        if require_infantry and not self._necrons_unit_contains_keyword(root, "INFANTRY"):
+            return False
+        round_state = getattr(root, "round_state", None)
+        if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+            return False
+        if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+            return False
+        if require_reanimation:
+            has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+            if not callable(has_rp) or not bool(has_rp()):
+                return False
+        if require_within_objective:
+            within_any = getattr(root, "is_within_any_objective_range", None)
+            if not callable(within_any) or not bool(within_any(game_map=getattr(self.game, "map", None))):
+                return False
+        return True
+
+    def _cryptek_conclave_candidates(
+        self,
+        *,
+        require_cryptek: bool = False,
+        require_infantry: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_reanimation: bool = False,
+        require_within_objective: bool = False,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_cryptek_conclave():
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._cryptek_conclave_unit_is_eligible(
+                root,
+                require_cryptek=require_cryptek,
+                require_infantry=require_infantry,
+                require_not_shot=require_not_shot,
+                require_not_fought=require_not_fought,
+                require_reanimation=require_reanimation,
+                require_within_objective=require_within_objective,
+                require_targetable=require_targetable,
+            ):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _cryptek_conclave_unit_in_candidates(self, unit: Any, candidates: list[Any]) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        return any(str(get_entity_id(self._necrons_root(candidate)) or "") == unit_id for candidate in list(candidates or []))
+
+    def _cryptek_conclave_pending_context(
+        self,
+        stratagem_name: str,
+        *,
+        unit: Any = None,
+        destroyed_model: Any = None,
+    ) -> Optional[dict[str, Any]]:
+        target_name = str(stratagem_name or "").strip().upper()
+        target_unit_id = str(get_entity_id(self._necrons_root(unit)) or "") if unit is not None else ""
+        target_model_id = str(get_entity_id(destroyed_model) or "") if destroyed_model is not None else ""
+        for reaction in reversed(list(self._pending_reactions or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if target_model_id:
+                direct_model = reaction.get("destroyed_model")
+                if str(get_entity_id(direct_model) or "") == target_model_id:
+                    return reaction
+                model_map = reaction.get("destroyed_model_by_unit_id", {})
+                if isinstance(model_map, dict):
+                    for candidate_model in list(model_map.values()):
+                        if str(get_entity_id(candidate_model) or "") == target_model_id:
+                            return reaction
+                continue
+            if not target_unit_id:
+                return reaction
+            possible_units = [
+                reaction.get("unit"),
+                reaction.get("target_unit"),
+                reaction.get("destroyed_unit"),
+            ]
+            possible_units.extend(list(reaction.get("candidates") or []))
+            for candidate in list(possible_units or []):
+                if str(get_entity_id(self._necrons_root(candidate)) or "") == target_unit_id:
+                    return reaction
+        return None
+
+    def _cryptek_conclave_microscarab_swarm_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        if not self._is_cryptek_conclave():
+            return []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._cryptek_conclave_unit_is_eligible(root, require_cryptek=True, require_infantry=True):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _cryptek_conclave_synergistic_empowerment_model_candidates(self, source_unit: Any) -> list[Any]:
+        if not self._is_cryptek_conclave():
+            return []
+        source_root = self._necrons_root(source_unit)
+        if not self._cryptek_conclave_unit_is_eligible(source_root, require_cryptek=True):
+            return []
+        cryptek_models = [
+            model
+            for model in self._necrons_iter_unit_models(source_root)
+            if bool(getattr(model, "is_alive", True))
+            and (
+                self._necrons_entity_has_keyword(model, "CRYPTEK")
+                or self._necrons_unit_contains_keyword(getattr(model, "parent_unit", None), "CRYPTEK")
+            )
+        ]
+        if not cryptek_models:
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen_model_ids: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id:
+                continue
+            if not self._necrons_owned_by_player(root):
+                continue
+            if not self._necrons_on_battlefield(root, require_targetable=False):
+                continue
+            if not bool(getattr(mgr, "unit_is_necrons", lambda _unit: False)(root)):
+                continue
+            if self._necrons_unit_contains_keyword(root, "MONSTER") or self._necrons_unit_contains_keyword(root, "VEHICLE"):
+                continue
+            for model in self._necrons_iter_unit_models(root):
+                if not bool(getattr(model, "is_alive", True)):
+                    continue
+                if not any(
+                    float(distance_between_models_bases_3d(source_model, model)) <= 12.0 + 1e-6
+                    for source_model in list(cryptek_models or [])
+                ):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if model_id and model_id in seen_model_ids:
+                    continue
+                if model_id:
+                    seen_model_ids.add(model_id)
+                results.append(model)
+        results.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return results
+
+    @staticmethod
+    def _cryptek_conclave_resolve_selected_model(selected_model: Any, model_candidates: list[Any]) -> Any:
+        if selected_model is None:
+            return None
+        if selected_model in list(model_candidates or []):
+            return selected_model
+        selected_id = str(get_entity_id(selected_model) or getattr(selected_model, "id", "") or "")
+        if not selected_id:
+            return None
+        for candidate in list(model_candidates or []):
+            candidate_id = str(get_entity_id(candidate) or getattr(candidate, "id", "") or "")
+            if candidate_id and candidate_id == selected_id:
+                return candidate
+        return None
+
     def _queue_canoptek_court_countertemporal_shift_reactions(
         self,
         *,
@@ -1986,6 +2209,649 @@ class NecronsStratagemMixin:
             "INFO: SUBOPTIMAL FACADE: %s triggers Reanimation Protocols for %d wound(s).",
             getattr(root, "name", "Unit"),
             int(roll),
+        )
+        return True
+
+    def _queue_cryptek_conclave_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_cryptek_conclave():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("MICROSCARAB SWARM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._cryptek_conclave_microscarab_swarm_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Shooting phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MICROSCARAB SWARM":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_cryptek_conclave_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_cryptek_conclave():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("MICROSCARAB SWARM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._cryptek_conclave_microscarab_swarm_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Fight phase",
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "MICROSCARAB SWARM":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_cryptek_conclave_animus_curse_reaction(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+        phase_name: str,
+        event_name: str,
+    ) -> None:
+        if self.game is None or attacker_unit is None or not self._is_cryptek_conclave():
+            return
+        attacker_root = self._necrons_root(attacker_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("ANIMUS CURSE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        destroyed_model_by_unit_id: dict[str, Any] = {}
+        seen: set[str] = set()
+        for target_unit, destroyed_models in dict(killing_models_by_target or {}).items():
+            if not destroyed_models:
+                continue
+            for destroyed_model in list(destroyed_models or []):
+                model_unit = getattr(destroyed_model, "parent_unit", None)
+                if not (
+                    self._necrons_entity_has_keyword(destroyed_model, "CRYPTEK")
+                    or self._necrons_unit_contains_keyword(model_unit, "CRYPTEK")
+                ):
+                    continue
+                destroyed_root = self._necrons_root(model_unit or target_unit)
+                if destroyed_root is None or not self._necrons_owned_by_player(destroyed_root):
+                    continue
+                unit_id = str(get_entity_id(destroyed_root) or "")
+                if not unit_id or unit_id in seen:
+                    continue
+                seen.add(unit_id)
+                candidates.append(destroyed_root)
+                destroyed_model_by_unit_id[unit_id] = destroyed_model
+        candidates.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        if not candidates:
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacker_unit=attacker_root,
+            phase_name=phase_name,
+            candidates=list(candidates),
+        ):
+            return
+        for reaction in list(self._pending_reactions or []):
+            if reaction.get("event") != event_name:
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "ANIMUS CURSE":
+                continue
+            if reaction.get("enemy_unit") is attacker_root:
+                return
+        payload = {
+            "event": event_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "candidates": candidates,
+            "destroyed_model_by_unit_id": destroyed_model_by_unit_id,
+        }
+        if len(candidates) == 1:
+            unit = candidates[0]
+            unit_id = str(get_entity_id(unit) or "")
+            payload["unit"] = unit
+            payload["target_unit"] = unit
+            payload["destroyed_unit"] = unit
+            payload["destroyed_model"] = destroyed_model_by_unit_id.get(unit_id)
+        self._queue_reaction(payload)
+
+    def _queue_cryptek_conclave_shooting_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        if str(self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return
+        self._queue_cryptek_conclave_animus_curse_reaction(
+            attacker_unit=attacker_unit,
+            killing_models_by_target=killing_models_by_target,
+            phase_name="Shooting phase",
+            event_name="unit_shooting_resolved",
+        )
+
+    def _queue_cryptek_conclave_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+        killing_models_by_target: dict | None,
+    ) -> None:
+        del target_unit
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        self._queue_cryptek_conclave_animus_curse_reaction(
+            attacker_unit=attacker_root,
+            killing_models_by_target=killing_models_by_target,
+            phase_name="Fight phase",
+            event_name="fight_attacks_resolved",
+        )
+
+    def _use_cryptek_conclave_molecular_targeting(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MOLECULAR TARGETING: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cryptek_conclave():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MOLECULAR TARGETING: wrong phase")
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: MOLECULAR TARGETING: only usable in your Shooting phase")
+            return False
+        candidates = candidates or self._cryptek_conclave_candidates(
+            require_not_shot=phase_name == "shooting phase",
+            require_not_fought=phase_name == "fight phase",
+        )
+        if not self._cryptek_conclave_unit_is_eligible(
+            root,
+            require_not_shot=phase_name == "shooting phase",
+            require_not_fought=phase_name == "fight phase",
+        ):
+            logger.error("ERROR: MOLECULAR TARGETING: target unit is not currently eligible")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MOLECULAR TARGETING: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: MOLECULAR TARGETING: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["cryptek_conclave_molecular_targeting_active"] = True
+        special_rules["cryptek_conclave_molecular_targeting_ignore_wound"] = bool(
+            self._cryptek_conclave_unit_has_cryptek_keyword(root)
+        )
+        special_rules["cryptek_conclave_molecular_targeting_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        special_rules["cryptek_conclave_molecular_targeting_turn"] = int(self._necrons_current_turn())
+        special_rules["cryptek_conclave_molecular_targeting_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["cryptek_conclave_molecular_targeting_source"] = (
+            str(getattr(stratagem, "name", "") or "MOLECULAR TARGETING").strip() or "MOLECULAR TARGETING"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MOLECULAR TARGETING: %s ignores skill and Hit roll modifiers this phase%s.",
+            getattr(root, "name", "Unit"),
+            " and Wound roll modifiers" if bool(special_rules.get("cryptek_conclave_molecular_targeting_ignore_wound")) else "",
+        )
+        return True
+
+    def _use_cryptek_conclave_potentiality_syphon(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: POTENTIALITY SYPHON: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cryptek_conclave():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "command phase":
+            logger.error("ERROR: POTENTIALITY SYPHON: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: POTENTIALITY SYPHON: only usable in your opponent's Command phase")
+            return False
+        candidates = candidates or self._cryptek_conclave_candidates(
+            require_reanimation=True,
+            require_within_objective=True,
+        )
+        if not self._cryptek_conclave_unit_is_eligible(
+            root,
+            require_reanimation=True,
+            require_within_objective=True,
+        ):
+            logger.error("ERROR: POTENTIALITY SYPHON: target must be a friendly NECRONS unit within objective range with Reanimation Protocols")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(root, candidates):
+            logger.error("ERROR: POTENTIALITY SYPHON: target unit is not a valid candidate")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Command phase"):
+            logger.error("ERROR: POTENTIALITY SYPHON: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        roll = int(dice_module.get_roll("D3") or 0)
+        total_wounds = int(roll) + (1 if self._cryptek_conclave_unit_has_cryptek_keyword(root) else 0)
+        if total_wounds > 0:
+            game_map = getattr(self.game, "map", None)
+            provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+            is_human = bool(getattr(self.player, "has_control", lambda: False)())
+            root.apply_reanimation_protocols(
+                total_wounds,
+                game_map=game_map,
+                is_human=is_human,
+                provider=provider,
+                roll_expr="D3",
+            )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POTENTIALITY SYPHON: %s triggers Reanimation Protocols for %d wound(s).",
+            getattr(root, "name", "Unit"),
+            int(total_wounds),
+        )
+        return True
+
+    def _use_cryptek_conclave_synergistic_empowerment(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        target_model = kwargs.get("target_model") or kwargs.get("model")
+        candidates = list(kwargs.get("candidates") or [])
+        model_candidates = list(kwargs.get("model_candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: no CRYPTEK unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cryptek_conclave():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "shooting phase":
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: only usable in your Shooting phase")
+            return False
+        candidates = candidates or self._cryptek_conclave_candidates(require_cryptek=True)
+        if not self._cryptek_conclave_unit_is_eligible(root, require_cryptek=True):
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: target must be a friendly CRYPTEK unit")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: target unit is not a valid candidate")
+            return False
+        if not model_candidates:
+            model_candidates = self._cryptek_conclave_synergistic_empowerment_model_candidates(root)
+        if not model_candidates:
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: no eligible friendly NECRONS model within 12\"")
+            return False
+        selected_model = self._cryptek_conclave_resolve_selected_model(target_model, model_candidates)
+        if selected_model is None:
+            if len(model_candidates) == 1:
+                selected_model = model_candidates[0]
+            else:
+                logger.error("ERROR: SYNERGISTIC EMPOWERMENT: no target model provided")
+                return False
+        if selected_model not in list(model_candidates or []):
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: selected model is not currently eligible")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            target_model=selected_model,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: SYNERGISTIC EMPOWERMENT: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        model_keywords = list(getattr(selected_model, "keywords", []) or [])
+        added_keyword = False
+        if not any(str(keyword or "").strip().upper() == "CRYPTEK" for keyword in model_keywords):
+            model_keywords.append("CRYPTEK")
+            selected_model.keywords = model_keywords
+            added_keyword = True
+        target_root = self._necrons_root(getattr(selected_model, "parent_unit", None))
+        if target_root is not None and added_keyword:
+            special_rules = dict(getattr(target_root, "special_rules", None) or {})
+            entries = list(special_rules.get("cryptek_conclave_synergistic_empowerment_entries", []) or [])
+            entries.append(
+                {
+                    "model_id": str(get_entity_id(selected_model) or ""),
+                    "added_model_keyword": True,
+                    "expires_phase": "SHOOTING_PHASE",
+                    "turn": int(self._necrons_current_turn()),
+                    "turn_owner": str(getattr(self.player, "id", "") or ""),
+                    "source": str(getattr(stratagem, "name", "") or "SYNERGISTIC EMPOWERMENT").strip()
+                    or "SYNERGISTIC EMPOWERMENT",
+                }
+            )
+            special_rules["cryptek_conclave_synergistic_empowerment_entries"] = entries
+            target_root.special_rules = special_rules
+            invalidate = getattr(target_root, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYNERGISTIC EMPOWERMENT: %s gains the CRYPTEK keyword until end of phase.",
+            getattr(selected_model, "name", "Model"),
+        )
+        return True
+
+    def _use_cryptek_conclave_untapped_power(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNTAPPED POWER: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_cryptek_conclave():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "shooting phase":
+            logger.error("ERROR: UNTAPPED POWER: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: UNTAPPED POWER: only usable in your Shooting phase")
+            return False
+        candidates = candidates or self._cryptek_conclave_candidates(require_cryptek=True, require_not_shot=True)
+        if not self._cryptek_conclave_unit_is_eligible(root, require_cryptek=True, require_not_shot=True):
+            logger.error("ERROR: UNTAPPED POWER: target must be a friendly CRYPTEK unit that has not been selected to shoot")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNTAPPED POWER: target unit is not a valid candidate")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: UNTAPPED POWER: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["cryptek_conclave_untapped_power_active"] = True
+        special_rules["cryptek_conclave_untapped_power_expires_phase"] = "SHOOTING_PHASE"
+        special_rules["cryptek_conclave_untapped_power_turn"] = int(self._necrons_current_turn())
+        special_rules["cryptek_conclave_untapped_power_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["cryptek_conclave_untapped_power_source"] = (
+            str(getattr(stratagem, "name", "") or "UNTAPPED POWER").strip() or "UNTAPPED POWER"
+        )
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNTAPPED POWER: %s selects one additional Technosorcerous Augmentations ability this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_cryptek_conclave_microscarab_swarm(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        pending = self._cryptek_conclave_pending_context("MICROSCARAB SWARM", unit=unit)
+        if isinstance(pending, dict):
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MICROSCARAB SWARM: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        attacker_root = self._necrons_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_cryptek_conclave():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MICROSCARAB SWARM: wrong phase")
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: MICROSCARAB SWARM: not opponent's Shooting phase")
+            return False
+        if self._necrons_owned_by_player(attacker_root):
+            logger.error("ERROR: MICROSCARAB SWARM: attacking unit must be enemy")
+            return False
+        candidates = candidates or self._cryptek_conclave_microscarab_swarm_candidates(target_units=target_units)
+        if not self._cryptek_conclave_unit_is_eligible(root, require_cryptek=True, require_infantry=True):
+            logger.error("ERROR: MICROSCARAB SWARM: target must be a friendly CRYPTEK INFANTRY unit")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MICROSCARAB SWARM: target unit is not a valid candidate")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            attacking_unit=attacker_root,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: MICROSCARAB SWARM: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        root_name = str(getattr(root, "name", "") or "").strip().lower()
+        inv_value = 0
+        if self._necrons_unit_contains_keyword(root, "IMMORTALS") or root_name == "immortals":
+            inv_value = 4
+        elif self._necrons_unit_contains_keyword(root, "NECRON WARRIORS") or root_name == "necron warriors":
+            inv_value = 5
+        current_phase = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if inv_value > 0:
+            for model in self._necrons_iter_unit_models(root):
+                if not bool(getattr(model, "is_alive", True)):
+                    continue
+                setter = getattr(model, "set_temporary_invulnerable_save", None)
+                if callable(setter):
+                    setter(
+                        key=f"cryptek_conclave_microscarab_swarm:{get_entity_id(root)}:{get_entity_id(model)}",
+                        value=int(inv_value),
+                        source=str(getattr(stratagem, "name", "") or "MICROSCARAB SWARM").strip() or "MICROSCARAB SWARM",
+                        expires_phase=current_phase,
+                    )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if inv_value > 0:
+            logger.info(
+                "INFO: MICROSCARAB SWARM: %s gains a %d+ invulnerable save until end of phase.",
+                getattr(root, "name", "Unit"),
+                int(inv_value),
+            )
+        else:
+            logger.info(
+                "INFO: MICROSCARAB SWARM: %s was a legal target but gained no keyword-based invulnerable bonus.",
+                getattr(root, "name", "Unit"),
+            )
+        return True
+
+    def _use_cryptek_conclave_animus_curse(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        destroyed_model = kwargs.get("destroyed_model")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        destroyed_model_by_unit_id = dict(kwargs.get("destroyed_model_by_unit_id") or {})
+        pending = self._cryptek_conclave_pending_context(
+            "ANIMUS CURSE",
+            unit=unit,
+            destroyed_model=destroyed_model,
+        )
+        if isinstance(pending, dict):
+            if enemy_unit is None:
+                enemy_unit = pending.get("enemy_unit") or pending.get("attacking_unit")
+            if destroyed_model is None:
+                destroyed_model = pending.get("destroyed_model")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+            if not destroyed_model_by_unit_id:
+                destroyed_model_by_unit_id = dict(pending.get("destroyed_model_by_unit_id") or {})
+        if unit is None and destroyed_model is not None:
+            unit = getattr(destroyed_model, "parent_unit", None)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ANIMUS CURSE: no destroyed CRYPTEK model provided")
+            return False
+        destroyed_root = self._necrons_root(unit)
+        enemy_root = self._necrons_root(enemy_unit)
+        if destroyed_root is None or enemy_root is None or not self._is_cryptek_conclave():
+            return False
+        if destroyed_model is None:
+            destroyed_model = destroyed_model_by_unit_id.get(str(get_entity_id(destroyed_root) or ""))
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: ANIMUS CURSE: wrong phase")
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: ANIMUS CURSE: not opponent's Shooting phase")
+            return False
+        if self._necrons_owned_by_player(enemy_root):
+            logger.error("ERROR: ANIMUS CURSE: attacking unit must be enemy")
+            return False
+        if candidates and not self._cryptek_conclave_unit_in_candidates(destroyed_root, candidates):
+            logger.error("ERROR: ANIMUS CURSE: target unit is not a valid candidate")
+            return False
+        if destroyed_model is not None and not (
+            self._necrons_entity_has_keyword(destroyed_model, "CRYPTEK")
+            or self._necrons_unit_contains_keyword(getattr(destroyed_model, "parent_unit", None), "CRYPTEK")
+        ):
+            logger.error("ERROR: ANIMUS CURSE: target must be a destroyed CRYPTEK model")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            destroyed_unit=destroyed_root,
+            destroyed_model=destroyed_model,
+            attacker_unit=enemy_root,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: ANIMUS CURSE: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=destroyed_root):
+            return False
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(
+            getattr(mgr, "cryptek_conclave_mark_animus_curse_target", lambda *_args, **_kwargs: False)(
+                enemy_root,
+                source=str(getattr(stratagem, "name", "") or "ANIMUS CURSE").strip() or "ANIMUS CURSE",
+            )
+        ):
+            logger.error("ERROR: ANIMUS CURSE: failed to mark the attacking enemy unit")
+            return False
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANIMUS CURSE: friendly NECRONS models can re-roll Hit rolls against %s for the rest of the battle.",
+            getattr(enemy_root, "name", "Enemy Unit"),
         )
         return True
 
@@ -2914,10 +3780,94 @@ class NecronsStratagemMixin:
             if callable(clear_fn):
                 clear_fn()
 
+    def _cleanup_cryptek_conclave_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_cryptek_conclave():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        seen: set[str] = set()
+        current_turn = int(self._necrons_current_turn())
+        for unit in units:
+            root = self._necrons_root(unit)
+            root_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            for key_base in (
+                "cryptek_conclave_molecular_targeting",
+                "cryptek_conclave_untapped_power",
+            ):
+                expires_phase = str(special_rules.get(f"{key_base}_expires_phase", "") or "").strip().upper()
+                if not bool(special_rules.get(f"{key_base}_active")):
+                    continue
+                if expires_phase and expires_phase != phase_name:
+                    continue
+                for key in list(special_rules.keys()):
+                    if key.startswith(f"{key_base}_"):
+                        special_rules.pop(key, None)
+            invalidate_cache = False
+            entries = list(special_rules.get("cryptek_conclave_synergistic_empowerment_entries", []) or [])
+            remaining_entries: list[dict[str, Any]] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                expires_phase = str(entry.get("expires_phase", "") or "").strip().upper()
+                effect_turn = int(entry.get("turn", 0) or 0)
+                if expires_phase and expires_phase != phase_name:
+                    remaining_entries.append(entry)
+                    continue
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    remaining_entries.append(entry)
+                    continue
+                if bool(entry.get("added_model_keyword")):
+                    target_model_id = str(entry.get("model_id", "") or "")
+                    for model in self._necrons_iter_unit_models(root):
+                        if str(get_entity_id(model) or "") != target_model_id:
+                            continue
+                        keywords = list(getattr(model, "keywords", []) or [])
+                        removed = False
+                        cleaned_keywords: list[Any] = []
+                        for keyword in list(keywords or []):
+                            if not removed and str(keyword or "").strip().upper() == "CRYPTEK":
+                                removed = True
+                                continue
+                            cleaned_keywords.append(keyword)
+                        if removed:
+                            model.keywords = cleaned_keywords
+                            invalidate_cache = True
+                        break
+            if remaining_entries:
+                special_rules["cryptek_conclave_synergistic_empowerment_entries"] = remaining_entries
+            else:
+                special_rules.pop("cryptek_conclave_synergistic_empowerment_entries", None)
+            root.special_rules = special_rules
+            if invalidate_cache:
+                invalidate = getattr(root, "_invalidate_ability_cache", None)
+                if callable(invalidate):
+                    invalidate()
+
     def _use_necrons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "MOLECULAR TARGETING" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_molecular_targeting(stratagem, **kwargs)
+        if name_u == "POTENTIALITY SYPHON" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_potentiality_syphon(stratagem, **kwargs)
+        if name_u == "SYNERGISTIC EMPOWERMENT" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_synergistic_empowerment(stratagem, **kwargs)
+        if name_u == "UNTAPPED POWER" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_untapped_power(stratagem, **kwargs)
+        if name_u == "MICROSCARAB SWARM" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_microscarab_swarm(stratagem, **kwargs)
+        if name_u == "ANIMUS CURSE" and self._is_cryptek_conclave():
+            return self._use_cryptek_conclave_animus_curse(stratagem, **kwargs)
         if name_u == "PROTOCOL OF THE CONQUERING TYRANT" and self._is_awakened_dynasty():
             return self._use_awakened_dynasty_conquering_tyrant(stratagem, **kwargs)
         if name_u == "PROTOCOL OF THE ETERNAL REVENANT" and self._is_awakened_dynasty():

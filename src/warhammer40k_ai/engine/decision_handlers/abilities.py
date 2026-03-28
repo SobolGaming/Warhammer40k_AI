@@ -1821,7 +1821,7 @@ def _apply_choose_technosorcerous_augmentation(game: object, request: DecisionRe
     if not applied:
         raise RuntimeError("Technosorcerous Augmentations could not be applied.")
     label_fn = getattr(mgr, "technosorcerous_choice_label", None) if mgr is not None else None
-    label = str(label_fn(choice_key) if callable(label_fn) else choice_key or choice_key)
+    label = str(label_fn(choice_key, unit, game=game) if callable(label_fn) else choice_key or choice_key)
     player = getattr(army, "player", None) if army is not None else None
     _log_action_for_players(
         game,

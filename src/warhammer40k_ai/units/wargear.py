@@ -10062,6 +10062,22 @@ class WargearProfile:
                 tyr_rule = None
             if isinstance(tyr_rule, dict) and tyr_rule:
                 return tyr_rule
+        necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        molecular_rule_fn = (
+            getattr(necrons_mgr, "cryptek_conclave_molecular_targeting_ignore_hit_modifiers_rule", None)
+            if necrons_mgr is not None
+            else None
+        )
+        if callable(molecular_rule_fn):
+            try:
+                necrons_rule = molecular_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                necrons_rule = None
+            if isinstance(necrons_rule, dict) and necrons_rule:
+                return necrons_rule
         ironstorm_rule_fn = (
             getattr(root, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
             if root is not None
@@ -10264,6 +10280,22 @@ class WargearProfile:
                 brute_fervour_rule = None
             if isinstance(brute_fervour_rule, dict) and brute_fervour_rule:
                 return brute_fervour_rule
+        necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        molecular_rule_fn = (
+            getattr(necrons_mgr, "cryptek_conclave_molecular_targeting_ignore_wound_modifiers_rule", None)
+            if necrons_mgr is not None
+            else None
+        )
+        if callable(molecular_rule_fn):
+            try:
+                necrons_rule = molecular_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                necrons_rule = None
+            if isinstance(necrons_rule, dict) and necrons_rule:
+                return necrons_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())

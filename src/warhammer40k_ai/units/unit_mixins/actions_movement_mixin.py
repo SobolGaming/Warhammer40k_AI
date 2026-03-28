@@ -7353,6 +7353,23 @@ class ActionsMovementMixin:
                         "PROTOCOL OF THE CONQUERING TYRANT: re-roll Hit rolls of 1 vs targets within half range"
                     )
 
+        if target is not None:
+            army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            necrons_mgr = getattr(army_local, "necrons_detachments", None) if army_local is not None else None
+            animus_reroll_fn = (
+                getattr(necrons_mgr, "cryptek_conclave_animus_curse_reroll_hit_applies", None)
+                if necrons_mgr is not None
+                else None
+            )
+            if callable(animus_reroll_fn):
+                game_local = getattr(getattr(army_local, "player", None), "game", None) if army_local is not None else None
+                applies, source = animus_reroll_fn(attacker_model, target, game=game_local)
+                if applies:
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(
+                        f"{str(source or 'ANIMUS CURSE').strip() or 'ANIMUS CURSE'}: re-roll Hit roll vs marked target"
+                    )
+
         if atype in ("any", "ranged"):
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("space_marines_battle_drill_recall_active", False)):

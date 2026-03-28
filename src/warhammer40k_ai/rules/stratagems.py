@@ -109,6 +109,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COUNTERTEMPORAL SHIFT",
     "CURSE OF THE CRYPTEK",
     "CYNOSURE OF ERADICATION",
+    "ANIMUS CURSE",
+    "MICROSCARAB SWARM",
+    "MOLECULAR TARGETING",
+    "POTENTIALITY SYPHON",
+    "SYNERGISTIC EMPOWERMENT",
+    "UNTAPPED POWER",
     "REACTIVE SUBROUTINES",
     "SOLAR PULSE",
     "SUBOPTIMAL FACADE",
@@ -4581,6 +4587,119 @@ class StratagemManager(
                 return result
             result["reason"] = (
                 "Requires opponent Shooting phase trigger after an enemy unit destroys a nearby friendly NECRONS unit and one of your NECRONS CHARACTER units can shoot it"
+            )
+            return result
+        if name_u == "ANIMUS CURSE":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or the Fight phase trigger after an enemy unit destroys a friendly CRYPTEK model"
+            )
+            return result
+        if name_u == "MICROSCARAB SWARM":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(
+                    self._cryptek_conclave_microscarab_swarm_candidates(
+                        target_units=list(context.get("target_units") or []),
+                    )
+                    or []
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or the Fight phase trigger after an enemy unit selects one of your CRYPTEK INFANTRY units as a target"
+            )
+            return result
+        if name_u == "MOLECULAR TARGETING":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l not in {"shooting phase", "fight phase"}:
+                result["reason"] = "Requires your Shooting phase or the Fight phase"
+                return result
+            if phase_name_l == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                if active_player is not self.player:
+                    result["reason"] = "Only usable in your Shooting phase"
+                    return result
+            candidates = self._cryptek_conclave_candidates(
+                require_not_shot=phase_name_l == "shooting phase",
+                require_not_fought=phase_name_l == "fight phase",
+            )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a friendly NECRONS unit that has not been selected to act this phase"
+            return result
+        if name_u == "POTENTIALITY SYPHON":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "command phase":
+                result["reason"] = "Requires your opponent's Command phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's Command phase"
+                return result
+            candidates = self._cryptek_conclave_candidates(
+                require_reanimation=True,
+                require_within_objective=True,
+            )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your opponent's Command phase and a friendly NECRONS unit within objective range with Reanimation Protocols"
+            )
+            return result
+        if name_u == "SYNERGISTIC EMPOWERMENT":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Shooting phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._cryptek_conclave_candidates(require_cryptek=True) or [])
+            model_candidates = list(context.get("model_candidates") or [])
+            source_unit = context.get("unit") or context.get("target_unit")
+            if source_unit is not None and not model_candidates:
+                model_candidates = list(self._cryptek_conclave_synergistic_empowerment_model_candidates(source_unit) or [])
+            if not model_candidates:
+                for candidate in list(candidates or []):
+                    model_candidates = list(self._cryptek_conclave_synergistic_empowerment_model_candidates(candidate) or [])
+                    if model_candidates:
+                        break
+            if candidates and model_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase, a friendly CRYPTEK unit, and a friendly NECRONS non-MONSTER/non-VEHICLE model within 12\" of one of its CRYPTEK models"
+            )
+            return result
+        if name_u == "UNTAPPED POWER":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase"
+                return result
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your Shooting phase"
+                return result
+            if self._cryptek_conclave_candidates(require_cryptek=True, require_not_shot=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase and a friendly CRYPTEK unit that has not been selected to shoot"
             )
             return result
         if name_u == "COUNTERTEMPORAL SHIFT":
@@ -9404,6 +9523,10 @@ class StratagemManager(
             self._cleanup_canoptek_court_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._cleanup_cryptek_conclave_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -10744,6 +10867,10 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 killing_models_by_target=killing_models_by_target,
             )
+            self._queue_cryptek_conclave_shooting_reactions(
+                attacker_unit=attacker_unit,
+                killing_models_by_target=killing_models_by_target,
+            )
         except Exception:
             raise
 
@@ -11863,6 +11990,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_cryptek_conclave_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -12603,6 +12737,13 @@ class StratagemManager(
             raise
         try:
             self._capture_annihilation_legion_fight_targets_selected(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_cryptek_conclave_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13789,6 +13930,11 @@ class StratagemManager(
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             self._queue_canoptek_court_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._queue_cryptek_conclave_fight_attacks_resolved_reactions(
                 unit=unit,
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),

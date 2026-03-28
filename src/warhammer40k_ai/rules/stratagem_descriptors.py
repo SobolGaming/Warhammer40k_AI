@@ -9296,6 +9296,92 @@ _AWAKENED_DYNASTY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CRYPTEK_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010665004": StratagemToolDescriptor(
+        stratagem_id="000010665004",
+        name="ANIMUS CURSE",
+        timing="opponent_shooting_or_fight_phase_after_enemy_attacks_resolved",
+        target="just_destroyed_friendly_cryptek_model",
+        duration="until_end_of_battle",
+        effect="mark_enemy_for_necrons_hit_rerolls",
+        cp_cost=1,
+        effect_params={"reroll_hit_full": True, "attacker_keyword": "NECRONS"},
+    ),
+    "000010665003": StratagemToolDescriptor(
+        stratagem_id="000010665003",
+        name="MICROSCARAB SWARM",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="friendly_cryptek_infantry_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="conditional_unit_invulnerable_save_by_keyword",
+        cp_cost=1,
+        effect_params={
+            "keyword_invulnerable_save_map": {
+                "NECRON WARRIORS": 5,
+                "IMMORTALS": 4,
+            }
+        },
+    ),
+    "000010665002": StratagemToolDescriptor(
+        stratagem_id="000010665002",
+        name="MOLECULAR TARGETING",
+        timing="your_shooting_or_fight_phase_on_select",
+        target="necrons_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="ignore_skill_hit_and_conditional_wound_modifiers",
+        cp_cost=1,
+        effect_params={
+            "ignore_skill_modifiers": True,
+            "ignore_hit_modifiers": True,
+            "ignore_wound_modifiers_if_cryptek": True,
+        },
+    ),
+    "000010665007": StratagemToolDescriptor(
+        stratagem_id="000010665007",
+        name="POTENTIALITY SYPHON",
+        timing="opponent_command_phase",
+        target="necrons_unit_within_objective_range_with_reanimation_protocols",
+        duration="immediate",
+        effect="trigger_reanimation_protocols_with_conditional_bonus",
+        cp_cost=1,
+        effect_params={
+            "reanimation_roll": "D3",
+            "conditional_bonus_wounds": 1,
+            "condition": "cryptek_unit",
+            "requires_objective_range": True,
+            "requires_reanimation_protocols": True,
+        },
+    ),
+    "000010665005": StratagemToolDescriptor(
+        stratagem_id="000010665005",
+        name="SYNERGISTIC EMPOWERMENT",
+        timing="start_of_your_shooting_phase",
+        target="friendly_cryptek_unit_and_friendly_necrons_non_monster_non_vehicle_model_within_12",
+        duration="until_end_of_phase",
+        effect="temporary_model_cryptek_keyword",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "granted_keyword": "CRYPTEK",
+            "excluded_keywords_any": ["MONSTER", "VEHICLE"],
+        },
+    ),
+    "000010665006": StratagemToolDescriptor(
+        stratagem_id="000010665006",
+        name="UNTAPPED POWER",
+        timing="your_shooting_phase",
+        target="friendly_cryptek_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="additional_technosorcerous_augmentation_choice",
+        cp_cost=1,
+        effect_params={"additional_choices": 1},
+    ),
+}
+
+_CRYPTEK_CONCLAVE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CRYPTEK_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008547006": StratagemToolDescriptor(
         stratagem_id="000008547006",
@@ -9793,6 +9879,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CRYPTEK_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9925,6 +10014,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
         or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)
+        or _CRYPTEK_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _CANOPTEK_COURT_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)

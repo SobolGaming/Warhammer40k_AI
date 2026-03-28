@@ -6407,7 +6407,7 @@ class GameShootingFightHandlersMixin:
         ]
         req = DecisionRequest.create(
             DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
-            "Technosorcerous Augmentations: select one weapon ability.",
+            "Technosorcerous Augmentations: select a weapon ability choice.",
             player_id=getattr(player, "id", None),
             options=options,
             context={

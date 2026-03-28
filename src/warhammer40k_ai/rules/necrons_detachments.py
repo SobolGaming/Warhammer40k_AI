@@ -400,18 +400,49 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return False
         if not self._unit_belongs_to_army(root):
             return False
-        return self._unit_contains_keyword(root, "CRYPTEK")
+        return self.cryptek_conclave_unit_has_cryptek_keyword(root)
 
     def technosorcerous_choice_keyword(self, choice_key: str) -> str:
         key = str(choice_key or "").strip().upper()
         return str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("keyword", "") or "")
 
-    def technosorcerous_choice_label(self, choice_key: str) -> str:
+    def technosorcerous_choice_label(self, choice_key: str, unit=None, *, game=None) -> str:
+        selected_keys = self.technosorcerous_selected_choice_keys(unit, choice_key, game=game) if unit is not None else ()
+        if not selected_keys:
+            raw_parts = [
+                str(part or "").strip().upper()
+                for part in str(choice_key or "").replace("|", "+").split("+")
+                if str(part or "").strip()
+            ]
+            if len(raw_parts) > 1:
+                selected_keys = tuple(raw_parts)
+        if selected_keys:
+            return " + ".join(
+                str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("label", "") or key).strip() or key
+                for key in list(selected_keys or [])
+            )
         key = str(choice_key or "").strip().upper()
         label = str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("label", "") or "").strip()
         return label or key
 
-    def technosorcerous_choice_summary(self, choice_key: str) -> str:
+    def technosorcerous_choice_summary(self, choice_key: str, unit=None, *, game=None) -> str:
+        selected_keys = self.technosorcerous_selected_choice_keys(unit, choice_key, game=game) if unit is not None else ()
+        if not selected_keys:
+            raw_parts = [
+                str(part or "").strip().upper()
+                for part in str(choice_key or "").replace("|", "+").split("+")
+                if str(part or "").strip()
+            ]
+            if len(raw_parts) > 1:
+                selected_keys = tuple(raw_parts)
+        if selected_keys and len(selected_keys) > 1:
+            keywords = [
+                str(self.technosorcerous_choice_keyword(key) or "").strip()
+                for key in list(selected_keys or [])
+            ]
+            keywords = [keyword for keyword in list(keywords or []) if keyword]
+            if keywords:
+                return "Ranged weapons gain " + " and ".join(f"[{keyword}]" for keyword in keywords) + " until end of phase."
         key = str(choice_key or "").strip().upper()
         summary = str(self._TECHNOSORCEROUS_CHOICE_DATA.get(key, {}).get("summary", "") or "").strip()
         if summary:
@@ -454,21 +485,34 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         return tuple(choices)
 
     def technosorcerous_choice_is_valid(self, unit, choice_key: str) -> bool:
-        key = str(choice_key or "").strip().upper()
-        if not key:
-            return False
-        return key in set(self.technosorcerous_available_choice_keys(unit))
+        return bool(self.technosorcerous_selected_choice_keys(unit, choice_key))
 
     def technosorcerous_choice_options(self, unit) -> list[dict]:
         options: list[dict] = []
-        for choice_key in self.technosorcerous_available_choice_keys(unit):
-            options.append(
-                {
-                    "choice": choice_key,
-                    "label": self.technosorcerous_choice_label(choice_key),
-                    "summary": self.technosorcerous_choice_summary(choice_key),
-                }
-            )
+        available = list(self.technosorcerous_available_choice_keys(unit))
+        selection_size = int(self.cryptek_conclave_technosorcerous_selection_size(unit) or 0)
+        if selection_size <= 0 or not available:
+            return options
+        if selection_size == 1:
+            for choice_key in available:
+                options.append(
+                    {
+                        "choice": choice_key,
+                        "label": self.technosorcerous_choice_label(choice_key, unit),
+                        "summary": self.technosorcerous_choice_summary(choice_key, unit),
+                    }
+                )
+            return options
+        for idx, first in enumerate(available):
+            for second in available[idx + 1:]:
+                combined = f"{first}+{second}"
+                options.append(
+                    {
+                        "choice": combined,
+                        "label": self.technosorcerous_choice_label(combined, unit),
+                        "summary": self.technosorcerous_choice_summary(combined, unit),
+                    }
+                )
         return options
 
     @staticmethod
@@ -533,13 +577,17 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         return False
 
     def apply_technosorcerous_augmentation_choice(self, unit, choice_key: str, *, game=None) -> bool:
-        keyword = self.technosorcerous_choice_keyword(choice_key)
-        if not keyword:
+        selected_choice_keys = self.technosorcerous_selected_choice_keys(unit, choice_key, game=game)
+        if not selected_choice_keys:
             return False
         if not self.technosorcerous_unit_is_eligible(unit):
             return False
         root = self._unit_root(unit)
         if root is None:
+            return False
+        keywords = [self.technosorcerous_choice_keyword(key) for key in list(selected_choice_keys or [])]
+        keywords = [keyword for keyword in list(keywords or []) if str(keyword or "").strip()]
+        if not keywords:
             return False
 
         sr = getattr(root, "special_rules", None)
@@ -554,7 +602,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
 
         applied = False
         unit_id = str(get_entity_id(root) or id(root))
-        choice_key_norm = str(choice_key or "").strip().upper()
+        choice_key_norm = str("+".join(selected_choice_keys)).strip().upper()
         for model in self._iter_unit_models(root):
             if not bool(getattr(model, "is_alive", True)):
                 continue
@@ -576,14 +624,14 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 set_keywords(
                     key=effect_key,
                     weapon_name=weapon_name,
-                    keywords=[keyword],
+                    keywords=list(keywords),
                     source=self._TECHNOSORCEROUS_AUGMENTATIONS_SOURCE,
                     expires_phase="SHOOTING_PHASE",
                     attack_type="ranged",
                 )
                 applied = True
 
-        if keyword == "ASSAULT":
+        if "ASSAULT" in {str(keyword or "").strip().upper() for keyword in list(keywords or [])}:
             sr["technosorcerous_assault_active"] = True
             sr["technosorcerous_assault_expires_phase"] = "SHOOTING_PHASE"
             if game is not None:
@@ -592,6 +640,202 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 sr["technosorcerous_assault_turn_owner"] = str(getattr(player, "id", "") or "")
         root.special_rules = sr
         return bool(applied)
+
+    def _cryptek_conclave_flag_active(self, unit, *, base_key: str, game=None) -> bool:
+        if not self.is_cryptek_conclave():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{base_key}_active")):
+            return False
+        if game is None:
+            return True
+        expires_phase = str(sr.get(f"{base_key}_expires_phase", "") or "").strip().upper()
+        if expires_phase and expires_phase != self._current_phase_name(game):
+            return False
+        try:
+            effect_turn = int(sr.get(f"{base_key}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = self._current_turn(game)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        owner_id = str(sr.get(f"{base_key}_turn_owner", "") or "").strip()
+        if owner_id:
+            player = getattr(self.army, "player", None)
+            if owner_id != str(getattr(player, "id", "") or "").strip():
+                return False
+        return True
+
+    def cryptek_conclave_unit_has_cryptek_keyword(self, unit) -> bool:
+        if not self.is_cryptek_conclave():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        if self._unit_contains_keyword(root, "CRYPTEK"):
+            return True
+        for model in self._iter_unit_models(root):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            if self._entity_has_keyword(model, "CRYPTEK"):
+                return True
+        return False
+
+    def cryptek_conclave_technosorcerous_selection_size(self, unit, *, game=None) -> int:
+        if not self.technosorcerous_unit_is_eligible(unit):
+            return 0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        active_game = game
+        if active_game is None:
+            player = getattr(self.army, "player", None)
+            active_game = getattr(player, "game", None) if player is not None else None
+        if self._cryptek_conclave_flag_active(
+            root,
+            base_key="cryptek_conclave_untapped_power",
+            game=active_game,
+        ):
+            return 2
+        return 1
+
+    def technosorcerous_selected_choice_keys(self, unit, choice_key: str, *, game=None) -> tuple[str, ...]:
+        selection_size = int(self.cryptek_conclave_technosorcerous_selection_size(unit, game=game) or 0)
+        if selection_size <= 0:
+            return ()
+        available = tuple(self.technosorcerous_available_choice_keys(unit))
+        if not available:
+            return ()
+        order = {choice: idx for idx, choice in enumerate(available)}
+        raw_parts = [
+            str(part or "").strip().upper()
+            for part in str(choice_key or "").replace("|", "+").split("+")
+            if str(part or "").strip()
+        ]
+        if len(raw_parts) != selection_size:
+            return ()
+        if len(set(raw_parts)) != len(raw_parts):
+            return ()
+        if any(part not in order for part in list(raw_parts or [])):
+            return ()
+        sorted_parts = tuple(sorted(raw_parts, key=lambda item: int(order.get(item, 9999))))
+        return sorted_parts
+
+    def cryptek_conclave_molecular_targeting_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None:
+            return None
+        root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return None
+        if not self._cryptek_conclave_flag_active(
+            root,
+            base_key="cryptek_conclave_molecular_targeting",
+            game=game,
+        ):
+            return None
+        sr = getattr(root, "special_rules", None)
+        source = str(
+            sr.get("cryptek_conclave_molecular_targeting_source", "") if isinstance(sr, dict) else ""
+            or "MOLECULAR TARGETING"
+        ).strip() or "MOLECULAR TARGETING"
+        return {
+            "name": source,
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def cryptek_conclave_molecular_targeting_ignore_wound_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None:
+            return None
+        root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return None
+        if not self._cryptek_conclave_flag_active(
+            root,
+            base_key="cryptek_conclave_molecular_targeting",
+            game=game,
+        ):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not (isinstance(sr, dict) and bool(sr.get("cryptek_conclave_molecular_targeting_ignore_wound"))):
+            return None
+        source = str(sr.get("cryptek_conclave_molecular_targeting_source", "") or "MOLECULAR TARGETING").strip() or "MOLECULAR TARGETING"
+        return {
+            "name": source,
+            "attack_type": "any",
+            "allow_wound": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def cryptek_conclave_animus_curse_reroll_hit_applies(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+    ) -> tuple[bool, str]:
+        if not self.is_cryptek_conclave():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False, ""
+        if not self._unit_belongs_to_army(attacker_root):
+            return False, ""
+        if not self.unit_is_necrons(attacker_root):
+            return False, ""
+        sr = getattr(target_root, "special_rules", None)
+        marks = list(sr.get("cryptek_conclave_animus_curse_marks", []) or []) if isinstance(sr, dict) else []
+        for mark in list(marks or []):
+            if not isinstance(mark, dict):
+                continue
+            source = str(mark.get("source", "") or "ANIMUS CURSE").strip() or "ANIMUS CURSE"
+            return True, source
+        return False, ""
+
+    def cryptek_conclave_mark_animus_curse_target(self, target_unit, *, source: str = "ANIMUS CURSE") -> bool:
+        if not self.is_cryptek_conclave():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        marks = list(sr.get("cryptek_conclave_animus_curse_marks", []) or [])
+        target_id = str(get_entity_id(target_root) or "")
+        normalized_source = str(source or "ANIMUS CURSE").strip() or "ANIMUS CURSE"
+        for entry in list(marks or []):
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("target_unit_id", "") or "") == target_id:
+                return True
+        marks.append(
+            {
+                "target_unit_id": target_id,
+                "source": normalized_source,
+            }
+        )
+        sr["cryptek_conclave_animus_curse_marks"] = marks
+        target_root.special_rules = sr
+        return True
 
     @staticmethod
     def _current_turn_owner_id(game) -> str:
