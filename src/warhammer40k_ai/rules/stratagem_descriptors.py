@@ -9197,6 +9197,105 @@ _ANNIHILATION_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ANNIHILATION_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008371006": StratagemToolDescriptor(
+        stratagem_id="000008371006",
+        name="PROTOCOL OF THE CONQUERING TYRANT",
+        timing="your_shooting_phase",
+        target="necrons_unit_not_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_reroll_ones_or_full_within_half_range",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_hit_values": [1],
+            "reroll_hit_full_if_within_half_range": True,
+            "requires_within_half_range": True,
+            "full_reroll_if_led_by_character": True,
+        },
+    ),
+    "000008371002": StratagemToolDescriptor(
+        stratagem_id="000008371002",
+        name="PROTOCOL OF THE ETERNAL REVENANT",
+        timing="any_phase_on_friendly_character_model_destroyed_before_removal",
+        target="just_destroyed_necrons_infantry_character_model_once_per_battle_per_model",
+        duration="end_of_phase",
+        effect="return_destroyed_model_at_half_wounds_as_close_as_possible_not_in_engagement",
+        cp_cost=1,
+        effect_params={
+            "return_timing": "end_of_phase",
+            "wounds_fraction": 0.5,
+            "round_up": True,
+            "once_per_battle_per_model": True,
+            "not_within_engagement_range": True,
+        },
+    ),
+    "000008371004": StratagemToolDescriptor(
+        stratagem_id="000008371004",
+        name="PROTOCOL OF THE HUNGRY VOID",
+        timing="fight_phase",
+        target="necrons_unit_not_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_strength_bonus_and_conditional_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "melee_strength_bonus": 1,
+            "conditional_melee_ap_bonus": 1,
+            "condition": "character_leading",
+        },
+    ),
+    "000008371005": StratagemToolDescriptor(
+        stratagem_id="000008371005",
+        name="PROTOCOL OF THE SUDDEN STORM",
+        timing="your_movement_phase",
+        target="necrons_unit",
+        duration="until_end_of_turn",
+        effect="grant_assault_and_conditional_advance_reroll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["ASSAULT"],
+            "conditional_reroll_advance": True,
+            "condition": "character_leading",
+        },
+    ),
+    "000008371003": StratagemToolDescriptor(
+        stratagem_id="000008371003",
+        name="PROTOCOL OF THE UNDYING LEGIONS",
+        timing="opponent_shooting_or_fight_phase_after_enemy_attacks_resolved",
+        target="necrons_unit_that_lost_models_to_attacker_with_reanimation_protocols",
+        duration="immediate",
+        effect="trigger_reanimation_protocols_with_conditional_bonus",
+        cp_cost=1,
+        effect_params={
+            "reanimation_roll": "D3",
+            "conditional_bonus_wounds": 1,
+            "condition": "character_leading",
+            "requires_reanimation_protocols": True,
+        },
+    ),
+    "000008371007": StratagemToolDescriptor(
+        stratagem_id="000008371007",
+        name="PROTOCOL OF THE VENGEFUL STARS",
+        timing="opponent_shooting_phase_after_enemy_unit_destroys_friendly_unit",
+        target="necrons_character_unit_within_6_of_destroyed_friendly_unit",
+        duration="immediate",
+        effect="reactive_shooting_restricted_to_attacker",
+        cp_cost=2,
+        effect_params={
+            "out_of_phase": True,
+            "force_target_attacker_only": True,
+            "requires_eligible_shooting_target": True,
+            "range_inches": 6.0,
+        },
+    ),
+}
+
+_AWAKENED_DYNASTY_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008555005": StratagemToolDescriptor(
         stratagem_id="000008555005",
@@ -9622,6 +9721,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ANNIHILATION_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _AWAKENED_DYNASTY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -9750,6 +9852,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _ANNIHILATION_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _AWAKENED_DYNASTY_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

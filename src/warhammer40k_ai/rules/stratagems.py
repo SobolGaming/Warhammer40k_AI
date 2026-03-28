@@ -449,6 +449,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
+    "PROTOCOL OF THE CONQUERING TYRANT",
+    "PROTOCOL OF THE ETERNAL REVENANT",
+    "PROTOCOL OF THE HUNGRY VOID",
+    "PROTOCOL OF THE SUDDEN STORM",
+    "PROTOCOL OF THE UNDYING LEGIONS",
+    "PROTOCOL OF THE VENGEFUL STARS",
     "BLOOD-FUELLED CRUELTY",
     "INSANITY'S IRE",
     "MURDEROUS REANIMATION",
@@ -857,6 +863,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
+    "PROTOCOL OF THE ETERNAL REVENANT",
+    "PROTOCOL OF THE UNDYING LEGIONS",
+    "PROTOCOL OF THE VENGEFUL STARS",
     "BLOOD-FUELLED CRUELTY",
     "INSANITY'S IRE",
     "MURDEROUS REANIMATION",
@@ -2033,6 +2042,7 @@ class StratagemManager(
             "EYE OF THE GODS",
             "SADISTIC DISPLAY",
             "ENDLESS IRE",
+            "PROTOCOL OF THE VENGEFUL STARS",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -2055,6 +2065,7 @@ class StratagemManager(
             "VENGEFUL ANIMUS",
             "DETONATOR",
             "GIFT OF CHANGE",
+            "PROTOCOL OF THE ETERNAL REVENANT",
         }:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {
@@ -2079,6 +2090,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
         if "SWIFT AS THE EAGLE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
+        if "PROTOCOL OF THE UNDYING LEGIONS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
         if "UNRELENTING ADVANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unrelenting_advance)
         if "MEET FORCE WITH FORCE" in names:
@@ -2322,6 +2335,7 @@ class StratagemManager(
             "SHOCK BOMBARDMENT",
             "TERRITORIAL ADVANTAGE",
             "MURDEROUS REANIMATION",
+            "PROTOCOL OF THE UNDYING LEGIONS",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
@@ -2384,6 +2398,7 @@ class StratagemManager(
             "ENCIRCLING SURGE",
             "BLIGHTED LAND",
             "GIFT OF CHANGE",
+            "PROTOCOL OF THE ETERNAL REVENANT",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -2433,6 +2448,9 @@ class StratagemManager(
             "POINT-BLANK DESTRUCTION",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
+            "PROTOCOL OF THE CONQUERING TYRANT",
+            "PROTOCOL OF THE HUNGRY VOID",
+            "PROTOCOL OF THE SUDDEN STORM",
             "RELENTLESS MOMENTUM",
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
@@ -4511,6 +4529,52 @@ class StratagemManager(
                 return result
             result["reason"] = (
                 "Requires a just-destroyed YNNARI unit within a previously controlled objective marker at end of previous phase"
+            )
+            return result
+        if name_u == "PROTOCOL OF THE CONQUERING TYRANT":
+            if self._awakened_dynasty_candidates(require_not_shot=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a friendly NECRONS unit that has not been selected to shoot"
+            return result
+        if name_u == "PROTOCOL OF THE ETERNAL REVENANT":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a just-destroyed NECRONS INFANTRY CHARACTER model from your army"
+            return result
+        if name_u == "PROTOCOL OF THE HUNGRY VOID":
+            if self._awakened_dynasty_candidates(require_not_fought=True):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and a friendly NECRONS unit that has not fought this phase"
+            return result
+        if name_u == "PROTOCOL OF THE SUDDEN STORM":
+            if self._awakened_dynasty_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a friendly NECRONS unit on the battlefield"
+            return result
+        if name_u == "PROTOCOL OF THE UNDYING LEGIONS":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or Fight phase trigger after an enemy unit destroys one or more models in one of your NECRONS units"
+            )
+            return result
+        if name_u == "PROTOCOL OF THE VENGEFUL STARS":
+            if list(context.get("candidates") or []):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase trigger after an enemy unit destroys a nearby friendly NECRONS unit and one of your NECRONS CHARACTER units can shoot it"
             )
             return result
         if name_u == "MERCILESS RECLAMATION":
@@ -9234,6 +9298,11 @@ class StratagemManager(
             self._cleanup_annihilation_legion_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._resolve_awakened_dynasty_phase_end_effects(phase=phase)
+            self._cleanup_awakened_dynasty_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -10558,6 +10627,10 @@ class StratagemManager(
     ):
         try:
             self._queue_annihilation_legion_shooting_reactions(
+                attacker_unit=attacker_unit,
+                killing_models_by_target=killing_models_by_target,
+            )
+            self._queue_awakened_dynasty_shooting_reactions(
                 attacker_unit=attacker_unit,
                 killing_models_by_target=killing_models_by_target,
             )
@@ -13593,6 +13666,11 @@ class StratagemManager(
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
+            self._queue_awakened_dynasty_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
             self._resolve_soulforged_glut_of_souls_fight_attacks_resolved(
                 unit=unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
@@ -14786,6 +14864,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_awakened_dynasty_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
             self._queue_space_marines_ironstorm_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
@@ -15025,6 +15107,14 @@ class StratagemManager(
         try:
             self._queue_aeldari_devoted_unit_destroyed_reactions(
                 unit=unit,
+                last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_awakened_dynasty_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
                 last_model=last_model,
             )
         except Exception:

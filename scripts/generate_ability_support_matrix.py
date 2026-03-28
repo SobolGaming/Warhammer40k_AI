@@ -19939,6 +19939,12 @@ def _stratagem_support(
         "000010210005": "Your Command phase: selected THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER ignores modifiers to its characteristics, Weapon Skill, Ballistic Skill, and to its rolls or tests (excluding saving throws) until your next Command phase.",
         "000010210006": "Your Shooting phase: selected THOUSAND SONS VEHICLE unit within 6\" of a friendly THOUSAND SONS PSYKER and not yet selected to shoot gains [PSYCHIC] on ranged weapons and +1 to Wound rolls for those attacks until end of phase.",
         "000010210007": "Opponent Charge phase reaction after an enemy unit ends a Charge move within Engagement Range of your THOUSAND SONS VEHICLE: roll 6D6, inflicting 1 mortal wound for each 5+, then that enemy unit must take a Battle-shock test.",
+        "000008371006": "Your Shooting phase: selected NECRONS unit that has not yet shot re-rolls Hit rolls of 1 against targets within half range until end of phase, or re-rolls all Hit rolls within half range if a NECRONS CHARACTER was leading it when activated.",
+        "000008371002": "Any phase reaction before removal: selected just-destroyed NECRONS INFANTRY CHARACTER model returns at phase end as close as possible to where it was destroyed, not within Engagement Range, with half its starting wounds remaining (rounding up, once per battle per model).",
+        "000008371004": "Fight phase: selected NECRONS unit that has not fought gains +1 Strength on melee weapons until end of phase, and also improves melee AP by 1 if a NECRONS CHARACTER was leading it when activated.",
+        "000008371005": "Your Movement phase: selected NECRONS unit gains [ASSAULT] on ranged weapons until end of turn, and also re-rolls Advance rolls for that phase if a NECRONS CHARACTER was leading it when activated.",
+        "000008371003": "Opponent Shooting phase or the Fight phase reaction after an enemy unit finishes its attacks: selected NECRONS unit that lost models to that attacker triggers Reanimation Protocols for D3 wounds, or D3+1 if a NECRONS CHARACTER was leading it when the reaction was created.",
+        "000008371007": "Opponent Shooting phase reaction after an enemy unit destroys a friendly NECRONS unit: selected nearby NECRONS CHARACTER unit within 6\" can shoot out of phase and must target only that attacking enemy unit.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",

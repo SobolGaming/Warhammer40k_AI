@@ -240,6 +240,13 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return [m for m in list(get_models() or []) if m is not None]
         return [m for m in list(getattr(unit, "models", []) or []) if m is not None]
 
+    @classmethod
+    def _unit_has_any_alive_models(cls, unit) -> bool:
+        for model in cls._iter_unit_models(unit):
+            if cls._model_is_alive(model):
+                return True
+        return False
+
     @staticmethod
     def _weapon_profile_is_ranged(weapon_profile) -> bool:
         if weapon_profile is None:
@@ -591,6 +598,141 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return ""
         player = get_current_player()
         return str(getattr(player, "id", "") or "")
+
+    def awakened_dynasty_unit_has_character_leading(self, unit) -> bool:
+        if not self.is_awakened_dynasty():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None or getattr(leader, "attached_to", None) is not root:
+                continue
+            if not self._unit_has_any_alive_models(leader):
+                continue
+            if self._unit_contains_keyword(leader, "CHARACTER"):
+                return True
+        return False
+
+    def _awakened_dynasty_flag_active(self, unit, *, base_key: str, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key_base = str(base_key or "").strip()
+        if not key_base or not bool(sr.get(f"{key_base}_active")):
+            return False
+        if game is None:
+            return True
+        expires_phase = str(sr.get(f"{key_base}_expires_phase", "") or "").strip().upper()
+        if expires_phase and expires_phase != self._current_phase_name(game):
+            return False
+        try:
+            effect_turn = int(sr.get(f"{key_base}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        current_turn = self._current_turn(game)
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        owner_id = str(sr.get(f"{key_base}_turn_owner", "") or "").strip()
+        if owner_id:
+            player = getattr(self.army, "player", None)
+            if owner_id != str(getattr(player, "id", "") or "").strip():
+                return False
+        return True
+
+    def awakened_dynasty_conquering_tyrant_reroll_mode(
+        self,
+        unit,
+        *,
+        target=None,
+        attacker_model=None,
+        weapon_profile=None,
+        closest_dist=None,
+        game=None,
+    ) -> str:
+        if not self.is_awakened_dynasty():
+            return ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self.unit_is_necrons(root):
+            return ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return ""
+        if not self._awakened_dynasty_flag_active(
+            root,
+            base_key="awakened_dynasty_conquering_tyrant",
+            game=game,
+        ):
+            return ""
+        if attacker_model is None or target is None or weapon_profile is None:
+            return ""
+        effective_range_fn = getattr(weapon_profile, "_effective_range_max", None)
+        if not callable(effective_range_fn):
+            return ""
+        try:
+            effective_range = float(effective_range_fn(attacker_model) or 0.0)
+        except (TypeError, ValueError):
+            effective_range = 0.0
+        if effective_range <= 0.0:
+            return ""
+        current_distance = None
+        if closest_dist is not None:
+            try:
+                current_distance = float(closest_dist)
+            except (TypeError, ValueError):
+                current_distance = None
+        if current_distance is None:
+            closest_fn = getattr(attacker_model, "return_closest_model_in_unit", None)
+            if callable(closest_fn):
+                try:
+                    _closest_model, current_distance = closest_fn(target)
+                    current_distance = float(current_distance or 0.0)
+                except (TypeError, ValueError):
+                    current_distance = None
+        within_half_range = bool(
+            current_distance is not None and current_distance <= (effective_range / 2.0) + 1e-6
+        )
+        if not within_half_range:
+            half_range_fn = getattr(weapon_profile, "_target_counts_as_half_range_for_attacker", None)
+            if callable(half_range_fn):
+                within_half_range = bool(half_range_fn(attacker_model, target))
+        if not within_half_range:
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        mode = str(sr.get("awakened_dynasty_conquering_tyrant_reroll_mode", "") or "").strip().lower()
+        if mode not in {"ones", "full"}:
+            return ""
+        return mode
+
+    def awakened_dynasty_sudden_storm_assault_applies(self, unit, weapon_profile, *, game=None) -> bool:
+        if not self.is_awakened_dynasty():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self.unit_is_necrons(root):
+            return False
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return False
+        return self._awakened_dynasty_flag_active(
+            root,
+            base_key="awakened_dynasty_sudden_storm_assault",
+            game=game,
+        )
+
+    def awakened_dynasty_sudden_storm_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        if not self.is_awakened_dynasty():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root) or not self.unit_is_necrons(root):
+            return False
+        return self._awakened_dynasty_flag_active(
+            root,
+            base_key="awakened_dynasty_sudden_storm_reroll_advance",
+            game=game,
+        )
 
     def _cold_fervour_turn_key_for_game(self, game) -> tuple[int, str]:
         return (self._current_turn(game), self._current_turn_owner_id(game))

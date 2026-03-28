@@ -7322,6 +7322,38 @@ class ActionsMovementMixin:
                     crit_hit_reasons.append(f"{source}: critical hit on successful hit")
 
         if atype in ("any", "ranged"):
+            army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            necrons_mgr = getattr(army_local, "necrons_detachments", None) if army_local is not None else None
+            reroll_mode_fn = (
+                getattr(necrons_mgr, "awakened_dynasty_conquering_tyrant_reroll_mode", None)
+                if necrons_mgr is not None
+                else None
+            )
+            if callable(reroll_mode_fn):
+                game_local = getattr(getattr(army_local, "player", None), "game", None) if army_local is not None else None
+                reroll_mode = str(
+                    reroll_mode_fn(
+                        root,
+                        target=target,
+                        attacker_model=attacker_model,
+                        weapon_profile=weapon_profile,
+                        closest_dist=closest_dist,
+                        game=game_local,
+                    )
+                    or ""
+                ).strip().lower()
+                if reroll_mode == "full":
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(
+                        "PROTOCOL OF THE CONQUERING TYRANT: re-roll Hit roll vs targets within half range"
+                    )
+                elif reroll_mode == "ones":
+                    reroll_hit_values.add(1)
+                    reroll_hit_reasons.append(
+                        "PROTOCOL OF THE CONQUERING TYRANT: re-roll Hit rolls of 1 vs targets within half range"
+                    )
+
+        if atype in ("any", "ranged"):
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("space_marines_battle_drill_recall_active", False)):
                 army_local = root.get_parent_army() if hasattr(root, "get_parent_army") else None
@@ -9766,6 +9798,13 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        reroll_fn = getattr(mgr, "awakened_dynasty_sudden_storm_reroll_advance_applies", None) if mgr is not None else None
+        if callable(reroll_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if reroll_fn(self, game=game):
+                return True
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_advance"):
@@ -18243,6 +18282,13 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        assault_fn = getattr(mgr, "awakened_dynasty_sudden_storm_assault_applies", None) if mgr is not None else None
+        if callable(assault_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if assault_fn(self, profile, game=game):
+                return True
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
