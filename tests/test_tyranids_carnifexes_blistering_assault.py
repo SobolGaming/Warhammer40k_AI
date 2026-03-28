@@ -208,3 +208,70 @@ def test_blistering_assault_validation_uses_closest_enemy_including_aircraft():
     bad = validate_final_position(mover.models[0], (1.0, 0.0, 0.0), rules, game_map)
     assert bool(ok.get("valid", False))
     assert not bool(bad.get("valid", True))
+
+
+def test_blistering_assault_allows_partial_move_up_to_rolled_distance():
+    game, shooter_player, tyr_player, enemy_army, tyr_army = _build_game()
+    attacker = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"], model_count=1, wounds=2)
+    carnifexes = _make_unit(
+        "Carnifexes",
+        model_count=2,
+        abilities=[{"name": "Blistering Assault", "description": BLISTERING_ASSAULT_TEXT, "type": "Datasheet", "parameter": ""}],
+        keywords=["MONSTER", "CARNIFEXES"],
+        faction_keywords=["TYRANIDS"],
+        wounds=8,
+    )
+    enemy_army.add_unit(attacker)
+    tyr_army.add_unit(carnifexes)
+    attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    carnifexes.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    carnifexes.models[1].set_location(12.0, 0.0, 0.0, 0.0)
+    game.map.units = [attacker, carnifexes]
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[carnifexes])
+    carnifexes.models[0].wounds = max(1, int(carnifexes.models[0].wounds or 0) - 1)
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=4):
+        game.event_system.publish("unit_shooting_resolved", attacker_unit=attacker, hits_by_target={carnifexes: 1})
+
+    confirm_req = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CONFIRM_YES_NO
+        and str((req.context or {}).get("reactive_move_kind", "")) == "blistering_assault"
+    )
+    yes_opt = _first_option(confirm_req, lambda payload: bool(payload.get("choice", False)))
+    assert yes_opt is not None
+    resolve_decision_command(game, confirm_req, yes_opt.option_id, player_id=tyr_player.id)
+
+    move_req = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_MOVE_UNIT
+        and str((req.context or {}).get("movement_type", "")) == "blistering_assault"
+    )
+    assert int((move_req.context or {}).get("max_distance", 0) or 0) > 2
+
+    confirm_move = _first_option(move_req, lambda payload: str(payload.get("action", "")) == "confirm")
+    assert confirm_move is not None
+    model_positions = []
+    for model in list(carnifexes.models or []):
+        x, y, z, facing = model.get_location()
+        model_positions.append(
+            {
+                "model_id": get_entity_id(model),
+                "position": [float(x - 1.0), float(y), float(z)],
+                "facing": float(facing),
+            }
+        )
+    resolved = resolve_decision_command(
+        game,
+        move_req,
+        confirm_move.option_id,
+        player_id=tyr_player.id,
+        result_payload={"model_positions": model_positions},
+    )
+    assert bool(getattr(resolved, "ok", False))
+    assert carnifexes.models[0].get_location()[0] == 9.0
+    assert carnifexes.models[1].get_location()[0] == 11.0

@@ -99,6 +99,37 @@ class TestAuraStealthHasStealth(unittest.TestCase):
             self.assertTrue(infantry_target.has_stealth())
             self.assertFalse(monster_target.has_stealth())
 
+    def test_foul_spores_attached_hive_tyrant_tyrant_guard_unit_has_no_stealth(self):
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
+        p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+        game.add_player(p1)
+
+        aura = Ability(
+            name="Foul Spores (Aura)",
+            faction_id="",
+            description=(
+                'While a friendly TYRANIDS unit is within 6" of this unit, each time a ranged attack targets that unit, '
+                "models in that unit have the Benefit of Cover against that attack. In addition, while a friendly TYRANIDS "
+                'unit (excluding Monsters) is within 6" of this unit, models in that unit have the Stealth ability.'
+            ),
+            type="Datasheet",
+            parameter="",
+        )
+
+        source = _make_unit("Venomthropes", keywords=["TYRANIDS"], abilities=[aura])
+        bodyguard = _make_unit("Tyrant Guard", keywords=["TYRANIDS", "INFANTRY"])
+        leader = _make_unit("Hive Tyrant", keywords=["TYRANIDS", "MONSTER", "CHARACTER"])
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+
+        p1.army.add_unit(source)
+        p1.army.add_unit(bodyguard)
+        game.map.units = [source, bodyguard]
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            self.assertTrue(bodyguard.has_any_keyword("MONSTER"))
+            self.assertFalse(bodyguard.has_stealth())
+
 
 if __name__ == "__main__":
     unittest.main()

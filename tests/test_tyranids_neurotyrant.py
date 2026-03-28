@@ -185,6 +185,55 @@ def test_neuroloids_queues_selection_applies_synapse_marker_and_cleans_up_next_c
     assert not bool((getattr(ally_two, "special_rules", {}) or {}).get("neuroloids_synapse_active", False))
 
 
+def test_neuroloids_does_not_grant_synapse_keyword_to_neurogaunts():
+    game, tyr_army, _enemy_army, tyr_player, _enemy_player = _build_game()
+    neurotyrant = _make_unit(
+        "Neurotyrant",
+        keywords=["INFANTRY", "SYNAPSE"],
+        faction_keywords=["TYRANIDS"],
+    )
+    ability = Ability("Neuroloids", "TYR", _NEUROLOIDS_DESCRIPTION, "Datasheet", "")
+    neurotyrant.models[0].abilities = {"Neuroloids": ability}
+
+    neurogaunts = _make_unit(
+        "Neurogaunts",
+        keywords=["INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+        model_count=3,
+    )
+
+    tyr_army.add_unit(neurotyrant)
+    tyr_army.add_unit(neurogaunts)
+    _deploy_unit(game, neurotyrant, 10.0, 10.0)
+    _deploy_unit(game, neurogaunts, 20.0, 10.0)
+    game.rebuild_entity_registry()
+
+    game.turn = 2
+    game.current_player_index = 0
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.event_system.publish("phase_start", player=tyr_player, phase=game.phase)
+
+    request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str((getattr(req, "context", {}) or {}).get("ability", "")).strip().lower() == "neuroloids"
+    )
+    neurogaunts_id = str(neurogaunts._id)
+    selected_option = next(
+        option
+        for option in list(request.options or [])
+        if {str(v) for v in list((option.payload or {}).get("selected_unit_ids", []) or [])} == {neurogaunts_id}
+    )
+    outcome = resolve_decision_command(game, request, selected_option.option_id, player_id=tyr_player.id)
+    assert bool(getattr(outcome, "ok", False))
+
+    synapse_mgr = getattr(tyr_army, "synapse", None) or SynapseManager(tyr_army)
+    tyr_army.synapse = synapse_mgr
+    assert synapse_mgr.unit_in_synapse_range(neurogaunts)
+    assert not neurogaunts.has_any_keyword("SYNAPSE")
+    assert all(not model.has_any_keyword("SYNAPSE") for model in list(neurogaunts.models or []))
+
+
 def test_psychic_terror_applies_additional_shadow_in_the_warp_battleshock_penalty():
     game, tyr_army, enemy_army, tyr_player, _enemy_player = _build_game()
     shadow_source = _make_unit(

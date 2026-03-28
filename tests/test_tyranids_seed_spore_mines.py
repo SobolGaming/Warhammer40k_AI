@@ -264,3 +264,78 @@ def test_seed_spore_mines_spawn_point_must_be_more_than_9_from_enemy_units():
     )
     assert not bool(getattr(invalid, "ok", False))
     assert any("parasitic infection" in str(err).lower() for err in list(getattr(invalid, "errors", []) or []))
+
+
+def test_seed_spore_mines_spawn_ignores_reserves_denial_auras():
+    omnicramblers = (
+        "Enemy units that are set up on the battlefield as Reinforcements cannot be set up within 12\" of this unit."
+    )
+
+    game, tyr_player, _enemy_player, tyr_army, enemy_army = _build_game()
+    biovores = _make_unit(
+        "Biovores",
+        model_count=1,
+        abilities=[{"name": "Seed Spore Mines", "description": SEED_SPORE_MINES_RULE, "type": "Datasheet", "parameter": ""}],
+        keywords=["INFANTRY"],
+        faction_keywords=["TYRANIDS"],
+    )
+    enemy = _make_unit(
+        "Infiltrators",
+        model_count=1,
+        abilities=[{"name": "Omniscramblers", "description": omnicramblers, "type": "Datasheet", "parameter": ""}],
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    biovores.deployed = True
+    enemy.deployed = True
+    biovores.reserve_status = "deployed"
+    enemy.reserve_status = "deployed"
+    biovores.models[0].set_location(20.0, 20.0, 0.0, 0.0)
+    enemy.models[0].set_location(36.0, 20.0, 0.0, 0.0)
+
+    tyr_army.add_unit(biovores)
+    enemy_army.add_unit(enemy)
+    assert game.map.place_unit(biovores)
+    assert game.map.place_unit(enemy)
+    game.rebuild_entity_registry()
+
+    denial_ranges = list(game._reserves_denial_ranges_for_unit(enemy) or [])
+    assert any(abs(float(entry.get("range", 0.0) or 0.0) - 12.0) <= 1e-6 for entry in denial_ranges)
+
+    game.event_system.publish("phase_start", player=tyr_player, phase=game.phase)
+    select_req = _find_seed_selection_request(game)
+    assert select_req is not None
+    choose_option = next(
+        option
+        for option in list(select_req.options or [])
+        if str((option.payload or {}).get("unit_id", "")) == str(get_entity_id(biovores) or "")
+    )
+    select_resolved = resolve_decision_command(
+        game,
+        select_req,
+        choose_option.option_id,
+        result_payload={},
+        player_id=tyr_player.id,
+    )
+    assert bool(getattr(select_resolved, "ok", False))
+
+    pick_req = _find_seed_spawn_pick_point_request(game)
+    assert pick_req is not None
+    confirm = _option_by_action(pick_req, "confirm")
+    assert confirm is not None
+    resolved = resolve_decision_command(
+        game,
+        pick_req,
+        confirm.option_id,
+        result_payload={"point": [25.5, 20.0]},
+        player_id=tyr_player.id,
+    )
+    assert bool(getattr(resolved, "ok", False))
+
+    spawned_units = [
+        unit
+        for unit in list(getattr(tyr_army, "units", []) or [])
+        if str(getattr(unit, "name", "") or "").strip().lower() == "spore mines"
+        and bool(getattr(unit, "spawned_in_battle", False))
+    ]
+    assert len(spawned_units) == 1

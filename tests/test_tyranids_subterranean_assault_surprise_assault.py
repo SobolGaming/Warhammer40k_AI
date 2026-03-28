@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_handlers.movement import _evaluate_reserves_arrival_positions
 from warhammer40k_ai.engine.decision_kinds import DECISION_PICK_POINT, DECISION_SELECT_REALM_OF_CHAOS_UNITS
-from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.tyranids_detachments import TunnelMarker
+from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command, resolve_decision_value
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -300,3 +302,60 @@ def test_tunnel_marker_removed_on_enemy_move_within_three_except_aircraft():
     _set_unit_position(enemy_aircraft, 25.5, 25.0)
     mgr.on_enemy_unit_move_ended(enemy_aircraft, game=game)
     assert bool(marker2.active)
+
+
+def test_mawloc_tunnel_marker_arrival_does_not_trigger_terror_from_the_deep():
+    terror_text = (
+        "Each time this model is set up on the battlefield using the Deep Strike ability, "
+        "roll one D6 for each enemy unit within 12\" of this model: on a 2-4, that unit suffers D3 mortal wounds; "
+        "on a 5+, that unit suffers 3 mortal wounds and must take a Battle-shock test."
+    )
+
+    game, _tyr_player, _enemy_player, tyr_army, enemy_army = _build_game()
+    burrower = _make_unit("Trygon", keywords=["MONSTER"], faction_keywords=["TYRANIDS"])
+    mawloc = _make_unit("Mawloc", keywords=["MONSTER"], faction_keywords=["TYRANIDS"])
+    mawloc.possible_abilities = [Ability("Terror From The Deep", "TYR", terror_text, "Datasheet", "")]
+    enemy = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    tyr_army.add_unit(burrower)
+    tyr_army.add_unit(mawloc)
+    enemy_army.add_unit(enemy)
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.turn = 2
+
+    _set_unit_position(burrower, 20.0, 20.0)
+    _set_unit_position(enemy, 30.0, 20.0)
+    mawloc.deployed = False
+    mawloc.reserve_status = "reserves"
+    mawloc._started_in_reserves = True
+
+    mgr = tyr_army.tyranids_detachments
+    marker = mgr.place_tunnel_marker_at(game=game, unit=burrower, x=20.0, y=20.0)
+    assert marker is not None
+
+    model_id = str(get_entity_id(mawloc.models[0]) or "")
+    evaluation = _evaluate_reserves_arrival_positions(
+        game,
+        mawloc,
+        [{"model_id": model_id, "position": [20.0, 20.0, 0.0], "facing": 0.0}],
+    )
+    assert not list(evaluation.get("errors") or [])
+    assert bool(evaluation.get("pending_deep_strike", True)) is False
+    assert str(evaluation.get("tunnel_marker_id", "") or "") == str(marker.marker_id)
+
+    _set_unit_position(mawloc, 20.0, 20.0)
+    applied_mortals: list[int] = []
+    mawloc._apply_mortal_wounds_to_unit = lambda *_args, **_kwargs: applied_mortals.append(1)
+    battleshock_targets: list[str] = []
+    enemy.take_battle_shock_test = lambda _turn: battleshock_targets.append("Enemy Infantry")
+
+    with patch("warhammer40k_ai.engine.game.get_roll") as mocked_roll:
+        game.event_system.publish(
+            "unit_set_up",
+            unit=mawloc,
+            set_up_as_reinforcements=True,
+            used_deep_strike=False,
+        )
+
+    mocked_roll.assert_not_called()
+    assert applied_mortals == []
+    assert battleshock_targets == []

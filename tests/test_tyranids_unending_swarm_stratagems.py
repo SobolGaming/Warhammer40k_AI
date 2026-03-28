@@ -439,6 +439,49 @@ def test_synaptic_goading_queues_for_pending_surge_move_and_allows_reroll_and_ob
     assert provider_calls[0]["source"] == "SYNAPTIC GOADING"
 
 
+def test_synaptic_goading_allows_leaving_engagement_range_toward_closest_objective():
+    game, tyr_player, enemy_player, tyr_army, enemy_army = _build_game()
+    target = _make_unit(
+        "Termagants",
+        keywords=["INFANTRY", "ENDLESS MULTITUDE", "TYRANIDS"],
+        faction_keywords=["TYRANIDS"],
+        quantity=12,
+    )
+    synapse = _make_unit(
+        "Warriors",
+        keywords=["INFANTRY", "SYNAPSE", "TYRANIDS"],
+        faction_keywords=["TYRANIDS"],
+    )
+    attacker = _make_unit(
+        "Enemy Shooters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    tyr_army.add_unit(target)
+    tyr_army.add_unit(synapse)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, synapse, 8.0, 10.0)
+    _deploy_unit(game, attacker, 12.0, 10.0)
+    game.rebuild_entity_registry()
+
+    objective_loc = SimpleNamespace(id="obj-a", x=6.0, y=10.0, z=0.0, removed=False)
+    game.map.objectives = [SimpleNamespace(id="obj-a", location=objective_loc)]
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[target])
+    target.models[0].wounds = 0
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=attacker, hits_by_target={target: 1})
+
+    assert _pending_by_name(tyr_player.stratagems, "SYNAPTIC GOADING") is not None
+    assert tyr_player.stratagems.use("SYNAPTIC GOADING", unit=target, phase_name="Shooting phase", dequeue=True)
+
+    rules = get_validation_rules(MovementType.HORDE_MOVE, moving_unit=target)
+    rules["blood_surge_max_distance"] = 6.0
+    valid = validate_final_position(target.models[1], (6.0, 10.0, 0.0), rules, game.map)
+    assert bool(valid.get("valid", False))
+
+
 def test_unending_waves_replaces_destroyed_unit_once_per_battle():
     game, tyr_player, _enemy_player, tyr_army, enemy_army = _build_game()
     unit = _make_unit(
