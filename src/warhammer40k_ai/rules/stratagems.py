@@ -110,6 +110,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CURSE OF THE CRYPTEK",
     "CYNOSURE OF ERADICATION",
     "DRIVEN TO BUTCHERY",
+    "ENSLAVED ARTIFICE",
     "IMAGE OF DEATH",
     "METHODICAL MURDER",
     "MORTIS PROTOCOLS",
@@ -118,9 +119,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MOLECULAR TARGETING",
     "POTENTIALITY SYPHON",
     "SPREADING MADNESS",
+    "SENTINELS OF ETERNITY",
+    "SUFFER NO RIVAL",
     "SYNERGISTIC EMPOWERMENT",
+    "TERRITORIAL OBSESSION",
     "UNNATURAL AGGRESSION",
     "UNTAPPED POWER",
+    "YOUR TIME IS NIGH",
     "REACTIVE SUBROUTINES",
     "SOLAR PULSE",
     "SUBOPTIMAL FACADE",
@@ -2067,6 +2072,7 @@ class StratagemManager(
             "SADISTIC DISPLAY",
             "ENDLESS IRE",
             "PROTOCOL OF THE VENGEFUL STARS",
+            "YOUR TIME IS NIGH",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
 
@@ -4884,6 +4890,70 @@ class StratagemManager(
                 "Requires opponent Charge phase trigger after an enemy unit declares a charge against one of your CANOPTEK units wholly within the Power Matrix"
             )
             return result
+        if name_u == "ENSLAVED ARTIFICE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+                candidates = self._obeisance_candidates(
+                    require_not_shot=phase_name_l == "shooting phase",
+                    require_not_fought=phase_name_l == "fight phase",
+                    exclude_titanic=True,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and a friendly non-TITANIC NECRONS unit that has not acted this phase"
+            return result
+        if name_u == "SENTINELS OF ETERNITY":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                pending = self._obeisance_pending_context("SENTINELS OF ETERNITY", unit=context.get("unit") or context.get("target_unit"))
+                if isinstance(pending, dict):
+                    candidates = list(pending.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires Fight phase trigger after an enemy unit selects a friendly LYCHGUARD or TRIARCH PRAETORIANS unit as a target"
+            )
+            return result
+        if name_u == "SUFFER NO RIVAL":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._obeisance_candidates(
+                    require_not_fought=True,
+                    require_lychguard_or_triarch=True,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and a friendly LYCHGUARD or TRIARCH unit that has not fought this phase"
+            return result
+        if name_u == "TERRITORIAL OBSESSION":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._obeisance_candidates(require_lychguard_or_triarch=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly LYCHGUARD or TRIARCH unit on the battlefield"
+            return result
+        if name_u == "YOUR TIME IS NIGH":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                pending = self._obeisance_pending_context("YOUR TIME IS NIGH", unit=context.get("unit") or context.get("target_unit"))
+                if isinstance(pending, dict):
+                    candidates = list(pending.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase trigger after your opponent's WARLORD is destroyed and your NECRONS WARLORD is still available"
+            return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
                 result["available"] = True
@@ -7644,6 +7714,10 @@ class StratagemManager(
             self._queue_thousand_sons_warpmeld_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_obeisance_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -9673,6 +9747,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_cryptek_conclave_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_obeisance_phalanx_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
@@ -12923,6 +13001,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_obeisance_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_guardian_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15567,6 +15652,13 @@ class StratagemManager(
             raise
         try:
             self._queue_cursed_legion_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_obeisance_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )

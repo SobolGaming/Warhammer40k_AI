@@ -2328,6 +2328,23 @@ class ShootingMixin:
             aura_mod = 0
             aura_mod_reasons = []
         try:
+            root_for_mod = self.get_attached_unit_root()
+        except Exception:
+            root_for_mod = self
+        try:
+            persistent_rules = getattr(root_for_mod, "special_rules", None)
+            if isinstance(persistent_rules, dict):
+                persistent_mod = int(persistent_rules.get("obeisance_your_time_is_nigh_battle_shock_test_modifier", 0) or 0)
+                if persistent_mod:
+                    extra_mod += int(persistent_mod)
+                    source_name = (
+                        str(persistent_rules.get("obeisance_your_time_is_nigh_source", "") or "YOUR TIME IS NIGH").strip()
+                        or "YOUR TIME IS NIGH"
+                    )
+                    extra_mod_reasons.append(f"{source_name} ({int(persistent_mod):+d})")
+        except Exception:
+            pass
+        try:
             dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
             modifier_fn = (
                 getattr(dg_mgr, "shamblerot_witherbone_pipes_leadership_test_modifier", None)

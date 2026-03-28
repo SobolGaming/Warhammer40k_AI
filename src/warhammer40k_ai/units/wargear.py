@@ -15955,6 +15955,25 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+            context_fn = getattr(root, "_obeisance_enslaved_artifice_context", None) if root is not None else None
+            if callable(context_fn):
+                game_now = None
+                try:
+                    army_now = root.get_parent_army() if root is not None else None
+                    game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+                except Exception:
+                    game_now = None
+                ctx = context_fn(game=game_now)
+                if isinstance(ctx, dict):
+                    threshold = int(ctx.get("crit_threshold", 5) or 5)
+                    source = str(ctx.get("source", "") or "ENSLAVED ARTIFICE").strip() or "ENSLAVED ARTIFICE"
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             if is_melee:
                 unit = getattr(attacker, "parent_unit", None)

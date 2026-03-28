@@ -1627,6 +1627,16 @@ class StateAttachmentMixin:
                 root_for_mod = self.get_attached_unit_root()
             except Exception:
                 root_for_mod = self
+            try:
+                persistent_rules = getattr(root_for_mod, "special_rules", None)
+                if isinstance(persistent_rules, dict):
+                    mod += int(persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0)
+            except Exception:
+                pass
+            try:
+                root_for_mod = self.get_attached_unit_root()
+            except Exception:
+                root_for_mod = self
             sr = getattr(root_for_mod, "special_rules", None)
             if isinstance(sr, dict):
                 soulforged_mod = int(sr.get("soulforged_warpack_dark_pact_test_modifier", 0) or 0)
@@ -1876,6 +1886,13 @@ class StateAttachmentMixin:
             if callable(modifier_fn):
                 test_mod, _source = modifier_fn(self, game=game)
                 mod += int(test_mod or 0)
+            try:
+                root_for_mod = self.get_attached_unit_root()
+            except Exception:
+                root_for_mod = self
+            persistent_rules = getattr(root_for_mod, "special_rules", None)
+            if isinstance(persistent_rules, dict):
+                mod += int(persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0)
         except Exception:
             mod = 0
         try:

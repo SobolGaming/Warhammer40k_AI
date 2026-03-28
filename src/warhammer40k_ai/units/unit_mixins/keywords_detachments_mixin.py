@@ -968,6 +968,46 @@ class KeywordsDetachmentsMixin:
             self.special_rules = sr
         return None
 
+    def _necrons_obeisance_sentinels_of_eternity_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        _ = model
+        sr = getattr(self, "special_rules", None)
+        if not (isinstance(sr, dict) and sr.get("obeisance_sentinels_of_eternity_active")):
+            return None
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            marked_turn = int(sr.get("obeisance_sentinels_of_eternity_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        exp = str(sr.get("obeisance_sentinels_of_eternity_expires_phase", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+            if not (marked_turn and current_turn and marked_turn != current_turn):
+                source = str(sr.get("obeisance_sentinels_of_eternity_source", "") or "SENTINELS OF ETERNITY").strip()
+                source = source or "SENTINELS OF ETERNITY"
+                try:
+                    threshold = int(sr.get("obeisance_sentinels_of_eternity_threshold", 4) or 4)
+                except (TypeError, ValueError):
+                    threshold = 4
+                return {
+                    "threshold": max(2, min(6, int(threshold))),
+                    "source": source,
+                }
+        if phase_name and phase_name != "FIGHT_PHASE":
+            for key in (
+                "obeisance_sentinels_of_eternity_active",
+                "obeisance_sentinels_of_eternity_threshold",
+                "obeisance_sentinels_of_eternity_expires_phase",
+                "obeisance_sentinels_of_eternity_turn",
+                "obeisance_sentinels_of_eternity_source",
+            ):
+                sr.pop(key, None)
+            self.special_rules = sr
+        return None
+
     def _space_marines_lost_brethren_final_retribution_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         _ = model
         sr = getattr(self, "special_rules", None)
@@ -1932,6 +1972,10 @@ class KeywordsDetachmentsMixin:
             pass
 
         rule = self._space_marines_reclamation_fight_to_the_end_rule(model=model)
+        if rule is not None:
+            return rule
+
+        rule = self._necrons_obeisance_sentinels_of_eternity_rule(model=model)
         if rule is not None:
             return rule
 

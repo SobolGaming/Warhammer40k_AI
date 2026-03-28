@@ -1030,6 +1030,22 @@ class Unit(
                         )
             except Exception:
                 pass
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                special_rules = getattr(root, "special_rules", None)
+                if isinstance(special_rules, dict) and bool(special_rules.get("obeisance_territorial_obsession_active")):
+                    bonus = int(special_rules.get("obeisance_territorial_obsession_objective_control_bonus", 0) or 0)
+                    if bonus:
+                        source_name = (
+                            str(special_rules.get("obeisance_territorial_obsession_source", "") or "TERRITORIAL OBSESSION").strip()
+                            or "TERRITORIAL OBSESSION"
+                        )
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
 
             # Warpmeld Pact: TZAANGOR models gain +1 OC while in non-Battle-shocked Tzaangors units.
             try:

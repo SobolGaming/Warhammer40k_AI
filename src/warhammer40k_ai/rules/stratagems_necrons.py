@@ -99,6 +99,12 @@ class NecronsStratagemMixin:
             return False
         return bool(mgr.is_cryptek_conclave())
 
+    def _is_obeisance_phalanx(self) -> bool:
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        return bool(mgr.is_obeisance_phalanx())
+
     def _necrons_entity_has_keyword(self, entity: Any, keyword: str) -> bool:
         mgr = self._get_necrons_mgr()
         if mgr is not None and callable(getattr(mgr, "_entity_has_keyword", None)):
@@ -4523,6 +4529,786 @@ class NecronsStratagemMixin:
                 if callable(invalidate):
                     invalidate()
 
+    def _cleanup_obeisance_command_phase_start_effects(self) -> None:
+        if not self._is_obeisance_phalanx():
+            return
+        owner_id = str(getattr(self.player, "id", "") or "")
+        current_turn = int(self._necrons_current_turn())
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            root_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if not bool(special_rules.get("obeisance_territorial_obsession_active")):
+                continue
+            effect_owner = str(special_rules.get("obeisance_territorial_obsession_command_phase_owner", "") or "")
+            if effect_owner and effect_owner != owner_id:
+                continue
+            try:
+                effect_turn = int(special_rules.get("obeisance_territorial_obsession_command_phase_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if effect_turn and current_turn and effect_turn == current_turn:
+                continue
+            for key in list(special_rules.keys()):
+                if key.startswith("obeisance_territorial_obsession_"):
+                    special_rules.pop(key, None)
+            root.special_rules = special_rules
+
+    def _cleanup_obeisance_phalanx_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_obeisance_phalanx():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            root_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            special_rules = dict(getattr(root, "special_rules", None) or {})
+            if phase_name in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                expires_phase = str(special_rules.get("obeisance_enslaved_artifice_expires_phase", "") or "").strip().upper()
+                if bool(special_rules.get("obeisance_enslaved_artifice_active")) and (not expires_phase or expires_phase == phase_name):
+                    for key in list(special_rules.keys()):
+                        if key.startswith("obeisance_enslaved_artifice_"):
+                            special_rules.pop(key, None)
+            if phase_name == "FIGHT_PHASE" and bool(special_rules.get("obeisance_sentinels_of_eternity_active")):
+                for key in list(special_rules.keys()):
+                    if key.startswith("obeisance_sentinels_of_eternity_"):
+                        special_rules.pop(key, None)
+                for model in self._necrons_iter_unit_models(root):
+                    temporary_effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(temporary_effects, dict):
+                        continue
+                    for key in list(temporary_effects.keys()):
+                        if str(key or "").strip().lower().startswith("obeisance_suffer_no_rival:"):
+                            temporary_effects.pop(key, None)
+            root.special_rules = special_rules
+
+    def _obeisance_unit_name_matches(self, unit: Any, *phrases: str) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        if not name_u:
+            return False
+        return any(str(phrase or "").strip().upper() in name_u for phrase in list(phrases or []) if str(phrase or "").strip())
+
+    def _obeisance_is_lychguard_or_triarch_unit(self, unit: Any) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        return bool(
+            self._necrons_unit_contains_keyword(root, "LYCHGUARD")
+            or self._necrons_unit_contains_keyword(root, "TRIARCH")
+            or self._obeisance_unit_name_matches(root, "LYCHGUARD", "TRIARCH")
+        )
+
+    def _obeisance_is_sentinels_target(self, unit: Any) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        return bool(
+            self._necrons_unit_contains_keyword(root, "LYCHGUARD")
+            or self._necrons_unit_contains_keyword(root, "TRIARCH PRAETORIANS")
+            or self._obeisance_unit_name_matches(root, "LYCHGUARD", "TRIARCH PRAETORIANS", "PRAETORIANS")
+        )
+
+    @staticmethod
+    def _obeisance_unit_contains_warlord(unit: Any) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        warlord = getattr(army, "warlord", None) if army is not None else None
+        if warlord is not None:
+            try:
+                warlord_root = warlord.get_attached_unit_root()
+            except Exception:
+                warlord_root = warlord
+            if warlord_root is root:
+                return True
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            if bool(getattr(member, "is_warlord", False)) or member is warlord:
+                return True
+        return False
+
+    def _obeisance_warlord(self) -> Any:
+        if not self._is_obeisance_phalanx():
+            return None
+        army = self.player.get_army()
+        warlord = getattr(army, "warlord", None) if army is not None else None
+        if warlord is None:
+            for unit in list(getattr(army, "units", []) or []):
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        root = self._necrons_root(warlord)
+        if root is None or not self._necrons_owned_by_player(root):
+            return None
+        if not self._necrons_on_battlefield(root):
+            return None
+        mgr = self._get_necrons_mgr()
+        if mgr is None or not bool(mgr.unit_is_necrons(root)):
+            return None
+        return root
+
+    def _obeisance_unit_eligible(
+        self,
+        unit: Any,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        exclude_titanic: bool = False,
+        require_lychguard_or_triarch: bool = False,
+        require_sentinels_target: bool = False,
+    ) -> bool:
+        if not self._is_obeisance_phalanx():
+            return False
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        if not self._necrons_owned_by_player(root):
+            return False
+        if not self._necrons_on_battlefield(root):
+            return False
+        if not bool(mgr.unit_is_necrons(root)):
+            return False
+        if exclude_titanic and bool(mgr.unit_is_titanic(root)):
+            return False
+        round_state = getattr(root, "round_state", None)
+        if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+            return False
+        if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+            return False
+        if require_lychguard_or_triarch and not self._obeisance_is_lychguard_or_triarch_unit(root):
+            return False
+        if require_sentinels_target and not self._obeisance_is_sentinels_target(root):
+            return False
+        return True
+
+    def _obeisance_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        exclude_titanic: bool = False,
+        require_lychguard_or_triarch: bool = False,
+        require_sentinels_target: bool = False,
+    ) -> list[Any]:
+        if not self._is_obeisance_phalanx():
+            return []
+        army = self.player.get_army()
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        results: list[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._obeisance_unit_eligible(
+                root,
+                require_not_shot=require_not_shot,
+                require_not_fought=require_not_fought,
+                exclude_titanic=exclude_titanic,
+                require_lychguard_or_triarch=require_lychguard_or_triarch,
+                require_sentinels_target=require_sentinels_target,
+            ):
+                continue
+            results.append(root)
+        results.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        return results
+
+    def _obeisance_unit_in_candidates(self, unit: Any, candidates: list[Any]) -> bool:
+        root = self._necrons_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        return any(str(get_entity_id(self._necrons_root(candidate)) or "") == unit_id for candidate in list(candidates or []))
+
+    def _obeisance_pending_context(self, stratagem_name: str, *, unit: Any = None) -> Optional[dict[str, Any]]:
+        target_name = str(stratagem_name or "").strip().upper()
+        target_unit_id = str(get_entity_id(self._necrons_root(unit)) or "") if unit is not None else ""
+        for reaction in reversed(list(self._pending_reactions or [])):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if not target_unit_id:
+                return reaction
+            possible_units = [
+                reaction.get("unit"),
+                reaction.get("target_unit"),
+                reaction.get("destroyed_unit"),
+                reaction.get("enemy_unit"),
+            ]
+            possible_units.extend(list(reaction.get("candidates") or []))
+            for candidate in list(possible_units or []):
+                candidate_root = self._necrons_root(candidate)
+                if candidate_root is None:
+                    continue
+                if str(get_entity_id(candidate_root) or "") == target_unit_id:
+                    return reaction
+        return None
+
+    def _obeisance_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str = "",
+        enemy_unit: Any = None,
+    ) -> bool:
+        target_name = str(stratagem_name or "").strip().upper()
+        phase_key = str(phase_name or "").strip().lower()
+        for reaction in list(self._pending_reactions or []):
+            if str(reaction.get("event", "") or "").strip() != str(event_name or "").strip():
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if phase_key and str(reaction.get("phase_name", "") or "").strip().lower() != phase_key:
+                continue
+            if enemy_unit is not None and reaction.get("enemy_unit") is not enemy_unit and reaction.get("attacking_unit") is not enemy_unit:
+                continue
+            return True
+        return False
+
+    def _queue_obeisance_phase_start_stratagem(
+        self,
+        *,
+        stratagem_name: str,
+        phase_name: str,
+        candidates: list[Any],
+    ) -> None:
+        if not list(candidates or []):
+            return
+        stratagem = self.get_by_name(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if self._obeisance_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            phase_name=phase_name,
+            candidates=list(candidates),
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_obeisance_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_obeisance_phalanx():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_key == "COMMAND_PHASE" and player is self.player and active_player is self.player:
+            self._cleanup_obeisance_command_phase_start_effects()
+            self._queue_obeisance_phase_start_stratagem(
+                stratagem_name="TERRITORIAL OBSESSION",
+                phase_name="Command phase",
+                candidates=self._obeisance_candidates(require_lychguard_or_triarch=True),
+            )
+            return
+        if phase_key == "SHOOTING_PHASE" and player is self.player and active_player is self.player:
+            self._queue_obeisance_phase_start_stratagem(
+                stratagem_name="ENSLAVED ARTIFICE",
+                phase_name="Shooting phase",
+                candidates=self._obeisance_candidates(require_not_shot=True, exclude_titanic=True),
+            )
+            return
+        if phase_key == "FIGHT_PHASE":
+            self._queue_obeisance_phase_start_stratagem(
+                stratagem_name="ENSLAVED ARTIFICE",
+                phase_name="Fight phase",
+                candidates=self._obeisance_candidates(require_not_fought=True, exclude_titanic=True),
+            )
+            self._queue_obeisance_phase_start_stratagem(
+                stratagem_name="SUFFER NO RIVAL",
+                phase_name="Fight phase",
+                candidates=self._obeisance_candidates(require_not_fought=True, require_lychguard_or_triarch=True),
+            )
+
+    def _queue_obeisance_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if self.game is None or attacking_unit is None or not self._is_obeisance_phalanx():
+            return
+        if str(self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._necrons_root(attacking_unit)
+        if attacker_root is None or self._necrons_owned_by_player(attacker_root):
+            return
+        stratagem = self.get_by_name("SENTINELS OF ETERNITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._necrons_root(unit)
+            unit_id = str(get_entity_id(root) or "") if root is not None else ""
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._obeisance_unit_eligible(root, require_sentinels_target=True):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda candidate: str(get_entity_id(candidate) or ""))
+        if not candidates:
+            return
+        if self._obeisance_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            phase_name="Fight phase",
+            candidates=list(candidates),
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_obeisance_unit_destroyed_reactions(self, *, destroyed_unit: Any, destroyed_by_unit: Any) -> None:
+        _ = destroyed_by_unit
+        if self.game is None or destroyed_unit is None or not self._is_obeisance_phalanx():
+            return
+        destroyed_root = self._necrons_root(destroyed_unit)
+        if destroyed_root is None or self._necrons_owned_by_player(destroyed_root):
+            return
+        if not self._obeisance_unit_contains_warlord(destroyed_root):
+            return
+        stratagem = self.get_by_name("YOUR TIME IS NIGH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        warlord = self._obeisance_warlord()
+        if warlord is None:
+            return
+        phase_name = str(self._current_phase_name or "").strip() or "Any phase"
+        candidates = [warlord]
+        if self._obeisance_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+        ):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=warlord,
+            destroyed_unit=destroyed_root,
+            phase_name=phase_name,
+            candidates=list(candidates),
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "destroyed_unit": destroyed_root,
+                "enemy_unit": destroyed_root,
+                "candidates": list(candidates),
+                "unit": warlord,
+                "target_unit": warlord,
+            }
+        )
+
+    def _use_obeisance_enslaved_artifice(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._obeisance_pending_context("ENSLAVED ARTIFICE", unit=unit)
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict) and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENSLAVED ARTIFICE: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_obeisance_phalanx():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: ENSLAVED ARTIFICE: wrong phase")
+            return False
+        if phase_name == "shooting phase" and getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: ENSLAVED ARTIFICE: only usable in your Shooting phase")
+            return False
+        valid_candidates = candidates or self._obeisance_candidates(
+            require_not_shot=phase_name == "shooting phase",
+            require_not_fought=phase_name == "fight phase",
+            exclude_titanic=True,
+        )
+        if not self._obeisance_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: ENSLAVED ARTIFICE: target must be a friendly non-TITANIC NECRONS unit that has not acted this phase")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            phase_name=phase_label,
+            candidates=list(valid_candidates),
+        ):
+            logger.error("ERROR: ENSLAVED ARTIFICE: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        source = str(getattr(stratagem, "name", "") or "ENSLAVED ARTIFICE").strip() or "ENSLAVED ARTIFICE"
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["obeisance_enslaved_artifice_active"] = True
+        special_rules["obeisance_enslaved_artifice_crit_threshold"] = 5
+        special_rules["obeisance_enslaved_artifice_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        special_rules["obeisance_enslaved_artifice_turn"] = int(self._necrons_current_turn())
+        special_rules["obeisance_enslaved_artifice_turn_owner"] = str(getattr(current_player, "id", "") or "")
+        special_rules["obeisance_enslaved_artifice_source"] = source
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ENSLAVED ARTIFICE: %s scores critical hits on unmodified Hit rolls of 5+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_obeisance_sentinels_of_eternity(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._obeisance_pending_context("SENTINELS OF ETERNITY", unit=unit)
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if attacking_unit is None:
+                attacking_unit = pending.get("attacking_unit") or pending.get("enemy_unit")
+            if not target_units:
+                target_units = list(pending.get("target_units") or [])
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SENTINELS OF ETERNITY: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        attacker_root = self._necrons_root(attacking_unit)
+        if root is None or attacker_root is None or not self._is_obeisance_phalanx():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "fight phase":
+            logger.error("ERROR: SENTINELS OF ETERNITY: wrong phase")
+            return False
+        if self._necrons_owned_by_player(attacker_root):
+            logger.error("ERROR: SENTINELS OF ETERNITY: trigger requires an enemy attacking unit")
+            return False
+        if not candidates:
+            seen: set[str] = set()
+            for target in list(target_units or []):
+                target_root = self._necrons_root(target)
+                target_id = str(get_entity_id(target_root) or "") if target_root is not None else ""
+                if not target_id or target_id in seen:
+                    continue
+                seen.add(target_id)
+                if self._obeisance_unit_eligible(target_root, require_sentinels_target=True):
+                    candidates.append(target_root)
+        if not self._obeisance_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SENTINELS OF ETERNITY: target must be a friendly LYCHGUARD or TRIARCH PRAETORIANS unit selected by that attacker")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            target_unit=root,
+            phase_name="Fight phase",
+            candidates=list(candidates),
+        ):
+            logger.error("ERROR: SENTINELS OF ETERNITY: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "SENTINELS OF ETERNITY").strip() or "SENTINELS OF ETERNITY"
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["obeisance_sentinels_of_eternity_active"] = True
+        special_rules["obeisance_sentinels_of_eternity_threshold"] = 4
+        special_rules["obeisance_sentinels_of_eternity_turn"] = int(self._necrons_current_turn())
+        special_rules["obeisance_sentinels_of_eternity_expires_phase"] = "FIGHT_PHASE"
+        special_rules["obeisance_sentinels_of_eternity_source"] = source
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SENTINELS OF ETERNITY: %s can fight on death on a 4+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_obeisance_suffer_no_rival(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._obeisance_pending_context("SUFFER NO RIVAL", unit=unit)
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict) and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SUFFER NO RIVAL: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_obeisance_phalanx():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "fight phase":
+            logger.error("ERROR: SUFFER NO RIVAL: wrong phase")
+            return False
+        valid_candidates = candidates or self._obeisance_candidates(
+            require_not_fought=True,
+            require_lychguard_or_triarch=True,
+        )
+        if not self._obeisance_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: SUFFER NO RIVAL: target must be a friendly LYCHGUARD or TRIARCH unit that has not fought this phase")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            phase_name="Fight phase",
+            candidates=list(valid_candidates),
+        ):
+            logger.error("ERROR: SUFFER NO RIVAL: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "SUFFER NO RIVAL").strip() or "SUFFER NO RIVAL"
+        root_id = str(get_entity_id(root) or id(root))
+        for model in self._necrons_iter_unit_models(root):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            model_id = str(get_entity_id(model) or id(model))
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords(
+                    key=f"obeisance_suffer_no_rival:{root_id}:{model_id}:{weapon_name}".lower(),
+                    weapon_name=weapon_name,
+                    keywords=["PRECISION"],
+                    source=source,
+                    expires_phase="FIGHT_PHASE",
+                    attack_type="melee",
+                )
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUFFER NO RIVAL: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_obeisance_territorial_obsession(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._obeisance_pending_context("TERRITORIAL OBSESSION", unit=unit)
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict) and not candidates:
+            candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TERRITORIAL OBSESSION: no target unit provided")
+            return False
+        root = self._necrons_root(unit)
+        if root is None or not self._is_obeisance_phalanx():
+            return False
+        if str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower() != "command phase":
+            logger.error("ERROR: TERRITORIAL OBSESSION: wrong phase")
+            return False
+        if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: TERRITORIAL OBSESSION: only usable in your Command phase")
+            return False
+        valid_candidates = candidates or self._obeisance_candidates(require_lychguard_or_triarch=True)
+        if not self._obeisance_unit_in_candidates(root, valid_candidates):
+            logger.error("ERROR: TERRITORIAL OBSESSION: target must be a friendly LYCHGUARD or TRIARCH unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            phase_name="Command phase",
+            candidates=list(valid_candidates),
+        ):
+            logger.error("ERROR: TERRITORIAL OBSESSION: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        bonus = 3 if self._necrons_unit_contains_keyword(root, "VEHICLE") else 1
+        source = str(getattr(stratagem, "name", "") or "TERRITORIAL OBSESSION").strip() or "TERRITORIAL OBSESSION"
+        special_rules = dict(getattr(root, "special_rules", None) or {})
+        special_rules["obeisance_territorial_obsession_active"] = True
+        special_rules["obeisance_territorial_obsession_objective_control_bonus"] = int(bonus)
+        special_rules["obeisance_territorial_obsession_command_phase_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["obeisance_territorial_obsession_command_phase_turn"] = int(self._necrons_current_turn())
+        special_rules["obeisance_territorial_obsession_source"] = source
+        root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TERRITORIAL OBSESSION: %s gains +%d Objective Control until the start of your next Command phase.",
+            getattr(root, "name", "Unit"),
+            int(bonus),
+        )
+        return True
+
+    def _use_obeisance_your_time_is_nigh(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        pending = self._obeisance_pending_context("YOUR TIME IS NIGH", unit=unit)
+        destroyed_unit = kwargs.get("destroyed_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if isinstance(pending, dict):
+            if destroyed_unit is None:
+                destroyed_unit = pending.get("destroyed_unit") or pending.get("enemy_unit")
+            if not candidates:
+                candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            unit = self._obeisance_warlord()
+        if unit is None:
+            logger.error("ERROR: YOUR TIME IS NIGH: no warlord target available")
+            return False
+        root = self._necrons_root(unit)
+        destroyed_root = self._necrons_root(destroyed_unit)
+        if root is None or destroyed_root is None or not self._is_obeisance_phalanx():
+            return False
+        if root is not self._obeisance_warlord():
+            logger.error("ERROR: YOUR TIME IS NIGH: target must be your NECRONS WARLORD")
+            return False
+        if self._necrons_owned_by_player(destroyed_root) or not self._obeisance_unit_contains_warlord(destroyed_root):
+            logger.error("ERROR: YOUR TIME IS NIGH: trigger requires your opponent's WARLORD to be destroyed")
+            return False
+        if candidates and not self._obeisance_unit_in_candidates(root, candidates):
+            logger.error("ERROR: YOUR TIME IS NIGH: selected target is not currently eligible")
+            return False
+        phase_label = str(kwargs.get("phase_name") or self._current_phase_name or "").strip() or "Any phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            destroyed_unit=destroyed_root,
+            phase_name=phase_label,
+            candidates=list(candidates or [root]),
+        ):
+            logger.error("ERROR: YOUR TIME IS NIGH: cannot be used in current state")
+            return False
+        if not self._necrons_spend_cp(stratagem, target_unit=root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "YOUR TIME IS NIGH").strip() or "YOUR TIME IS NIGH"
+        enemy_army = destroyed_root.get_parent_army() if hasattr(destroyed_root, "get_parent_army") else None
+        enemy_units = list(getattr(enemy_army, "units", []) or []) if enemy_army is not None else [destroyed_root]
+        seen: set[str] = set()
+        for enemy_unit in enemy_units:
+            enemy_root = self._necrons_root(enemy_unit)
+            enemy_id = str(get_entity_id(enemy_root) or "") if enemy_root is not None else ""
+            if not enemy_id or enemy_id in seen:
+                continue
+            seen.add(enemy_id)
+            special_rules = dict(getattr(enemy_root, "special_rules", None) or {})
+            special_rules["obeisance_your_time_is_nigh_active"] = True
+            special_rules["obeisance_your_time_is_nigh_battle_shock_test_modifier"] = -1
+            special_rules["obeisance_your_time_is_nigh_leadership_test_modifier"] = -1
+            special_rules["obeisance_your_time_is_nigh_source"] = source
+            enemy_root.special_rules = special_rules
+        self._necrons_finalize_stratagem_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: YOUR TIME IS NIGH: enemy units suffer -1 to Battle-shock and Leadership test results for the rest of the battle.",
+        )
+        return True
+
     def _use_necrons_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -4559,6 +5345,16 @@ class NecronsStratagemMixin:
             return self._use_cryptek_conclave_microscarab_swarm(stratagem, **kwargs)
         if name_u == "ANIMUS CURSE" and self._is_cryptek_conclave():
             return self._use_cryptek_conclave_animus_curse(stratagem, **kwargs)
+        if name_u == "ENSLAVED ARTIFICE" and self._is_obeisance_phalanx():
+            return self._use_obeisance_enslaved_artifice(stratagem, **kwargs)
+        if name_u == "SENTINELS OF ETERNITY" and self._is_obeisance_phalanx():
+            return self._use_obeisance_sentinels_of_eternity(stratagem, **kwargs)
+        if name_u == "SUFFER NO RIVAL" and self._is_obeisance_phalanx():
+            return self._use_obeisance_suffer_no_rival(stratagem, **kwargs)
+        if name_u == "TERRITORIAL OBSESSION" and self._is_obeisance_phalanx():
+            return self._use_obeisance_territorial_obsession(stratagem, **kwargs)
+        if name_u == "YOUR TIME IS NIGH" and self._is_obeisance_phalanx():
+            return self._use_obeisance_your_time_is_nigh(stratagem, **kwargs)
         if name_u == "PROTOCOL OF THE CONQUERING TYRANT" and self._is_awakened_dynasty():
             return self._use_awakened_dynasty_conquering_tyrant(stratagem, **kwargs)
         if name_u == "PROTOCOL OF THE ETERNAL REVENANT" and self._is_awakened_dynasty():

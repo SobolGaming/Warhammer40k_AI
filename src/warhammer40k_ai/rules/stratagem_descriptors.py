@@ -9527,6 +9527,94 @@ _CANOPTEK_COURT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_OBEISANCE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008551002": StratagemToolDescriptor(
+        stratagem_id="000008551002",
+        name="Your Time Is Nigh",
+        timing="any_phase_after_opponent_warlord_destroyed",
+        target="your_necrons_warlord",
+        duration="until_end_of_battle",
+        effect="enemy_battleshock_and_leadership_tests_minus_one_until_end_of_battle",
+        cp_cost=1,
+        effect_params={
+            "battle_shock_test_modifier": -1,
+            "leadership_test_modifier": -1,
+        },
+    ),
+    "000008551003": StratagemToolDescriptor(
+        stratagem_id="000008551003",
+        name="Enslaved Artifice",
+        timing="your_shooting_or_fight_phase_on_select",
+        target="necrons_non_titanic_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="critical_hits_on_5plus",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["NECRONS"],
+            "excluded_keywords_any": ["TITANIC"],
+            "crit_threshold": 5,
+        },
+    ),
+    "000008551004": StratagemToolDescriptor(
+        stratagem_id="000008551004",
+        name="Nanoassembly Protocols",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="necrons_vehicle_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["VEHICLE"],
+            "damage_reduction": 1,
+        },
+    ),
+    "000008551005": StratagemToolDescriptor(
+        stratagem_id="000008551005",
+        name="Sentinels of Eternity",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="friendly_lychguard_or_triarch_praetorians_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_on_4_plus",
+        cp_cost=1,
+        effect_params={
+            "threshold": 4,
+            "required_keywords_any": ["LYCHGUARD", "TRIARCH PRAETORIANS"],
+        },
+    ),
+    "000008551006": StratagemToolDescriptor(
+        stratagem_id="000008551006",
+        name="Suffer No Rival",
+        timing="fight_phase_on_select_to_fight",
+        target="friendly_lychguard_or_triarch_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["LYCHGUARD", "TRIARCH"],
+            "attack_type": "melee",
+            "grant_keywords": ["PRECISION"],
+        },
+    ),
+    "000008551007": StratagemToolDescriptor(
+        stratagem_id="000008551007",
+        name="Territorial Obsession",
+        timing="your_command_phase",
+        target="friendly_lychguard_or_triarch_unit",
+        duration="until_your_next_command_phase",
+        effect="objective_control_bonus_until_next_command_phase",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["LYCHGUARD", "TRIARCH"],
+            "objective_control_bonus": 1,
+            "vehicle_objective_control_bonus": 3,
+        },
+    ),
+}
+
+_OBEISANCE_PHALANX_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _OBEISANCE_PHALANX_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008555002": StratagemToolDescriptor(
         stratagem_id="000008555002",
@@ -10036,6 +10124,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CANOPTEK_COURT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _OBEISANCE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10168,6 +10259,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CURSED_LEGION_STRATAGEM_BY_NAME.get(key)
         or _CRYPTEK_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _CANOPTEK_COURT_STRATAGEM_BY_NAME.get(key)
+        or _OBEISANCE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
         or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

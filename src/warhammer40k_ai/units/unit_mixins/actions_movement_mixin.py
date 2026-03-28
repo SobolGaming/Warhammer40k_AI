@@ -7539,6 +7539,47 @@ class ActionsMovementMixin:
                 return None
         return {"crit_threshold": threshold, "source": source}
 
+    def _obeisance_enslaved_artifice_context(self, *, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("obeisance_enslaved_artifice_active")):
+            return None
+        source = str(sr.get("obeisance_enslaved_artifice_source", "") or "ENSLAVED ARTIFICE").strip() or "ENSLAVED ARTIFICE"
+        try:
+            threshold = int(sr.get("obeisance_enslaved_artifice_crit_threshold", 5) or 5)
+        except Exception:
+            threshold = 5
+        threshold = max(2, min(6, int(threshold)))
+        if game is None:
+            return {"crit_threshold": threshold, "source": source}
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("obeisance_enslaved_artifice_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("obeisance_enslaved_artifice_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("obeisance_enslaved_artifice_turn_owner", "") or "")
+        if effect_owner:
+            try:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"crit_threshold": threshold, "source": source}
+
     def _gsc_coordinated_trap_context(self, *, game=None) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()
