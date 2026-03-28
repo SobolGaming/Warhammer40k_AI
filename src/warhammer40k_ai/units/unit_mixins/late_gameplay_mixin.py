@@ -4752,8 +4752,29 @@ class LateGameplayMixin:
             )
             if callable(range_limit_fn):
                 dist, source = range_limit_fn(root)
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "COUNTERTEMPORAL SHIFT")
+        except Exception:
+            pass
+
+        try:
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            range_cap_fn = (
+                getattr(tyr_mgr, "vanguard_unseen_lurkers_ranged_targeting_cap", None)
+                if tyr_mgr is not None
+                else None
+            )
+            if callable(range_cap_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                dist, lone_dist, source = range_cap_fn(root, game=game)
                 if float(dist or 0.0) > 0.0:
-                    _consider(float(dist), source or "COUNTERTEMPORAL SHIFT")
+                    target_cap = float(dist)
+                    try:
+                        if bool(root.has_lone_operative()) and float(lone_dist or 0.0) > 0.0:
+                            target_cap = float(lone_dist)
+                    except Exception:
+                        pass
+                    _consider(target_cap, source or "UNSEEN LURKERS")
         except Exception:
             pass
 

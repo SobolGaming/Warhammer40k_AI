@@ -19992,6 +19992,12 @@ def _stratagem_support(
         "000008409005": "Your Shooting phase or the Fight phase: selected ENDLESS MULTITUDE unit that has not yet acted gains Sustained Hits 1 until end of phase, and while it contains 15 or more models it scores critical hits on unmodified Hit rolls of 5+.",
         "000008409006": "Your Movement phase: selected ENDLESS MULTITUDE unit that has not been selected to move treats its Advance distance this phase as a fixed +6\" instead of rolling.",
         "000008409007": "Opponent Shooting phase reaction after enemy targets are selected: selected ENDLESS MULTITUDE target is treated as containing fewer than five models for the purpose of Blast until end of phase.",
+        "000008418002": "Your Shooting phase or Fight phase, just after a friendly VANGUARD INVADER unit selects targets: select one of those enemy units to take a Battle-shock test; that friendly unit gains +1 to hit it until end of phase, and also gains +1 to wound it if the test is failed.",
+        "000008418003": "Fight phase: selected friendly VANGUARD INVADER INFANTRY unit that has not yet been selected to fight gains [PRECISION] on melee weapons until end of phase.",
+        "000008418004": "Your Movement phase: select one TYRANIDS unit in Reserves, or up to two VANGUARD INVADER units in Reserves; selected units treat the current battle round as one higher when setting them up this phase.",
+        "000008418005": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of eligible targets: select up to two friendly VANGUARD INVADER units, or one other friendly TYRANIDS INFANTRY unit, and each selected unit can make a reactive Normal move up to 6\".",
+        "000008418006": "Opponent Shooting phase reaction after enemy targets are selected: selected friendly VANGUARD INVADER unit can only be selected as the target of ranged attacks by attacking models within 18\" until end of phase, or within 6\" while it has Lone Operative.",
+        "000008418007": "End of opponent Fight phase: select up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit, that are not within Engagement Range; the selected units enter Strategic Reserves.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20577,6 +20583,15 @@ def _stratagem_support(
         "000008409005",
         "000008409006",
         "000008409007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008418002",
+        "000008418003",
+        "000008418004",
+        "000008418005",
+        "000008418006",
+        "000008418007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
     if stratagem_id in {

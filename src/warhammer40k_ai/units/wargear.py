@@ -11375,6 +11375,27 @@ class WargearProfile:
                     attack_instance["bonus_precision"] = True
         except Exception:
             pass
+        try:
+            if attack_is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                precision_fn = (
+                    getattr(tyr_mgr, "vanguard_assassin_beasts_precision_applies", None)
+                    if tyr_mgr is not None
+                    else None
+                )
+                if callable(precision_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    precision_applies, _source = precision_fn(
+                        attacker,
+                        unit=unit,
+                        game=game,
+                    )
+                    if bool(precision_applies):
+                        attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
 
         # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
         try:
@@ -12751,6 +12772,11 @@ class WargearProfile:
             bonus, reason = bonus_fn(attacker, unit)
             if bonus:
                 _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Enraged Behemoths")
+        surprise_hit_bonus_fn = getattr(mgr, "vanguard_surprise_assault_hit_bonus", None) if mgr is not None else None
+        if callable(surprise_hit_bonus_fn):
+            bonus, reason = surprise_hit_bonus_fn(attacker, target_unit=target, game=game)
+            if bonus:
+                _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Surprise Assault")
         if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()):
             synaptic_bonus_fn = getattr(mgr, "synaptic_imperatives_melee_hit_bonus", None) if mgr is not None else None
             if callable(synaptic_bonus_fn):
@@ -18638,6 +18664,18 @@ class WargearProfile:
                 dice_modifier += int(bonus)
                 wound_result['modifiers'].append(
                     reason or f"+{int(bonus)} to wound from Enraged Behemoths"
+                )
+        surprise_bonus_fn = getattr(mgr, "vanguard_surprise_assault_wound_bonus", None) if mgr is not None else None
+        if callable(surprise_bonus_fn):
+            bonus, reason = surprise_bonus_fn(
+                attacker,
+                target_unit=target,
+                game=game,
+            )
+            if bonus:
+                dice_modifier += int(bonus)
+                wound_result['modifiers'].append(
+                    reason or f"+{int(bonus)} to wound from Surprise Assault"
                 )
         monstrous_bonus_fn = getattr(mgr, "crusher_monstrous_nemesis_wound_bonus", None) if mgr is not None else None
         if callable(monstrous_bonus_fn):

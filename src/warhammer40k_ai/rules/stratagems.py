@@ -72,6 +72,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DETONATOR",
     "DIABOLIC REGENERATION",
     "ARCANE FOCUS",
+    "ASSASSIN BEASTS",
     "FROM ALL SIDES",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
@@ -101,8 +102,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRESERVATION IMPERATIVE",
     "REINFORCED HIVE NODE",
     "IRRESISTIBLE WILL",
+    "INVISIBLE HUNTER",
     "SYNAPTIC CHANNELLING",
     "SYNAPTIC GOADING",
+    "SURPRISE ASSAULT",
+    "SEEDED BROODS",
+    "HYPERSENSORY SCILLIA",
+    "UNSEEN LURKERS",
     "SWARMING MASSES",
     "TEEMING MASSES",
     "IMPERATIVE DOMINANCE",
@@ -792,6 +798,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FEIGNED RETREAT",
     "GUIDED DISRUPTION",
     "GRIP OF THE WALKING POX",
+    "HYPERSENSORY SCILLIA",
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
@@ -847,6 +854,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SAVAGE ROAR",
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
+    "SURPRISE ASSAULT",
     "THUNDEROUS PURSUIT",
     "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
@@ -956,6 +964,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "LAYERED WARDS",
     "SUSTAINED BY AGONY",
     "UNCANNY REACTIONS",
+    "UNSEEN LURKERS",
     "VENGEFUL SURGE",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
@@ -2293,6 +2302,8 @@ class StratagemManager(
             "MORTAL THRALLS",
             "STEADFAST DETERMINATION",
             "TO THE FAVOURED THE SPOILS",
+            "SURPRISE ASSAULT",
+            "UNSEEN LURKERS",
             "SHAMBLING WALL",
             "FESTERING MIASMA",
             "CORRUPTED MUNITIONS",
@@ -2353,6 +2364,7 @@ class StratagemManager(
             "SHIELD NODES",
             "STRENGTH IN UNITY",
             "SAVAGE ROAR",
+            "SURPRISE ASSAULT",
             "ETERNAL HATE",
             "PSYCHIC DOMINION",
             "WRATH OF THE DOOMED",
@@ -5839,6 +5851,91 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and eligible VANGUARD INVADER or TYRANIDS INFANTRY units on the battlefield"
             return result
+        if name_u == "SURPRISE ASSAULT":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SURPRISE ASSAULT":
+                    continue
+                pending_candidates = list(reaction.get("enemy_candidates") or reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("enemy_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            source_unit = context.get("unit") or context.get("target_unit") or context.get("attacking_unit")
+            target_units = list(context.get("target_units") or [])
+            candidates = list(context.get("enemy_candidates") or context.get("candidates") or [])
+            if not candidates and source_unit is not None:
+                candidates = self._tyr_vanguard_surprise_assault_enemy_candidates(
+                    attacking_unit=source_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or Fight phase, just after a VANGUARD INVADER unit from your army selects targets"
+            return result
+        if name_u == "ASSASSIN BEASTS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_vanguard_assassin_beasts_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Fight phase and a friendly VANGUARD INVADER INFANTRY unit on the battlefield that is eligible to fight and has not already fought"
+            return result
+        if name_u == "SEEDED BROODS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_vanguard_seeded_broods_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and one TYRANIDS unit in Reserves, or up to two VANGUARD INVADER units in Reserves"
+            return result
+        if name_u == "HYPERSENSORY SCILLIA":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "HYPERSENSORY SCILLIA":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("enemy_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            enemy_unit = context.get("enemy_unit") or context.get("moving_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_unit is not None:
+                candidates = self._tyr_vanguard_hypersensory_scillia_candidates(enemy_unit=enemy_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Movement phase, just after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of eligible TYRANIDS units"
+            return result
+        if name_u == "UNSEEN LURKERS":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNSEEN LURKERS":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            candidates = list(context.get("candidates") or [])
+            if not candidates and attacking_unit is not None and target_units:
+                candidates = self._tyr_vanguard_targeted_vanguard_invader_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase, just after an enemy unit selects targets including one of your VANGUARD INVADER units"
+            return result
         if name_u == "BOUNDING ADVANCE":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -6859,6 +6956,11 @@ class StratagemManager(
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "SULPHUROUS VEIL": "Target: your THOUSAND SONS or SCINTILLATING LEGIONS unit selected as an enemy shooting/fight target; incoming attacks suffer -1 to Hit this phase",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
+            "SURPRISE ASSAULT": "Your Shooting phase or Fight phase, just after your VANGUARD INVADER unit selects targets: choose one of those enemy targets; it takes a Battle-shock test, and your unit gains +1 to hit it and also +1 to wound it if that test is failed until end of phase",
+            "ASSASSIN BEASTS": "Fight phase: target your VANGUARD INVADER INFANTRY unit that has not yet been selected to fight; its melee weapons gain [PRECISION] until end of phase",
+            "SEEDED BROODS": "Movement phase: target one TYRANIDS unit in Reserves, or up to two VANGUARD INVADER units in Reserves; selected units treat the current battle round as one higher when setting up this phase",
+            "HYPERSENSORY SCILLIA": "Opponent Movement phase, just after an enemy unit ends a Normal, Advance, or Fall Back move: target up to two VANGUARD INVADER units within 9\", or one other TYRANIDS INFANTRY unit within 9\"; selected units each make a reactive Normal move up to 6\"",
+            "UNSEEN LURKERS": "Opponent Shooting phase, just after an enemy unit selects targets: target your VANGUARD INVADER unit selected by that attacker; until end of phase it can only be targeted by ranged attacks from within 18\", or 6\" if it has Lone Operative",
             "BOUNDING ADVANCE": "Movement phase: target your ENDLESS MULTITUDE unit that has not been selected to move; if it Advances this phase, add 6\" to its Move instead of making an Advance roll",
             "SYNAPTIC GOADING": "Any phase, just before an ENDLESS MULTITUDE unit within Synapse Range makes an Insurmountable Odds Surge move: that move can re-roll its distance and can end as close as possible to the closest objective marker instead of the closest enemy unit",
             "UNENDING WAVES": "Any phase: target your ENDLESS MULTITUDE unit that was just destroyed; add an identical replacement unit to Strategic Reserves at Starting Strength (once per battle)",
@@ -11073,6 +11175,7 @@ class StratagemManager(
         self._queue_veterans_move_end_reactions(unit=unit, action=action)
         self._queue_death_guard_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
+        self._queue_tyranids_vanguard_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12244,6 +12347,10 @@ class StratagemManager(
                     attacking_unit=attacking_unit,
                     target_units=list(target_units or []),
                 )
+                self._queue_tyranids_vanguard_shooting_target_reactions(
+                    attacking_unit=attacking_unit,
+                    target_units=list(target_units or []),
+                )
             if owner_player is self.player:
                 return  # only opponent can react
         except Exception:
@@ -12257,6 +12364,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_synaptic_nexus_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_vanguard_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13471,6 +13585,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_crusher_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_vanguard_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

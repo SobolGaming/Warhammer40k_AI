@@ -5934,6 +5934,234 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(getattr(mgr, "_unit_in_synapse_range", lambda *_a, **_k: False)(unit_root, game=game)):
             return ("Imperative Dominance target must be within Synapse Range.",)
         return ()
+    if ability == "tyranids_vanguard_surprise_assault":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("Surprise Assault selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Surprise Assault army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_vanguard_onslaught", lambda: False)()):
+            return ("Surprise Assault requires Vanguard Onslaught.",)
+        unit = resolve_unit(game, payload.get("unit_id") or payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if unit is None:
+            return ("Surprise Assault source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Surprise Assault target unit was not found.",)
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if unit_root is None or target_root is None:
+            return ("Surprise Assault units were not found.",)
+        if unit_root.get_parent_army() is not army:
+            return ("Surprise Assault source must be a friendly TYRANIDS unit.",)
+        if target_root.get_parent_army() is army:
+            return ("Surprise Assault target must be an enemy unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and str(get_entity_id(target_root) or "") not in candidate_ids:
+            return ("Surprise Assault target is not in this request's candidate list.",)
+        return ()
+    if ability == "tyranids_vanguard_seeded_broods":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("Seeded Broods selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Seeded Broods army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_vanguard_onslaught", lambda: False)()):
+            return ("Seeded Broods requires Vanguard Onslaught.",)
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            single_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if single_target:
+                selected_vals = [single_target]
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        if not selected_ids:
+            return ("Seeded Broods requires one or more selected_unit_ids.",)
+        if len(selected_ids) > 2:
+            return ("Seeded Broods can select at most two units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Seeded Broods selected_unit_ids must be unique.",)
+        candidate_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        candidate_id_set = set(candidate_ids)
+        for unit_id in selected_ids:
+            if candidate_id_set and unit_id not in candidate_id_set:
+                return ("Seeded Broods selection includes an ineligible unit.",)
+        selected_roots = []
+        for unit_id in list(selected_ids):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                return ("Seeded Broods selected unit was not found.",)
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return ("Seeded Broods selected unit was not found.",)
+            if root.get_parent_army() is not army:
+                return ("Seeded Broods target must be a friendly TYRANIDS unit in Reserves.",)
+            selected_roots.append(root)
+        owner = _resolve_player(game, request, payload)
+        if owner is None:
+            owner = getattr(army, "player", None)
+        stratagems = getattr(owner, "stratagems", None) if owner is not None else None
+        validate_selection = getattr(stratagems, "_tyr_validate_vanguard_pair_selection", None)
+        if callable(validate_selection):
+            eligible_units = []
+            for unit_id in list(candidate_ids):
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is not None:
+                    eligible_units.append(root)
+            vanguard_units = []
+            for unit_id in list(ctx.get("vanguard_candidate_unit_ids", []) or []):
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is not None:
+                    vanguard_units.append(root)
+            is_valid, _reason = validate_selection(
+                selected_roots,
+                eligible=eligible_units,
+                vanguard_candidates=vanguard_units,
+                infantry_candidates=eligible_units,
+            )
+            if not is_valid:
+                return ("Seeded Broods selection is not valid for this request.",)
+        return ()
+    if ability == "tyranids_vanguard_hypersensory_scillia":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("Hypersensory Scillia selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Hypersensory Scillia army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_vanguard_onslaught", lambda: False)()):
+            return ("Hypersensory Scillia requires Vanguard Onslaught.",)
+        enemy_unit = resolve_unit(game, payload.get("enemy_unit_id") or ctx.get("enemy_unit_id"))
+        if enemy_unit is None:
+            return ("Hypersensory Scillia enemy unit was not found.",)
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return ("Hypersensory Scillia enemy unit was not found.",)
+        if enemy_root.get_parent_army() is army:
+            return ("Hypersensory Scillia trigger must come from an enemy unit.",)
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            single_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if single_target:
+                selected_vals = [single_target]
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        if not selected_ids:
+            return ("Hypersensory Scillia requires one or more selected_unit_ids.",)
+        if len(selected_ids) > 2:
+            return ("Hypersensory Scillia can select at most two units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Hypersensory Scillia selected_unit_ids must be unique.",)
+        candidate_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        candidate_id_set = set(candidate_ids)
+        for unit_id in selected_ids:
+            if candidate_id_set and unit_id not in candidate_id_set:
+                return ("Hypersensory Scillia selection includes an ineligible unit.",)
+        selected_roots = []
+        for unit_id in list(selected_ids):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                return ("Hypersensory Scillia selected unit was not found.",)
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return ("Hypersensory Scillia selected unit was not found.",)
+            if root.get_parent_army() is not army:
+                return ("Hypersensory Scillia target must be a friendly TYRANIDS unit.",)
+            selected_roots.append(root)
+        owner = _resolve_player(game, request, payload)
+        if owner is None:
+            owner = getattr(army, "player", None)
+        stratagems = getattr(owner, "stratagems", None) if owner is not None else None
+        validate_selection = getattr(stratagems, "_tyr_validate_vanguard_pair_selection", None)
+        if callable(validate_selection):
+            eligible_units = []
+            for unit_id in list(candidate_ids):
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is not None:
+                    eligible_units.append(root)
+            vanguard_units = []
+            for unit_id in list(ctx.get("vanguard_candidate_unit_ids", []) or []):
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is not None:
+                    vanguard_units.append(root)
+            infantry_units = []
+            for unit_id in list(ctx.get("infantry_candidate_unit_ids", []) or []):
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is not None:
+                    infantry_units.append(root)
+            is_valid, _reason = validate_selection(
+                selected_roots,
+                eligible=eligible_units,
+                vanguard_candidates=vanguard_units,
+                infantry_candidates=infantry_units,
+            )
+            if not is_valid:
+                return ("Hypersensory Scillia selection is not valid for this request.",)
+        return ()
     if ability == "psychostatic_disruption":
         payload = _option_payload(request, result)
         arriving_unit = resolve_unit(game, payload.get("arriving_unit_id") or ctx.get("arriving_unit_id"))
@@ -14055,6 +14283,190 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "applied": True,
             "choice_key": str(applied.get("choice_key", "") or str(choice)),
             "unit_id": str(get_entity_id(unit_root) or ""),
+        }
+    if ability == "tyranids_vanguard_surprise_assault":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        unit = resolve_unit(game, payload.get("unit_id") or payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if unit is None or target_unit is None:
+            return None
+        try:
+            unit_root = unit.get_attached_unit_root()
+        except Exception:
+            unit_root = unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if unit_root is None or target_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Surprise Assault").strip() or "Surprise Assault"
+        phase_name = str(ctx.get("phase_name", "") or ctx.get("phase", "") or "Shooting phase").strip() or "Shooting phase"
+        applied = mgr.activate_vanguard_surprise_assault(
+            unit_root,
+            target_root,
+            phase_name=phase_name,
+            game=game,
+            player=player,
+            source=ability_name,
+        )
+        if not isinstance(applied, dict) or not bool(applied.get("ok", False)):
+            return applied
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(unit_root, 'name', 'Unit')} selected {getattr(target_root, 'name', 'Enemy Unit')}; "
+                f"it gains +1 to hit that unit this phase"
+                f"{' and +1 to wound because the Battle-shock test was failed' if bool(applied.get('failed_battle_shock', False)) else ''}."
+            ),
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "unit_id": str(get_entity_id(unit_root) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "failed_battle_shock": bool(applied.get("failed_battle_shock", False)),
+        }
+    if ability == "tyranids_vanguard_seeded_broods":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        selected_roots = []
+        for unit_id in list(selected_vals or []):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            selected_roots.append(root)
+        if not selected_roots:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Seeded Broods").strip() or "Seeded Broods"
+        phase_name = str(ctx.get("phase_name", "") or ctx.get("phase", "") or "Movement phase").strip() or "Movement phase"
+        selected_ids = []
+        for root in list(selected_roots):
+            applied = mgr.activate_vanguard_seeded_broods(
+                root,
+                phase_name=phase_name,
+                game=game,
+                player=player,
+                source=ability_name,
+            )
+            if not isinstance(applied, dict) or not bool(applied.get("ok", False)):
+                return applied
+            selected_ids.append(str(get_entity_id(root) or ""))
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: "
+                + ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
+                + " treat the current battle round as one higher when setting up this phase."
+            ),
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "selected_unit_ids": [unit_id for unit_id in list(selected_ids) if unit_id],
+        }
+    if ability == "tyranids_vanguard_hypersensory_scillia":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        enemy_unit = resolve_unit(game, payload.get("enemy_unit_id") or ctx.get("enemy_unit_id"))
+        if enemy_unit is None:
+            return None
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return None
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        selected_roots = []
+        for unit_id in list(selected_vals or []):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            selected_roots.append(root)
+        if not selected_roots:
+            return None
+        queue_reactive_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_reactive_move):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Hypersensory Scillia").strip() or "Hypersensory Scillia"
+        selected_ids = []
+        for root in list(selected_roots):
+            queue_reactive_move(
+                player=player,
+                unit=root,
+                max_distance=6,
+                kind="tyranids_hypersensory_scillia",
+                movement_type="reactive",
+                source=ability_name,
+                moving_unit=enemy_root,
+                range_value=6,
+                allow_skip=True,
+            )
+            selected_ids.append(str(get_entity_id(root) or ""))
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: queued reactive Normal moves for "
+                + ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
+                + f" after {getattr(enemy_root, 'name', 'Enemy Unit')} moved."
+            ),
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "enemy_unit_id": str(get_entity_id(enemy_root) or ""),
+            "selected_unit_ids": [unit_id for unit_id in list(selected_ids) if unit_id],
         }
     if ability == "psychostatic_disruption":
         payload = _option_payload(request, result)

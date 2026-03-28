@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import combinations
 import logging
 from typing import Any, Optional
 
@@ -1080,6 +1081,318 @@ class TyranidsStratagemMixin:
             is_vanguard = self._tyr_is_vanguard_invader_unit(root)
             is_tyr_infantry = self._tyr_is_infantry_unit(root)
             if not (is_vanguard or is_tyr_infantry):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_validate_vanguard_pair_selection(
+        self,
+        selected_roots: list[Any],
+        *,
+        eligible: list[Any],
+        vanguard_candidates: list[Any],
+        infantry_candidates: list[Any],
+    ) -> tuple[bool, str]:
+        if not selected_roots:
+            return False, "no_units"
+        if len(selected_roots) > 2:
+            return False, "too_many_units"
+        valid_vanguard = self._tyr_resolve_units(vanguard_candidates) or [
+            unit for unit in list(eligible or []) if self._tyr_is_vanguard_invader_unit(unit)
+        ]
+        valid_infantry = self._tyr_resolve_units(infantry_candidates) or [
+            unit for unit in list(eligible or []) if self._tyr_is_infantry_unit(unit)
+        ]
+        selected_vanguard = 0
+        selected_infantry_only = 0
+        for root in list(selected_roots):
+            if not self._tyr_unit_in_candidates(root, eligible):
+                return False, "unit_not_candidate"
+            is_vanguard = self._tyr_unit_in_candidates(root, valid_vanguard)
+            is_infantry = self._tyr_unit_in_candidates(root, valid_infantry)
+            if not (is_vanguard or is_infantry):
+                return False, "unit_not_eligible"
+            if is_vanguard:
+                selected_vanguard += 1
+            else:
+                selected_infantry_only += 1
+        if selected_infantry_only > 1:
+            return False, "too_many_infantry"
+        if selected_infantry_only > 0 and len(selected_roots) > 1:
+            return False, "mixed_selection"
+        if len(selected_roots) == 2 and selected_vanguard != 2:
+            return False, "two_units_require_vanguard"
+        return True, ""
+
+    def _tyr_pending_choose_quarry_request(self, *, ability: str, **match_context: Any) -> bool:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != str(DECISION_CHOOSE_QUARRY):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability or ""):
+                continue
+            matches = True
+            for key, value in dict(match_context or {}).items():
+                if isinstance(value, (list, tuple, set)):
+                    expected = [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+                    current = [
+                        str(item or "").strip()
+                        for item in list(ctx.get(key, []) or [])
+                        if str(item or "").strip()
+                    ]
+                    if current != expected:
+                        matches = False
+                        break
+                    continue
+                if str(ctx.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+    def _tyr_vanguard_selection_payloads(
+        self,
+        *,
+        eligible: list[Any],
+        vanguard_candidates: list[Any],
+        single_unit_candidates: list[Any],
+    ) -> list[dict[str, Any]]:
+        eligible_roots = self._tyr_resolve_units(eligible)
+        if not eligible_roots:
+            return []
+        valid_vanguard = self._tyr_resolve_units(vanguard_candidates) or [
+            unit for unit in list(eligible_roots or []) if self._tyr_is_vanguard_invader_unit(unit)
+        ]
+        valid_single = self._tyr_resolve_units(single_unit_candidates) or list(eligible_roots)
+        payloads: list[dict[str, Any]] = []
+        seen_keys: set[str] = set()
+
+        def _add_selection(selected_roots: list[Any]) -> None:
+            is_valid, _reason = self._tyr_validate_vanguard_pair_selection(
+                selected_roots,
+                eligible=eligible_roots,
+                vanguard_candidates=valid_vanguard,
+                infantry_candidates=valid_single,
+            )
+            if not is_valid:
+                return
+            resolved_roots = self._tyr_resolve_units(selected_roots)
+            selected_ids = [self._tyr_sort_key(root) for root in list(resolved_roots) if self._tyr_sort_key(root)]
+            if not selected_ids:
+                return
+            key = "|".join(selected_ids)
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
+            payloads.append(
+                {
+                    "label": ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(resolved_roots)),
+                    "payload": {"selected_unit_ids": list(selected_ids)},
+                }
+            )
+
+        for root in list(valid_single):
+            _add_selection([root])
+        for left, right in combinations(list(valid_vanguard), 2):
+            _add_selection([left, right])
+        payloads.sort(
+            key=lambda item: tuple(
+                str(value or "").strip()
+                for value in list(dict(item.get("payload", {}) or {}).get("selected_unit_ids", []) or [])
+            )
+        )
+        return payloads
+
+    def _tyr_vanguard_surprise_assault_enemy_candidates(self, *, attacking_unit: Any, target_units: Any) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return []
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or not self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._tyr_on_battlefield(attacker_root, require_targetable=True):
+            return []
+        if not self._is_tyranids_unit(attacker_root):
+            return []
+        if not self._tyr_is_vanguard_invader_unit(attacker_root):
+            return []
+        if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(
+            attacker_root,
+            phase_name="Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase",
+        ):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=False):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_vanguard_assassin_beasts_candidates(self) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_is_vanguard_invader_unit(root):
+                continue
+            if not self._tyr_is_infantry_unit(root):
+                continue
+            is_eligible = getattr(root, "is_eligible_to_fight", None)
+            if not callable(is_eligible) or not bool(is_eligible(game_map)):
+                continue
+            if self._tyr_unit_already_selected_to_shoot_or_fight_this_phase(root, phase_name="Fight phase"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_vanguard_seeded_broods_candidates(self) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            if not callable(is_in_reserves) or not bool(is_in_reserves()):
+                continue
+            if bool(getattr(root, "embarked_in", None)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_vanguard_targeted_vanguard_invader_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or self._tyr_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not self._tyr_is_vanguard_invader_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
+    def _tyr_vanguard_hypersensory_scillia_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        enemy_root = self._tyr_root(enemy_unit)
+        if enemy_root is None or self._tyr_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=True):
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if self._tyr_unit_in_engagement_range(root):
+                continue
+            is_vanguard = self._tyr_is_vanguard_invader_unit(root)
+            is_infantry = self._tyr_is_infantry_unit(root)
+            if not (is_vanguard or is_infantry):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
@@ -2684,6 +2997,211 @@ class TyranidsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_tyranids_vanguard_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_tyranids_vanguard_onslaught_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if not callable(queue_reaction):
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None:
+            return
+        if active_player is self.player and self._tyr_owned_by_player(attacker_root, self.player):
+            surprise = getattr(self, "get_by_name", lambda _name: None)("SURPRISE ASSAULT")
+            if surprise is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(surprise, "cp_cost", 0) or 0):
+                return
+            name_u = str(getattr(surprise, "name", "") or "").strip().upper()
+            if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            enemy_candidates = self._tyr_vanguard_surprise_assault_enemy_candidates(
+                attacking_unit=attacker_root,
+                target_units=target_units,
+            )
+            if not enemy_candidates:
+                return
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if (
+                    reaction.get("event") == "shooting_targets_selected"
+                    and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                    and reaction.get("attacking_unit") is attacking_unit
+                ):
+                    return
+            payload = {
+                "event": "shooting_targets_selected",
+                "phase_name": "Shooting phase",
+                "stratagem": surprise.name,
+                "cp_cost": surprise.cp_cost,
+                "attacking_unit": attacking_unit,
+                "unit": attacker_root,
+                "target_unit": attacker_root,
+                "enemy_candidates": enemy_candidates,
+            }
+            if len(enemy_candidates) == 1:
+                payload["enemy_unit"] = enemy_candidates[0]
+            queue_reaction(payload)
+            return
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        unseen = getattr(self, "get_by_name", lambda _name: None)("UNSEEN LURKERS")
+        if unseen is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(unseen, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(unseen, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_vanguard_targeted_vanguard_invader_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": unseen.name,
+            "cp_cost": unseen.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction(payload)
+
+    def _queue_tyranids_vanguard_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_tyranids_vanguard_onslaught_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if not callable(queue_reaction):
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        attacker_root = self._tyr_root(attacking_unit)
+        if attacker_root is None or active_player is not self.player or not self._tyr_owned_by_player(attacker_root, self.player):
+            return
+        surprise = getattr(self, "get_by_name", lambda _name: None)("SURPRISE ASSAULT")
+        if surprise is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(surprise, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(surprise, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        enemy_candidates = self._tyr_vanguard_surprise_assault_enemy_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not enemy_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": surprise.name,
+            "cp_cost": surprise.cp_cost,
+            "attacking_unit": attacking_unit,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        queue_reaction(payload)
+
+    def _queue_tyranids_vanguard_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_tyranids_vanguard_onslaught_detachment():
+            return
+        action_key = self._tyr_normalize_token(action)
+        if action_key not in {"move", "advance", "fall back"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        enemy_root = self._tyr_root(unit)
+        if enemy_root is None or self._tyr_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("HYPERSENSORY SCILLIA")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tyr_vanguard_hypersensory_scillia_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        enemy_id = self._tyr_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("enemy_unit_id", "") or "") == enemy_id:
+                return
+        vanguard_candidates = [candidate for candidate in candidates if self._tyr_is_vanguard_invader_unit(candidate)]
+        infantry_candidates = [candidate for candidate in candidates if self._tyr_is_infantry_unit(candidate)]
+        max_units = 2 if len(vanguard_candidates) >= 2 else 1
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "enemy_unit_id": enemy_id,
+            "move_action": str(action),
+            "candidates": candidates,
+            "vanguard_candidates": vanguard_candidates,
+            "infantry_candidates": infantry_candidates,
+            "max_units": int(max_units),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _queue_tyranids_vanguard_onslaught_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         game = getattr(self, "game", None)
         if game is None:
@@ -3223,6 +3741,16 @@ class TyranidsStratagemMixin:
             if name_u == "OVERRUN":
                 return self._use_tyranids_overrun(stratagem, **kwargs)
         if self._is_tyranids_vanguard_onslaught_detachment():
+            if name_u == "SURPRISE ASSAULT":
+                return self._use_tyranids_surprise_assault(stratagem, **kwargs)
+            if name_u == "ASSASSIN BEASTS":
+                return self._use_tyranids_assassin_beasts(stratagem, **kwargs)
+            if name_u == "SEEDED BROODS":
+                return self._use_tyranids_seeded_broods(stratagem, **kwargs)
+            if name_u == "HYPERSENSORY SCILLIA":
+                return self._use_tyranids_hypersensory_scillia(stratagem, **kwargs)
+            if name_u == "UNSEEN LURKERS":
+                return self._use_tyranids_unseen_lurkers(stratagem, **kwargs)
             if name_u == "INVISIBLE HUNTER":
                 return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
         if self._is_tyranids_synaptic_nexus_detachment():
@@ -5278,6 +5806,746 @@ class TyranidsStratagemMixin:
             "INFO: OVERRUN: %s gets +3\" consolidate this phase%s.",
             getattr(root, "name", "Unit"),
             " and may make a 6\" Normal move instead" if normal_move_active else "",
+        )
+        return True
+
+    def _use_tyranids_surprise_assault(self, stratagem: Any, **kwargs) -> bool:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit")
+        attacking_unit = kwargs.get("attacking_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if source_unit is None or (enemy_unit is None and not enemy_candidates):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SURPRISE ASSAULT":
+                    continue
+                if source_unit is None:
+                    source_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not enemy_candidates:
+                    enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(source_unit)
+        enemy_root = self._tyr_root(enemy_unit)
+        attacker_root = self._tyr_root(attacking_unit) if attacking_unit is not None else root
+        if root is None:
+            logger.error("ERROR: SURPRISE ASSAULT: no source unit provided")
+            return False
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SURPRISE ASSAULT: wrong phase")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SURPRISE ASSAULT: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: SURPRISE ASSAULT: source unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SURPRISE ASSAULT: source unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: SURPRISE ASSAULT: source must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_vanguard_invader_unit(root):
+            logger.error("ERROR: SURPRISE ASSAULT: source must be a VANGUARD INVADER unit")
+            return False
+
+        eligible = list(enemy_candidates or [])
+        if not eligible and enemy_root is not None:
+            eligible = [enemy_root]
+        if not eligible:
+            eligible = self._tyr_vanguard_surprise_assault_enemy_candidates(
+                attacking_unit=attacker_root,
+                target_units=target_units or ([enemy_root] if enemy_root is not None else []),
+            )
+        if not eligible:
+            logger.error("ERROR: SURPRISE ASSAULT: no eligible enemy targets")
+            return False
+
+        if enemy_root is None:
+            if len(eligible) == 1:
+                enemy_root = eligible[0]
+            else:
+                request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+                if not callable(request_decision):
+                    logger.error("ERROR: SURPRISE ASSAULT: decision queue unavailable")
+                    return False
+                from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+                from ..engine.decisions import DecisionOption, DecisionRequest
+
+                unit_id = str(get_entity_id(root) or "")
+                candidate_ids = [self._tyr_sort_key(candidate) for candidate in list(eligible) if self._tyr_sort_key(candidate)]
+                if not unit_id or not candidate_ids:
+                    logger.error("ERROR: SURPRISE ASSAULT: source unit or candidate target is missing a stable id")
+                    return False
+                if self._tyr_pending_choose_quarry_request(
+                    ability="tyranids_vanguard_surprise_assault",
+                    source_unit_id=unit_id,
+                    phase_name=phase_label,
+                ):
+                    logger.error("ERROR: SURPRISE ASSAULT: target selection already queued for this unit")
+                    return False
+                if not stratagem.can_use(
+                    self.player,
+                    self.game,
+                    unit=root,
+                    target_unit=root,
+                    enemy_unit=eligible[0],
+                    phase_name=phase_label,
+                ):
+                    logger.error("ERROR: SURPRISE ASSAULT: cannot be used in current state")
+                    return False
+                if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=eligible[0]):
+                    return False
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{getattr(stratagem, 'name', 'SURPRISE ASSAULT')}: select one enemy unit targeted by {getattr(root, 'name', 'Unit')}.",
+                    player_id=getattr(self.player, "id", None),
+                    options=[
+                        DecisionOption.create(
+                            str(getattr(candidate, "name", "Enemy Unit") or "Enemy Unit"),
+                            payload={
+                                "unit_id": unit_id,
+                                "source_unit_id": unit_id,
+                                "target_unit_id": self._tyr_sort_key(candidate),
+                            },
+                        )
+                        for candidate in list(eligible)
+                        if self._tyr_sort_key(candidate)
+                    ],
+                    context={
+                        "ability": "tyranids_vanguard_surprise_assault",
+                        "ability_name": str(getattr(stratagem, "name", "") or "SURPRISE ASSAULT"),
+                        "phase": phase_label,
+                        "phase_name": phase_label,
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "candidate_unit_ids": list(candidate_ids),
+                        "optional": False,
+                    },
+                )
+                request_decision(request)
+                queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+                if queue is not None and hasattr(queue, "get") and hasattr(queue, "add"):
+                    decision_id = str(getattr(request, "decision_id", "") or "")
+                    if decision_id and queue.get(decision_id) is None:
+                        queue.add(request)
+                self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+                logger.info(
+                    "INFO: SURPRISE ASSAULT: queued target selection for %s.",
+                    getattr(root, "name", "Unit"),
+                )
+                return True
+
+        if enemy_root is None:
+            logger.error("ERROR: SURPRISE ASSAULT: no enemy unit selected")
+            return False
+        if self._tyr_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: SURPRISE ASSAULT: enemy target must be an enemy unit")
+            return False
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: SURPRISE ASSAULT: enemy target must be on the battlefield")
+            return False
+        if not self._tyr_unit_in_candidates(enemy_root, eligible):
+            logger.error("ERROR: SURPRISE ASSAULT: selected enemy is not currently eligible")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            enemy_unit=enemy_root,
+            phase_name=phase_label,
+        ):
+            logger.error("ERROR: SURPRISE ASSAULT: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_vanguard_surprise_assault", None) if mgr is not None else None
+        outcome = (
+            activate(
+                root,
+                enemy_root,
+                phase_name=phase_label,
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "SURPRISE ASSAULT"),
+            )
+            if callable(activate)
+            else {"ok": False}
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: SURPRISE ASSAULT: failed to apply selected target")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SURPRISE ASSAULT: %s gains +1 to hit%s against %s this phase.",
+            getattr(root, "name", "Unit"),
+            " and +1 to wound" if bool(outcome.get("failed_battle_shock", False)) else "",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_tyranids_assassin_beasts(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ASSASSIN BEASTS":
+                    continue
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: ASSASSIN BEASTS: no target unit provided")
+            return False
+
+        root = self._tyr_root(target_unit)
+        if root is None:
+            return False
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: ASSASSIN BEASTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ASSASSIN BEASTS: not your turn")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: ASSASSIN BEASTS: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: ASSASSIN BEASTS: target unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: ASSASSIN BEASTS: target must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_vanguard_invader_unit(root) or not self._tyr_is_infantry_unit(root):
+            logger.error("ERROR: ASSASSIN BEASTS: target must be a VANGUARD INVADER INFANTRY unit")
+            return False
+
+        eligible = candidates or self._tyr_vanguard_assassin_beasts_candidates()
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ASSASSIN BEASTS: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: ASSASSIN BEASTS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_vanguard_assassin_beasts", None) if mgr is not None else None
+        outcome = (
+            activate(
+                root,
+                phase_name="Fight phase",
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "ASSASSIN BEASTS"),
+            )
+            if callable(activate)
+            else {"ok": False}
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: ASSASSIN BEASTS: failed to apply precision bonus")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ASSASSIN BEASTS: %s gains [PRECISION] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tyranids_seeded_broods(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("selected_unit_ids")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._tyr_vanguard_seeded_broods_candidates()
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "movement phase":
+            logger.error("ERROR: SEEDED BROODS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SEEDED BROODS: not your turn")
+            return False
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return False
+        if not candidates:
+            logger.error("ERROR: SEEDED BROODS: no eligible units are in Reserves")
+            return False
+
+        vanguard_candidates = [candidate for candidate in list(candidates) if self._tyr_is_vanguard_invader_unit(candidate)]
+        option_payloads = self._tyr_vanguard_selection_payloads(
+            eligible=candidates,
+            vanguard_candidates=vanguard_candidates,
+            single_unit_candidates=candidates,
+        )
+        selected_roots = self._tyr_resolve_units(selected)
+        if not selected_roots and len(option_payloads) == 1:
+            selected_roots = self._tyr_resolve_units(
+                dict(option_payloads[0].get("payload", {}) or {}).get("selected_unit_ids")
+            )
+        if not selected_roots:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            if not callable(request_decision):
+                logger.error("ERROR: SEEDED BROODS: decision queue unavailable")
+                return False
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            candidate_ids = [self._tyr_sort_key(candidate) for candidate in list(candidates) if self._tyr_sort_key(candidate)]
+            vanguard_candidate_ids = [
+                self._tyr_sort_key(candidate)
+                for candidate in list(vanguard_candidates)
+                if self._tyr_sort_key(candidate)
+            ]
+            if not candidate_ids or not option_payloads:
+                logger.error("ERROR: SEEDED BROODS: no legal selections are available")
+                return False
+            if self._tyr_pending_choose_quarry_request(
+                ability="tyranids_vanguard_seeded_broods",
+                phase_name="Movement phase",
+                candidate_unit_ids=candidate_ids,
+            ):
+                logger.error("ERROR: SEEDED BROODS: unit selection already queued")
+                return False
+            if not stratagem.can_use(
+                self.player,
+                self.game,
+                unit=candidates[0],
+                target_unit=candidates[0],
+                phase_name="Movement phase",
+            ):
+                logger.error("ERROR: SEEDED BROODS: cannot be used in current state")
+                return False
+            if not self._tyr_spend_cp(stratagem, target_unit=candidates[0]):
+                return False
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{getattr(stratagem, 'name', 'SEEDED BROODS')}: select eligible unit(s) in Reserves.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        str(item.get("label", "") or "Selected units"),
+                        payload=dict(item.get("payload", {}) or {}),
+                    )
+                    for item in list(option_payloads)
+                ],
+                context={
+                    "ability": "tyranids_vanguard_seeded_broods",
+                    "ability_name": str(getattr(stratagem, "name", "") or "SEEDED BROODS"),
+                    "phase": "Movement phase",
+                    "phase_name": "Movement phase",
+                    "candidate_unit_ids": list(candidate_ids),
+                    "vanguard_candidate_unit_ids": list(vanguard_candidate_ids),
+                    "max_selections": 2,
+                    "optional": False,
+                },
+            )
+            request_decision(request)
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info("INFO: SEEDED BROODS: queued reserves unit selection.")
+            return True
+
+        is_valid, reason = self._tyr_validate_vanguard_pair_selection(
+            selected_roots,
+            eligible=candidates,
+            vanguard_candidates=vanguard_candidates,
+            infantry_candidates=candidates,
+        )
+        if not is_valid:
+            logger.error("ERROR: SEEDED BROODS: invalid unit selection (%s)", reason or "invalid_selection")
+            return False
+        for root in list(selected_roots):
+            if not self._tyr_owned_by_player(root, self.player):
+                logger.error("ERROR: SEEDED BROODS: selected unit is not yours")
+                return False
+            if not self._is_tyranids_unit(root):
+                logger.error("ERROR: SEEDED BROODS: selected unit must be a TYRANIDS unit")
+                return False
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            if not callable(is_in_reserves) or not bool(is_in_reserves()):
+                logger.error("ERROR: SEEDED BROODS: selected unit must currently be in Reserves")
+                return False
+            if bool(getattr(root, "embarked_in", None)):
+                logger.error("ERROR: SEEDED BROODS: embarked units cannot be selected")
+                return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=selected_roots[0],
+            units=list(selected_roots),
+            target_unit=selected_roots[0],
+            phase_name="Movement phase",
+        ):
+            logger.error("ERROR: SEEDED BROODS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=selected_roots[0]):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_vanguard_seeded_broods", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: SEEDED BROODS: detachment effect manager is unavailable")
+            return False
+        for root in list(selected_roots):
+            outcome = activate(
+                root,
+                phase_name="Movement phase",
+                game=self.game,
+                player=self.player,
+                source=str(getattr(stratagem, "name", "") or "SEEDED BROODS"),
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: SEEDED BROODS: failed to apply setup-round bonus to %s", getattr(root, "name", "Unit"))
+                return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SEEDED BROODS: %s treat the current battle round as one higher when setting up this phase.",
+            ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots)),
+        )
+        return True
+
+    def _use_tyranids_hypersensory_scillia(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("selected_unit_ids")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        enemy_unit = kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        vanguard_candidates = list(kwargs.get("vanguard_candidates") or [])
+        infantry_candidates = list(kwargs.get("infantry_candidates") or [])
+
+        if enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "HYPERSENSORY SCILLIA":
+                    continue
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not vanguard_candidates:
+                    vanguard_candidates = list(reaction.get("vanguard_candidates") or [])
+                if not infantry_candidates:
+                    infantry_candidates = list(reaction.get("infantry_candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        enemy_root = self._tyr_root(enemy_unit)
+        if enemy_root is None:
+            logger.error("ERROR: HYPERSENSORY SCILLIA: missing enemy move trigger context")
+            return False
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "movement phase":
+            logger.error("ERROR: HYPERSENSORY SCILLIA: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: HYPERSENSORY SCILLIA: only available in your opponent's Movement phase")
+            return False
+        if self._tyr_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: HYPERSENSORY SCILLIA: trigger unit must be an enemy unit")
+            return False
+        if not self._tyr_on_battlefield(enemy_root, require_targetable=True):
+            logger.error("ERROR: HYPERSENSORY SCILLIA: trigger unit must be on the battlefield")
+            return False
+
+        eligible = candidates or self._tyr_vanguard_hypersensory_scillia_candidates(enemy_unit=enemy_root)
+        if not eligible:
+            logger.error("ERROR: HYPERSENSORY SCILLIA: no eligible units are within range")
+            return False
+        if not vanguard_candidates:
+            vanguard_candidates = [candidate for candidate in list(eligible) if self._tyr_is_vanguard_invader_unit(candidate)]
+        if not infantry_candidates:
+            infantry_candidates = [candidate for candidate in list(eligible) if self._tyr_is_infantry_unit(candidate)]
+
+        option_payloads = self._tyr_vanguard_selection_payloads(
+            eligible=eligible,
+            vanguard_candidates=vanguard_candidates,
+            single_unit_candidates=eligible,
+        )
+        selected_roots = self._tyr_resolve_units(selected)
+        if not selected_roots and len(option_payloads) == 1:
+            selected_roots = self._tyr_resolve_units(
+                dict(option_payloads[0].get("payload", {}) or {}).get("selected_unit_ids")
+            )
+        if not selected_roots:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            if not callable(request_decision):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: decision queue unavailable")
+                return False
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            candidate_ids = [self._tyr_sort_key(candidate) for candidate in list(eligible) if self._tyr_sort_key(candidate)]
+            vanguard_candidate_ids = [
+                self._tyr_sort_key(candidate)
+                for candidate in list(vanguard_candidates)
+                if self._tyr_sort_key(candidate)
+            ]
+            infantry_candidate_ids = [
+                self._tyr_sort_key(candidate)
+                for candidate in list(infantry_candidates)
+                if self._tyr_sort_key(candidate)
+            ]
+            enemy_unit_id = self._tyr_sort_key(enemy_root)
+            if not candidate_ids or not option_payloads or not enemy_unit_id:
+                logger.error("ERROR: HYPERSENSORY SCILLIA: no legal reactive move selections are available")
+                return False
+            if self._tyr_pending_choose_quarry_request(
+                ability="tyranids_vanguard_hypersensory_scillia",
+                enemy_unit_id=enemy_unit_id,
+            ):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: unit selection already queued for this enemy move")
+                return False
+            if not stratagem.can_use(
+                self.player,
+                self.game,
+                unit=eligible[0],
+                target_unit=eligible[0],
+                enemy_unit=enemy_root,
+                phase_name="Movement phase",
+            ):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: cannot be used in current state")
+                return False
+            if not self._tyr_spend_cp(stratagem, target_unit=eligible[0], enemy_unit=enemy_root):
+                return False
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{getattr(stratagem, 'name', 'HYPERSENSORY SCILLIA')}: select eligible units to react to {getattr(enemy_root, 'name', 'Enemy')}.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        str(item.get("label", "") or "Selected units"),
+                        payload=dict(item.get("payload", {}) or {}),
+                    )
+                    for item in list(option_payloads)
+                ],
+                context={
+                    "ability": "tyranids_vanguard_hypersensory_scillia",
+                    "ability_name": str(getattr(stratagem, "name", "") or "HYPERSENSORY SCILLIA"),
+                    "phase": "Opponent Movement phase",
+                    "phase_name": "Movement phase",
+                    "enemy_unit_id": enemy_unit_id,
+                    "candidate_unit_ids": list(candidate_ids),
+                    "vanguard_candidate_unit_ids": list(vanguard_candidate_ids),
+                    "infantry_candidate_unit_ids": list(infantry_candidate_ids),
+                    "max_selections": 2,
+                    "optional": False,
+                },
+            )
+            request_decision(request)
+            self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: HYPERSENSORY SCILLIA: queued reactive move selection against %s.",
+                getattr(enemy_root, "name", "Enemy"),
+            )
+            return True
+
+        is_valid, reason = self._tyr_validate_vanguard_pair_selection(
+            selected_roots,
+            eligible=eligible,
+            vanguard_candidates=vanguard_candidates,
+            infantry_candidates=infantry_candidates,
+        )
+        if not is_valid:
+            logger.error("ERROR: HYPERSENSORY SCILLIA: invalid unit selection (%s)", reason or "invalid_selection")
+            return False
+        for root in list(selected_roots):
+            if not self._tyr_owned_by_player(root, self.player):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: selected unit is not yours")
+                return False
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: selected unit must be on the battlefield")
+                return False
+            if not self._is_tyranids_unit(root):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: selected unit must be a TYRANIDS unit")
+                return False
+            if self._tyr_unit_in_engagement_range(root):
+                logger.error("ERROR: HYPERSENSORY SCILLIA: selected unit cannot be in Engagement Range")
+                return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=selected_roots[0],
+            units=list(selected_roots),
+            target_unit=selected_roots[0],
+            enemy_unit=enemy_root,
+            phase_name="Movement phase",
+        ):
+            logger.error("ERROR: HYPERSENSORY SCILLIA: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=selected_roots[0], enemy_unit=enemy_root):
+            return False
+
+        queue_reactive_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_reactive_move):
+            logger.error("ERROR: HYPERSENSORY SCILLIA: reactive move queue is unavailable")
+            return False
+        for root in list(selected_roots):
+            queue_reactive_move(
+                player=self.player,
+                unit=root,
+                max_distance=6,
+                kind="tyranids_hypersensory_scillia",
+                movement_type="reactive",
+                source=str(getattr(stratagem, "name", "") or "HYPERSENSORY SCILLIA"),
+                moving_unit=enemy_root,
+                range_value=6,
+                allow_skip=True,
+            )
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HYPERSENSORY SCILLIA: queued reactive moves for %s.",
+            ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots)),
+        )
+        return True
+
+    def _use_tyranids_unseen_lurkers(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNSEEN LURKERS":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+
+        root = self._tyr_root(target_unit)
+        attacker_root = self._tyr_root(attacking_unit)
+        if root is None:
+            logger.error("ERROR: UNSEEN LURKERS: no target unit provided")
+            return False
+        if attacker_root is None:
+            logger.error("ERROR: UNSEEN LURKERS: missing attacking unit context")
+            return False
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "shooting phase":
+            logger.error("ERROR: UNSEEN LURKERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: UNSEEN LURKERS: only available in your opponent's Shooting phase")
+            return False
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: UNSEEN LURKERS: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNSEEN LURKERS: target unit must be on the battlefield")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: UNSEEN LURKERS: target must be a TYRANIDS unit")
+            return False
+        if not self._tyr_is_vanguard_invader_unit(root):
+            logger.error("ERROR: UNSEEN LURKERS: target must be a VANGUARD INVADER unit")
+            return False
+        if self._tyr_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: UNSEEN LURKERS: attacker must be an enemy unit")
+            return False
+
+        eligible = candidates or self._tyr_vanguard_targeted_vanguard_invader_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units or ([root] if root is not None else []),
+        )
+        if not eligible or not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNSEEN LURKERS: target must be one of the attacking unit's selected VANGUARD INVADER targets")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: UNSEEN LURKERS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        mgr = self._tyr_detachment_mgr()
+        activate = getattr(mgr, "activate_vanguard_unseen_lurkers", None) if mgr is not None else None
+        outcome = (
+            activate(
+                root,
+                phase_name="Shooting phase",
+                game=self.game,
+                player=active_player,
+                source=str(getattr(stratagem, "name", "") or "UNSEEN LURKERS"),
+            )
+            if callable(activate)
+            else {"ok": False}
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            logger.error("ERROR: UNSEEN LURKERS: failed to apply ranged targeting cap")
+            return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNSEEN LURKERS: %s can only be targeted by ranged attacks from within 18\" this phase (or 6\" while it has Lone Operative).",
+            getattr(root, "name", "Unit"),
         )
         return True
 

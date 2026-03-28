@@ -99,8 +99,14 @@ _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES = {
     "tyranid warriors with ranged bio weapons",
     "tyranid warriors with melee bio weapons",
 }
+_WARRIOR_BIOFORM_RANGED_TYRANID_WARRIOR_UNIT_NAMES = {
+    "tyranid warriors with ranged bio weapons",
+}
 _ENRAGED_BEHEMOTHS_SOURCE = "Enraged Behemoths"
 _SURPRISE_ASSAULT_SOURCE = "Surprise Assault"
+_ASSASSIN_BEASTS_SOURCE = "Assassin Beasts"
+_SEEDED_BROODS_SOURCE = "Seeded Broods"
+_UNSEEN_LURKERS_SOURCE = "Unseen Lurkers"
 _SUBTERRANEAN_ASSAULT_TRYGON_SELECTION_ABILITY = "subterranean_assault_trygon_character_selection"
 _SUBTERRANEAN_ASSAULT_TUNNEL_MARKER_PLACEMENT_ABILITY = "subterranean_assault_tunnel_marker_placement"
 _TUNNEL_MARKER_HORIZONTAL_RANGE = 9.0
@@ -642,6 +648,9 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
     def _leader_beasts_unit_is_tyranid_warrior_datasheet(self, unit) -> bool:
         return self._leader_beasts_unit_name_norm(unit) in _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES
 
+    def _warrior_bioform_unit_is_ranged_tyranid_warrior_datasheet(self, unit) -> bool:
+        return self._leader_beasts_unit_name_norm(unit) in _WARRIOR_BIOFORM_RANGED_TYRANID_WARRIOR_UNIT_NAMES
+
     def _leader_beasts_unit_is_winged_tyranid_prime_datasheet(self, unit) -> bool:
         return self._leader_beasts_unit_name_norm(unit) == "winged tyranid prime"
 
@@ -797,6 +806,321 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if self._attached_unit_has_keyword(root, "WINGED TYRANID PRIME"):
             return 5, "Leader-beasts"
         return 0, ""
+
+    def _activate_timed_unit_effect(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        source_key: str,
+        source: str,
+        phase_name: str,
+        expires_phase_key: str,
+        turn_key: str,
+        owner_key: str,
+        game=None,
+        player=None,
+        extra_updates: Optional[dict[str, object]] = None,
+    ) -> dict[str, object]:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {"ok": False, "reason": "invalid_unit"}
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[flag_key] = True
+        sr[source_key] = str(source or "").strip()
+        phase_key = self._synaptic_nexus_effect_phase_key(phase_name)
+        if phase_key:
+            sr[expires_phase_key] = phase_key
+        owner_id = self._current_turn_owner_id(game=resolved_game, player=player)
+        if owner_id:
+            sr[owner_key] = owner_id
+        turn = int(getattr(resolved_game, "turn", 0) or 0) if resolved_game is not None else 0
+        if turn:
+            sr[turn_key] = int(turn)
+        if isinstance(extra_updates, dict):
+            for key, value in dict(extra_updates).items():
+                sr[key] = value
+        root.special_rules = sr
+        return {"ok": True, "unit_id": str(get_entity_id(root) or "")}
+
+    def activate_vanguard_surprise_assault(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_vanguard_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return {"ok": False, "reason": "invalid_target"}
+        if not self._unit_in_army(source_root):
+            return {"ok": False, "reason": "invalid_source"}
+        if self._unit_in_army(target_root):
+            return {"ok": False, "reason": "enemy_target_required"}
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            resolved_game = getattr(getattr(self.army, "player", None), "game", None)
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if not callable(take_test):
+            return {"ok": False, "reason": "battle_shock_unavailable"}
+        current_turn = int(getattr(resolved_game, "turn", 0) or 1) if resolved_game is not None else 1
+        take_test(int(current_turn or 1))
+        is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+        failed = bool(is_battle_shocked()) if callable(is_battle_shocked) else bool(getattr(target_root, "battle_shocked", False))
+        outcome = self._activate_timed_unit_effect(
+            source_root,
+            flag_key="tyranids_vanguard_surprise_assault_active",
+            source_key="tyranids_vanguard_surprise_assault_source",
+            source=str(source or _SURPRISE_ASSAULT_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_vanguard_surprise_assault_expires_phase",
+            turn_key="tyranids_vanguard_surprise_assault_turn",
+            owner_key="tyranids_vanguard_surprise_assault_turn_owner",
+            game=resolved_game,
+            player=player,
+            extra_updates={
+                "tyranids_vanguard_surprise_assault_target_unit_id": str(get_entity_id(target_root) or ""),
+                "tyranids_vanguard_surprise_assault_hit_bonus": 1,
+                "tyranids_vanguard_surprise_assault_wound_bonus": 1 if failed else 0,
+            },
+        )
+        if not bool(outcome.get("ok", False)):
+            return outcome
+        outcome["target_unit_id"] = str(get_entity_id(target_root) or "")
+        outcome["failed_battle_shock"] = bool(failed)
+        return outcome
+
+    def _vanguard_surprise_assault_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+        bonus_key: str,
+    ) -> tuple[int, str]:
+        if not self.is_vanguard_onslaught():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        if str(sr.get("tyranids_vanguard_surprise_assault_target_unit_id", "") or "") != str(get_entity_id(target_root) or ""):
+            return 0, ""
+        if not self._timed_unit_effect_is_active(
+            attacker_root,
+            "tyranids_vanguard_surprise_assault_active",
+            expires_phase_key="tyranids_vanguard_surprise_assault_expires_phase",
+            turn_key="tyranids_vanguard_surprise_assault_turn",
+            owner_key="tyranids_vanguard_surprise_assault_turn_owner",
+            game=game,
+        ):
+            return 0, ""
+        try:
+            bonus = int(sr.get(bonus_key, 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source_name = str(sr.get("tyranids_vanguard_surprise_assault_source", "") or _SURPRISE_ASSAULT_SOURCE).strip()
+        return int(bonus), source_name or _SURPRISE_ASSAULT_SOURCE
+
+    def vanguard_surprise_assault_hit_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._vanguard_surprise_assault_bonus(
+            attacker_model,
+            target_unit=target_unit,
+            game=game,
+            bonus_key="tyranids_vanguard_surprise_assault_hit_bonus",
+        )
+
+    def vanguard_surprise_assault_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._vanguard_surprise_assault_bonus(
+            attacker_model,
+            target_unit=target_unit,
+            game=game,
+            bonus_key="tyranids_vanguard_surprise_assault_wound_bonus",
+        )
+
+    def activate_vanguard_assassin_beasts(
+        self,
+        source_unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_vanguard_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        return self._activate_timed_unit_effect(
+            source_unit,
+            flag_key="tyranids_vanguard_assassin_beasts_active",
+            source_key="tyranids_vanguard_assassin_beasts_source",
+            source=str(source or _ASSASSIN_BEASTS_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_vanguard_assassin_beasts_expires_phase",
+            turn_key="tyranids_vanguard_assassin_beasts_turn",
+            owner_key="tyranids_vanguard_assassin_beasts_turn_owner",
+            game=game,
+            player=player,
+        )
+
+    def vanguard_assassin_beasts_precision_applies(self, model, *, unit=None, game=None) -> tuple[bool, str]:
+        if not self.is_vanguard_onslaught():
+            return False, ""
+        if model is None:
+            return False, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_in_army(root):
+            return False, ""
+        if not self._timed_unit_effect_is_active(
+            root,
+            "tyranids_vanguard_assassin_beasts_active",
+            expires_phase_key="tyranids_vanguard_assassin_beasts_expires_phase",
+            turn_key="tyranids_vanguard_assassin_beasts_turn",
+            owner_key="tyranids_vanguard_assassin_beasts_turn_owner",
+            game=game,
+        ):
+            return False, ""
+        source_name = str(getattr(root, "special_rules", {}).get("tyranids_vanguard_assassin_beasts_source", "") or _ASSASSIN_BEASTS_SOURCE).strip()
+        return True, source_name or _ASSASSIN_BEASTS_SOURCE
+
+    def activate_vanguard_seeded_broods(
+        self,
+        source_unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_vanguard_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        return self._activate_timed_unit_effect(
+            source_unit,
+            flag_key="tyranids_vanguard_seeded_broods_active",
+            source_key="tyranids_vanguard_seeded_broods_source",
+            source=str(source or _SEEDED_BROODS_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_vanguard_seeded_broods_expires_phase",
+            turn_key="tyranids_vanguard_seeded_broods_turn",
+            owner_key="tyranids_vanguard_seeded_broods_turn_owner",
+            game=game,
+            player=player,
+            extra_updates={"tyranids_vanguard_seeded_broods_round_bonus": 1},
+        )
+
+    def vanguard_seeded_broods_strategic_reserves_round_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.is_vanguard_onslaught():
+            return 0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        if not self._timed_unit_effect_is_active(
+            root,
+            "tyranids_vanguard_seeded_broods_active",
+            expires_phase_key="tyranids_vanguard_seeded_broods_expires_phase",
+            turn_key="tyranids_vanguard_seeded_broods_turn",
+            owner_key="tyranids_vanguard_seeded_broods_turn_owner",
+            game=game,
+        ):
+            return 0, ""
+        try:
+            bonus = int(getattr(root, "special_rules", {}).get("tyranids_vanguard_seeded_broods_round_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source_name = str(getattr(root, "special_rules", {}).get("tyranids_vanguard_seeded_broods_source", "") or _SEEDED_BROODS_SOURCE).strip()
+        return int(bonus), source_name or _SEEDED_BROODS_SOURCE
+
+    def activate_vanguard_unseen_lurkers(
+        self,
+        target_unit,
+        *,
+        phase_name: str,
+        game=None,
+        player=None,
+        source: str = "",
+    ) -> dict[str, object]:
+        if not self.is_vanguard_onslaught():
+            return {"ok": False, "reason": "wrong_detachment"}
+        return self._activate_timed_unit_effect(
+            target_unit,
+            flag_key="tyranids_vanguard_unseen_lurkers_active",
+            source_key="tyranids_vanguard_unseen_lurkers_source",
+            source=str(source or _UNSEEN_LURKERS_SOURCE),
+            phase_name=phase_name,
+            expires_phase_key="tyranids_vanguard_unseen_lurkers_expires_phase",
+            turn_key="tyranids_vanguard_unseen_lurkers_turn",
+            owner_key="tyranids_vanguard_unseen_lurkers_turn_owner",
+            game=game,
+            player=player,
+            extra_updates={
+                "tyranids_vanguard_unseen_lurkers_targeting_range": 18.0,
+                "tyranids_vanguard_unseen_lurkers_lone_operative_targeting_range": 6.0,
+            },
+        )
+
+    def vanguard_unseen_lurkers_ranged_targeting_cap(self, unit, *, game=None) -> tuple[float, float, str]:
+        if not self.is_vanguard_onslaught():
+            return 0.0, 0.0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0.0, 0.0, ""
+        if not self._timed_unit_effect_is_active(
+            root,
+            "tyranids_vanguard_unseen_lurkers_active",
+            expires_phase_key="tyranids_vanguard_unseen_lurkers_expires_phase",
+            turn_key="tyranids_vanguard_unseen_lurkers_turn",
+            owner_key="tyranids_vanguard_unseen_lurkers_turn_owner",
+            game=game,
+        ):
+            return 0.0, 0.0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0.0, 0.0, ""
+        try:
+            targeting_range = float(sr.get("tyranids_vanguard_unseen_lurkers_targeting_range", 18.0) or 18.0)
+        except (TypeError, ValueError):
+            targeting_range = 18.0
+        try:
+            lone_range = float(sr.get("tyranids_vanguard_unseen_lurkers_lone_operative_targeting_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            lone_range = 6.0
+        source_name = str(sr.get("tyranids_vanguard_unseen_lurkers_source", "") or _UNSEEN_LURKERS_SOURCE).strip()
+        return float(targeting_range), float(lone_range), source_name or _UNSEEN_LURKERS_SOURCE
 
     def _unit_root(self, unit):
         if unit is None:

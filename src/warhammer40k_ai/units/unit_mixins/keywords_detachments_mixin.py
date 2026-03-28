@@ -11521,6 +11521,19 @@ class KeywordsDetachmentsMixin:
                 lord_bonus = 0
             if int(lord_bonus or 0) > 0:
                 total_bonus = max(int(total_bonus), int(lord_bonus))
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        seeded_broods_bonus_fn = (
+            getattr(tyr_mgr, "vanguard_seeded_broods_strategic_reserves_round_bonus", None)
+            if tyr_mgr is not None
+            else None
+        )
+        if callable(seeded_broods_bonus_fn):
+            try:
+                seeded_broods_bonus, _source = seeded_broods_bonus_fn(root, game=game)
+            except (TypeError, ValueError):
+                seeded_broods_bonus = 0
+            if int(seeded_broods_bonus or 0) > 0:
+                total_bonus += int(seeded_broods_bonus)
 
         try:
             sr = getattr(root, "special_rules", None)
