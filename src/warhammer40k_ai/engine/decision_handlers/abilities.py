@@ -28115,6 +28115,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 ap_bonus = int(ctx.get("ap_bonus", 0) or 0)
             except Exception:
                 ap_bonus = 0
+            expires_phase = str(ctx.get("expires_phase", "") or "").strip().upper()
             limit_scope = str(ctx.get("limit_scope", "") or "").strip().lower()
             sr = getattr(target_root, "special_rules", None)
             if not isinstance(sr, dict):
@@ -28124,7 +28125,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sr.pop("post_shoot_ap_bonus_expires_phase", None)
                 sr["post_shoot_ap_bonus_expires_timing"] = "TURN_END"
             else:
-                sr["post_shoot_ap_bonus_expires_phase"] = "SHOOTING_PHASE"
+                sr["post_shoot_ap_bonus_expires_phase"] = expires_phase or "SHOOTING_PHASE"
                 sr.pop("post_shoot_ap_bonus_expires_timing", None)
             sr["post_shoot_ap_bonus_source"] = ability_name
             sr["post_shoot_ap_bonus_value"] = int(ap_bonus)
@@ -28132,6 +28133,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             sr["post_shoot_ap_bonus_attack_type"] = attack_type
             sr["post_shoot_ap_bonus_owner"] = owner_id
             sr["post_shoot_ap_bonus_turn"] = int(turn or 0)
+            if bool(ctx.get("requires_attacker_not_battle_shocked", False)):
+                sr["post_shoot_ap_bonus_requires_attacker_not_battle_shocked"] = True
             if limit_scope in ("turn", "phase"):
                 sr["post_shoot_ap_bonus_selected_owner"] = owner_id
                 sr["post_shoot_ap_bonus_selected_turn"] = int(turn or 0)

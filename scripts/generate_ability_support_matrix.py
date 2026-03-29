@@ -20078,6 +20078,12 @@ def _stratagem_support(
         "000008418005": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of eligible targets: select up to two friendly VANGUARD INVADER units, or one other friendly TYRANIDS INFANTRY unit, and each selected unit can make a reactive Normal move up to 6\".",
         "000008418006": "Opponent Shooting phase reaction after enemy targets are selected: selected friendly VANGUARD INVADER unit can only be selected as the target of ranged attacks by attacking models within 18\" until end of phase, or within 6\" while it has Lone Operative.",
         "000008418007": "End of opponent Fight phase: select up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit, that are not within Engagement Range; the selected units enter Strategic Reserves.",
+        "000008822002": "Any phase reaction when one of your KROOT INFANTRY or KROOT HOUNDS units is just destroyed: add an identical replacement unit to Strategic Reserves at Starting Strength.",
+        "000008822003": "Your Shooting phase or the Fight phase: selected KROOT unit that has not yet acted marks one enemy unit it hit after resolving its attacks, and friendly KROOT attacks against that marked enemy improve AP by 1 until end of phase unless the attacker is Battle-shocked.",
+        "000008822004": "Opponent Shooting phase or Fight phase reaction after an enemy VEHICLE unit is selected to shoot or fight: selected friendly KROOT GRENADES unit within 8\" worsens that enemy VEHICLE unit's Weapon Skill and Ballistic Skill by 1 until end of phase.",
+        "000008822005": "Fight phase reaction after one of your KROOT units destroys an enemy unit: during your opponent's next Command phase, enemy units within 6\" of that KROOT unit must take Battle-shock tests, and below-half-strength enemies suffer -1 to those tests while ignoring other Battle-shock tests that phase.",
+        "000008822006": "Your Movement phase reaction after one of your KROOT units Falls Back: that unit remains eligible to shoot and declare a charge this turn.",
+        "000008822007": "Opponent Shooting phase reaction after an enemy unit selects its targets: selected friendly KROOT target can only be selected as the target of ranged attacks by attacking models within 18\" until end of phase.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",

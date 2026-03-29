@@ -5227,6 +5227,105 @@ _KAUYON_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _KAUYON_STRATAGEM_DESCRIPTORS.values()
 }
 
+_KROOT_HUNTING_PACK_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008822003": StratagemToolDescriptor(
+        stratagem_id="000008822003",
+        name="A Trap Well Laid",
+        timing="shooting_or_fight_phase_on_select_to_shoot_or_fight",
+        target="kroot_unit_not_yet_selected_for_phase",
+        duration="until_end_of_phase",
+        effect="conditional_kroot_ap_bonus_vs_selected_hit_enemy_unless_battleshocked",
+        cp_cost=1,
+        effect_params={
+            "attack_type_by_phase": {
+                "shooting": "ranged",
+                "fight": "melee",
+            },
+            "ap_bonus": 1,
+            "selected_enemy_must_have_been_hit": True,
+            "attacker_required_keywords_any": ["KROOT"],
+            "disabled_if_attacker_battle_shocked": True,
+        },
+    ),
+    "000008822004": StratagemToolDescriptor(
+        stratagem_id="000008822004",
+        name="Emp Grenades",
+        timing="opponent_shooting_phase_or_fight_phase_after_enemy_selected_to_shoot_or_fight",
+        target="kroot_grenades_unit_within_8_of_enemy_vehicle",
+        duration="until_end_of_phase",
+        effect="enemy_vehicle_ws_bs_penalty",
+        cp_cost=1,
+        range_in=8.0,
+        effect_params={
+            "range": 8.0,
+            "target_keywords_any": ["KROOT", "GRENADES"],
+            "enemy_required_keywords_any": ["VEHICLE"],
+            "ws_penalty": 1,
+            "bs_penalty": 1,
+        },
+    ),
+    "000008822006": StratagemToolDescriptor(
+        stratagem_id="000008822006",
+        name="Guerrilla Warriors",
+        timing="your_movement_phase_after_fall_back",
+        target="kroot_unit_that_fell_back_this_phase",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+        },
+    ),
+    "000008822007": StratagemToolDescriptor(
+        stratagem_id="000008822007",
+        name="Hidden Hunters",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="kroot_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={
+            "targeting_range": 18.0,
+            "attack_type": "ranged",
+        },
+    ),
+    "000008822002": StratagemToolDescriptor(
+        stratagem_id="000008822002",
+        name="Join the Hunt",
+        timing="any_phase_after_friendly_kroot_unit_destroyed",
+        target="destroyed_kroot_infantry_or_kroot_hounds_unit",
+        duration="immediate",
+        effect="clone_unit_to_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "starting_strength": True,
+            "reserve_status": "strategic_reserves",
+        },
+    ),
+    "000008822005": StratagemToolDescriptor(
+        stratagem_id="000008822005",
+        name="The Grisly Feast",
+        timing="fight_phase_after_kroot_unit_destroys_enemy_unit",
+        target="kroot_unit_that_just_destroyed_enemy_unit",
+        duration="next_opponent_command_phase",
+        effect="battle_shock_enemies_within_range_in_next_opponent_command_phase",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "force_battle_shock_test": True,
+            "below_half_strength_test_modifier": -1,
+            "suppress_other_battle_shock_tests_that_phase": True,
+        },
+    ),
+}
+
+_KROOT_HUNTING_PACK_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _KROOT_HUNTING_PACK_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008349002": StratagemToolDescriptor(
         stratagem_id="000008349002",
@@ -10600,6 +10699,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _KAUYON_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _KROOT_HUNTING_PACK_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10858,6 +10960,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _AUXILIARY_CADRE_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
+        or _KROOT_HUNTING_PACK_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ASSIMILATION_SWARM_STRATAGEM_BY_NAME.get(key)
         or _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME.get(key)

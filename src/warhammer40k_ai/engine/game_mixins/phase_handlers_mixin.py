@@ -20920,6 +20920,7 @@ class GamePhaseHandlersMixin:
                         "post_shoot_ap_bonus_value",
                         "post_shoot_ap_bonus_keyword",
                         "post_shoot_ap_bonus_attack_type",
+                        "post_shoot_ap_bonus_requires_attacker_not_battle_shocked",
                         "post_shoot_ap_bonus_owner",
                         "post_shoot_ap_bonus_turn",
                     ):
@@ -20961,6 +20962,7 @@ class GamePhaseHandlersMixin:
                                 "post_shoot_ap_bonus_value",
                                 "post_shoot_ap_bonus_keyword",
                                 "post_shoot_ap_bonus_attack_type",
+                                "post_shoot_ap_bonus_requires_attacker_not_battle_shocked",
                                 "post_shoot_ap_bonus_owner",
                                 "post_shoot_ap_bonus_turn",
                                 "post_shoot_ap_bonus_selected_owner",

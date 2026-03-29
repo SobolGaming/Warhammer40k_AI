@@ -4679,6 +4679,10 @@ class WargearProfile:
                     keyword = str(sr.get("post_shoot_ap_bonus_keyword", "") or "").strip()
                     if keyword and not attacker_unit.has_any_keyword(keyword):
                         apply_bonus = False
+                if apply_bonus and bool(sr.get("post_shoot_ap_bonus_requires_attacker_not_battle_shocked")):
+                    is_battle_shocked = getattr(attacker_unit, "is_battle_shocked", None)
+                    if callable(is_battle_shocked) and bool(is_battle_shocked()):
+                        apply_bonus = False
                 if apply_bonus:
                     attack_type = str(sr.get("post_shoot_ap_bonus_attack_type", "") or "any").strip().lower() or "any"
                     if attack_type in ("ranged", "melee"):
@@ -10818,7 +10822,24 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_ranged = _parent_wargear_is_ranged()
             is_melee = _parent_wargear_is_melee()
+            if isinstance(sr, dict) and bool(sr.get("tau_emp_grenades_active")) and (is_ranged or is_melee):
+                expires_phase = str(sr.get("tau_emp_grenades_expires_phase", "") or "").strip().upper()
+                current_phase = ""
+                if unit is not None:
+                    army = unit.get_parent_army()
+                    player = getattr(army, "player", None) if army is not None else None
+                    game = getattr(player, "game", None) if player is not None else None
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if (not expires_phase) or (not current_phase) or (expires_phase == current_phase):
+                    penalty = int(sr.get("tau_emp_grenades_penalty", 0) or 0)
+                    if penalty > 0:
+                        source = str(sr.get("tau_emp_grenades_source", "") or "EMP GRENADES").strip() or "EMP GRENADES"
+                        if is_ranged:
+                            _add_skill_mod(-int(penalty), f"{source}: -{int(penalty)} BS")
+                        elif is_melee:
+                            _add_skill_mod(-int(penalty), f"{source}: -{int(penalty)} WS")
             if is_melee and isinstance(sr, dict) and bool(sr.get("data_spike_ws_penalty_active")):
                 expires_phase = str(sr.get("data_spike_ws_penalty_expires_phase", "") or "").strip().upper()
                 current_phase = ""

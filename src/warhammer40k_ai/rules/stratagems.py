@@ -51,6 +51,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A GRIM WARNING",
     "A DEADLY SNARE",
     "ALIEN EXPERTISE",
+    "A TRAP WELL LAID",
     "AUTOMATED REPAIR DRONES",
     "BOUNDING ADVANCE",
     "COORDINATED STRIKE",
@@ -96,6 +97,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AT THE TYRANT'S COMMAND",
     "ETERNAL HATE",
     "ENDLESS IRE",
+    "EMP GRENADES",
     "EYE OF THE GODS",
     "FESTERING MIASMA",
     "MASSIVE IMPACT",
@@ -125,6 +127,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "IMPERATIVE DOMINANCE",
     "THE SMOTHERING SHADOW",
     "UNENDING WAVES",
+    "JOIN THE HUNT",
     "OVERRIDE INSTINCTS",
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -254,11 +257,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FENRISIAN FEROCITY",
     "FURIOUS ONSLAUGHT",
     "GLORIOUS SACRIFICE",
+    "GUERRILLA WARRIORS",
     "GRIMNAR'S COMMAND",
     "GRIM RETRIBUTION",
     "GUERRILLA TACTICS",
     "GUIDED DISRUPTION",
     "HAIL OF VENGEANCE",
+    "HIDDEN HUNTERS",
     "ANCIENT FURY",
     "HELLFIRE ROUNDS",
     "HEARTS HARDENED TO DUTY",
@@ -418,6 +423,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SPOOR OF THE UNHOLY",
     "SUPPRESS AND OVERWHELM",
+    "THE GRISLY FEAST",
     "SUMMONED BY SLAUGHTER",
     "VOICE OF DEVOTION",
     "WALL OF MIRRORS",
@@ -802,6 +808,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "EMP GRENADES",
     "ONLY IN DEATH DOES DUTY END",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
@@ -813,6 +820,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
+    "GUERRILLA WARRIORS",
     "GUIDED DISRUPTION",
     "GRIP OF THE WALKING POX",
     "HYPERSENSORY SCILLIA",
@@ -855,6 +863,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SHOCK AND HORROR",
     "SMEARED WITH FILTH",
     "LIGHTNING-FAST REACTIONS",
+    "HIDDEN HUNTERS",
     "A DEADLY SNARE",
     "A CEASELESS CAUSE",
     "CORROSIVE VISCERA",
@@ -862,6 +871,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "MASSIVE IMPACT",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
+    "JOIN THE HUNT",
     "PINPOINT COUNTER-OFFENSIVE",
     "PHOTON GRENADES",
     "RAPID REGENERATION",
@@ -874,6 +884,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SQUAD TACTICS",
     "SHOCK BOMBARDMENT",
     "SURPRISE ASSAULT",
+    "THE GRISLY FEAST",
     "THUNDEROUS PURSUIT",
     "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
@@ -1969,10 +1980,10 @@ class StratagemManager(
         if "BERZERKER'S WRATH" in names:
             add("blood_surge_triggered", self._on_blood_surge_triggered)
 
-        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "GRIP OF THE WALKING POX", "SHOCK BOMBARDMENT"}:
+        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES", "GUIDED DISRUPTION", "GRIP OF THE WALKING POX", "SHOCK BOMBARDMENT", "EMP GRENADES"}:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
-        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION", "DERANGED FEROCITY"}:
+        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION", "DERANGED FEROCITY", "EMP GRENADES"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
         if names & {
@@ -2065,6 +2076,7 @@ class StratagemManager(
             "WARPFLAME GARGOYLES",
             "MUTATE LANDSCAPE",
             "BLOOD-FUELLED CRUELTY",
+            "GUERRILLA WARRIORS",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2126,6 +2138,8 @@ class StratagemManager(
             "MASS TRANSMOGRIFICATION",
             "PROTOCOL OF THE VENGEFUL STARS",
             "UNENDING WAVES",
+            "JOIN THE HUNT",
+            "THE GRISLY FEAST",
             "YOUR TIME IS NIGH",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
@@ -2225,7 +2239,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if "REVENGE OF THE RUBRICAE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
-        if "PULSE ONSLAUGHT" in names:
+        if names & {"PULSE ONSLAUGHT", "A TRAP WELL LAID"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
         if "EXEMPLAR'S WISDOM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_exemplars_wisdom)
@@ -2332,6 +2346,8 @@ class StratagemManager(
             "CORRUPTED MUNITIONS",
             "NEVER OUTGUNNED",
             "VENGEFUL DESTRUCTION",
+            "HIDDEN HUNTERS",
+            "EMP GRENADES",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2394,6 +2410,7 @@ class StratagemManager(
             "NEVER OUTGUNNED",
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
+            "EMP GRENADES",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -2433,6 +2450,7 @@ class StratagemManager(
             "MURDEROUS REANIMATION",
             "PROTOCOL OF THE UNDYING LEGIONS",
             "HYPERPHASIC RECALL",
+            "A TRAP WELL LAID",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
@@ -2501,6 +2519,7 @@ class StratagemManager(
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
             "AGGRESSOR IMPERATIVE",
+            "A TRAP WELL LAID",
             "CONDEMNATORY INFO-SCREED",
             "BALEFUL HALO",
             "ASPIRE TO INFAMY",
@@ -2594,6 +2613,7 @@ class StratagemManager(
             "PYROGENESIS",
             "DENIZENS OF THE WARP",
             "WARP SURGE",
+            "EMP GRENADES",
             "RAPID MANIFESTATION",
             "TUNNEL CRAWLERS",
             "OVERSHADOWED BY NONE",
@@ -2618,6 +2638,7 @@ class StratagemManager(
             "DEVOTED DUELLISTS",
             "EMBRACE THE PAIN",
             "EUPHORIC INSPIRATION",
+            "HIDDEN HUNTERS",
             "HEIGHTENED JEALOUSY",
             "MARTIAL PERFECTION",
             "LAYERED WARDS",
@@ -2712,6 +2733,7 @@ class StratagemManager(
             "ENSNARING TRAP",
             "PRIME TARGET",
             "ORBITAL OVERSIGHT",
+            "THE GRISLY FEAST",
             "WILL-SAPPING SALVO",
             "WILL‑SAPPING SALVO",
             "VOID HARDENED",
@@ -5528,6 +5550,125 @@ class StratagemManager(
                 "Requires your Shooting phase just-after-shooting trigger with a non-KROOT T'AU EMPIRE INFANTRY unit and a hit non-MONSTER/non-VEHICLE enemy unit"
             )
             return result
+        if name_u == "A TRAP WELL LAID":
+            candidates = list(context.get("candidates") or [])
+            phase_name = str(
+                context.get("phase_name")
+                or getattr(self, "_current_phase_name", "")
+                or ""
+            ).strip()
+            if not candidates:
+                candidates = self._tau_kroot_a_trap_well_laid_candidates(phase_name=phase_name)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and a friendly KROOT unit on the battlefield that has not yet been selected this phase"
+            return result
+        if name_u == "EMP GRENADES":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "EMP GRENADES":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            enemy_unit = (
+                context.get("enemy_unit")
+                or context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_unit is not None:
+                candidates = self._tau_emp_grenades_candidates(enemy_unit=enemy_unit)
+            if enemy_unit is not None and candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase or Fight phase trigger with an enemy VEHICLE unit and a friendly KROOT GRENADES unit within 8\""
+            return result
+        if name_u == "GUERRILLA WARRIORS":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GUERRILLA WARRIORS":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            if candidates or target_unit is not None:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after one of your KROOT units Falls Back"
+            return result
+        if name_u == "HIDDEN HUNTERS":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "HIDDEN HUNTERS":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_hidden_hunters_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase target-selection trigger with one of your KROOT units selected as a target"
+            return result
+        if name_u == "JOIN THE HUNT":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "JOIN THE HUNT":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("destroyed_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_join_the_hunt_candidates(destroyed_unit=destroyed_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any phase, a friendly KROOT INFANTRY or KROOT HOUNDS unit that was just destroyed"
+            return result
+        if name_u == "THE GRISLY FEAST":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE GRISLY FEAST":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            candidates = list(context.get("candidates") or [])
+            target_unit = context.get("target_unit") or context.get("unit")
+            if candidates or target_unit is not None:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase reaction after one of your KROOT units destroys an enemy unit"
+            return result
         if name_u == "EXPERIMENTAL AMMUNITION":
             if self._tau_experimental_ammunition_candidates():
                 result["available"] = True
@@ -8219,6 +8360,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._process_tau_kroot_phase_start_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_genestealer_cults_host_of_ascension_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9103,6 +9248,10 @@ class StratagemManager(
         return candidates
 
     def _on_phase_end(self, player, phase, **kwargs):
+        try:
+            self._cleanup_tau_kroot_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Queue NEW ORDERS at end of your Command phase
         try:
             is_your_turn = player is self.player
@@ -11242,6 +11391,7 @@ class StratagemManager(
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._track_a_challenge_met_move(unit, action)
         self._maybe_queue_overwatch(unit, action, when='end')
+        self._queue_tau_kroot_move_end_reactions(unit=unit, action=action)
         self._queue_drukhari_skysplinter_move_end_reactions(unit=unit, action=action)
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
@@ -12188,6 +12338,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_tau_kroot_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
 
     def _on_unit_shooting_resolved_imperial_knights_exemplars_wisdom(
         self,
@@ -12486,6 +12643,13 @@ class StratagemManager(
                 )
             if owner_player is self.player:
                 return  # only opponent can react
+        except Exception:
+            raise
+        try:
+            self._queue_tau_kroot_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -13420,6 +13584,13 @@ class StratagemManager(
             return
         if (self._current_phase_name or "").strip().lower() != "fight phase":
             return
+        try:
+            self._queue_tau_kroot_fight_unit_selected_reactions(
+                unit=unit,
+                selecting_player=selecting_player,
+            )
+        except Exception:
+            raise
         # Offer only to the player selecting the unit
         if selecting_player is not self.player:
             return
@@ -14859,6 +15030,10 @@ class StratagemManager(
                 unit=unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
+            self._queue_tau_kroot_fight_attacks_resolved_reactions(
+                unit=unit,
+                hits_by_target=_kwargs.get("hits_by_target"),
+            )
             s = self.get_by_name("A WORTHY SKULL")
             if not s:
                 return
@@ -16253,6 +16428,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_montka_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tau_kroot_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
@@ -25507,6 +25689,14 @@ class StratagemManager(
                         trigger_label = "Trigger: move end"
                 elif r.get("event") == "shooting_targets_selected":
                     trigger_label = "Trigger: after targets selected"
+                elif r.get("event") == "fight_unit_selected":
+                    trigger_label = "Trigger: unit selected to fight"
+                elif r.get("event") == "unit_shooting_resolved":
+                    trigger_label = "Trigger: after shooting"
+                elif r.get("event") == "fight_attacks_resolved":
+                    trigger_label = "Trigger: after fighting"
+                elif r.get("event") == "unit_destroyed":
+                    trigger_label = "Trigger: after unit destroyed"
                 elif r.get("event") == "blood_surge_triggered":
                     trigger_label = "Trigger: after enemy shooting"
                 elif r.get("event") == "fight_sequence_complete":

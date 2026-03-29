@@ -50,6 +50,16 @@ class TauEmpireStratagemMixin:
         checker = getattr(mgr, "is_kauyon", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tau_kroot_hunting_pack_detachment(self) -> bool:
+        mgr = self._tau_detachment_mgr()
+        checker = getattr(mgr, "is_kroot_hunting_pack", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_tau_retaliation_cadre_detachment(self) -> bool:
+        mgr = self._tau_detachment_mgr()
+        checker = getattr(mgr, "is_retaliation_cadre", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _tau_has_any_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -88,6 +98,16 @@ class TauEmpireStratagemMixin:
         if self._tau_has_any_keyword(root, "KROOT"):
             return True
         return "KROOT" in str(getattr(root, "name", "") or "").strip().upper()
+
+    def _is_tau_kroot_hounds_unit(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if not self._is_tau_kroot_unit(root):
+            return False
+        if self._tau_has_any_keyword(root, "HOUNDS"):
+            return True
+        return "HOUND" in str(getattr(root, "name", "") or "").strip().upper()
 
     def _is_tau_vespid_unit(self, unit: Any) -> bool:
         root = self._tau_root(unit)
@@ -1053,6 +1073,171 @@ class TauEmpireStratagemMixin:
                 out.append(root)
         return sorted(out, key=self._tau_sort_key)
 
+    def _tau_kroot_a_trap_well_laid_candidates(self, *, phase_name: Any = None) -> list[Any]:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return []
+        phase_key = self._tau_normalized_phase_name(phase_name or self._current_phase_name or "")
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_kroot_unit(root):
+                continue
+            if phase_key == "shooting phase" and self._tau_has_shot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._tau_has_fought_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_hidden_hunters_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return []
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_kroot_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_emp_grenades_candidates(self, *, enemy_unit: Any = None) -> list[Any]:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return []
+        enemy_root = self._tau_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        if self._tau_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._tau_on_battlefield(enemy_root, require_targetable=True):
+            return []
+        if not self._tau_unit_is_monster_or_vehicle(enemy_root) or not self._tau_has_any_keyword(enemy_root, "VEHICLE"):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_kroot_unit(root):
+                continue
+            if not self._tau_has_any_keyword(root, "GRENADES"):
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(root, enemy_root))
+            except Exception:
+                continue
+            if dist > 8.0:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_join_the_hunt_candidates(self, *, destroyed_unit: Any = None) -> list[Any]:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return []
+        root = self._tau_root(destroyed_unit)
+        if root is None:
+            return []
+        if not self._tau_owned_by_player(root, self.player):
+            return []
+        if self._tau_is_alive(root):
+            return []
+        if not self._is_tau_kroot_unit(root):
+            return []
+        if not (self._tau_has_any_keyword(root, "INFANTRY") or self._is_tau_kroot_hounds_unit(root)):
+            return []
+        return [root]
+
+    def _tau_a_trap_well_laid_enemy_candidates(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return []
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None or not self._tau_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._is_tau_kroot_unit(attacker_root):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        if isinstance(hits_by_target, dict):
+            for unit, hits in list(hits_by_target.items()):
+                try:
+                    if int(hits or 0) <= 0:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                root = self._tau_root(unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if self._tau_owned_by_player(root, self.player):
+                    continue
+                if not self._tau_on_battlefield(root, require_targetable=True):
+                    continue
+                out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
     def _tau_resolve_selected_model(self, selection: Any, models: list[Any]) -> Any:
         if selection is None:
             return None
@@ -1430,6 +1615,565 @@ class TauEmpireStratagemMixin:
         queue_reaction = getattr(self, "_queue_reaction", None)
         if callable(queue_reaction):
             queue_reaction(payload)
+
+    def _tau_phase_key_from_name(self, phase_name: Any) -> str:
+        normal = self._tau_normalized_phase_name(phase_name)
+        if normal == "command phase":
+            return "COMMAND_PHASE"
+        if normal == "movement phase":
+            return "MOVEMENT_PHASE"
+        if normal == "shooting phase":
+            return "SHOOTING_PHASE"
+        if normal == "charge phase":
+            return "CHARGE_PHASE"
+        if normal == "fight phase":
+            return "FIGHT_PHASE"
+        return ""
+
+    def _clear_tau_a_trap_well_laid_effect(self, unit: Any) -> None:
+        root = self._tau_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "tau_a_trap_well_laid_active",
+            "tau_a_trap_well_laid_attack_type",
+            "tau_a_trap_well_laid_expires_phase",
+            "tau_a_trap_well_laid_turn_owner",
+            "tau_a_trap_well_laid_turn",
+            "tau_a_trap_well_laid_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _queue_tau_kroot_move_end_reactions(self, *, unit: Any = None, action: str = "") -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        root = self._tau_root(unit)
+        if root is None:
+            return
+        if not self._tau_owned_by_player(root, self.player):
+            return
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_tau_kroot_unit(root):
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        if self._tau_normalized_phase_name(self._current_phase_name) != "movement phase":
+            return
+        active_player = getattr(getattr(self, "game", None), "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("GUERRILLA WARRIORS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "unit_move_ended"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and self._tau_root(reaction.get("unit") or reaction.get("target_unit")) is root
+            ):
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "fall_back",
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_kroot_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return
+
+        hidden_hunters = getattr(self, "get_by_name", lambda _name: None)("HIDDEN HUNTERS")
+        if hidden_hunters is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(hidden_hunters, "cp_cost", 0) or 0):
+                name_u = str(getattr(hidden_hunters, "name", "") or "").strip().upper()
+                if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    candidates = self._tau_hidden_hunters_candidates(
+                        attacking_unit=attacker_root,
+                        target_units=target_units,
+                    )
+                    if candidates:
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if (
+                                str(reaction.get("event", "") or "") == "shooting_targets_selected"
+                                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                                and reaction.get("attacking_unit") is attacker_root
+                            ):
+                                already = True
+                                break
+                        if not already:
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": hidden_hunters.name,
+                                "cp_cost": hidden_hunters.cp_cost,
+                                "attacking_unit": attacker_root,
+                                "enemy_unit": attacker_root,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            queue_reaction = getattr(self, "_queue_reaction", None)
+                            if callable(queue_reaction):
+                                queue_reaction(payload)
+
+        emp_grenades = getattr(self, "get_by_name", lambda _name: None)("EMP GRENADES")
+        if emp_grenades is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(emp_grenades, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(emp_grenades, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_emp_grenades_candidates(enemy_unit=attacker_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": emp_grenades.name,
+            "cp_cost": emp_grenades.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_kroot_fight_unit_selected_reactions(
+        self,
+        *,
+        unit: Any = None,
+        selecting_player: Any = None,
+    ) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        if self._tau_normalized_phase_name(self._current_phase_name) != "fight phase":
+            return
+        if selecting_player is self.player:
+            return
+        enemy_root = self._tau_root(unit)
+        if enemy_root is None or self._tau_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("EMP GRENADES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_emp_grenades_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "fight_unit_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("enemy_unit") is enemy_root
+            ):
+                return
+        payload = {
+            "event": "fight_unit_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_a_trap_well_laid_target_selection(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+        attack_type: str = "any",
+        source_name: str = "A TRAP WELL LAID",
+        phase_key: str = "",
+    ) -> None:
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None or not self._tau_owned_by_player(attacker_root, self.player):
+            return
+        candidates = self._tau_a_trap_well_laid_enemy_candidates(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not candidates:
+            self._clear_tau_a_trap_well_laid_effect(attacker_root)
+            return
+
+        request_decision = getattr(getattr(self, "game", None), "request_decision", None)
+        if not callable(request_decision):
+            self._clear_tau_a_trap_well_laid_effect(attacker_root)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        attacker_unit_id = self._tau_sort_key(attacker_root)
+        candidate_unit_ids = [self._tau_sort_key(candidate) for candidate in list(candidates) if self._tau_sort_key(candidate)]
+        current_turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        if not attacker_unit_id or not candidate_unit_ids:
+            self._clear_tau_a_trap_well_laid_effect(attacker_root)
+            return
+        if self._tau_pending_choose_quarry_request(
+            ability="post_shoot_ap_bonus",
+            attacker_unit_id=attacker_unit_id,
+            ability_name=str(source_name or "A TRAP WELL LAID").strip() or "A TRAP WELL LAID",
+        ):
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{source_name}: select one enemy unit that was hit.",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": self._tau_sort_key(candidate)},
+                )
+                for candidate in list(candidates)
+                if self._tau_sort_key(candidate)
+            ],
+            context={
+                "attacker_unit_id": attacker_unit_id,
+                "ability": "post_shoot_ap_bonus",
+                "ability_name": str(source_name or "A TRAP WELL LAID").strip() or "A TRAP WELL LAID",
+                "keyword": "KROOT",
+                "attack_type": str(attack_type or "any").strip().lower() or "any",
+                "ap_bonus": 1,
+                "duration": "phase_end",
+                "expires_phase": str(phase_key or ""),
+                "turn": int(current_turn or 0),
+                "requires_attacker_not_battle_shocked": True,
+                "candidate_unit_ids": list(candidate_unit_ids),
+                "optional": False,
+            },
+        )
+        request_decision(request)
+        self._clear_tau_a_trap_well_laid_effect(attacker_root)
+
+    def _queue_tau_kroot_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        if self._tau_normalized_phase_name(self._current_phase_name) != "shooting phase":
+            return
+        active_player = getattr(getattr(self, "game", None), "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None or not self._tau_owned_by_player(attacker_root, self.player):
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tau_a_trap_well_laid_active")):
+            return
+        if str(sr.get("tau_a_trap_well_laid_expires_phase", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        self._queue_tau_a_trap_well_laid_target_selection(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+            attack_type="ranged",
+            source_name=str(sr.get("tau_a_trap_well_laid_source", "") or "A TRAP WELL LAID"),
+            phase_key="SHOOTING_PHASE",
+        )
+
+    def _queue_tau_kroot_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        if self._tau_normalized_phase_name(self._current_phase_name) != "fight phase":
+            return
+        attacker_root = self._tau_root(unit)
+        if attacker_root is None or not self._tau_owned_by_player(attacker_root, self.player):
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tau_a_trap_well_laid_active")):
+            return
+        if str(sr.get("tau_a_trap_well_laid_expires_phase", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        self._queue_tau_a_trap_well_laid_target_selection(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+            attack_type="melee",
+            source_name=str(sr.get("tau_a_trap_well_laid_source", "") or "A TRAP WELL LAID"),
+            phase_key="FIGHT_PHASE",
+        )
+
+    def _queue_tau_kroot_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any = None,
+        destroyed_by_unit: Any = None,
+    ) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        destroyed_root = self._tau_root(unit)
+        current_phase = self._tau_normalized_phase_name(self._current_phase_name)
+
+        join_the_hunt = getattr(self, "get_by_name", lambda _name: None)("JOIN THE HUNT")
+        if join_the_hunt is not None and destroyed_root is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(join_the_hunt, "cp_cost", 0) or 0):
+                name_u = str(getattr(join_the_hunt, "name", "") or "").strip().upper()
+                if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    candidates = self._tau_join_the_hunt_candidates(destroyed_unit=destroyed_root)
+                    if candidates:
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if (
+                                str(reaction.get("event", "") or "") == "unit_destroyed"
+                                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                                and self._tau_root(reaction.get("destroyed_unit") or reaction.get("unit")) is destroyed_root
+                            ):
+                                already = True
+                                break
+                        if not already:
+                            payload = {
+                                "event": "unit_destroyed",
+                                "phase_name": str(self._current_phase_name or ""),
+                                "stratagem": join_the_hunt.name,
+                                "cp_cost": join_the_hunt.cp_cost,
+                                "unit": destroyed_root,
+                                "destroyed_unit": destroyed_root,
+                                "target_unit": destroyed_root,
+                                "candidates": candidates,
+                            }
+                            queue_reaction = getattr(self, "_queue_reaction", None)
+                            if callable(queue_reaction):
+                                queue_reaction(payload)
+
+        if current_phase != "fight phase":
+            return
+        destroyer_root = self._tau_root(destroyed_by_unit)
+        if destroyer_root is None or not self._tau_owned_by_player(destroyer_root, self.player):
+            return
+        if not self._tau_on_battlefield(destroyer_root, require_targetable=True):
+            return
+        if not self._is_tau_kroot_unit(destroyer_root):
+            return
+
+        sr = getattr(destroyer_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_grisly_feast_eligible"] = True
+        sr["tau_grisly_feast_eligible_phase"] = "FIGHT_PHASE"
+        sr["tau_grisly_feast_eligible_turn"] = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        destroyer_root.special_rules = sr
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("THE GRISLY FEAST")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == "unit_destroyed"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and self._tau_root(reaction.get("unit") or reaction.get("target_unit")) is destroyer_root
+            ):
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": destroyer_root,
+            "target_unit": destroyer_root,
+            "destroyed_unit": destroyed_root,
+            "candidates": [destroyer_root],
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _process_tau_kroot_phase_start_effects(self, *, player: Any = None, phase: Any = None) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        if player is self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        current_turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("tau_grisly_feast_pending")):
+                continue
+            sr.pop("tau_grisly_feast_pending", None)
+            sr.pop("tau_grisly_feast_source", None)
+            root.special_rules = sr
+            if not self._tau_on_battlefield(root, require_targetable=False):
+                continue
+            enemy_units = []
+            get_enemy_units = getattr(game_map, "get_enemy_units", None)
+            if callable(get_enemy_units):
+                enemy_units = list(get_enemy_units(root) or [])
+            for enemy in list(enemy_units or []):
+                enemy_root = self._tau_root(enemy)
+                if enemy_root is None:
+                    continue
+                if not self._tau_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                try:
+                    dist = float(game_map.get_distance_between_units(root, enemy_root))
+                except Exception:
+                    continue
+                if dist > 6.0:
+                    continue
+                enemy_sr = getattr(enemy_root, "special_rules", None)
+                if not isinstance(enemy_sr, dict):
+                    enemy_sr = {}
+                if hasattr(enemy_root, "is_below_half_strength") and enemy_root.is_below_half_strength():
+                    enemy_sr["battle_shock_test_modifier"] = int(enemy_sr.get("battle_shock_test_modifier", 0) or 0) - 1
+                    reasons = list(enemy_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                    reasons.append("The Grisly Feast (below half-strength)")
+                    enemy_sr["battle_shock_test_modifier_reasons"] = reasons
+                enemy_sr["battle_shock_suppress_other_tests_phase"] = "COMMAND_PHASE"
+                enemy_sr["battle_shock_suppress_other_tests_source"] = "THE GRISLY FEAST"
+                enemy_sr["battle_shock_allow_suppressed_test"] = True
+                enemy_root.special_rules = enemy_sr
+                take_test = getattr(enemy_root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(current_turn)
+
+    def _cleanup_tau_kroot_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if not phase_name:
+            return
+        for player_entry in list(getattr(getattr(self, "game", None), "players", []) or []):
+            get_player_army = getattr(player_entry, "get_army", None)
+            player_army = get_player_army() if callable(get_player_army) else getattr(player_entry, "army", None)
+            if player_army is None:
+                continue
+            seen: set[str] = set()
+            for unit in list(getattr(player_army, "units", []) or []):
+                root = self._tau_root(unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("tau_a_trap_well_laid_expires_phase", "") or "").strip().upper() == phase_name:
+                    self._clear_tau_a_trap_well_laid_effect(root)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                if str(sr.get("tau_grisly_feast_eligible_phase", "") or "").strip().upper() == phase_name:
+                    sr.pop("tau_grisly_feast_eligible", None)
+                    sr.pop("tau_grisly_feast_eligible_phase", None)
+                    sr.pop("tau_grisly_feast_eligible_turn", None)
+                if (
+                    str(sr.get("tau_neuroweb_system_jammer_expires_phase", "") or "").strip().upper() == phase_name
+                    and str(sr.get("tau_neuroweb_system_jammer_source", "") or "").strip().upper() == "HIDDEN HUNTERS"
+                ):
+                    for key in (
+                        "tau_neuroweb_system_jammer_active",
+                        "tau_neuroweb_system_jammer_targeting_range",
+                        "tau_neuroweb_system_jammer_expires_phase",
+                        "tau_neuroweb_system_jammer_turn_owner",
+                        "tau_neuroweb_system_jammer_turn",
+                        "tau_neuroweb_system_jammer_source",
+                    ):
+                        sr.pop(key, None)
+                if str(sr.get("tau_emp_grenades_expires_phase", "") or "").strip().upper() == phase_name:
+                    for key in (
+                        "tau_emp_grenades_active",
+                        "tau_emp_grenades_penalty",
+                        "tau_emp_grenades_expires_phase",
+                        "tau_emp_grenades_turn",
+                        "tau_emp_grenades_source",
+                    ):
+                        sr.pop(key, None)
+                root.special_rules = sr
 
     def _queue_tau_montka_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_tau_montka_detachment():
@@ -2323,6 +3067,93 @@ class TauEmpireStratagemMixin:
                 game_map.units.remove(member)
         return True
 
+    def _tau_copy_model_wargear(self, source_unit: Any, target_unit: Any) -> None:
+        if source_unit is None or target_unit is None:
+            return
+
+        def _norm(text: str) -> str:
+            raw = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in str(text or "").lower())
+            return " ".join(raw.split())
+
+        source_models = list(getattr(source_unit, "models", []) or [])
+        source_models.extend(list(getattr(source_unit, "models_lost", []) or []))
+
+        buckets: dict[str, list[Any]] = {}
+        for source_model in source_models:
+            key = _norm(getattr(source_model, "name", "") or "")
+            buckets.setdefault(key, []).append(source_model)
+
+        possible = list(getattr(target_unit, "possible_wargear", []) or [])
+        possible_by_name = {_norm(getattr(wg, "name", "") or ""): wg for wg in possible}
+        leftovers = [model for model in source_models if model is not None]
+
+        for target_model in list(getattr(target_unit, "models", []) or []):
+            key = _norm(getattr(target_model, "name", "") or "")
+            source_model = None
+            if key in buckets and buckets[key]:
+                source_model = buckets[key].pop(0)
+            elif leftovers:
+                source_model = leftovers.pop(0)
+            if source_model is None:
+                continue
+
+            target_model.wargear = []
+            for wargear in list(getattr(source_model, "wargear", []) or []):
+                name_key = _norm(getattr(wargear, "name", "") or "")
+                target_model.wargear.append(possible_by_name.get(name_key, wargear))
+            target_model.optional_wargear = list(getattr(source_model, "optional_wargear", []) or [])
+
+    def _tau_clone_join_the_hunt_unit(self, unit: Any) -> Any:
+        if unit is None:
+            return None
+        clone_hook = getattr(unit, "clone_for_cult_ambush", None)
+        if callable(clone_hook):
+            return clone_hook()
+        try:
+            from ..units.unit import Unit as UnitClass
+        except ImportError:
+            return None
+        datasheet = getattr(unit, "_datasheet", None)
+        if datasheet is None:
+            return None
+        count = int(getattr(unit, "starting_model_count", 0) or 0)
+        if count <= 0:
+            count = len(list(getattr(unit, "models", []) or []))
+        if count <= 0:
+            count = len(list(getattr(unit, "models_lost", []) or []))
+        if count <= 0:
+            return None
+        try:
+            new_unit = UnitClass(datasheet, quantity=count, enhancement=getattr(unit, "enhancement", None))
+        except TypeError:
+            new_unit = UnitClass(datasheet, quantity=count)
+        self._tau_copy_model_wargear(unit, new_unit)
+        new_unit.is_warlord = bool(getattr(unit, "is_warlord", False))
+        return new_unit
+
+    def _tau_prepare_join_the_hunt_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        set_parent = getattr(unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(army)
+        else:
+            unit.parent_army = army
+        if hasattr(army, "add_unit"):
+            army.add_unit(unit)
+        else:
+            army.units.append(unit)
+        if not self._tau_place_unit_into_strategic_reserves(unit, reason="JOIN THE HUNT"):
+            return False
+        rebuild = getattr(self.game, "rebuild_entity_registry", None) if self.game is not None else None
+        if callable(rebuild):
+            rebuild()
+        return True
+
     def _tau_finalize_use(self, stratagem: Any, *, dequeue: bool = False) -> None:
         if dequeue and hasattr(self, "_dequeue_reaction_by_name"):
             self._dequeue_reaction_by_name(getattr(stratagem, "name", ""))
@@ -2340,6 +3171,9 @@ class TauEmpireStratagemMixin:
         if result is not None:
             return result
         result = self._use_tau_montka_stratagem(stratagem, **kwargs)
+        if result is not None:
+            return result
+        result = self._use_tau_kroot_hunting_pack_stratagem(stratagem, **kwargs)
         if result is not None:
             return result
         return self._use_tau_kauyon_stratagem(stratagem, **kwargs)
@@ -2422,6 +3256,26 @@ class TauEmpireStratagemMixin:
             return self._use_tau_wall_of_mirrors(stratagem, **kwargs)
         if name_u == "POINT-BLANK AMBUSH":
             return self._use_tau_point_blank_ambush(stratagem, **kwargs)
+        return None
+
+    def _use_tau_kroot_hunting_pack_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_tau_kroot_hunting_pack_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "A TRAP WELL LAID":
+            return self._use_tau_a_trap_well_laid(stratagem, **kwargs)
+        if name_u == "EMP GRENADES":
+            return self._use_tau_emp_grenades(stratagem, **kwargs)
+        if name_u == "GUERRILLA WARRIORS":
+            return self._use_tau_guerrilla_warriors(stratagem, **kwargs)
+        if name_u == "HIDDEN HUNTERS":
+            return self._use_tau_hidden_hunters(stratagem, **kwargs)
+        if name_u == "JOIN THE HUNT":
+            return self._use_tau_join_the_hunt(stratagem, **kwargs)
+        if name_u == "THE GRISLY FEAST":
+            return self._use_tau_the_grisly_feast(stratagem, **kwargs)
         return None
 
     def _use_tau_interlocking_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
@@ -2855,6 +3709,437 @@ class TauEmpireStratagemMixin:
         self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: PHEROMONE WAYPOINTS: %s treats its Advance this phase as a fixed +6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_guerrilla_warriors(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = str(kwargs.get("action", "") or "").strip().lower()
+        if (target_unit is None or not candidates or not action) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GUERRILLA WARRIORS":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                if not action:
+                    action = str(reaction.get("action", "") or "").strip().lower()
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: GUERRILLA WARRIORS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: GUERRILLA WARRIORS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: GUERRILLA WARRIORS: not your Movement phase")
+            return False
+        if action != "fall_back":
+            logger.error("ERROR: GUERRILLA WARRIORS: trigger requires a Fall Back move")
+            return False
+        if candidates and not self._tau_unit_in_candidates(root, candidates):
+            logger.error("ERROR: GUERRILLA WARRIORS: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: GUERRILLA WARRIORS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_unit(root):
+            logger.error("ERROR: GUERRILLA WARRIORS: target must be a KROOT unit")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: GUERRILLA WARRIORS: target must have Fallen Back this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: GUERRILLA WARRIORS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["feigned_retreat_active"] = True
+        sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        sr["feigned_retreat_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GUERRILLA WARRIORS: %s can shoot and charge after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_hidden_hunters(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "HIDDEN HUNTERS":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: HIDDEN HUNTERS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: HIDDEN HUNTERS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_unit(root):
+            logger.error("ERROR: HIDDEN HUNTERS: target must be a KROOT unit")
+            return False
+
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: HIDDEN HUNTERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: HIDDEN HUNTERS: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: HIDDEN HUNTERS: missing attacking unit context")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: HIDDEN HUNTERS: attacker is not an enemy unit")
+            return False
+
+        eligible = candidates or self._tau_hidden_hunters_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: HIDDEN HUNTERS: target must be one of the attacking unit's selected targets")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: HIDDEN HUNTERS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_neuroweb_system_jammer_active"] = True
+        sr["tau_neuroweb_system_jammer_targeting_range"] = 18
+        sr["tau_neuroweb_system_jammer_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_neuroweb_system_jammer_turn_owner"] = owner_id
+        sr["tau_neuroweb_system_jammer_turn"] = int(current_turn)
+        sr["tau_neuroweb_system_jammer_source"] = "HIDDEN HUNTERS"
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HIDDEN HUNTERS: %s can only be targeted by ranged attacks from within 18\" until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_join_the_hunt(self, stratagem: Any, **kwargs) -> bool:
+        destroyed_unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if destroyed_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "JOIN THE HUNT":
+                    continue
+                destroyed_unit = destroyed_unit or reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if destroyed_unit is None and len(candidates) == 1:
+            destroyed_unit = candidates[0]
+        root = self._tau_root(destroyed_unit)
+        if root is None:
+            logger.error("ERROR: JOIN THE HUNT: no destroyed unit provided")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: JOIN THE HUNT: target must be a friendly unit")
+            return False
+        if self._tau_is_alive(root):
+            logger.error("ERROR: JOIN THE HUNT: target unit must have been just destroyed")
+            return False
+        if not self._is_tau_kroot_unit(root):
+            logger.error("ERROR: JOIN THE HUNT: target must be a KROOT unit")
+            return False
+        if not (self._tau_has_any_keyword(root, "INFANTRY") or self._is_tau_kroot_hounds_unit(root)):
+            logger.error("ERROR: JOIN THE HUNT: target must be KROOT INFANTRY or KROOT HOUNDS")
+            return False
+        eligible = candidates or self._tau_join_the_hunt_candidates(destroyed_unit=root)
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: JOIN THE HUNT: target unit is not currently eligible")
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        phase_label = str(phase_name or "").replace("_", " ").title()
+        if not phase_label:
+            phase_label = str(kwargs.get("phase_name") or self._current_phase_name or "").replace("_", " ").title()
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name=phase_label):
+            logger.error("ERROR: JOIN THE HUNT: cannot be used in current state")
+            return False
+        replacement = self._tau_clone_join_the_hunt_unit(root)
+        if replacement is None:
+            logger.error("ERROR: JOIN THE HUNT: failed to create replacement unit")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._tau_prepare_join_the_hunt_unit(replacement):
+            logger.error("ERROR: JOIN THE HUNT: failed to place replacement unit into Strategic Reserves")
+            return False
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: JOIN THE HUNT: added a new %s unit to Strategic Reserves at Starting Strength.",
+            getattr(replacement, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_emp_grenades(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if target_unit is None or enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "EMP GRENADES":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: EMP GRENADES: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        enemy_root = self._tau_root(enemy_unit)
+        if root is None:
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: EMP GRENADES: missing enemy unit context")
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: EMP GRENADES: wrong phase")
+            return False
+        if phase_name == "shooting phase":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is self.player:
+                logger.error("ERROR: EMP GRENADES: not opponent's Shooting phase")
+                return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: EMP GRENADES: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_unit(root) or not self._tau_has_any_keyword(root, "GRENADES"):
+            logger.error("ERROR: EMP GRENADES: target must be a KROOT GRENADES unit")
+            return False
+        if self._tau_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: EMP GRENADES: enemy unit must be hostile")
+            return False
+        if not self._tau_on_battlefield(enemy_root, require_targetable=True):
+            return False
+        if not self._tau_has_any_keyword(enemy_root, "VEHICLE"):
+            logger.error("ERROR: EMP GRENADES: enemy unit must be a VEHICLE")
+            return False
+        eligible = candidates or self._tau_emp_grenades_candidates(enemy_unit=enemy_root)
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EMP GRENADES: target must be within 8\" of the selected enemy VEHICLE")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=enemy_root, phase_name=phase_label):
+            logger.error("ERROR: EMP GRENADES: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        enemy_sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(enemy_sr, dict):
+            enemy_sr = {}
+        enemy_sr["tau_emp_grenades_active"] = True
+        enemy_sr["tau_emp_grenades_penalty"] = 1
+        enemy_sr["tau_emp_grenades_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        enemy_sr["tau_emp_grenades_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        enemy_sr["tau_emp_grenades_source"] = str(getattr(stratagem, "name", "") or "EMP GRENADES")
+        enemy_root.special_rules = enemy_sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EMP GRENADES: %s suffers -1 WS/BS until end of phase.",
+            getattr(enemy_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_the_grisly_feast(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE GRISLY FEAST":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THE GRISLY FEAST: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: THE GRISLY FEAST: wrong phase")
+            return False
+        if candidates and not self._tau_unit_in_candidates(root, candidates):
+            logger.error("ERROR: THE GRISLY FEAST: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: THE GRISLY FEAST: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_unit(root):
+            logger.error("ERROR: THE GRISLY FEAST: target must be a KROOT unit")
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tau_grisly_feast_eligible")):
+            logger.error("ERROR: THE GRISLY FEAST: target has not just destroyed an enemy unit this phase")
+            return False
+        if str(sr.get("tau_grisly_feast_eligible_phase", "") or "").strip().upper() != "FIGHT_PHASE":
+            logger.error("ERROR: THE GRISLY FEAST: target is no longer eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: THE GRISLY FEAST: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr["tau_grisly_feast_pending"] = True
+        sr["tau_grisly_feast_source"] = str(getattr(stratagem, "name", "") or "THE GRISLY FEAST")
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THE GRISLY FEAST: %s will force nearby enemies to take Battle-shock tests in the next opponent Command phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_a_trap_well_laid(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: A TRAP WELL LAID: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: A TRAP WELL LAID: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: A TRAP WELL LAID: not your Shooting phase")
+            return False
+        eligible = candidates or self._tau_kroot_a_trap_well_laid_candidates(phase_name=phase_name)
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: A TRAP WELL LAID: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: A TRAP WELL LAID: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_unit(root):
+            logger.error("ERROR: A TRAP WELL LAID: target must be a KROOT unit")
+            return False
+        if phase_name == "shooting phase" and self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: A TRAP WELL LAID: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._tau_has_fought_this_phase(root):
+            logger.error("ERROR: A TRAP WELL LAID: target has already been selected to fight this phase")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: A TRAP WELL LAID: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_a_trap_well_laid_active"] = True
+        sr["tau_a_trap_well_laid_attack_type"] = "ranged" if phase_name == "shooting phase" else "melee"
+        sr["tau_a_trap_well_laid_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr["tau_a_trap_well_laid_turn_owner"] = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        sr["tau_a_trap_well_laid_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["tau_a_trap_well_laid_source"] = str(getattr(stratagem, "name", "") or "A TRAP WELL LAID")
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: A TRAP WELL LAID: %s will mark one hit enemy for KROOT AP bonus after it resolves its attacks.",
             getattr(root, "name", "Unit"),
         )
         return True
