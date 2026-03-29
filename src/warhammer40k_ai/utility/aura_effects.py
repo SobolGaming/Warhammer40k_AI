@@ -2241,6 +2241,77 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
         return 0
     total = 0
     applied_aura_names: set[str] = set()
+    vocifer_key = _norm_name("Vocifer Magnificat (Aura)")
+    seen_roots: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        try:
+            root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+        except Exception:
+            root = source
+        root_key = str(get_entity_id(root) or "")
+        if root_key and root_key in seen_roots:
+            continue
+        if root_key:
+            seen_roots.add(root_key)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_vocifer_magnificat_aura")):
+                continue
+            if not bool(getattr(unit, "has_any_keyword", lambda _k: False)("ADEPTUS MECHANICUS")):
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_vocifer_magnificat_aura_range", 6.0) or 6.0)
+            except Exception:
+                aura_range = 6.0
+            try:
+                aura_bonus = int(sr.get("enhancement_vocifer_magnificat_aura_bonus", 1) or 1)
+            except Exception:
+                aura_bonus = 1
+            if aura_range <= 0.0 or aura_bonus <= 0:
+                continue
+            bearer_id = str(
+                sr.get("enhancement_vocifer_magnificat_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_model = None
+            for model in list(getattr(member, "models", []) or []):
+                try:
+                    alive_attr = getattr(model, "is_alive", True)
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if not is_alive:
+                        continue
+                except Exception:
+                    continue
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                entity_id = str(get_entity_id(model) or "")
+                if bearer_id and bearer_id not in {model_id, entity_id}:
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                continue
+            if not model_within_range_of_unit(
+                bearer_model,
+                unit,
+                float(aura_range),
+                use_attached_aggregate=True,
+            ):
+                continue
+            if vocifer_key:
+                if vocifer_key in applied_aura_names:
+                    break
+                applied_aura_names.add(vocifer_key)
+            total -= abs(int(aura_bonus))
+            break
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
             spec = _cached_parse_aura_spec("_parse_leadership_oc_aura", ab, _parse_leadership_oc_aura)
@@ -2681,6 +2752,7 @@ def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> 
     total = 0
     applied_aura_names: set[str] = set()
     grimoire_key = _norm_name("Grimoire of True Names (Aura)")
+    vocifer_key = _norm_name("Vocifer Magnificat (Aura)")
     seen_roots: set[str] = set()
     for source in list(game_map.get_enemy_units(unit)):
         try:
@@ -2747,6 +2819,74 @@ def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> 
                 if grimoire_key in applied_aura_names:
                     break
                 applied_aura_names.add(grimoire_key)
+            total += abs(int(aura_penalty))
+            break
+    seen_roots = set()
+    for source in list(game_map.get_enemy_units(unit)):
+        try:
+            root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+        except Exception:
+            root = source
+        root_key = str(get_entity_id(root) or "")
+        if root_key and root_key in seen_roots:
+            continue
+        if root_key:
+            seen_roots.add(root_key)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_vocifer_magnificat_aura")):
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_vocifer_magnificat_aura_range", 6.0) or 6.0)
+            except Exception:
+                aura_range = 6.0
+            try:
+                aura_penalty = int(sr.get("enhancement_vocifer_magnificat_aura_penalty", 1) or 1)
+            except Exception:
+                aura_penalty = 1
+            if aura_range <= 0.0 or aura_penalty <= 0:
+                continue
+            bearer_id = str(
+                sr.get("enhancement_vocifer_magnificat_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_model = None
+            for model in list(getattr(member, "models", []) or []):
+                try:
+                    alive_attr = getattr(model, "is_alive", True)
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if not is_alive:
+                        continue
+                except Exception:
+                    continue
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                entity_id = str(get_entity_id(model) or "")
+                if bearer_id and bearer_id not in {model_id, entity_id}:
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                continue
+            if not model_within_range_of_unit(
+                bearer_model,
+                unit,
+                float(aura_range),
+                use_attached_aggregate=True,
+            ):
+                continue
+            if vocifer_key:
+                if vocifer_key in applied_aura_names:
+                    break
+                applied_aura_names.add(vocifer_key)
             total += abs(int(aura_penalty))
             break
     explicit_key = _norm_name("The Dirgeheart of Kharis (Aura)")

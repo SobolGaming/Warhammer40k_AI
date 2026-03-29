@@ -18793,9 +18793,9 @@ class GamePhaseHandlersMixin:
             )
 
     def _on_phase_start_imperial_knights_enhancements(self, player=None, phase=None, **_kwargs) -> None:
-        """Imperial Knights Valourstrike Lance enhancements that trigger at phase start."""
+        """Imperial Knights enhancement selections that trigger at phase start."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname not in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE"):
+        if pname not in ("COMMAND_PHASE", "MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE"):
             return
         if player is None or player is not self.get_current_player():
             return
@@ -18803,7 +18803,63 @@ class GamePhaseHandlersMixin:
         if army is None:
             return
         mgr = getattr(army, "imperial_knights_detachments", None)
-        if mgr is None or not bool(getattr(mgr, "is_valourstrike_lance", lambda: False)()):
+        if mgr is None:
+            return
+
+        if pname == "COMMAND_PHASE":
+            if not bool(getattr(mgr, "is_questor_forgepact", lambda: False)()):
+                return
+            from ...utility.entity_ids import get_entity_id
+
+            def _unit_sort_key(unit_obj):
+                try:
+                    return str(get_entity_id(unit_obj))
+                except Exception:
+                    return str(getattr(unit_obj, "name", "") or "")
+
+            seen_sources: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                source_sr = getattr(unit, "special_rules", None)
+                if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_magos_questoris")):
+                    continue
+                source_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if source_root is None:
+                    continue
+                source_unit_id = str(get_entity_id(source_root) or "")
+                if not source_unit_id or source_unit_id in seen_sources:
+                    continue
+                seen_sources.add(source_unit_id)
+                if not self._unit_on_battlefield_for_reposition(source_root):
+                    continue
+                get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not bool(getattr(bearer, "is_alive", False)):
+                    continue
+                try:
+                    range_inches = int(float(source_sr.get("enhancement_magos_questoris_range", 3.0) or 3.0))
+                except (TypeError, ValueError):
+                    range_inches = 3
+                candidates_fn = getattr(mgr, "forgepact_magos_questoris_candidate_units", None)
+                candidates = list(candidates_fn(source_root, game=self, game_map=getattr(self, "map", None)) or []) if callable(candidates_fn) else []
+                if not candidates:
+                    continue
+                ability_name = str(source_sr.get("enhancement_magos_questoris_source", "") or "Magos Questoris").strip() or "Magos Questoris"
+                self._queue_imperial_knights_valourstrike_target(
+                    player=player,
+                    source_unit=source_root,
+                    model=bearer,
+                    candidates=list(candidates),
+                    ability_key="imperial_knights_magos_questoris",
+                    ability_name=ability_name,
+                    phase_label="Command phase",
+                    range_inches=max(1, int(range_inches)),
+                    allow_skip=False,
+                )
+            return
+
+        if not bool(getattr(mgr, "is_valourstrike_lance", lambda: False)()):
             return
 
         if pname == "MOVEMENT_PHASE":

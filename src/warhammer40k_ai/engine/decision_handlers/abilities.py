@@ -8263,6 +8263,7 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             return ("Inescapable Judgement target unit has not Fallen Back this round.",)
         return ()
     if ability in (
+        "imperial_knights_magos_questoris",
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",
         "imperial_knights_judicants_helm",
@@ -8281,8 +8282,25 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
         if source_root is None or target_root is None:
             return ("Imperial Knights source/target unit root was not found.",)
-        if target_root is source_root:
+        if ability != "imperial_knights_magos_questoris" and target_root is source_root:
             return ("Imperial Knights enhancement requires selecting another unit.",)
+        if ability == "imperial_knights_magos_questoris":
+            if target_root.get_parent_army() is not source_root.get_parent_army():
+                return ("Magos Questoris must target a friendly IMPERIAL KNIGHTS unit.",)
+            if not bool(getattr(target_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
+                return ("Magos Questoris target must have the IMPERIAL KNIGHTS keyword.",)
+            model = resolve_model(game, ctx.get("model_id"))
+            if model is None:
+                return ("Magos Questoris bearer model was not found.",)
+            try:
+                range_inches = float(ctx.get("range", 3) or 3)
+            except (TypeError, ValueError):
+                range_inches = 3.0
+            in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                if not bool(in_range_fn(model, target_root, range_value=float(range_inches))):
+                    return ("Magos Questoris target is out of range.",)
+            return ()
         if not bool(getattr(source_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
             return ("Imperial Knights source must have the IMPERIAL KNIGHTS keyword.",)
         if not bool(getattr(target_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
@@ -26396,6 +26414,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             return target_root
     if str(ctx.get("ability", "") or "") in (
+        "imperial_knights_magos_questoris",
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",
         "imperial_knights_judicants_helm",
@@ -26418,6 +26437,50 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 turn = 0
             ability_key = str(ctx.get("ability", "") or "").strip().lower()
             ability_name = str(ctx.get("ability_name", "") or "Imperial Knights enhancement").strip() or "Imperial Knights enhancement"
+            source_sr = getattr(source_root, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+
+            if ability_key == "imperial_knights_magos_questoris":
+                try:
+                    heal = int(source_sr.get("enhancement_magos_questoris_heal_amount", 2) or 2)
+                except Exception:
+                    heal = 2
+                heal = max(1, int(heal))
+                healed_model = None
+                if heal > 0:
+                    try:
+                        models = list(target_root.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(target_root, "models", []) or [])
+                    wounded = []
+                    for m in models:
+                        try:
+                            if not getattr(m, "is_alive", True):
+                                continue
+                        except Exception:
+                            continue
+                        base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
+                        if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
+                            wounded.append(m)
+                    if wounded:
+                        try:
+                            wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
+                        except Exception:
+                            wounded = list(wounded)
+                        healed_model = wounded[0]
+                        heal_fn = getattr(healed_model, "heal", None)
+                        if callable(heal_fn):
+                            heal_fn(int(heal))
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    if healed_model is not None:
+                        _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
+                    else:
+                        _log_action_for_players(game, player, f"{ability_name}: no eligible damaged IMPERIAL KNIGHTS model was selected.")
+                except Exception:
+                    pass
+                return target_root
 
             if ability_key == "imperial_knights_iron_chalice":
                 try:

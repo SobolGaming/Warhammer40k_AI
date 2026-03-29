@@ -6758,6 +6758,41 @@ _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.values()
 }
 
+_IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009761003": EnhancementToolDescriptor(
+        enhancement_id="000009761003",
+        name="Knight of the Opus Machina",
+        timing="ranged_attack",
+        target="bearer",
+        duration="constant",
+        effect="bearer_ranged_attacks_reroll_hit_ones_while_near_friendly_adeptus_mechanicus",
+        effect_params={"range_in": 6.0},
+    ),
+    "000009761004": EnhancementToolDescriptor(
+        enhancement_id="000009761004",
+        name="Magos Questoris",
+        timing="command_phase_and_passive",
+        target="bearer_and_friendly_imperial_knights_unit",
+        duration="constant_and_instant",
+        effect="grant_lone_operative_while_near_friendly_imperial_knights_and_heal_selected_knight",
+        effect_params={"range_in": 3.0, "heal_amount": 2},
+    ),
+    "000009761005": EnhancementToolDescriptor(
+        enhancement_id="000009761005",
+        name="Vocifer Magnificat (Aura)",
+        timing="passive",
+        target="enemy_units_and_friendly_adeptus_mechanicus_units_within_aura",
+        duration="constant",
+        effect="enemy_leadership_penalty_aura_and_friendly_adeptus_mechanicus_leadership_bonus_aura",
+        range_in=6.0,
+        effect_params={"aura_range": 6.0, "leadership_penalty": 1, "leadership_bonus": 1},
+    ),
+}
+
+_IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_DESCRIPTORS.values()
+}
+
 _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010497002": EnhancementToolDescriptor(
         enhancement_id="000010497002",
@@ -9936,6 +9971,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
+        or _IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)

@@ -14274,6 +14274,17 @@ class WargearProfile:
                 reroll_hit_values.add(1)
                 source_name = str(source or "Divine Inspiration").strip() or "Divine Inspiration"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        opus_machina_fn = getattr(ik_mgr, "forgepact_knight_of_the_opus_machina_reroll_hit_ones", None) if ik_mgr is not None else None
+        if callable(opus_machina_fn):
+            reroll_hit_ones, source = opus_machina_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Knight of the Opus Machina").strip() or "Knight of the Opus Machina"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         purgations_hand_fn = getattr(ik_mgr, "gate_warden_purgations_hand_reroll_hit_wound_ones", None) if ik_mgr is not None else None
         if callable(purgations_hand_fn):
             reroll_hit_ones, _reroll_wound_ones, source = purgations_hand_fn(

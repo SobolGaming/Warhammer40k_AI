@@ -2068,6 +2068,10 @@ class Enhancement:
         except Exception:
             is_gate_warden_lance = False
         try:
+            is_questor_forgepact = bool(ik_mgr and ik_mgr.is_questor_forgepact())
+        except Exception:
+            is_questor_forgepact = False
+        try:
             is_spearhead_at_arms = bool(ik_mgr and ik_mgr.is_spearhead_at_arms())
         except Exception:
             is_spearhead_at_arms = False
@@ -15137,6 +15141,63 @@ class Enhancement:
                 for cache_key in list(cache.keys()):
                     if str(cache_key).startswith("model_allocated_damage_zero_specs:"):
                         cache.pop(cache_key, None)
+
+        if name == "knight of the opus machina" or enh_id == "000009761003":
+            if not is_questor_forgepact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Knight of the Opus Machina").strip() or "Knight of the Opus Machina"
+            range_in = _coerce_float(params.get("range_in", getattr(desc, "range_in", 6.0)) or getattr(desc, "range_in", 6.0), default=6.0)
+            if range_in <= 0:
+                range_in = 6.0
+            unit.special_rules["enhancement_knight_of_the_opus_machina"] = True
+            unit.special_rules["enhancement_knight_of_the_opus_machina_source"] = source_name
+            unit.special_rules["enhancement_knight_of_the_opus_machina_range"] = float(range_in)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_knight_of_the_opus_machina_bearer_model_id"] = bearer_id
+
+        if name == "magos questoris" or enh_id == "000009761004":
+            if not is_questor_forgepact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Magos Questoris").strip() or "Magos Questoris"
+            range_in = _coerce_float(params.get("range_in", getattr(desc, "range_in", 3.0)) or getattr(desc, "range_in", 3.0), default=3.0)
+            if range_in <= 0:
+                range_in = 3.0
+            heal_amount = _coerce_int(params.get("heal_amount", 2) or 2, default=2)
+            unit.special_rules["enhancement_magos_questoris"] = True
+            unit.special_rules["enhancement_magos_questoris_source"] = source_name
+            unit.special_rules["enhancement_magos_questoris_range"] = float(range_in)
+            unit.special_rules["enhancement_magos_questoris_heal_amount"] = int(max(1, heal_amount))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_magos_questoris_bearer_model_id"] = bearer_id
+
+        if name == "vocifer magnificat (aura)" or enh_id == "000009761005":
+            if not is_questor_forgepact:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Vocifer Magnificat (Aura)").strip() or "Vocifer Magnificat (Aura)"
+            aura_range = _coerce_float(
+                params.get("aura_range", params.get("range_in", getattr(desc, "range_in", 6.0))) or getattr(desc, "range_in", 6.0),
+                default=6.0,
+            )
+            if aura_range <= 0:
+                aura_range = 6.0
+            leadership_penalty = _coerce_int(params.get("leadership_penalty", 1) or 1, default=1)
+            leadership_bonus = _coerce_int(params.get("leadership_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_vocifer_magnificat_aura"] = True
+            unit.special_rules["enhancement_vocifer_magnificat_source"] = source_name
+            unit.special_rules["enhancement_vocifer_magnificat_aura_range"] = float(aura_range)
+            unit.special_rules["enhancement_vocifer_magnificat_aura_penalty"] = int(max(1, leadership_penalty))
+            unit.special_rules["enhancement_vocifer_magnificat_aura_bonus"] = int(max(1, leadership_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vocifer_magnificat_bearer_model_id"] = bearer_id
 
         if name == "acquisitor-at-arms" or enh_id == "000010497002":
             if not is_gate_warden_lance:

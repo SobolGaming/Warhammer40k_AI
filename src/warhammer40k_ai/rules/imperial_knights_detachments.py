@@ -801,6 +801,28 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _forgepact_has_adeptus_mechanicus_support(
+        self,
+        unit,
+        *,
+        max_distance: float,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if not self._unit_on_battlefield(unit):
+            return False
+        source_root = self._attached_root(unit)
+        source_id = self._entity_id(source_root)
+        for ally in self._forgepact_allied_units():
+            if ally is None or not self._unit_on_battlefield(ally):
+                continue
+            ally_id = self._entity_id(ally)
+            if source_id and ally_id and ally_id == source_id:
+                continue
+            if self._unit_within_distance(unit, ally, max_distance=max_distance, game=game, game_map=game_map):
+                return True
+        return False
+
     def _forgepact_nearby_imperial_knights_support(self, unit, *, game=None, game_map=None) -> bool:
         if not self._unit_on_battlefield(unit):
             return False
@@ -880,6 +902,111 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             game_map=resolved_map,
         )
         return reroll_hit_ones, reroll_wound_ones, "Divine Inspiration"
+
+    def forgepact_knight_of_the_opus_machina_reroll_hit_ones(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        if not self.is_questor_forgepact():
+            return False, ""
+        if attacker_model is None or weapon_profile is None:
+            return False, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_knight_of_the_opus_machina")):
+            return False, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model):
+            return False, ""
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        if not self._forgepact_has_adeptus_mechanicus_support(
+            attacker_root,
+            max_distance=6.0,
+            game=resolved_game,
+            game_map=resolved_map,
+        ):
+            return False, ""
+        source_name = str(sr.get("enhancement_knight_of_the_opus_machina_source", "") or "Knight of the Opus Machina").strip()
+        return True, source_name or "Knight of the Opus Machina"
+
+    def forgepact_magos_questoris_lone_operative_applies(self, unit, *, game=None, game_map=None) -> bool:
+        if not self.is_questor_forgepact():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_magos_questoris")):
+            return False
+        if not self._unit_is_tech_priest(root):
+            return False
+        if not self._unit_on_battlefield(root):
+            return False
+        bearer = self._enhancement_bearer_model(root)
+        if bearer is None:
+            return False
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        return bool(self.forgepact_magos_questoris_candidate_units(root, game=resolved_game, game_map=resolved_map))
+
+    def forgepact_magos_questoris_candidate_units(self, source_unit, *, game=None, game_map=None) -> list:
+        if not self.is_questor_forgepact():
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return []
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_magos_questoris")):
+            return []
+        if not self._unit_is_tech_priest(source_root):
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        bearer = self._enhancement_bearer_model(source_root)
+        if bearer is None:
+            return []
+        try:
+            range_inches = float(sr.get("enhancement_magos_questoris_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            range_inches = 3.0
+        if range_inches <= 0.0:
+            return []
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        candidates: list = []
+        for candidate in self._iter_army_roots():
+            if candidate is None or candidate is source_root:
+                continue
+            if not self._unit_is_imperial_knights(candidate):
+                continue
+            if not self._unit_on_battlefield(candidate):
+                continue
+            if not self._unit_within_distance(
+                source_root,
+                candidate,
+                max_distance=range_inches,
+                game=resolved_game,
+                game_map=resolved_map,
+            ):
+                continue
+            candidates.append(candidate)
+        candidates.sort(key=lambda unit_obj: self._entity_id(unit_obj) or f"obj:{id(unit_obj)}")
+        return candidates
 
     def _unit_has_questoris_companions_expended_enhancement(self, unit) -> bool:
         if unit is None:

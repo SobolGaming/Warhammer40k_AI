@@ -4219,6 +4219,20 @@ class LateGameplayMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            lone_operative_fn = (
+                getattr(ik_mgr, "forgepact_magos_questoris_lone_operative_applies", None)
+                if ik_mgr is not None
+                else None
+            )
+            if callable(lone_operative_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if lone_operative_fn(self, game=game):
+                    return True
+        except Exception:
+            pass
         if isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth"):
             try:
                 game_map = self.get_parent_army().player.game.map
