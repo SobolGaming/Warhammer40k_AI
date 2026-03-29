@@ -6085,6 +6085,28 @@ class PositioningMixin:
                     ]
         except Exception:
             pass
+        try:
+            source_unit = getattr(model, "parent_unit", None) or self
+            army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            sustained_fn = (
+                getattr(mgr, "etacarn_sb9_targeting_implant_sustained_hits_value", None)
+                if mgr is not None
+                else None
+            )
+            if callable(sustained_fn):
+                sustained_value, source = sustained_fn(model, weapon_profile=weapon_profile)
+                if int(sustained_value or 0) > 0:
+                    attack_type = "melee" if is_melee_attack else "ranged" if is_ranged_attack else "any"
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": attack_type,
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": str(source or "Etacarn SB9 Targeting Implant"),
+                        }
+                    ]
+        except Exception:
+            pass
         if is_ranged_attack and self._attached_unit_has_active_enhancement(
             "enhancement_exotic_munitions",
             enhancement_id="000010699004",

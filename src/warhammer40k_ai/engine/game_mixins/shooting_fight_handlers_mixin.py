@@ -11618,6 +11618,109 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:{turn}:{owner_id}:{phase_name}:oathbound_speculator",
         )
 
+    def _queue_etacarn_sb9_targeting_implant_confirmation(self, root, *, player, trigger: str) -> None:
+        if root is None or player is None:
+            return
+        _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            root,
+            "enhancement_etacarn_sb9_targeting_implant",
+        )
+        if source_member is None or not isinstance(source_sr, dict):
+            return
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army()
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return
+        try:
+            cost = int(source_sr.get("enhancement_etacarn_sb9_targeting_implant_cost", 3) or 3)
+        except Exception:
+            cost = 3
+        cost = max(0, int(cost or 0))
+        if cost <= 0:
+            return
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < cost:
+                return
+        except Exception:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if not phase_name:
+            phase_name = "SHOOTING_PHASE" if str(trigger or "").strip().lower() == "shoot" else "FIGHT_PHASE"
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if not phase_name or turn <= 0 or not owner_id:
+            return
+        if bool(source_sr.get("enhancement_etacarn_sb9_targeting_implant_active", False)):
+            active_owner = str(source_sr.get("enhancement_etacarn_sb9_targeting_implant_turn_owner", "") or "")
+            try:
+                active_turn = int(source_sr.get("enhancement_etacarn_sb9_targeting_implant_turn", 0) or 0)
+            except Exception:
+                active_turn = 0
+            active_phase = str(
+                source_sr.get("enhancement_etacarn_sb9_targeting_implant_expires_phase", "") or ""
+            ).strip().upper()
+            if (
+                (not active_owner or active_owner == owner_id)
+                and (not active_turn or active_turn == turn)
+                and (not active_phase or active_phase == phase_name)
+            ):
+                return
+        root_id = str(get_entity_id(root) or "")
+        source_unit_id = str(get_entity_id(source_member) or "")
+        if not root_id or not source_unit_id:
+            return
+        ability_name = str(
+            source_sr.get("enhancement_etacarn_sb9_targeting_implant_source", "") or "Etacarn SB9 Targeting Implant"
+        ).strip() or "Etacarn SB9 Targeting Implant"
+        try:
+            sustained_hits_value = int(
+                source_sr.get("enhancement_etacarn_sb9_targeting_implant_sustained_hits_value", 1) or 1
+            )
+        except Exception:
+            sustained_hits_value = 1
+        sustained_hits_value = max(1, int(sustained_hits_value or 1))
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="etacarn_sb9_targeting_implant",
+            ability_name=ability_name,
+            message=(
+                f"{ability_name}: spend {int(cost)} YP for [SUSTAINED HITS {int(sustained_hits_value)}] until end of phase?"
+            ),
+            context={
+                "ability_name": ability_name,
+                "phase": phase_name,
+                "unit_id": root_id,
+                "source_unit_id": source_unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "cost": int(cost),
+                "sustained_hits_value": int(sustained_hits_value),
+                "trigger": "shoot" if str(trigger or "").strip().lower() == "shoot" else "fight",
+            },
+            payload={
+                "unit_id": root_id,
+                "source_unit_id": source_unit_id,
+                "cost": int(cost),
+                "sustained_hits_value": int(sustained_hits_value),
+            },
+            instance_key=f"{source_unit_id}:{turn}:{owner_id}:{phase_name}:etacarn_sb9_targeting_implant",
+        )
+
     def _on_shooting_targets_selected_oathbound_speculator(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -11634,6 +11737,24 @@ class GameShootingFightHandlersMixin:
         if player is None or player is not self.get_current_player():
             return
         self._queue_oathbound_speculator_confirmation(root, player=player, trigger="shoot")
+
+    def _on_shooting_targets_selected_etacarn_sb9_targeting_implant(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        _ = target_units
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        self._queue_etacarn_sb9_targeting_implant_confirmation(root, player=player, trigger="shoot")
 
     def _on_shooting_targets_selected_trivarg_cyber_implant(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         _ = target_units
@@ -11765,6 +11886,25 @@ class GameShootingFightHandlersMixin:
         if selecting_player is not None and selecting_player is not owner:
             return
         self._queue_oathbound_speculator_confirmation(root, player=owner, trigger="fight")
+
+    def _on_fight_unit_selected_etacarn_sb9_targeting_implant(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        self._queue_etacarn_sb9_targeting_implant_confirmation(root, player=owner, trigger="fight")
 
     def _on_fight_unit_selected_piledriver(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:

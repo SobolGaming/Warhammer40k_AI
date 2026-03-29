@@ -14077,6 +14077,127 @@ class GamePhaseHandlersMixin:
                     instance_key=f"{source_unit_id}:{turn}:{owner_id}:tactical_alchemy",
                 )
 
+    def _on_phase_start_asset_manipulator(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_mercenary_oathband", lambda: False)()):
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        if available_yp < 3:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj) or "")
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_roots:
+                continue
+            if root_id:
+                seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_asset_manipulator", False)):
+                    continue
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                if bool(sr.get("enhancement_asset_manipulator_active", False)):
+                    active_owner = str(sr.get("enhancement_asset_manipulator_turn_owner", "") or "")
+                    try:
+                        active_turn = int(sr.get("enhancement_asset_manipulator_turn", 0) or 0)
+                    except Exception:
+                        active_turn = 0
+                    if (not active_owner or active_owner == owner_id) and (not active_turn or active_turn == turn):
+                        continue
+                try:
+                    cost = int(sr.get("enhancement_asset_manipulator_cost", 3) or 3)
+                except Exception:
+                    cost = 3
+                cost = max(0, int(cost or 0))
+                if cost <= 0 or available_yp < cost:
+                    continue
+                source_unit_id = str(get_entity_id(member) or "")
+                if not source_unit_id:
+                    continue
+                ability_name = str(sr.get("enhancement_asset_manipulator_source", "") or "Asset Manipulator").strip()
+                if not ability_name:
+                    ability_name = "Asset Manipulator"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="asset_manipulator",
+                    ability_name=ability_name,
+                    message=f"{ability_name}: spend {int(cost)} YP to apply the Objective Control penalty aura until end of turn?",
+                    context={
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "unit_id": root_id,
+                        "source_unit_id": source_unit_id,
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                        "cost": int(cost),
+                    },
+                    payload={
+                        "unit_id": root_id,
+                        "source_unit_id": source_unit_id,
+                        "cost": int(cost),
+                    },
+                    instance_key=f"{source_unit_id}:{turn}:{owner_id}:asset_manipulator",
+                )
+
     def _on_phase_end_forgewrought_expertise(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "MOVEMENT_PHASE":

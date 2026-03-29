@@ -812,6 +812,255 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         )
         return max(2, int(threshold)), max(1, int(refund_yp)), source
 
+    def mercenary_prospector_destroyed_unit_gain(self, source_unit, destroyed_unit, *, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_mercenary_oathband():
+            return 0, ""
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            source_unit,
+            "enhancement_mercenary_prospector",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._unit_in_army(source_root):
+            return 0, ""
+        if not self._unit_is_votann(source_root):
+            return 0, ""
+        destroyed_root = self._attached_root(destroyed_unit)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        destroyed_army = destroyed_root.get_parent_army() if destroyed_root is not None and hasattr(destroyed_root, "get_parent_army") else None
+        if source_army is None or destroyed_army is None or source_army is destroyed_army:
+            return 0, ""
+        if bool(source_sr.get("enhancement_mercenary_prospector_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, ""
+        try:
+            gain = int(source_sr.get("enhancement_mercenary_prospector_gain", 2) or 2)
+        except (TypeError, ValueError):
+            gain = 2
+        if gain <= 0:
+            return 0, ""
+        source = (
+            str(source_sr.get("enhancement_mercenary_prospector_source", "") or "Mercenary Prospector").strip()
+            or "Mercenary Prospector"
+        )
+        return int(gain), source
+
+    def metaphysical_brokerage_top_up_amount(
+        self,
+        unit,
+        *,
+        game=None,
+        turn: int = 0,
+        turn_owner_id: str = "",
+    ) -> tuple[int, str]:
+        if not self.is_mercenary_oathband():
+            return 0, ""
+        root, source_member, source_sr = self._attached_member_with_special_rule(
+            unit,
+            "enhancement_metaphysical_brokerage",
+        )
+        if root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_votann(root):
+            return 0, ""
+        if bool(source_sr.get("enhancement_metaphysical_brokerage_requires_bearer_on_battlefield", True)):
+            if not self._unit_is_on_battlefield(root):
+                return 0, ""
+        if bool(source_sr.get("enhancement_metaphysical_brokerage_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, ""
+        try:
+            minimum_gain = int(
+                source_sr.get("enhancement_metaphysical_brokerage_minimum_yield_points_gained", 3) or 3
+            )
+        except (TypeError, ValueError):
+            minimum_gain = 3
+        if minimum_gain <= 0:
+            return 0, ""
+        mgr = self._get_yield_points_manager()
+        if mgr is None:
+            return 0, ""
+        gained = int(
+            getattr(mgr, "gained_yield_points_in_turn", lambda **_kwargs: 0)(
+                game=game,
+                turn=int(turn or 0),
+                turn_owner_id=str(turn_owner_id or ""),
+            )
+            or 0
+        )
+        if gained >= minimum_gain:
+            return 0, ""
+        source = (
+            str(source_sr.get("enhancement_metaphysical_brokerage_source", "") or "Metaphysical Brokerage").strip()
+            or "Metaphysical Brokerage"
+        )
+        return int(minimum_gain - gained), source
+
+    def etacarn_sb9_targeting_implant_reroll_hit_ones(self, unit, *, game=None) -> tuple[bool, str]:
+        del game
+        if not self.is_mercenary_oathband():
+            return False, ""
+        root, source_member, source_sr = self._attached_member_with_special_rule(
+            unit,
+            "enhancement_etacarn_sb9_targeting_implant",
+        )
+        if root is None or source_member is None or not isinstance(source_sr, dict):
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        if not self._unit_is_votann(root):
+            return False, ""
+        if not self._unit_is_on_battlefield(root):
+            return False, ""
+        if bool(source_sr.get("enhancement_etacarn_sb9_targeting_implant_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return False, ""
+        reroll_values = tuple(source_sr.get("enhancement_etacarn_sb9_targeting_implant_reroll_hit_values", (1,)) or (1,))
+        if 1 not in reroll_values:
+            return False, ""
+        source = (
+            str(source_sr.get("enhancement_etacarn_sb9_targeting_implant_source", "") or "Etacarn SB9 Targeting Implant").strip()
+            or "Etacarn SB9 Targeting Implant"
+        )
+        return True, source
+
+    def etacarn_sb9_targeting_implant_sustained_hits_value(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
+        if not self.is_mercenary_oathband():
+            return 0, ""
+        if model is None or weapon_profile is None:
+            return 0, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        is_melee = bool(getattr(parent_wargear, "is_melee", lambda: False)())
+        is_ranged = bool(getattr(parent_wargear, "is_ranged", lambda: False)())
+        if not is_melee and not is_ranged:
+            return 0, ""
+        if not self._model_in_army(model):
+            return 0, ""
+        if not self._model_is_votann(model):
+            return 0, ""
+        source_unit = getattr(model, "parent_unit", None)
+        root = self._attached_root(source_unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return 0, ""
+
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        turn, owner_id = self._current_turn_context(game_obj)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        for member in self._attached_unit_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_etacarn_sb9_targeting_implant_active", False)):
+                continue
+            effect_owner = str(sr.get("enhancement_etacarn_sb9_targeting_implant_turn_owner", "") or "")
+            if owner_id and effect_owner and effect_owner != owner_id:
+                continue
+            try:
+                effect_turn = int(sr.get("enhancement_etacarn_sb9_targeting_implant_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if turn and effect_turn and effect_turn != turn:
+                continue
+            effect_phase = str(
+                sr.get("enhancement_etacarn_sb9_targeting_implant_expires_phase", "") or ""
+            ).strip().upper()
+            if phase_name and effect_phase and effect_phase != phase_name:
+                continue
+            try:
+                sustained_hits_value = int(
+                    sr.get("enhancement_etacarn_sb9_targeting_implant_sustained_hits_value", 1) or 1
+                )
+            except (TypeError, ValueError):
+                sustained_hits_value = 0
+            if sustained_hits_value <= 0:
+                continue
+            source = (
+                str(
+                    sr.get("enhancement_etacarn_sb9_targeting_implant_source", "")
+                    or "Etacarn SB9 Targeting Implant"
+                ).strip()
+                or "Etacarn SB9 Targeting Implant"
+            )
+            return int(sustained_hits_value), source
+        return 0, ""
+
+    def asset_manipulator_oc_penalty(self, source_unit, target_unit, *, game=None) -> tuple[int, str]:
+        if not self.is_mercenary_oathband():
+            return 0, ""
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            source_unit,
+            "enhancement_asset_manipulator",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._unit_in_army(source_root):
+            return 0, ""
+        if not self._unit_is_votann(source_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(source_root):
+            return 0, ""
+        if not bool(source_sr.get("enhancement_asset_manipulator_active", False)):
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self._unit_is_on_battlefield(target_root):
+            return 0, ""
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is target_army:
+            return 0, ""
+        if bool(source_sr.get("enhancement_asset_manipulator_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, ""
+        else:
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return 0, ""
+
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        turn, owner_id = self._current_turn_context(game_obj)
+        effect_owner = str(source_sr.get("enhancement_asset_manipulator_turn_owner", "") or "")
+        if owner_id and effect_owner and effect_owner != owner_id:
+            return 0, ""
+        try:
+            effect_turn = int(source_sr.get("enhancement_asset_manipulator_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if turn and effect_turn and effect_turn != turn:
+            return 0, ""
+        try:
+            range_in = float(source_sr.get("enhancement_asset_manipulator_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            range_in = 3.0
+        try:
+            penalty = int(source_sr.get("enhancement_asset_manipulator_oc_penalty", 1) or 1)
+        except (TypeError, ValueError):
+            penalty = 1
+        if range_in <= 0.0 or penalty <= 0:
+            return 0, ""
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        if not model_within_range_of_unit(bearer, target_root, float(range_in), use_attached_aggregate=True):
+            return 0, ""
+        source = (
+            str(source_sr.get("enhancement_asset_manipulator_source", "") or "Asset Manipulator").strip()
+            or "Asset Manipulator"
+        )
+        return int(penalty), source
+
     def persecution_prospect_shooting_unit_eligible(self, unit) -> bool:
         if not self.is_persecution_prospect():
             return False

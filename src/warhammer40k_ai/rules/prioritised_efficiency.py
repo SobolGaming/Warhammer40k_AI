@@ -37,8 +37,10 @@ class PrioritisedEfficiencyManager:
         self.mode: EfficiencyMode = HOSTILE_ACQUISITION
         self.last_mode_turn: Optional[int] = None
         self.last_gain_turn: Optional[int] = None
+        self.last_gain_turn_owner_id: str = ""
         self.last_spend_turn: Optional[int] = None
         self.last_spend_turn_owner_id: str = ""
+        self._yield_points_gained_by_turn_owner: dict[tuple[int, str], int] = {}
 
     def _army_has_rule(self) -> bool:
         if self.army is None:
@@ -242,11 +244,14 @@ class PrioritisedEfficiencyManager:
         if amount <= 0:
             return 0
         self.yield_points = max(0, int(self.yield_points or 0) + int(amount))
-        try:
-            turn = self._battle_round(game)
-            self.last_gain_turn = int(turn) if turn else self.last_gain_turn
-        except Exception:
-            pass
+        turn, owner_id = self._resolve_turn_context(game=game)
+        if int(turn or 0) > 0:
+            self.last_gain_turn = int(turn)
+            self.last_gain_turn_owner_id = str(owner_id or "")
+            gain_key = (int(turn), str(owner_id or ""))
+            self._yield_points_gained_by_turn_owner[gain_key] = int(
+                self._yield_points_gained_by_turn_owner.get(gain_key, 0) or 0
+            ) + int(amount)
         return int(amount)
 
     def _resolve_turn_context(self, *, game=None, turn_owner=None) -> tuple[int, str]:
@@ -302,6 +307,27 @@ class PrioritisedEfficiencyManager:
         if check_owner_id:
             return str(self.last_spend_turn_owner_id or "") == check_owner_id
         return True
+
+    def gained_yield_points_in_turn(self, *, game=None, turn: int | None = None, turn_owner_id: str | None = None) -> int:
+        if not self._army_has_rule():
+            return 0
+        check_turn = int(turn or 0)
+        check_owner_id = str(turn_owner_id or "")
+        if check_turn <= 0:
+            resolved_turn, resolved_owner = self._resolve_turn_context(game=game, turn_owner=turn_owner_id)
+            check_turn = int(resolved_turn or 0)
+            if not check_owner_id:
+                check_owner_id = str(resolved_owner or "")
+        if check_turn <= 0:
+            return 0
+        if check_owner_id:
+            return int(self._yield_points_gained_by_turn_owner.get((check_turn, check_owner_id), 0) or 0)
+        total = 0
+        for (tracked_turn, _tracked_owner_id), gained in list(self._yield_points_gained_by_turn_owner.items()):
+            if int(tracked_turn or 0) != check_turn:
+                continue
+            total += int(gained or 0)
+        return int(total)
 
     def spend_yield_points(self, amount: int, *, game=None, turn_owner=None) -> bool:
         if not self._army_has_rule():

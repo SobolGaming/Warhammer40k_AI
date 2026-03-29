@@ -1902,6 +1902,10 @@ class Enhancement:
         except Exception:
             is_hearthfyre_arsenal = False
         try:
+            is_mercenary_oathband = bool(lov_mgr and lov_mgr.is_mercenary_oathband())
+        except Exception:
+            is_mercenary_oathband = False
+        try:
             is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
         except Exception:
             is_needgaard_oathband = False
@@ -10919,6 +10923,105 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_graviton_vault_bearer_model_id"] = bearer_id
+
+        if name == "mercenary prospector" or enh_id == "000010708002":
+            if not is_mercenary_oathband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Mercenary Prospector").strip()
+            if not source_name:
+                source_name = "Mercenary Prospector"
+            yp_gain = _coerce_int(params.get("yield_points_gain", 2) or 2, default=2)
+            unit.special_rules["enhancement_mercenary_prospector"] = True
+            unit.special_rules["enhancement_mercenary_prospector_gain"] = int(max(1, yp_gain))
+            unit.special_rules["enhancement_mercenary_prospector_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_mercenary_prospector_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mercenary_prospector_bearer_model_id"] = bearer_id
+
+        if name == "metaphysical brokerage" or enh_id == "000010708003":
+            if not is_mercenary_oathband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Metaphysical Brokerage").strip()
+            if not source_name:
+                source_name = "Metaphysical Brokerage"
+            minimum_gain = _coerce_int(params.get("minimum_yield_points_gained", 3) or 3, default=3)
+            unit.special_rules["enhancement_metaphysical_brokerage"] = True
+            unit.special_rules["enhancement_metaphysical_brokerage_minimum_yield_points_gained"] = int(
+                max(1, minimum_gain)
+            )
+            unit.special_rules["enhancement_metaphysical_brokerage_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_metaphysical_brokerage_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_metaphysical_brokerage_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_metaphysical_brokerage_bearer_model_id"] = bearer_id
+
+        if name == "etacarn sb9 targeting implant" or enh_id == "000010708004":
+            if not is_mercenary_oathband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(
+                getattr(desc, "name", "") or getattr(self, "name", "") or "Etacarn SB9 Targeting Implant"
+            ).strip()
+            if not source_name:
+                source_name = "Etacarn SB9 Targeting Implant"
+            cost = _coerce_int(params.get("yp_cost", 3) or 3, default=3)
+            sustained_hits_value = _coerce_int(params.get("sustained_hits_value", 1) or 1, default=1)
+            reroll_hit_values = tuple(
+                int(v)
+                for v in tuple(params.get("reroll_hit_values", (1,)) or (1,))
+                if str(v).strip().lstrip("-").isdigit()
+            ) or (1,)
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant"] = True
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant_cost"] = int(max(1, cost))
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant_sustained_hits_value"] = int(
+                max(1, sustained_hits_value)
+            )
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant_reroll_hit_values"] = tuple(
+                sorted(set(reroll_hit_values))
+            )
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_etacarn_sb9_targeting_implant_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_etacarn_sb9_targeting_implant_bearer_model_id"] = bearer_id
+
+        if name == "asset manipulator" or enh_id == "000010708005":
+            if not is_mercenary_oathband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Asset Manipulator").strip()
+            if not source_name:
+                source_name = "Asset Manipulator"
+            cost = _coerce_int(params.get("yp_cost", 3) or 3, default=3)
+            range_in = float(params.get("range_in", 3.0) or 3.0)
+            oc_penalty = _coerce_int(params.get("objective_control_penalty", 1) or 1, default=1)
+            unit.special_rules["enhancement_asset_manipulator"] = True
+            unit.special_rules["enhancement_asset_manipulator_cost"] = int(max(1, cost))
+            unit.special_rules["enhancement_asset_manipulator_range"] = float(max(0.0, range_in))
+            unit.special_rules["enhancement_asset_manipulator_oc_penalty"] = int(max(0, oc_penalty))
+            unit.special_rules["enhancement_asset_manipulator_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_asset_manipulator_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_asset_manipulator_bearer_model_id"] = bearer_id
 
         if name == "oathbound speculator" or enh_id == "000010435002":
             if not is_needgaard_oathband:

@@ -6601,6 +6601,19 @@ class ActionsMovementMixin:
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Ruthless Discipline: re-roll Hit rolls of 1 while ordered")
 
+        votann_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        etacarn_reroll_fn = (
+            getattr(votann_mgr, "etacarn_sb9_targeting_implant_reroll_hit_ones", None)
+            if votann_mgr is not None
+            else None
+        )
+        if callable(etacarn_reroll_fn):
+            reroll_ones, source = etacarn_reroll_fn(root)
+            if bool(reroll_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Etacarn SB9 Targeting Implant").strip() or "Etacarn SB9 Targeting Implant"
+                reroll_hit_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
+
         ne_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         arisen_tyrant_fn = getattr(ne_mgr, "arisen_tyrant_hit_rerolls", None) if ne_mgr is not None else None
         if callable(arisen_tyrant_fn):

@@ -8984,6 +8984,67 @@ _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_DESCRIPTORS.values()
 }
 
+_LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010708002": EnhancementToolDescriptor(
+        enhancement_id="000010708002",
+        name="Mercenary Prospector",
+        timing="enemy_unit_destroyed_by_bearer_unit",
+        target="bearer_unit",
+        duration="instant",
+        effect="gain_yield_points_on_destroyed_enemy_unit",
+        effect_params={
+            "yield_points_gain": 2,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010708003": EnhancementToolDescriptor(
+        enhancement_id="000010708003",
+        name="Metaphysical Brokerage",
+        timing="end_of_your_turn",
+        target="bearer",
+        duration="instant",
+        effect="top_up_yield_points_gained_this_turn_to_minimum",
+        effect_params={
+            "minimum_yield_points_gained": 3,
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000010708004": EnhancementToolDescriptor(
+        enhancement_id="000010708004",
+        name="Etacarn SB9 Targeting Implant",
+        timing="passive_and_when_selected_to_shoot_or_fight",
+        target="bearer_unit",
+        duration="constant_and_until_end_of_phase_on_activation",
+        effect="reroll_hit_ones_and_optional_yp_spend_for_sustained_hits",
+        effect_params={
+            "reroll_hit_values": (1,),
+            "yp_cost": 3,
+            "sustained_hits_value": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010708005": EnhancementToolDescriptor(
+        enhancement_id="000010708005",
+        name="Asset Manipulator",
+        timing="start_of_command_phase",
+        target="enemy_units_within_range_of_bearer",
+        duration="until_end_of_turn",
+        effect="optional_yp_spend_enemy_objective_control_penalty_aura",
+        range_in=3.0,
+        effect_params={
+            "yp_cost": 3,
+            "range_in": 3.0,
+            "objective_control_penalty": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -9488,6 +9549,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -9660,4 +9724,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_BY_NAME.get(key)
+        or _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_BY_NAME.get(key)
     )

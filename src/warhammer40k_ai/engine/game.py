@@ -11272,6 +11272,45 @@ class Game(
             instance_key=f"{phase_key}:seized_opportunity",
         )
 
+    def _on_unit_destroyed_mercenary_prospector(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            source_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            source_root = destroyed_by_unit
+        if source_root is None:
+            return
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        destroyed_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        if source_army is None or destroyed_army is None or source_army is destroyed_army:
+            return
+        detachment_mgr = getattr(source_army, "leagues_of_votann_detachments", None)
+        gain_fn = getattr(detachment_mgr, "mercenary_prospector_destroyed_unit_gain", None) if detachment_mgr is not None else None
+        if not callable(gain_fn):
+            return
+        gain_amount, reason = gain_fn(source_root, unit, game=self)
+        if int(gain_amount or 0) <= 0:
+            return
+        pe = getattr(source_army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(int(gain_amount), game=self) or 0)
+        if delta <= 0:
+            return
+        player = getattr(source_army, "player", None)
+        if player is None:
+            return
+        self.event_system.publish(
+            "prioritised_efficiency_updated",
+            player=player,
+            game=self,
+            delta=int(delta),
+            mode=getattr(pe, "mode", None),
+            yield_points=int(getattr(pe, "yield_points", 0) or 0),
+            reason=str(reason or "Mercenary Prospector").strip() or "Mercenary Prospector",
+        )
+
     def _on_unit_destroyed_cult_ambush(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

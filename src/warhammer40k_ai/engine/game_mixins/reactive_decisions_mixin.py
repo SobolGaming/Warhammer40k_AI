@@ -5654,9 +5654,11 @@ class GameReactiveDecisionsMixin:
             "geomantic_hunters",
             "resource_transmutation",
             "tactical_alchemy",
+            "etacarn_sb9_targeting_implant",
             "trivarg_cyber_implant",
             "optimal_application",
             "ruthless_reinvestment",
+            "asset_manipulator",
             "oathbound_speculator",
             "dead_reckoning",
             "warpmeld_sacrifice",
@@ -6613,6 +6615,77 @@ class GameReactiveDecisionsMixin:
                 )
             return
 
+        if ability_key == "etacarn_sb9_targeting_implant":
+            source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "")
+            if not source_unit_id:
+                return
+            source_unit = self._resolve_unit_by_id(source_unit_id)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_etacarn_sb9_targeting_implant", False)):
+                return
+            if is_skip_choice(request, result):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 3)) or 3)
+            except Exception:
+                cost = 3
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            try:
+                sustained_hits_value = int(payload.get("sustained_hits_value", ctx.get("sustained_hits_value", 1)) or 1)
+            except Exception:
+                sustained_hits_value = 1
+            sr["enhancement_etacarn_sb9_targeting_implant_active"] = True
+            sr["enhancement_etacarn_sb9_targeting_implant_sustained_hits_value"] = int(max(1, sustained_hits_value))
+            sr["enhancement_etacarn_sb9_targeting_implant_turn_owner"] = owner_id
+            sr["enhancement_etacarn_sb9_targeting_implant_turn"] = int(turn or 0)
+            sr["enhancement_etacarn_sb9_targeting_implant_expires_phase"] = phase_name or "SHOOTING_PHASE"
+            sr["enhancement_etacarn_sb9_targeting_implant_source"] = (
+                str(ctx.get("ability_name", "") or "Etacarn SB9 Targeting Implant").strip()
+                or "Etacarn SB9 Targeting Implant"
+            )
+            source_unit.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Etacarn SB9 Targeting Implant",
+                )
+            return
+
         if ability_key == "optimal_application":
             unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
             if not unit_id:
@@ -6733,6 +6806,67 @@ class GameReactiveDecisionsMixin:
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Ruthless Reinvestment",
+                )
+            return
+
+        if ability_key == "asset_manipulator":
+            source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "")
+            if not source_unit_id:
+                return
+            source_unit = self._resolve_unit_by_id(source_unit_id)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_asset_manipulator", False)):
+                return
+            if is_skip_choice(request, result):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 3)) or 3)
+            except Exception:
+                cost = 3
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            sr["enhancement_asset_manipulator_active"] = True
+            sr["enhancement_asset_manipulator_turn_owner"] = owner_id
+            sr["enhancement_asset_manipulator_turn"] = int(turn or 0)
+            sr["enhancement_asset_manipulator_source"] = (
+                str(ctx.get("ability_name", "") or "Asset Manipulator").strip() or "Asset Manipulator"
+            )
+            source_unit.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Asset Manipulator",
                 )
             return
 

@@ -453,6 +453,97 @@ class GameMissionsScoringActionsMixin:
                     instance_key=f"{unit_id}:{turn}:{turn_owner_id}:dead_reckoning",
                 )
 
+    def _resolve_metaphysical_brokerage_end_of_turn(self, turn_ending_player) -> None:
+        if turn_ending_player is None:
+            return
+        army = turn_ending_player.get_army()
+        if army is None:
+            return
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_mercenary_oathband", lambda: False)()):
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        turn_owner_id = str(getattr(turn_ending_player, "id", "") or "")
+        if turn <= 0 or not turn_owner_id:
+            return
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        seen_units: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            if not unit_id or unit_id in seen_units:
+                continue
+            seen_units.add(unit_id)
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_metaphysical_brokerage", False)):
+                    continue
+                try:
+                    if (
+                        str(sr.get("enhancement_metaphysical_brokerage_resolved_turn_owner", "") or "") == turn_owner_id
+                        and int(sr.get("enhancement_metaphysical_brokerage_resolved_turn", 0) or 0) == int(turn or 0)
+                    ):
+                        continue
+                except Exception:
+                    pass
+                delta, reason = getattr(
+                    detachment_mgr,
+                    "metaphysical_brokerage_top_up_amount",
+                    lambda *_args, **_kwargs: (0, ""),
+                )(
+                    root,
+                    game=self,
+                    turn=int(turn or 0),
+                    turn_owner_id=turn_owner_id,
+                )
+                delta = int(delta or 0)
+                if delta <= 0:
+                    continue
+                gained = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(delta, game=self) or 0)
+                if gained <= 0:
+                    continue
+                sr["enhancement_metaphysical_brokerage_resolved_turn_owner"] = turn_owner_id
+                sr["enhancement_metaphysical_brokerage_resolved_turn"] = int(turn or 0)
+                member.special_rules = sr
+                event_system = getattr(self, "event_system", None)
+                if event_system is not None:
+                    event_system.publish(
+                        "prioritised_efficiency_updated",
+                        player=turn_ending_player,
+                        game=self,
+                        delta=int(gained or 0),
+                        mode=getattr(pe, "mode", None),
+                        yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                        reason=str(reason or "Metaphysical Brokerage").strip() or "Metaphysical Brokerage",
+                    )
+
     def end_of_turn_scoring(self) -> None:
         """Apply end-of-turn scoring for primaries and secondaries, manage discard rules and CP gain."""
         turn_ending_player = self.get_current_player()
@@ -555,6 +646,9 @@ class GameMissionsScoringActionsMixin:
 
         # Needgaârd Oathband enhancement: optional YP gain if no YP were spent this turn.
         self._queue_dead_reckoning_end_of_turn(turn_ending_player)
+
+        # Mercenary Oathband enhancement: top up YP gained this turn to the configured minimum.
+        self._resolve_metaphysical_brokerage_end_of_turn(turn_ending_player)
 
         # End-of-turn cleanup for temporary stratagem effects.
         army = getattr(turn_ending_player, "army", None)

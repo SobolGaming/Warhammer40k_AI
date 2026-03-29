@@ -1725,6 +1725,52 @@ class Unit(
             except Exception:
                 pass
 
+            # Asset Manipulator (Mercenary Oathband): enemy units within 3" of the
+            # bearer suffer -1 Objective Control until end of turn after the spend.
+            try:
+                try:
+                    root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                except Exception:
+                    root = self
+                total_asset_penalty = 0
+                seen_enemy_roots = set()
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    enemy_id = str(maybe_entity_id(enemy_root) or "")
+                    if enemy_id and enemy_id in seen_enemy_roots:
+                        continue
+                    if enemy_id:
+                        seen_enemy_roots.add(enemy_id)
+                    try:
+                        enemy_army = enemy_root.get_parent_army()
+                    except Exception:
+                        enemy_army = None
+                    mgr = getattr(enemy_army, "leagues_of_votann_detachments", None) if enemy_army is not None else None
+                    penalty_fn = getattr(mgr, "asset_manipulator_oc_penalty", None) if mgr is not None else None
+                    if not callable(penalty_fn):
+                        continue
+                    penalty, _source = penalty_fn(enemy_root, root)
+                    if int(penalty or 0) <= 0:
+                        continue
+                    total_asset_penalty += int(max(0, penalty))
+                if total_asset_penalty > 0:
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            -int(total_asset_penalty),
+                            source="enhancement:asset_manipulator",
+                        )
+                    )
+            except Exception:
+                pass
+
             # Pledge of Dark Glory: while the bearer is leading a unit, improve
             # Objective Control characteristics of models in that unit by 1.
             try:
