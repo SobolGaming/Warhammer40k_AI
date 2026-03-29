@@ -4801,6 +4801,92 @@ _REAPERS_WAGER_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _REAPERS_WAGER_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COVENITE_COTERIE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010585006": StratagemToolDescriptor(
+        stratagem_id="000010585006",
+        name="CONNOISSEURS OF PAIN",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="drukhari_unit_selected_as_target",
+        duration="until_attacker_finishes_attacks_then_end_of_phase_refund_check",
+        effect="worsen_incoming_ap_and_refund_pain_token_if_covens_and_alive",
+        cp_cost=1,
+        effect_params={
+            "pain_token_cost": 1,
+            "ap_worsen": 1,
+            "refund_if_keywords_any": ["HAEMONCULUS COVENS"],
+        },
+    ),
+    "000010585005": StratagemToolDescriptor(
+        stratagem_id="000010585005",
+        name="DISTILLERS OF FEAR",
+        timing="fight_phase",
+        target="haemonculus_covens_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_devastating_wounds_vs_battle_shocked",
+        cp_cost=2,
+    ),
+    "000010585007": StratagemToolDescriptor(
+        stratagem_id="000010585007",
+        name="ENFOLDING NIGHTMARE",
+        timing="opponent_shooting_phase_after_enemy_unit_shoots",
+        target="haemonculus_covens_unit_selected_as_target",
+        duration="immediate",
+        effect="reactive_move_towards_closest_enemy",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "allow_engagement_range": True,
+            "closest_enemy_exclude_keywords_any": ["AIRCRAFT"],
+        },
+    ),
+    "000010585004": StratagemToolDescriptor(
+        stratagem_id="000010585004",
+        name="POISONER'S ART",
+        timing="fight_phase_after_friendly_haemonculus_covens_unit_fights",
+        target="non_vehicle_enemy_unit_hit_by_source_unit",
+        duration="until_end_of_battle",
+        effect="poison_hit_enemy_unit_until_end_of_battle",
+        cp_cost=1,
+        effect_params={
+            "exclude_target_keywords_any": ["VEHICLE"],
+            "command_phase_mortal_wounds_on_4_plus": "D3",
+        },
+    ),
+    "000010585002": StratagemToolDescriptor(
+        stratagem_id="000010585002",
+        name="POSTMORTALITY",
+        timing="any_phase_on_friendly_haemonculus_model_destroyed",
+        target="destroyed_haemonculus_model",
+        duration="end_of_current_phase",
+        effect="return_destroyed_haemonculus_model_at_phase_end",
+        cp_cost=1,
+        effect_params={
+            "pain_token_cost_min": 1,
+            "pain_token_cost_max": 3,
+            "wounds_equal_tokens_spent": True,
+            "once_per_model_per_battle": True,
+        },
+    ),
+    "000010585003": StratagemToolDescriptor(
+        stratagem_id="000010585003",
+        name="SYMPHONY OF SUFFERING",
+        timing="fight_phase_after_friendly_drukhari_unit_destroys_enemy_unit",
+        target="friendly_drukhari_unit_that_destroyed_enemy_unit",
+        duration="immediate",
+        effect="force_visible_enemy_battle_shock_tests_with_optional_modifier",
+        cp_cost=1,
+        effect_params={
+            "range_inches": 9,
+            "modifier_if_source_keywords_any": ["HAEMONCULUS COVENS"],
+            "battle_shock_modifier": -1,
+        },
+    ),
+}
+
+_COVENITE_COTERIE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COVENITE_COTERIE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010577006": StratagemToolDescriptor(
         stratagem_id="000010577006",
@@ -10777,6 +10863,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _REAPERS_WAGER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COVENITE_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11051,6 +11140,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SERPENTS_BROOD_STRATAGEM_BY_NAME.get(key)
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _REAPERS_WAGER_STRATAGEM_BY_NAME.get(key)
+        or _COVENITE_COTERIE_STRATAGEM_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)

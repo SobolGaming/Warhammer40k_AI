@@ -7477,6 +7477,7 @@ class GameView:
                 "strike_swiftly",
                 "student_of_kauyon",
                 "archons_will_objective",
+                "drukhari_postmortality",
                 "traitoris_tyrants_shadow_objective",
                 "traitoris_malevolent_heraldry",
                 "tau_kauyon_tempting_trap_objective",
@@ -16083,6 +16084,10 @@ class GameView:
             title = ability_name or "Archon's Will"
             subtitle = "Select one objective marker on the battlefield."
             header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "drukhari_postmortality":
+            title = ability_name or "Postmortality"
+            subtitle = "Select how many Pain tokens to spend to return the destroyed Haemonculus model at the end of the phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Postmortality return value."
         elif str(ability_key) == "tau_kauyon_tempting_trap_objective":
             title = ability_name or "A Tempting Trap"
             subtitle = "Select one objective marker that is not in your opponent's deployment zone."
@@ -16158,7 +16163,7 @@ class GameView:
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
             decision_request=req,
-            show_cancel=str(ability_key) not in {"primarch_of_the_first_legion", "author_of_the_codex"},
+            show_cancel=str(ability_key) not in {"primarch_of_the_first_legion", "author_of_the_codex", "drukhari_postmortality"},
         )
         try:
             self.dialog_manager.open(dlg, modal=True)

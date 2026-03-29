@@ -12704,7 +12704,7 @@ class Game(
         army = self._get_player_army(player)
         if army is None:
             return
-        from ..rules.daemonic_poisons import unit_is_poisoned, DAEMONIC_POISONS_NAME
+        from ..rules.daemonic_poisons import DAEMONIC_POISONS_NAME, POISONED_SOURCE, unit_is_poisoned
 
         poisoned_units: list[Unit] = []
         seen: set[str] = set()
@@ -12738,14 +12738,16 @@ class Game(
             return
 
         for unit in list(poisoned_units):
+            sr = getattr(unit, "special_rules", None)
+            ability_name = str((sr or {}).get(POISONED_SOURCE, "") or DAEMONIC_POISONS_NAME).strip() or DAEMONIC_POISONS_NAME
             roll_spec = {
                 "dice_count": 1,
                 "faces": 6,
-                "reason": f"{DAEMONIC_POISONS_NAME}: {getattr(unit, 'name', 'Unit')}",
+                "reason": f"{ability_name}: {getattr(unit, 'name', 'Unit')}",
                 "roll_type": "daemonic_poisons",
                 "unit_id": get_entity_id(unit),
                 "handler_key": "daemonic_poisons",
-                "handler_payload": {"ability_name": DAEMONIC_POISONS_NAME},
+                "handler_payload": {"ability_name": ability_name},
             }
             self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
 

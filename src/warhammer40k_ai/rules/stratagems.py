@@ -56,6 +56,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BOUNDING ADVANCE",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
+    "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
     "CORROSIVE VISCERA",
@@ -74,6 +75,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DELAYED MUTATIONS",
     "DETONATOR",
     "DIABOLIC REGENERATION",
+    "DISTILLERS OF FEAR",
     "ARCANE FOCUS",
     "ASSASSIN BEASTS",
     "FROM ALL SIDES",
@@ -148,6 +150,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DRIVEN TO BUTCHERY",
     "ENTROPHASIC AURA TARGETING",
     "ENSLAVED ARTIFICE",
+    "ENFOLDING NIGHTMARE",
     "IMAGE OF DEATH",
     "MASS TRANSMOGRIFICATION",
     "METHODICAL MURDER",
@@ -158,6 +161,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MOLECULAR TARGETING",
     "PHASE MELDING",
     "POTENTIALITY SYPHON",
+    "POISONER'S ART",
+    "POSTMORTALITY",
     "SPREADING MADNESS",
     "SENTINELS OF ETERNITY",
     "SUFFER NO RIVAL",
@@ -425,6 +430,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SPOOR OF THE UNHOLY",
     "SUPPRESS AND OVERWHELM",
+    "SYMPHONY OF SUFFERING",
     "THE GRISLY FEAST",
     "THE ARRO'KON PROTOCOL",
     "THE SHORTENED BLADE",
@@ -9664,6 +9670,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._resolve_drukhari_covenite_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_drukhari_covenite_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_drukhari_skysplinter_phase_end_effects(phase=phase)
         except Exception:
             raise
@@ -12618,6 +12632,13 @@ class StratagemManager(
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
+        try:
+            self._queue_drukhari_covenite_unit_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=_kwargs.get("hits_by_target"),
+            )
+        except Exception:
+            raise
         self._clear_armour_of_contempt_for_attacker(attacker_unit)
         self._clear_defensive_effects_for_attacker(attacker_unit)
 
@@ -12829,6 +12850,13 @@ class StratagemManager(
             raise
         try:
             self._queue_veterans_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_covenite_connoisseurs_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13994,6 +14022,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_unending_swarm_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_covenite_connoisseurs_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15209,6 +15244,12 @@ class StratagemManager(
                 unit=unit,
                 hits_by_target=_kwargs.get("hits_by_target"),
             )
+            self._queue_drukhari_covenite_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                hits_by_target=_kwargs.get("hits_by_target"),
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
             s = self.get_by_name("A WORTHY SKULL")
             if not s:
                 return
@@ -16419,6 +16460,10 @@ class StratagemManager(
             raise
         try:
             self._queue_thousand_sons_warpmeld_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_covenite_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
         try:

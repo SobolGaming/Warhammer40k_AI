@@ -11847,6 +11847,54 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if len(pool) < discard_count:
                 return ("Fiery Conviction discard mode requires enough Miracle dice.",)
         return ()
+    if ability == "drukhari_postmortality":
+        if is_skip_choice(request, result):
+            return ("Postmortality selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if not choice_key:
+            return ("Postmortality requires a Pain token choice.",)
+        valid_choice_keys = {"SPEND_1", "SPEND_2", "SPEND_3"}
+        if choice_key not in valid_choice_keys:
+            return ("Postmortality choice is invalid.",)
+        allowed_choice_keys = {
+            str(value or "").strip().upper()
+            for value in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(value or "").strip()
+        }
+        if allowed_choice_keys and choice_key not in allowed_choice_keys:
+            return ("Postmortality choice is not legal for this request.",)
+        try:
+            pain_token_cost = int(payload.get("pain_token_cost", choice_key.split("_")[-1]) or 0)
+        except (TypeError, ValueError, IndexError):
+            return ("Postmortality Pain token cost is invalid.",)
+        if pain_token_cost < 1 or pain_token_cost > 3:
+            return ("Postmortality Pain token cost must be between 1 and 3.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Postmortality player was not found.",)
+        stratagems = getattr(player, "stratagems", None)
+        source_model_id = str(payload.get("source_model_id") or ctx.get("source_model_id") or "").strip()
+        source_model = resolve_model(game, source_model_id) if source_model_id else None
+        resolve_model_fallback = getattr(stratagems, "_drukhari_resolve_model_by_entity_id", None) if stratagems is not None else None
+        if source_model is None and callable(resolve_model_fallback) and source_model_id:
+            source_model = resolve_model_fallback(source_model_id)
+        if source_model is None:
+            return ("Postmortality source model was not found.",)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        source_unit = resolve_unit(game, source_unit_id) if source_unit_id else None
+        if source_unit is None:
+            source_unit = getattr(source_model, "parent_unit", None)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Postmortality source unit was not found.",)
+        eligible_fn = getattr(stratagems, "_drukhari_postmortality_model_eligible", None) if stratagems is not None else None
+        if not callable(eligible_fn) or not bool(eligible_fn(unit=source_root, model=source_model)):
+            return ("Postmortality source model is not eligible.",)
+        can_spend_fn = getattr(stratagems, "_drukhari_can_spend_pain_tokens", None) if stratagems is not None else None
+        if not callable(can_spend_fn) or not bool(can_spend_fn(int(pain_token_cost))):
+            return ("Postmortality requires enough Pain tokens.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -19650,6 +19698,61 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"Archon's Will: {source_name} selected {objective_name}.",
         )
         return objective
+    if ability == "drukhari_postmortality":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return None
+        stratagems = getattr(player, "stratagems", None)
+        if stratagems is None:
+            return None
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        try:
+            pain_token_cost = int(payload.get("pain_token_cost", choice_key.split("_")[-1]) or 0)
+        except (TypeError, ValueError, IndexError):
+            return None
+        source_model_id = str(payload.get("source_model_id") or ctx.get("source_model_id") or "").strip()
+        source_model = resolve_model(game, source_model_id) if source_model_id else None
+        resolve_model_fallback = getattr(stratagems, "_drukhari_resolve_model_by_entity_id", None)
+        if source_model is None and callable(resolve_model_fallback) and source_model_id:
+            source_model = resolve_model_fallback(source_model_id)
+        if source_model is None:
+            return None
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        source_unit = resolve_unit(game, source_unit_id) if source_unit_id else None
+        if source_unit is None:
+            source_unit = getattr(source_model, "parent_unit", None)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        commit_fn = getattr(stratagems, "_drukhari_commit_postmortality_choice", None)
+        if not callable(commit_fn):
+            return None
+        applied = bool(
+            commit_fn(
+                unit=source_root,
+                model=source_model,
+                pain_tokens=int(pain_token_cost),
+                destroyed_position=ctx.get("destroyed_position"),
+                phase_name=str(ctx.get("phase_name", "") or ""),
+                phase_key=str(ctx.get("phase_key", "") or ""),
+                source_name=str(ctx.get("ability_name", "") or "Postmortality"),
+            )
+        )
+        if not applied:
+            return None
+        _log_action_for_players(
+            game,
+            player,
+            f"Postmortality: {getattr(source_model, 'name', 'Model')} will return at end of phase with {int(pain_token_cost)} wound(s).",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "source_model_id": str(get_entity_id(source_model) or ""),
+            "spent_pain_tokens": int(pain_token_cost),
+        }
     if ability == "void_mine":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

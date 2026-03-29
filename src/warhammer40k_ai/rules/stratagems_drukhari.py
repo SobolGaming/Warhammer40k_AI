@@ -40,6 +40,21 @@ class DrukhariStratagemMixin:
         checker = getattr(mgr, "is_reapers_wager", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_drukhari_covenite_coterie(self) -> bool:
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "is_covenite_coterie", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_drukhari_kabalite_cartel(self) -> bool:
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "is_kabalite_cartel", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_drukhari_realspace_raiders(self) -> bool:
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "is_realspace_raiders", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _drukhari_has_keyword(unit: Any, keyword: str) -> bool:
         if unit is None:
@@ -322,6 +337,248 @@ class DrukhariStratagemMixin:
                 if self._drukhari_sort_key(root) == uid:
                     return root
         return None
+
+    def _drukhari_resolve_model_by_entity_id(self, entity_id: str) -> Any:
+        uid = str(entity_id or "").strip()
+        if not uid:
+            return None
+        game = getattr(self, "game", None)
+        registry = getattr(game, "entity_registry", None) if game is not None else None
+        if registry is not None:
+            resolved = registry.get(uid, kind="model")
+            if resolved is not None:
+                return resolved
+            rebuild = getattr(game, "rebuild_entity_registry", None) if game is not None else None
+            if callable(rebuild):
+                rebuild()
+                resolved = registry.get(uid, kind="model")
+                if resolved is not None:
+                    return resolved
+        for player in list(getattr(game, "players", []) or []):
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                for model in list(getattr(unit, "models", []) or []):
+                    if self._drukhari_sort_key(model) == uid:
+                        return model
+                for model in list(getattr(unit, "models_lost", []) or []):
+                    if self._drukhari_sort_key(model) == uid:
+                        return model
+        return None
+
+    @staticmethod
+    def _drukhari_phase_key_from_name(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _drukhari_power_from_pain_mgr(self) -> Any:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        return getattr(army, "power_from_pain", None) if army is not None else None
+
+    def _drukhari_can_spend_pain_tokens(self, amount: int = 1) -> bool:
+        mgr = self._drukhari_power_from_pain_mgr()
+        if mgr is None:
+            return False
+        try:
+            needed = int(amount or 0)
+        except (TypeError, ValueError):
+            needed = 0
+        if needed <= 0:
+            return True
+        return int(getattr(mgr, "tokens", 0) or 0) >= needed
+
+    def _drukhari_spend_pain_tokens(self, amount: int, *, reason: str = "") -> bool:
+        mgr = self._drukhari_power_from_pain_mgr()
+        if mgr is None:
+            return False
+        spend = getattr(mgr, "spend_tokens", None)
+        if not callable(spend):
+            return False
+        try:
+            needed = int(amount or 0)
+        except (TypeError, ValueError):
+            needed = 0
+        if needed <= 0:
+            return True
+        return bool(spend(int(needed), reason=reason))
+
+    def _drukhari_gain_pain_tokens(self, amount: int, *, reason: str = "") -> int:
+        mgr = self._drukhari_power_from_pain_mgr()
+        gain = getattr(mgr, "gain_tokens", None) if mgr is not None else None
+        if not callable(gain):
+            return 0
+        try:
+            count = int(amount or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if count <= 0:
+            return 0
+        try:
+            return int(gain(int(count), reason=reason) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _drukhari_model_has_keyword(model: Any, keyword: str) -> bool:
+        if model is None:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any(keyword)):
+            return True
+        has_kw = getattr(model, "has_keyword", None)
+        if callable(has_kw) and bool(has_kw(keyword)):
+            return True
+        return False
+
+    def _drukhari_is_battle_shocked(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        check = getattr(root, "is_battle_shocked", None)
+        if callable(check):
+            try:
+                return bool(check())
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return bool(getattr(root, "battle_shocked", False))
+
+    def _drukhari_is_haemonculus_covens_unit(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        detachment_mgr = self._drukhari_detachment_mgr()
+        checker = getattr(detachment_mgr, "_unit_is_haemonculus_covens", None) if detachment_mgr is not None else None
+        if callable(checker):
+            try:
+                if bool(checker(root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if self._drukhari_has_keyword(root, "HAEMONCULUS COVENS"):
+            return True
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        return "HAEMONCULUS" in name_u or "WRACK" in name_u or "TALOS" in name_u or "CRONOS" in name_u
+
+    def _drukhari_is_haemonculus_model(self, model: Any) -> bool:
+        if model is None:
+            return False
+        if self._drukhari_model_has_keyword(model, "HAEMONCULUS"):
+            return True
+        unit = getattr(model, "parent_unit", None)
+        root = self._drukhari_root(unit)
+        if self._drukhari_has_keyword(root, "HAEMONCULUS"):
+            return True
+        model_name = str(getattr(model, "name", "") or "").strip().upper()
+        if "HAEMONCULUS" in model_name:
+            return True
+        root_name = str(getattr(root, "name", "") or "").strip().upper()
+        return "HAEMONCULUS" in root_name
+
+    def _drukhari_visible_enemy_units_within_range(
+        self,
+        source_unit: Any,
+        range_inches: float,
+        *,
+        exclude_keywords_any: list[str] | tuple[str, ...] | None = None,
+    ) -> list[Any]:
+        source_root = self._drukhari_root(source_unit)
+        if source_root is None or not self._drukhari_on_battlefield(source_root):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        get_enemy = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy):
+            return []
+        can_see = getattr(game, "_model_can_see_unit", None)
+        try:
+            distance_limit = float(range_inches)
+        except (TypeError, ValueError):
+            distance_limit = 0.0
+        excluded = {
+            str(value or "").strip().upper()
+            for value in list(exclude_keywords_any or [])
+            if str(value or "").strip()
+        }
+        source_models = list(getattr(source_root, "get_attached_unit_models", lambda: [])() or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy(source_root) or []):
+            enemy_root = self._drukhari_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._drukhari_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._drukhari_on_battlefield(enemy_root):
+                continue
+            if excluded and any(self._drukhari_has_keyword(enemy_root, keyword) for keyword in excluded):
+                continue
+            dist = self._drukhari_distance_between_units(source_root, enemy_root)
+            if dist is None or float(dist) > distance_limit + 1e-6:
+                continue
+            if callable(can_see):
+                visible = False
+                for model in list(source_models or []):
+                    alive = getattr(model, "is_alive", False)
+                    model_alive = bool(alive() if callable(alive) else alive)
+                    if not model_alive:
+                        continue
+                    try:
+                        if bool(can_see(model, enemy_root, game_map=game_map)):
+                            visible = True
+                            break
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                if not visible:
+                    continue
+            out.append(enemy_root)
+        return sorted(out, key=self._drukhari_sort_key)
+
+    def _drukhari_covenite_selected_shooting_targets_by_attacker(self) -> dict[str, list[str]]:
+        snapshots = getattr(self, "_drukhari_covenite_selected_shooting_targets", None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            self._drukhari_covenite_selected_shooting_targets = snapshots
+        return snapshots
+
+    def _drukhari_connoisseurs_of_pain_pending_refunds(self) -> list[dict[str, Any]]:
+        pending = getattr(self, "_drukhari_connoisseurs_of_pain_pending_refunds_store", None)
+        if not isinstance(pending, list):
+            pending = []
+            self._drukhari_connoisseurs_of_pain_pending_refunds_store = pending
+        return pending
+
+    def _drukhari_postmortality_pending_returns(self) -> list[dict[str, Any]]:
+        pending = getattr(self, "_drukhari_postmortality_pending_returns_store", None)
+        if not isinstance(pending, list):
+            pending = []
+            self._drukhari_postmortality_pending_returns_store = pending
+        return pending
+
+    def _drukhari_postmortality_used_model_ids(self) -> set[str]:
+        used = getattr(self, "_drukhari_postmortality_used_model_id_set", None)
+        if not isinstance(used, set):
+            used = set()
+            self._drukhari_postmortality_used_model_id_set = used
+        return used
+
+    def _drukhari_postmortality_model_eligible(self, *, unit: Any, model: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None or model is None:
+            return False
+        if not self._drukhari_is_haemonculus_model(model):
+            return False
+        alive_attr = getattr(model, "is_alive", None)
+        model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        if model_alive:
+            return False
+        return True
 
     def _drukhari_vicious_blades_roll_modifiers(self, transport_unit: Any) -> list[int]:
         transport_root = self._drukhari_root(transport_unit)
@@ -899,8 +1156,786 @@ class DrukhariStratagemMixin:
                 sr.pop(key, None)
             root.special_rules = sr
 
+    def _queue_drukhari_covenite_connoisseurs_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        attacker_root = self._drukhari_root(attacking_unit)
+        if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("CONNOISSEURS OF PAIN")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if not self._drukhari_can_spend_pain_tokens(1):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates: list[Any] = []
+        selected_target_ids: list[str] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._drukhari_root(target)
+            if root is None:
+                continue
+            target_id = self._drukhari_sort_key(root)
+            if target_id and target_id in seen:
+                continue
+            if target_id:
+                seen.add(target_id)
+                selected_target_ids.append(target_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_unit(root):
+                continue
+            candidates.append(root)
+        attacker_id = self._drukhari_sort_key(attacker_root)
+        if attacker_id:
+            self._drukhari_covenite_selected_shooting_targets_by_attacker()[attacker_id] = list(selected_target_ids)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "CONNOISSEURS OF PAIN":
+                continue
+            if self._drukhari_root(reaction.get("attacking_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": sorted(candidates, key=self._drukhari_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_covenite_unit_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        attacker_root = self._drukhari_root(attacker_unit)
+        if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ENFOLDING NIGHTMARE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        attacker_id = self._drukhari_sort_key(attacker_root)
+        snapshot_ids = []
+        if attacker_id:
+            snapshot_ids = list(self._drukhari_covenite_selected_shooting_targets_by_attacker().pop(attacker_id, []) or [])
+        candidate_ids = [str(value or "").strip() for value in list(snapshot_ids or []) if str(value or "").strip()]
+        if isinstance(hits_by_target, dict):
+            for raw_target in list(hits_by_target.keys()):
+                target_root = self._drukhari_root(raw_target)
+                target_id = self._drukhari_sort_key(target_root)
+                if target_id and target_id not in candidate_ids:
+                    candidate_ids.append(target_id)
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit_id in list(candidate_ids or []):
+            root = self._drukhari_resolve_unit_by_entity_id(unit_id)
+            if root is None:
+                continue
+            resolved_id = self._drukhari_sort_key(root)
+            if resolved_id and resolved_id in seen:
+                continue
+            if resolved_id:
+                seen.add(resolved_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._drukhari_is_haemonculus_covens_unit(root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "ENFOLDING NIGHTMARE":
+                continue
+            if self._drukhari_root(reaction.get("enemy_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "candidates": sorted(candidates, key=self._drukhari_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_covenite_connoisseurs_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        attacker_root = self._drukhari_root(attacking_unit)
+        if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("CONNOISSEURS OF PAIN")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if not self._drukhari_can_spend_pain_tokens(1):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._drukhari_root(target)
+            if root is None:
+                continue
+            target_id = self._drukhari_sort_key(root)
+            if target_id and target_id in seen:
+                continue
+            if target_id:
+                seen.add(target_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_unit(root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "CONNOISSEURS OF PAIN":
+                continue
+            if self._drukhari_root(reaction.get("enemy_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": sorted(candidates, key=self._drukhari_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_covenite_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        root = self._drukhari_root(unit)
+        if root is None or model is None:
+            return
+        if not self._drukhari_owned_by_player(root, self.player):
+            return
+        if not self._drukhari_postmortality_model_eligible(unit=root, model=model):
+            return
+        model_id = self._drukhari_sort_key(model)
+        if model_id and model_id in self._drukhari_postmortality_used_model_ids():
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("POSTMORTALITY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if not self._drukhari_can_spend_pain_tokens(1):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "POSTMORTALITY":
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == model_id:
+                return
+        destroyed_position = None
+        get_location = getattr(model, "get_location", None)
+        if callable(get_location):
+            try:
+                pos = get_location()
+            except (AttributeError, TypeError, ValueError):
+                pos = None
+            if isinstance(pos, (list, tuple)) and len(pos) >= 4:
+                try:
+                    destroyed_position = (float(pos[0]), float(pos[1]), float(pos[2]), float(pos[3]))
+                except (TypeError, ValueError):
+                    destroyed_position = None
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_id": model_id,
+            "destroyed_position": destroyed_position,
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_covenite_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+        hits_by_target: Any = None,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        root = self._drukhari_root(unit)
+        if root is None or not self._drukhari_owned_by_player(root, self.player):
+            return
+
+        poison_stratagem = getattr(self, "get_by_name", lambda _name: None)("POISONER'S ART")
+        if poison_stratagem is not None:
+            candidates: list[Any] = []
+            seen: set[str] = set()
+            target_items = (hits_by_target or {}).items() if isinstance(hits_by_target, dict) else []
+            if not target_items and target_unit is not None:
+                target_items = [(target_unit, 1)]
+            for raw_target, hits in list(target_items):
+                try:
+                    hit_count = int(hits or 0)
+                except (TypeError, ValueError):
+                    hit_count = 0
+                if hit_count <= 0:
+                    continue
+                enemy_root = self._drukhari_root(raw_target)
+                if enemy_root is None:
+                    continue
+                enemy_id = self._drukhari_sort_key(enemy_root)
+                if enemy_id and enemy_id in seen:
+                    continue
+                if enemy_id:
+                    seen.add(enemy_id)
+                if self._drukhari_owned_by_player(enemy_root, self.player):
+                    continue
+                if not self._drukhari_on_battlefield(enemy_root):
+                    continue
+                if self._drukhari_has_keyword(enemy_root, "VEHICLE"):
+                    continue
+                candidates.append(enemy_root)
+            if (
+                candidates
+                and self._drukhari_is_haemonculus_covens_unit(root)
+                and int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(poison_stratagem, "cp_cost", 0) or 0)
+                and str(getattr(poison_stratagem, "name", "") or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+            ):
+                duplicate = False
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("event", "") or "") != "fight_attacks_resolved":
+                        continue
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "POISONER'S ART":
+                        continue
+                    if self._drukhari_root(reaction.get("unit")) is root:
+                        duplicate = True
+                        break
+                if not duplicate:
+                    payload = {
+                        "event": "fight_attacks_resolved",
+                        "phase_name": "Fight phase",
+                        "stratagem": poison_stratagem.name,
+                        "cp_cost": poison_stratagem.cp_cost,
+                        "unit": root,
+                        "target_unit": root,
+                        "candidates": sorted(candidates, key=self._drukhari_sort_key),
+                        "hits_by_target": hits_by_target,
+                    }
+                    self._queue_reaction(payload, use_timer=False)
+
+        symphony_stratagem = getattr(self, "get_by_name", lambda _name: None)("SYMPHONY OF SUFFERING")
+        if symphony_stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(symphony_stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(symphony_stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        destroyed_enemy = False
+        target_items = (killing_models_by_target or {}).items() if isinstance(killing_models_by_target, dict) else []
+        for raw_target, _destroyed_models in list(target_items):
+            enemy_root = self._drukhari_root(raw_target)
+            if enemy_root is None or self._drukhari_owned_by_player(enemy_root, self.player):
+                continue
+            if self._drukhari_is_alive(enemy_root):
+                continue
+            destroyed_enemy = True
+            break
+        if not destroyed_enemy and target_unit is not None:
+            enemy_root = self._drukhari_root(target_unit)
+            if enemy_root is not None and not self._drukhari_owned_by_player(enemy_root, self.player):
+                destroyed_enemy = not self._drukhari_is_alive(enemy_root)
+        if not destroyed_enemy:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_attacks_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != "SYMPHONY OF SUFFERING":
+                continue
+            if self._drukhari_root(reaction.get("unit")) is root:
+                return
+        self._queue_reaction(
+            {
+                "event": "fight_attacks_resolved",
+                "phase_name": "Fight phase",
+                "stratagem": symphony_stratagem.name,
+                "cp_cost": symphony_stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "killing_models_by_target": killing_models_by_target,
+            },
+            use_timer=False,
+        )
+
+    def _drukhari_queue_postmortality_choice_request(
+        self,
+        *,
+        unit: Any,
+        model: Any,
+        destroyed_position: Any = None,
+        phase_name: str = "",
+        source_name: str = "Postmortality",
+    ) -> Any:
+        game = getattr(self, "game", None)
+        request_decision = getattr(game, "request_decision", None) if game is not None else None
+        if not callable(request_decision):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        root = self._drukhari_root(unit)
+        if root is None or model is None:
+            return None
+        unit_id = self._drukhari_sort_key(root)
+        model_id = self._drukhari_sort_key(model)
+        if not unit_id or not model_id:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(pending, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "drukhari_postmortality":
+                    continue
+                if str(ctx.get("source_model_id", "") or "") == model_id:
+                    return pending
+        max_tokens = min(3, int(getattr(self._drukhari_power_from_pain_mgr(), "tokens", 0) or 0))
+        if max_tokens <= 0:
+            return None
+        options = []
+        allowed_choice_keys: list[str] = []
+        for spend in range(1, max_tokens + 1):
+            choice_key = f"SPEND_{int(spend)}"
+            allowed_choice_keys.append(choice_key)
+            suffix = "" if spend == 1 else "s"
+            options.append(
+                DecisionOption.create(
+                    f"Spend {int(spend)} Pain token{suffix}",
+                    payload={
+                        "choice_key": choice_key,
+                        "pain_token_cost": int(spend),
+                        "source_unit_id": unit_id,
+                        "source_model_id": model_id,
+                    },
+                )
+            )
+        phase_key = self._drukhari_phase_key_from_name(phase_name)
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{source_name}: choose Pain tokens to spend.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "drukhari_postmortality",
+                "ability_name": source_name,
+                "source_unit_id": unit_id,
+                "target_unit_id": unit_id,
+                "source_model_id": model_id,
+                "model_id": model_id,
+                "phase_name": str(phase_name or ""),
+                "phase_key": phase_key,
+                "allowed_choice_keys": list(allowed_choice_keys),
+                "destroyed_position": destroyed_position,
+            },
+        )
+        request_decision(request)
+        return request
+
+    def _drukhari_commit_postmortality_choice(
+        self,
+        *,
+        unit: Any,
+        model: Any,
+        pain_tokens: int,
+        destroyed_position: Any = None,
+        phase_name: str = "",
+        phase_key: str = "",
+        source_name: str = "Postmortality",
+    ) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None or model is None:
+            return False
+        if not self._drukhari_postmortality_model_eligible(unit=root, model=model):
+            return False
+        model_id = self._drukhari_sort_key(model)
+        if model_id and model_id in self._drukhari_postmortality_used_model_ids():
+            return False
+        try:
+            token_count = int(pain_tokens or 0)
+        except (TypeError, ValueError):
+            token_count = 0
+        token_count = max(1, min(3, int(token_count)))
+        if not self._drukhari_spend_pain_tokens(token_count, reason=f"{source_name}: {getattr(model, 'name', 'Model')}"):
+            return False
+        trigger_phase_name = str(phase_name or getattr(self, "_current_phase_name", "") or "")
+        trigger_phase_key = self._drukhari_phase_key_from_name(phase_key or trigger_phase_name)
+        self._drukhari_postmortality_pending_returns().append(
+            {
+                "unit": root,
+                "model": model,
+                "model_id": model_id,
+                "destroyed_position": destroyed_position,
+                "trigger_phase_name": trigger_phase_name,
+                "trigger_phase_key": trigger_phase_key,
+                "pain_tokens": int(token_count),
+                "source": str(source_name or "Postmortality"),
+            }
+        )
+        if model_id:
+            self._drukhari_postmortality_used_model_ids().add(model_id)
+        return True
+
+    def _drukhari_postmortality_find_placement(self, *, unit: Any, model: Any, anchor: Any) -> Any:
+        root = self._drukhari_root(unit)
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if root is None or model is None or game_map is None:
+            return None
+        try:
+            anchor_x = float(anchor[0])
+            anchor_y = float(anchor[1])
+            anchor_z = float(anchor[2]) if len(anchor) > 2 else 0.0
+            anchor_f = float(anchor[3]) if len(anchor) > 3 else 0.0
+        except (TypeError, ValueError, IndexError):
+            return None
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None)
+        try:
+            alive_models = [
+                existing
+                for existing in list(getattr(root, "models", []) or [])
+                if existing is not None and existing is not model and bool(getattr(existing, "is_alive", False))
+            ]
+        except (AttributeError, TypeError, ValueError):
+            alive_models = []
+        if callable(find_pos) and len(alive_models) == 0:
+            try:
+                return find_pos(root, (anchor_x, anchor_y, anchor_z, anchor_f), game_map=game_map)
+            except (AttributeError, TypeError, ValueError):
+                return None
+
+        create_base = getattr(root, "_create_potential_base", None)
+        validate_reanimation = getattr(root, "_reanimation_position_valid", None)
+        if not callable(create_base) or not callable(validate_reanimation):
+            return None
+        try:
+            required_neighbors = int(getattr(root, "required_neighbors", 0) or 0)
+        except (TypeError, ValueError):
+            required_neighbors = 0
+
+        import math
+
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+
+        get_enemy = getattr(game_map, "get_enemy_units", None)
+        enemy_units = list(get_enemy(root) or []) if callable(get_enemy) else []
+        max_radius = float(max(getattr(game_map, "width", 0) or 0, getattr(game_map, "height", 0) or 0))
+        if max_radius <= 0:
+            max_radius = 30.0
+        radius = 0.0
+        while radius <= max_radius + 1e-6:
+            angles = (0,) if radius <= 1e-6 else range(0, 360, 15)
+            for deg in angles:
+                angle = math.radians(float(deg))
+                x = anchor_x + math.cos(angle) * radius
+                y = anchor_y + math.sin(angle) * radius
+                height_fn = getattr(game_map, "get_height_at_point", None)
+                if callable(height_fn):
+                    try:
+                        height = height_fn(x, y)
+                    except (AttributeError, TypeError, ValueError):
+                        height = None
+                    z = float(height) if height is not None else anchor_z
+                else:
+                    z = anchor_z
+                if not bool(validate_reanimation(x, y, z, anchor_f, model, alive_models, game_map, required_neighbors)):
+                    continue
+                try:
+                    candidate_base = create_base(x, y, z, anchor_f, model=model)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                engaged = False
+                for enemy in list(enemy_units or []):
+                    enemy_root = self._drukhari_root(enemy)
+                    if enemy_root is None or not self._drukhari_on_battlefield(enemy_root):
+                        continue
+                    enemy_models = list(getattr(enemy_root, "get_models_for_collision", lambda: [])() or [])
+                    if not enemy_models:
+                        enemy_models = list(getattr(enemy_root, "models", []) or [])
+                    for enemy_model in list(enemy_models or []):
+                        if enemy_model is None or not bool(getattr(enemy_model, "is_alive", False)):
+                            continue
+                        try:
+                            horizontal = float(horizontal_distance_between_bases_2d(candidate_base, enemy_model.model_base))
+                            vertical = float(vertical_distance_between_bases(candidate_base, enemy_model.model_base))
+                        except (AttributeError, TypeError, ValueError):
+                            continue
+                        if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) + 1e-6 and vertical <= float(ENGAGEMENT_RANGE_VERTICAL) + 1e-6:
+                            engaged = True
+                            break
+                    if engaged:
+                        break
+                if engaged:
+                    continue
+                return (float(x), float(y), float(z), float(anchor_f))
+            radius += 0.5
+        return None
+
+    def _resolve_drukhari_covenite_phase_end_effects(self, *, player: Any, phase: Any) -> None:
+        if not self._is_drukhari_covenite_coterie():
+            return
+        phase_key = self._drukhari_phase_key_from_name(getattr(phase, "name", "") or getattr(self, "_current_phase_name", ""))
+        if not phase_key:
+            return
+        remaining_refunds: list[dict[str, Any]] = []
+        for entry in list(self._drukhari_connoisseurs_of_pain_pending_refunds() or []):
+            if not isinstance(entry, dict):
+                continue
+            trigger_key = self._drukhari_phase_key_from_name(entry.get("trigger_phase_key") or entry.get("trigger_phase_name") or "")
+            if trigger_key and trigger_key != phase_key:
+                remaining_refunds.append(entry)
+                continue
+            root = self._drukhari_root(entry.get("unit"))
+            if root is None:
+                root = self._drukhari_resolve_unit_by_entity_id(entry.get("unit_id") or "")
+            if root is None:
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if not self._drukhari_is_haemonculus_covens_unit(root):
+                continue
+            self._drukhari_gain_pain_tokens(1, reason=f"Connoisseurs of Pain: {getattr(root, 'name', 'Unit')}")
+        self._drukhari_connoisseurs_of_pain_pending_refunds()[:] = remaining_refunds
+
+        remaining_returns: list[dict[str, Any]] = []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        for entry in list(self._drukhari_postmortality_pending_returns() or []):
+            if not isinstance(entry, dict):
+                continue
+            trigger_key = self._drukhari_phase_key_from_name(entry.get("trigger_phase_key") or entry.get("trigger_phase_name") or "")
+            if trigger_key and trigger_key != phase_key:
+                remaining_returns.append(entry)
+                continue
+            root = self._drukhari_root(entry.get("unit"))
+            if root is None:
+                root = self._drukhari_resolve_unit_by_entity_id(entry.get("unit_id") or "")
+            model = entry.get("model")
+            if model is None:
+                model = self._drukhari_resolve_model_by_entity_id(entry.get("model_id") or "")
+            if root is None or model is None:
+                continue
+            try:
+                in_unit = model in list(getattr(root, "models", []) or [])
+            except (AttributeError, TypeError, ValueError):
+                in_unit = False
+            if not in_unit:
+                try:
+                    if model in list(getattr(root, "models_lost", []) or []):
+                        root.models_lost.remove(model)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+                add_model = getattr(root, "add_model", None)
+                if callable(add_model):
+                    try:
+                        add_model(model)
+                    except (AttributeError, TypeError, ValueError):
+                        try:
+                            root.models.append(model)
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                else:
+                    try:
+                        root.models.append(model)
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+            try:
+                base_wounds = int(
+                    getattr(
+                        model,
+                        "_base_wounds",
+                        getattr(model, "base_wounds", getattr(model, "wounds", getattr(model, "_wounds", 1))),
+                    )
+                    or 1
+                )
+            except (AttributeError, TypeError, ValueError):
+                base_wounds = 1
+            try:
+                wound_value = min(int(base_wounds), max(1, int(entry.get("pain_tokens", 1) or 1)))
+            except (TypeError, ValueError):
+                wound_value = 1
+            try:
+                model.wounds = int(wound_value)
+            except (AttributeError, TypeError, ValueError):
+                try:
+                    model._wounds = int(wound_value)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            for key, value in (
+                ("_on_death_reactions_resolved", False),
+                ("_fight_on_death_used", False),
+                ("_shoot_on_death_used", False),
+                ("_pending_placement", False),
+                ("_pending_placement_source", None),
+            ):
+                try:
+                    setattr(model, key, value)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            anchor = entry.get("destroyed_position")
+            if anchor is None:
+                get_location = getattr(model, "get_location", None)
+                if callable(get_location):
+                    try:
+                        anchor = get_location()
+                    except (AttributeError, TypeError, ValueError):
+                        anchor = None
+            placement = self._drukhari_postmortality_find_placement(unit=root, model=model, anchor=anchor)
+            if placement is not None:
+                try:
+                    model.set_location(float(placement[0]), float(placement[1]), float(placement[2]), float(placement[3]))
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            root.deployed = True
+            try:
+                root.reserve_status = "deployed"
+            except (AttributeError, TypeError, ValueError):
+                pass
+            try:
+                root.embarked_in = None
+            except (AttributeError, TypeError, ValueError):
+                pass
+            try:
+                root.is_embarked = False
+            except (AttributeError, TypeError, ValueError):
+                pass
+            if game_map is not None:
+                units = list(getattr(game_map, "units", []) or [])
+                if root not in units:
+                    place_unit = getattr(game_map, "place_unit", None)
+                    if callable(place_unit):
+                        try:
+                            placed = bool(place_unit(root))
+                        except (AttributeError, TypeError, ValueError):
+                            placed = False
+                        if not placed and isinstance(getattr(game_map, "units", None), list):
+                            game_map.units.append(root)
+                    elif isinstance(getattr(game_map, "units", None), list):
+                        game_map.units.append(root)
+            logger.info(
+                "INFO: POSTMORTALITY: returned %s with %d wound(s).",
+                getattr(model, "name", "Model"),
+                int(wound_value),
+            )
+        self._drukhari_postmortality_pending_returns()[:] = remaining_returns
+
+    def _cleanup_drukhari_covenite_phase_end_effects(self, *, phase: Any) -> None:
+        phase_key = self._drukhari_phase_key_from_name(getattr(phase, "name", "") or "")
+        if phase_key != "FIGHT_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            root_id = self._drukhari_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for key in (
+                "drukhari_distillers_of_fear_active",
+                "drukhari_distillers_of_fear_source",
+                "drukhari_distillers_of_fear_phase",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
     def _use_drukhari_skysplinter_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "CONNOISSEURS OF PAIN":
+            return self._use_drukhari_covenite_connoisseurs_of_pain(stratagem, **kwargs)
+        if name_u == "DISTILLERS OF FEAR":
+            return self._use_drukhari_covenite_distillers_of_fear(stratagem, **kwargs)
+        if name_u == "ENFOLDING NIGHTMARE":
+            return self._use_drukhari_covenite_enfolding_nightmare(stratagem, **kwargs)
+        if name_u == "POISONER'S ART":
+            return self._use_drukhari_covenite_poisoners_art(stratagem, **kwargs)
+        if name_u == "POSTMORTALITY":
+            return self._use_drukhari_covenite_postmortality(stratagem, **kwargs)
+        if name_u == "SYMPHONY OF SUFFERING":
+            return self._use_drukhari_covenite_symphony_of_suffering(stratagem, **kwargs)
         if name_u == "SCINTILLATING TEMPO":
             return self._use_drukhari_reapers_wager_scintillating_tempo(stratagem, **kwargs)
         if name_u == "SWOOPING MOCKERY":
@@ -914,6 +1949,474 @@ class DrukhariStratagemMixin:
         if name_u == "WRAITHLIKE RETREAT":
             return self._use_drukhari_skysplinter_wraithlike_retreat(stratagem, **kwargs)
         return None
+
+    def _use_drukhari_covenite_connoisseurs_of_pain(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CONNOISSEURS OF PAIN":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CONNOISSEURS OF PAIN: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        attacker_root = self._drukhari_root(attacker_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: CONNOISSEURS OF PAIN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: CONNOISSEURS OF PAIN: only in your opponent's Shooting phase")
+            return False
+        if self._drukhari_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: attacking unit must be enemy")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if not self._is_drukhari_unit(root):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: target must be a Drukhari unit")
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: target cannot be selected")
+            return False
+        if not self._drukhari_can_spend_pain_tokens(1):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: insufficient Pain tokens")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._drukhari_spend_pain_tokens(1, reason=f"Connoisseurs of Pain: {getattr(root, 'name', 'Unit')}"):
+            return False
+        if not bool(self._apply_armour_of_contempt(root, attacker_root, amount=1)):
+            logger.error("ERROR: CONNOISSEURS OF PAIN: failed to apply AP worsen effect")
+            return False
+        if self._drukhari_is_haemonculus_covens_unit(root):
+            self._drukhari_connoisseurs_of_pain_pending_refunds().append(
+                {
+                    "unit": root,
+                    "unit_id": self._drukhari_sort_key(root),
+                    "trigger_phase_name": str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or ""),
+                    "trigger_phase_key": self._drukhari_phase_key_from_name(
+                        kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or ""
+                    ),
+                }
+            )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: CONNOISSEURS OF PAIN: %s worsens %s AP by 1 until attacks resolve.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_drukhari_covenite_distillers_of_fear(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DISTILLERS OF FEAR":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DISTILLERS OF FEAR: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DISTILLERS OF FEAR: wrong phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DISTILLERS OF FEAR: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: DISTILLERS OF FEAR: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DISTILLERS OF FEAR: target cannot be selected")
+            return False
+        if not self._drukhari_is_haemonculus_covens_unit(root):
+            logger.error("ERROR: DISTILLERS OF FEAR: target must be a Haemonculus Covens unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: DISTILLERS OF FEAR: target has already fought this phase")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_distillers_of_fear_active"] = True
+        sr["drukhari_distillers_of_fear_source"] = str(getattr(stratagem, "name", "DISTILLERS OF FEAR") or "DISTILLERS OF FEAR")
+        sr["drukhari_distillers_of_fear_phase"] = "FIGHT_PHASE"
+        root.special_rules = sr
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: DISTILLERS OF FEAR: %s gains Devastating Wounds against Battle-shocked targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_covenite_enfolding_nightmare(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ENFOLDING NIGHTMARE":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacker_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENFOLDING NIGHTMARE: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        attacker_root = self._drukhari_root(attacker_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ENFOLDING NIGHTMARE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ENFOLDING NIGHTMARE: only in your opponent's Shooting phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: target cannot be selected")
+            return False
+        if not self._drukhari_is_haemonculus_covens_unit(root):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: target must be a Haemonculus Covens unit")
+            return False
+        if self._drukhari_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: attacking unit must be enemy")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: ENFOLDING NIGHTMARE: reactive move decision queue unavailable")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        max_distance = int(dice_module.get_roll("D6") or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: ENFOLDING NIGHTMARE: invalid move distance roll")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="enfolding_nightmare",
+            movement_type="reactive",
+            reactive_movement_type="enfolding_nightmare",
+            source=str(getattr(stratagem, "name", "ENFOLDING NIGHTMARE") or "ENFOLDING NIGHTMARE"),
+            moving_unit=attacker_root,
+            attacker_unit=attacker_root,
+            range_value=int(max_distance),
+            allow_engagement_range=True,
+            allow_skip=True,
+            extra_context={
+                "enfolding_nightmare_closest_enemy_exclude_keywords_any": ["AIRCRAFT"],
+            },
+        )
+        if request is None:
+            logger.error("ERROR: ENFOLDING NIGHTMARE: failed to queue move decision")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: ENFOLDING NIGHTMARE: %s can make a reactive move of up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_drukhari_covenite_poisoners_art(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        target_enemy = kwargs.get("enemy_unit") or kwargs.get("selected_unit") or kwargs.get("poisoned_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "POISONER'S ART":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                target_enemy = target_enemy or reaction.get("enemy_unit") or reaction.get("selected_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None:
+            logger.error("ERROR: POISONER'S ART: no source unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: POISONER'S ART: wrong phase")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: POISONER'S ART: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if not self._drukhari_is_haemonculus_covens_unit(root):
+            logger.error("ERROR: POISONER'S ART: target must be a Haemonculus Covens unit")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: POISONER'S ART: source unit must have fought this phase")
+            return False
+        if target_enemy is None and len(candidates) == 1:
+            target_enemy = candidates[0]
+        if target_enemy is not None and candidates and not self._drukhari_unit_in_candidates(self._drukhari_root(target_enemy), candidates):
+            logger.error("ERROR: POISONER'S ART: selected enemy unit is not eligible")
+            return False
+        if target_enemy is not None:
+            enemy_root = self._drukhari_root(target_enemy)
+            if enemy_root is None:
+                logger.error("ERROR: POISONER'S ART: enemy unit could not be resolved")
+                return False
+            if self._drukhari_owned_by_player(enemy_root, self.player):
+                logger.error("ERROR: POISONER'S ART: selected unit must be an enemy")
+                return False
+            if not self._drukhari_on_battlefield(enemy_root):
+                logger.error("ERROR: POISONER'S ART: selected enemy unit is not on the battlefield")
+                return False
+            if self._drukhari_has_keyword(enemy_root, "VEHICLE"):
+                logger.error("ERROR: POISONER'S ART: VEHICLE units cannot be poisoned")
+                return False
+        if len(candidates) > 1:
+            game = getattr(self, "game", None)
+            request_decision = getattr(game, "request_decision", None) if game is not None else None
+            if target_enemy is None and not callable(request_decision):
+                logger.error("ERROR: POISONER'S ART: target decision queue unavailable")
+                return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        ability_name = str(getattr(stratagem, "name", "Poisoner's Art") or "Poisoner's Art")
+        if target_enemy is None:
+            from ..engine.decision_kinds import DECISION_CHOOSE_DAEMONIC_POISONS_TARGET
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            options = [
+                DecisionOption.create(
+                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                    payload={"unit_id": self._drukhari_sort_key(candidate)},
+                )
+                for candidate in list(sorted(candidates, key=self._drukhari_sort_key) or [])
+            ]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
+                f"{ability_name}: select a unit to poison.",
+                player_id=getattr(self.player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": self._drukhari_sort_key(root),
+                    "ability_name": ability_name,
+                    "phase": "Fight phase",
+                },
+            )
+            self.game.request_decision(request)
+        else:
+            from ..rules.daemonic_poisons import apply_daemonic_poisons
+
+            enemy_root = self._drukhari_root(target_enemy)
+            if enemy_root is None:
+                logger.error("ERROR: POISONER'S ART: enemy unit could not be resolved")
+                return False
+            apply_daemonic_poisons(
+                enemy_root,
+                source_unit=root,
+                ability_name=ability_name,
+                game=self.game,
+                player=self.player,
+            )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: POISONER'S ART: %s applies poison for the rest of the battle.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_covenite_postmortality(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        model = kwargs.get("model") or kwargs.get("destroyed_model")
+        destroyed_position = kwargs.get("destroyed_position")
+        if unit is None or model is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "POSTMORTALITY":
+                    continue
+                unit = unit or reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
+                model = model or reaction.get("destroyed_model")
+                destroyed_position = destroyed_position or reaction.get("destroyed_position")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None or model is None:
+            logger.error("ERROR: POSTMORTALITY: no destroyed model provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            logger.error("ERROR: POSTMORTALITY: source unit could not be resolved")
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        if not phase_name:
+            logger.error("ERROR: POSTMORTALITY: phase context is required")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: POSTMORTALITY: target model is not from your army")
+            return False
+        if not self._drukhari_postmortality_model_eligible(unit=root, model=model):
+            logger.error("ERROR: POSTMORTALITY: model is not an eligible destroyed Haemonculus")
+            return False
+        model_id = self._drukhari_sort_key(model)
+        if model_id and model_id in self._drukhari_postmortality_used_model_ids():
+            logger.error("ERROR: POSTMORTALITY: this model has already returned once this battle")
+            return False
+        if not self._drukhari_can_spend_pain_tokens(1):
+            logger.error("ERROR: POSTMORTALITY: insufficient Pain tokens")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        request = self._drukhari_queue_postmortality_choice_request(
+            unit=root,
+            model=model,
+            destroyed_position=destroyed_position,
+            phase_name=phase_name,
+            source_name=str(getattr(stratagem, "name", "Postmortality") or "Postmortality"),
+        )
+        if request is None:
+            logger.error("ERROR: POSTMORTALITY: failed to queue Pain token choice")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: POSTMORTALITY: queued return choice for %s.",
+            getattr(model, "name", "Model"),
+        )
+        return True
+
+    def _use_drukhari_covenite_symphony_of_suffering(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_covenite_coterie():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SYMPHONY OF SUFFERING":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None:
+            logger.error("ERROR: SYMPHONY OF SUFFERING: no source unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SYMPHONY OF SUFFERING: wrong phase")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: SYMPHONY OF SUFFERING: source unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if not self._is_drukhari_unit(root):
+            logger.error("ERROR: SYMPHONY OF SUFFERING: source must be a Drukhari unit")
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SYMPHONY OF SUFFERING: source unit cannot be selected")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        modifier = -1 if self._drukhari_is_haemonculus_covens_unit(root) else 0
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        targets = self._drukhari_visible_enemy_units_within_range(root, 9.0)
+        for enemy_unit in list(targets or []):
+            force_test = getattr(enemy_unit, "force_battle_shock_test", None)
+            if not callable(force_test):
+                continue
+            try:
+                force_test(
+                    current_turn=max(1, int(current_turn)),
+                    modifier=int(modifier),
+                    source=str(getattr(stratagem, "name", "Symphony of Suffering") or "Symphony of Suffering"),
+                )
+            except (AttributeError, TypeError, ValueError):
+                continue
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SYMPHONY OF SUFFERING: %s forced %d Battle-shock test(s).",
+            getattr(root, "name", "Unit"),
+            len(list(targets or [])),
+        )
+        return True
 
     def _use_drukhari_reapers_wager_scintillating_tempo(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_drukhari_reapers_wager():

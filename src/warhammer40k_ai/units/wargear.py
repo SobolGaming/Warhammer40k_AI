@@ -23059,12 +23059,21 @@ class WargearProfile:
                 if not is_melee:
                     return False
                 try:
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                except Exception:
+                    sr = None
+                try:
+                    target_is_battle_shocked = bool(target.is_battle_shocked())
+                except Exception:
+                    target_is_battle_shocked = False
+                if isinstance(sr, dict) and sr.get("drukhari_distillers_of_fear_active") and target_is_battle_shocked:
+                    return True
+                try:
                     if not target.has_keyword("Infantry"):
                         return False
                 except Exception:
                     return False
                 try:
-                    sr = getattr(attacker.parent_unit, "special_rules", None)
                     return bool(isinstance(sr, dict) and sr.get("pain_devastating_vs_infantry"))
                 except Exception:
                     return False
