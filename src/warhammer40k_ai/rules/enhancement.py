@@ -15328,6 +15328,39 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_crushing_condemnation_bearer_model_id"] = bearer_id
 
+        if name == "mentor's pride" or enh_id == "000010506002":
+            if not is_spearhead_at_arms:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Mentor's Pride").strip() or "Mentor's Pride"
+            unit.special_rules["enhancement_mentors_pride"] = True
+            unit.special_rules["enhancement_mentors_pride_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mentors_pride_bearer_model_id"] = bearer_id
+
+        if name == "fables of nightmare" or enh_id == "000010506003":
+            if not is_spearhead_at_arms:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Fables of Nightmare").strip() or "Fables of Nightmare"
+            unit.special_rules["enhancement_fables_of_nightmare"] = True
+            unit.special_rules["enhancement_fables_of_nightmare_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fables_of_nightmare_bearer_model_id"] = bearer_id
+
+        if name == "tales of heroism" or enh_id == "000010506004":
+            if not is_spearhead_at_arms:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Tales of Heroism").strip() or "Tales of Heroism"
+            unit.special_rules["enhancement_tales_of_heroism"] = True
+            unit.special_rules["enhancement_tales_of_heroism_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tales_of_heroism_bearer_model_id"] = bearer_id
+
         if name == "martial tuition" or enh_id == "000010506005":
             if not is_spearhead_at_arms:
                 return

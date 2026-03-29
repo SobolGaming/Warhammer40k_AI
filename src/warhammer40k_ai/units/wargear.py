@@ -10193,6 +10193,20 @@ class WargearProfile:
             )
             if isinstance(dauntless_rule, dict) and dauntless_rule:
                 return dauntless_rule
+        tales_hit_rule_fn = (
+            getattr(ik_mgr, "spearhead_tales_of_heroism_ignore_hit_modifiers_rule", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(tales_hit_rule_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            tales_hit_rule = tales_hit_rule_fn(
+                attacker,
+                weapon_profile=self,
+                game=game,
+            )
+            if isinstance(tales_hit_rule, dict) and tales_hit_rule:
+                return tales_hit_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -10340,6 +10354,20 @@ class WargearProfile:
                 necrons_rule = None
             if isinstance(necrons_rule, dict) and necrons_rule:
                 return necrons_rule
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        tales_wound_rule_fn = (
+            getattr(ik_mgr, "spearhead_tales_of_heroism_ignore_wound_modifiers_rule", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(tales_wound_rule_fn):
+            tales_wound_rule = tales_wound_rule_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if isinstance(tales_wound_rule, dict) and tales_wound_rule:
+                return tales_wound_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -11305,6 +11333,16 @@ class WargearProfile:
                     target=target,
                 )
                 _apply_keyword_bonus(model_bonus, lance_label="Ability")
+            ik_mgr = getattr(source_army, "imperial_knights_detachments", None) if source_army is not None else None
+            precision_fn = getattr(ik_mgr, "spearhead_fables_of_nightmare_precision_applies", None) if ik_mgr is not None else None
+            if callable(precision_fn):
+                precision_applies, _precision_source = precision_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=source_game,
+                )
+                if bool(precision_applies):
+                    attack_instance["bonus_precision"] = True
 
             if bonus_devastating:
                 attack_instance["bonus_devastating_wounds"] = True
@@ -14306,6 +14344,17 @@ class WargearProfile:
             if bool(reroll_hit_ones):
                 reroll_hit_values.add(1)
                 source_name = str(source or "Purgation's Hand").strip() or "Purgation's Hand"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        mentors_pride_fn = getattr(ik_mgr, "spearhead_mentors_pride_reroll_hit_ones", None) if ik_mgr is not None else None
+        if callable(mentors_pride_fn):
+            reroll_hit_ones, source = mentors_pride_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Mentor's Pride").strip() or "Mentor's Pride"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         # Astra Militarum: Bridgehead Strike (Only the Best) re-roll Hit roll of 1
         # for ASTRA MILITARUM INFANTRY models making ranged attacks.

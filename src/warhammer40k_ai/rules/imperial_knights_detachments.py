@@ -1279,6 +1279,136 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         candidates.sort(key=lambda unit_obj: self._entity_id(unit_obj) or f"obj:{id(unit_obj)}")
         return candidates
 
+    def _spearhead_bondsman_enhancement_source(self, target_unit, *, enhancement_key: str, min_targets: int = 2):
+        if not self.is_spearhead_at_arms():
+            return None, None
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return None, None
+        if not self._unit_on_battlefield(target_root):
+            return None, None
+        if not self._unit_is_armiger(target_root):
+            return None, None
+        for source_root in self._iter_army_roots():
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(enhancement_key)):
+                continue
+            if not self._unit_on_battlefield(source_root):
+                continue
+            if not self._enhancement_bearer_is_alive(source_root):
+                continue
+            targets = self._bondsman_target_roots(source_root, required_keyword="ARMIGER")
+            if len(targets) < int(max(1, min_targets)):
+                continue
+            if target_root not in targets:
+                continue
+            return source_root, sr
+        return None, None
+
+    def spearhead_mentors_pride_reroll_hit_ones(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[bool, str]:
+        del weapon_profile, game
+        if attacker_model is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None:
+            return False, ""
+        source_root, sr = self._spearhead_bondsman_enhancement_source(
+            attacker_root,
+            enhancement_key="enhancement_mentors_pride",
+            min_targets=2,
+        )
+        if source_root is None or sr is None:
+            return False, ""
+        source = str(sr.get("enhancement_mentors_pride_source", "") or "Mentor's Pride").strip()
+        return True, source or "Mentor's Pride"
+
+    def spearhead_fables_of_nightmare_precision_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        del game
+        if attacker_model is None or weapon_profile is None:
+            return False, ""
+        if self._weapon_is_ranged(weapon_profile):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None:
+            return False, ""
+        source_root, sr = self._spearhead_bondsman_enhancement_source(
+            attacker_root,
+            enhancement_key="enhancement_fables_of_nightmare",
+            min_targets=2,
+        )
+        if source_root is None or sr is None:
+            return False, ""
+        source = str(sr.get("enhancement_fables_of_nightmare_source", "") or "Fables of Nightmare").strip()
+        return True, source or "Fables of Nightmare"
+
+    def spearhead_tales_of_heroism_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> Optional[dict]:
+        del game
+        if attacker_model is None or weapon_profile is None:
+            return None
+        if self._weapon_is_ranged(weapon_profile):
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None:
+            return None
+        source_root, sr = self._spearhead_bondsman_enhancement_source(
+            attacker_root,
+            enhancement_key="enhancement_tales_of_heroism",
+            min_targets=2,
+        )
+        if source_root is None or sr is None:
+            return None
+        source = str(sr.get("enhancement_tales_of_heroism_source", "") or "Tales of Heroism").strip()
+        return {
+            "name": source or "Tales of Heroism",
+            "attack_type": "melee",
+            "allow_hit": True,
+        }
+
+    def spearhead_tales_of_heroism_ignore_wound_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> Optional[dict]:
+        del game
+        if attacker_model is None or weapon_profile is None:
+            return None
+        if self._weapon_is_ranged(weapon_profile):
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None:
+            return None
+        source_root, sr = self._spearhead_bondsman_enhancement_source(
+            attacker_root,
+            enhancement_key="enhancement_tales_of_heroism",
+            min_targets=2,
+        )
+        if source_root is None or sr is None:
+            return None
+        source = str(sr.get("enhancement_tales_of_heroism_source", "") or "Tales of Heroism").strip()
+        return {
+            "name": source or "Tales of Heroism",
+            "attack_type": "melee",
+            "allow_wound": True,
+        }
+
     def _process_heroes_of_legend_start_of_turn(self, *, game=None, player=None) -> None:
         if not self.is_questoris_companions():
             return

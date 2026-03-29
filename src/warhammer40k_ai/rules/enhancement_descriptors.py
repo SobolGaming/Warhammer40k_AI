@@ -6908,6 +6908,53 @@ _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_BY_NAME = {
 }
 
 _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010506002": EnhancementToolDescriptor(
+        enhancement_id="000010506002",
+        name="Mentor's Pride",
+        timing="passive",
+        target="friendly_armiger_under_bearers_bondsman",
+        duration="constant",
+        effect="bondsman_armigers_reroll_hit_ones_while_two_or_more_are_affected",
+        effect_params={
+            "required_target_keyword": "ARMIGER",
+            "required_min_bondsman_targets": 2,
+            "requires_bearer_on_battlefield": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010506003": EnhancementToolDescriptor(
+        enhancement_id="000010506003",
+        name="Fables of Nightmare",
+        timing="passive",
+        target="friendly_armiger_under_bearers_bondsman_melee_weapons",
+        duration="constant",
+        effect="bondsman_armigers_gain_precision_while_two_or_more_are_affected",
+        effect_params={
+            "required_target_keyword": "ARMIGER",
+            "required_min_bondsman_targets": 2,
+            "attack_type": "melee",
+            "keywords": ("PRECISION",),
+            "requires_bearer_on_battlefield": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010506004": EnhancementToolDescriptor(
+        enhancement_id="000010506004",
+        name="Tales of Heroism",
+        timing="passive",
+        target="friendly_armiger_under_bearers_bondsman_melee_attacks",
+        duration="constant",
+        effect="bondsman_armigers_ignore_hit_and_wound_modifiers_while_two_or_more_are_affected",
+        effect_params={
+            "required_target_keyword": "ARMIGER",
+            "required_min_bondsman_targets": 2,
+            "attack_type": "melee",
+            "ignore_hit_modifiers": True,
+            "ignore_wound_modifiers": True,
+            "requires_bearer_on_battlefield": True,
+            "requires_bearer_alive": True,
+        },
+    ),
     "000010506005": EnhancementToolDescriptor(
         enhancement_id="000010506005",
         name="Martial Tuition",
