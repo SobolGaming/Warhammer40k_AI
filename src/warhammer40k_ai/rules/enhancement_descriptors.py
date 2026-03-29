@@ -9045,6 +9045,68 @@ _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_DESCRIPTORS.values()
 }
 
+_LEAGUES_OF_VOTANN_PERSECUTION_PROSPECT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010439002": EnhancementToolDescriptor(
+        enhancement_id="000010439002",
+        name="Eye for Weakness",
+        timing="passive",
+        target="assailed_enemy_units_attacked_by_bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="wound_bonus_vs_assailed_targets",
+        effect_params={
+            "wound_roll_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010439003": EnhancementToolDescriptor(
+        enhancement_id="000010439003",
+        name="Writ of Acquisition",
+        timing="post_shoot",
+        target="assailed_enemy_units_hit_by_bearer_unit",
+        duration="instant",
+        effect="post_shoot_gain_yp_for_hit_assailed_units",
+        effect_params={
+            "yield_points_per_hit_unit": 1,
+            "max_yield_points_gain": 3,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010439004": EnhancementToolDescriptor(
+        enhancement_id="000010439004",
+        name="Surgical Saboteur",
+        timing="post_shoot",
+        target="hit_enemy_monster_or_vehicle",
+        duration="until_start_of_next_shooting_phase",
+        effect="post_shoot_select_hit_monster_or_vehicle_to_pin",
+        effect_params={
+            "move_penalty": -2,
+            "charge_penalty": -2,
+            "target_keywords_any": ("MONSTER", "VEHICLE"),
+            "expires_phase": "SHOOTING_PHASE",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010439005": EnhancementToolDescriptor(
+        enhancement_id="000010439005",
+        name="Nomad Strategist",
+        timing="end_of_opponent_fight_phase_once_per_battle",
+        target="friendly_hernkyn_units",
+        duration="instant_once_per_battle",
+        effect="once_per_battle_end_of_opponent_fight_phase_select_hernkyn_units_to_enter_strategic_reserves",
+        effect_params={
+            "once_per_battle_key": "nomad_strategist",
+            "max_yp_spend": 4,
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+            "destination": "strategic_reserves",
+        },
+    ),
+}
+
+_LEAGUES_OF_VOTANN_PERSECUTION_PROSPECT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_PERSECUTION_PROSPECT_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -9552,6 +9614,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEAGUES_OF_VOTANN_PERSECUTION_PROSPECT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -9725,4 +9790,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_MERCENARY_OATHBAND_BY_NAME.get(key)
+        or _LEAGUES_OF_VOTANN_PERSECUTION_PROSPECT_BY_NAME.get(key)
     )

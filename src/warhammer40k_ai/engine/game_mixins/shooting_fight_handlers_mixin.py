@@ -13683,6 +13683,168 @@ class GameShootingFightHandlersMixin:
 
         self._clear_persecution_prospect_source_lock(root)
 
+    def _on_unit_shooting_resolved_writ_of_acquisition(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        gain_fn = getattr(detachment_mgr, "writ_of_acquisition_gain", None) if detachment_mgr is not None else None
+        if not callable(gain_fn):
+            return
+        gain_amount, reason = gain_fn(root, hits_by_target, game=self)
+        if int(gain_amount or 0) <= 0:
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(int(gain_amount), game=self) or 0)
+        if delta <= 0:
+            return
+        event_system = getattr(self, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=self,
+                delta=int(delta),
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason=str(reason or "Writ of Acquisition"),
+            )
+        from ...utility.event_bus import append_action
+
+        ability_name = str(reason or "Writ of Acquisition").strip() or "Writ of Acquisition"
+        append_action(player, f"{ability_name}: gained {int(delta)} YP.")
+
+    def _on_unit_shooting_resolved_surgical_saboteur(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_persecution_prospect", lambda: False)()):
+            return
+        source_root, source_member, source_sr = detachment_mgr._attached_member_with_special_rule(
+            root,
+            "enhancement_surgical_saboteur",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return
+        if bool(source_sr.get("enhancement_surgical_saboteur_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            bearer_alive = getattr(bearer, "is_alive", False) if bearer is not None else False
+            if bearer is None or not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        attacker_unit_id = str(get_entity_id(source_root) or "")
+        if not attacker_unit_id or not owner_id or turn <= 0:
+            return
+        queue = getattr(self, "decision_queue", None)
+        ability_name = str(source_sr.get("enhancement_surgical_saboteur_source", "") or "Surgical Saboteur").strip()
+        if not ability_name:
+            ability_name = "Surgical Saboteur"
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "post_shoot_pinned":
+                    continue
+                if str(ctx.get("ability_name", "") or "") != ability_name:
+                    continue
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        candidates: list[Any] = []
+        seen_targets: set[str] = set()
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if target_root.get_parent_army() == source_root.get_parent_army():
+                continue
+            if not bool(getattr(target_root, "is_alive", lambda: True)()):
+                continue
+            if not self._unit_is_monster_or_vehicle(target_root):
+                continue
+            candidates.append(target_root)
+        if not candidates:
+            return
+        candidates = sorted(candidates, key=lambda unit: str(get_entity_id(unit) or ""))
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(candidate)},
+            )
+            for candidate in list(candidates)
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a MONSTER or VEHICLE unit to pin.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "post_shoot_pinned",
+                "ability_name": ability_name,
+                "attacker_unit_id": attacker_unit_id,
+                "source_unit_id": attacker_unit_id,
+                "move_penalty": int(source_sr.get("enhancement_surgical_saboteur_move_penalty", -2) or -2),
+                "charge_penalty": int(source_sr.get("enhancement_surgical_saboteur_charge_penalty", -2) or -2),
+                "expires_phase": str(
+                    source_sr.get("enhancement_surgical_saboteur_expires_phase", "") or "SHOOTING_PHASE"
+                ).strip().upper()
+                or "SHOOTING_PHASE",
+                "include_keywords_any": list(
+                    source_sr.get("enhancement_surgical_saboteur_target_keywords_any", []) or []
+                ),
+                "candidate_unit_ids": [str(get_entity_id(candidate) or "") for candidate in list(candidates)],
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+        )
+        self.request_decision(request)
+
     def _on_unit_shooting_resolved_resource_transmutation(self, attacker_unit=None, killing_models_by_target=None, **_kwargs) -> None:
         if attacker_unit is None:
             return

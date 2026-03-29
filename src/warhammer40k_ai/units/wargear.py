@@ -19457,6 +19457,30 @@ class WargearProfile:
                     )
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        attacker_army = None
+        if attacker_unit is not None:
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                attacker_army = get_parent_army()
+            else:
+                attacker_army = getattr(attacker_unit, "parent_army", None)
+        lov_mgr = getattr(attacker_army, "leagues_of_votann_detachments", None) if attacker_army is not None else None
+        eye_for_weakness_fn = getattr(lov_mgr, "persecution_eye_for_weakness_wound_bonus", None) if lov_mgr is not None else None
+        if callable(eye_for_weakness_fn):
+            wound_bonus, source = eye_for_weakness_fn(
+                attacker,
+                target,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+                game=game,
+            )
+            if wound_bonus:
+                source_name = str(source or "Eye for Weakness").strip() or "Eye for Weakness"
+                dice_modifier += int(wound_bonus)
+                wound_result["modifiers"].append(
+                    f"+{int(wound_bonus)} to wound from {source_name}"
+                )
         # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to wound vs targets below half-strength.
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)

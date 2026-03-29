@@ -24164,6 +24164,148 @@ class GamePhaseHandlersMixin:
                     instance_key=f"opponent_fight_phase_strat_reserves:{ability_key}:{uid}",
                 )
 
+    def _on_phase_end_nomad_strategist(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: Nomad Strategist offers a single spend-and-select Strategic Reserves choice."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        turn_ending_player = player
+        if turn_ending_player is None:
+            return
+        from itertools import combinations
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        for source_player in list(self.players or []):
+            if source_player is None or source_player is turn_ending_player:
+                continue
+            army = self._get_player_army(source_player)
+            if army is None:
+                continue
+            detachment_mgr = getattr(army, "leagues_of_votann_detachments", None)
+            if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_persecution_prospect", lambda: False)()):
+                continue
+            pe = getattr(army, "prioritised_efficiency", None)
+            try:
+                available_yp = int(getattr(pe, "yield_points", 0) or 0)
+            except Exception:
+                available_yp = 0
+
+            for source_root, source_member, source_sr, _bearer in list(
+                detachment_mgr._iter_enhancement_sources(
+                    "enhancement_nomad_strategist",
+                    require_bearer_alive=True,
+                )
+                or []
+            ):
+                if source_root is None or source_member is None or not isinstance(source_sr, dict):
+                    continue
+                if bool(source_sr.get("enhancement_nomad_strategist_requires_bearer_on_battlefield", True)) and not bool(
+                    getattr(detachment_mgr, "_unit_is_on_battlefield", lambda _u: False)(source_root)
+                ):
+                    continue
+                once_key = str(source_sr.get("enhancement_nomad_strategist_once_key", "") or "nomad_strategist").strip().lower()
+                if not once_key:
+                    once_key = "nomad_strategist"
+                root_has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+                if callable(root_has_used) and bool(root_has_used(once_key)):
+                    continue
+                member_has_used = getattr(source_member, "has_used_unit_once_per_battle", None)
+                if source_member is not source_root and callable(member_has_used) and bool(member_has_used(once_key)):
+                    continue
+                source_unit_id = str(get_entity_id(source_root) or "")
+                if not source_unit_id:
+                    continue
+                if detachment_mgr._pending_choose_quarry_request(
+                    self,
+                    abilities=("nomad_strategist",),
+                    player_id=str(getattr(source_player, "id", "") or ""),
+                    source_unit_id=source_unit_id,
+                ):
+                    continue
+
+                candidate_units: list[Any] = []
+                for candidate_root in list(detachment_mgr._iter_unique_army_roots() or []):
+                    if not bool(
+                        getattr(detachment_mgr, "nomad_strategist_target_eligible", lambda *_a, **_k: False)(
+                            candidate_root,
+                            game=self,
+                            owner_id=str(getattr(source_player, "id", "") or ""),
+                        )
+                    ):
+                        continue
+                    candidate_units.append(candidate_root)
+                candidate_units = sorted(candidate_units, key=lambda unit: str(get_entity_id(unit) or ""))
+                if not candidate_units:
+                    continue
+
+                try:
+                    configured_max_yp = int(source_sr.get("enhancement_nomad_strategist_max_yp_spend", 4) or 4)
+                except Exception:
+                    configured_max_yp = 4
+                max_yp_spend = max(0, min(int(configured_max_yp), int(available_yp)))
+                options: list[DecisionOption] = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "action": "skip",
+                            "source_unit_id": source_unit_id,
+                            "selected_unit_ids": [],
+                            "yp_spend": 0,
+                        },
+                    )
+                ]
+                for yp_spend in range(0, int(max_yp_spend) + 1):
+                    max_units = 1 + int(yp_spend // 2)
+                    combo_cap = min(int(max_units), len(candidate_units))
+                    for count in range(1, combo_cap + 1):
+                        for combo in combinations(candidate_units, count):
+                            selected_ids = [
+                                str(get_entity_id(unit) or "")
+                                for unit in list(combo)
+                                if str(get_entity_id(unit) or "")
+                            ]
+                            if len(selected_ids) != count:
+                                continue
+                            label = ", ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in list(combo))
+                            options.append(
+                                DecisionOption.create(
+                                    f"Spend {int(yp_spend)} YP: {label}",
+                                    payload={
+                                        "source_unit_id": source_unit_id,
+                                        "selected_unit_ids": list(selected_ids),
+                                        "yp_spend": int(yp_spend),
+                                        "ability_key": once_key,
+                                    },
+                                )
+                            )
+                if len(options) <= 1:
+                    continue
+                ability_name = str(source_sr.get("enhancement_nomad_strategist_source", "") or "Nomad Strategist").strip()
+                if not ability_name:
+                    ability_name = "Nomad Strategist"
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one or more Hernkyn units and an optional YP spend.",
+                    player_id=getattr(source_player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "nomad_strategist",
+                        "ability_name": ability_name,
+                        "phase": "End of opponent's Fight phase",
+                        "source_unit_id": source_unit_id,
+                        "candidate_unit_ids": [str(get_entity_id(unit) or "") for unit in list(candidate_units)],
+                        "max_yp_spend": int(max_yp_spend),
+                        "once_key": once_key,
+                        "turn_owner": str(getattr(source_player, "id", "") or ""),
+                        "turn": int(current_turn or 0),
+                    },
+                )
+                self.request_decision(request)
+
     def _on_phase_end_fight_phase_destroyed_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: units that destroyed enemies can enter Strategic Reserves (Warp Strike)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

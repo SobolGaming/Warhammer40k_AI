@@ -10542,6 +10542,163 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(target_eligible) or not bool(target_eligible(source_root, target_root)):
             return ("Assailed From Every Angle target must be an enemy non-MONSTER/non-VEHICLE unit.")
         return ()
+    if ability == "nomad_strategist":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Nomad Strategist army not found.",)
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_persecution_prospect", lambda: False)()):
+            return ("Nomad Strategist requires Persecution Prospect detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Nomad Strategist source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Nomad Strategist source unit was not found.",)
+        source_member = None
+        source_sr = {}
+        attached_member_with_rule = getattr(mgr, "_attached_member_with_special_rule", None)
+        if callable(attached_member_with_rule):
+            source_root, source_member, source_sr = attached_member_with_rule(
+                source_root,
+                "enhancement_nomad_strategist",
+            )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return ("Nomad Strategist enhancement is not active on the source unit.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        source_player = getattr(source_army, "player", None) if source_army is not None else None
+        expected_source_id = str(ctx.get("source_unit_id", "") or "").strip()
+        source_id = str(get_entity_id(source_root) or "")
+        if expected_source_id and source_id and source_id != expected_source_id:
+            return ("Nomad Strategist source unit mismatch.",)
+        if bool(source_sr.get("enhancement_nomad_strategist_requires_bearer_alive", True)):
+            bearer_model_id = str(
+                payload.get("model_id")
+                or ctx.get("model_id")
+                or source_sr.get("enhancement_nomad_strategist_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return ("Nomad Strategist requires bearer_model_id when bearer must be alive.",)
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return ("Nomad Strategist bearer model was not found.",)
+            if not _model_is_alive(bearer_model):
+                return ("Nomad Strategist bearer model must be alive.",)
+            if getattr(bearer_model, "parent_unit", None) is not source_member:
+                return ("Nomad Strategist bearer model does not belong to the source unit.",)
+        if bool(source_sr.get("enhancement_nomad_strategist_requires_bearer_on_battlefield", True)) and not _unit_is_on_battlefield(
+            source_root
+        ):
+            return ("Nomad Strategist source unit must be on the battlefield.",)
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != "FIGHT_PHASE":
+            return ("Nomad Strategist can only be resolved at the end of the Fight phase.",)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if current_player is not None and source_player is not None and current_player is source_player:
+            return ("Nomad Strategist can only be resolved in your opponent's Fight phase.",)
+        ctx_owner_id = str(ctx.get("turn_owner", "") or "").strip()
+        if ctx_owner_id and source_player is not None and str(getattr(source_player, "id", "") or "") != ctx_owner_id:
+            return ("Nomad Strategist turn ownership context no longer matches.",)
+        try:
+            ctx_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            ctx_turn = 0
+        if ctx_turn and int(getattr(game, "turn", 0) or 0) != ctx_turn:
+            return ("Nomad Strategist turn context no longer matches.",)
+        once_key = str(
+            ctx.get("once_key")
+            or source_sr.get("enhancement_nomad_strategist_once_key")
+            or "nomad_strategist"
+        ).strip().lower() or "nomad_strategist"
+        root_has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+        if callable(root_has_used) and bool(root_has_used(once_key)):
+            return ("Nomad Strategist has already been used this battle.",)
+        member_has_used = getattr(source_member, "has_used_unit_once_per_battle", None)
+        if source_member is not source_root and callable(member_has_used) and bool(member_has_used(once_key)):
+            return ("Nomad Strategist has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        selected_vals = payload.get("selected_unit_ids", ctx.get("selected_unit_ids"))
+        if selected_vals is None:
+            selected_vals = []
+        if not isinstance(selected_vals, (list, tuple, set)):
+            return ("Nomad Strategist requires selected_unit_ids.",)
+        selected_ids = [
+            str(value or "").strip()
+            for value in list(selected_vals or [])
+            if str(value or "").strip()
+        ]
+        if not selected_ids:
+            return ("Nomad Strategist requires one or more selected_unit_ids.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Nomad Strategist selected_unit_ids must be unique.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if not candidate_ids:
+            return ("Nomad Strategist candidate context is unavailable.",)
+        try:
+            yp_spend = int(payload.get("yp_spend", ctx.get("yp_spend", 0)) or 0)
+        except (TypeError, ValueError):
+            yp_spend = 0
+        if yp_spend < 0:
+            return ("Nomad Strategist YP spend must be non-negative.",)
+        try:
+            max_yp_spend = int(
+                ctx.get("max_yp_spend", source_sr.get("enhancement_nomad_strategist_max_yp_spend", 4)) or 0
+            )
+        except (TypeError, ValueError):
+            max_yp_spend = 0
+        if yp_spend > max(0, int(max_yp_spend)):
+            return ("Nomad Strategist cannot spend more YP than the ability allows.",)
+        pe = getattr(army, "prioritised_efficiency", None)
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0) if pe is not None else 0
+        except (TypeError, ValueError):
+            available_yp = 0
+        if yp_spend > int(available_yp):
+            return ("Nomad Strategist cannot spend more YP than are available.",)
+        max_units = 1 + int(yp_spend // 2)
+        if len(selected_ids) > int(max_units):
+            return ("Nomad Strategist selected too many units for the chosen YP spend.",)
+        target_eligible = getattr(mgr, "nomad_strategist_target_eligible", None)
+        source_owner_id = str(getattr(source_player, "id", "") or "")
+        for selected_id in list(selected_ids):
+            if selected_id not in candidate_ids:
+                return ("Nomad Strategist selected unit is not an eligible candidate.",)
+            target_unit = resolve_unit(game, selected_id)
+            if target_unit is None:
+                return ("Nomad Strategist selected unit was not found.",)
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return ("Nomad Strategist selected unit was not found.",)
+            target_root_id = str(get_entity_id(target_root) or "")
+            if target_root_id != selected_id:
+                return ("Nomad Strategist selected unit no longer matches an eligible candidate.",)
+            if not callable(target_eligible) or not bool(
+                target_eligible(target_root, game=game, owner_id=source_owner_id)
+            ):
+                return ("Nomad Strategist selected unit is no longer eligible.",)
+        return ()
     if ability == "integrated_tactics":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -14515,6 +14672,148 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source_unit_id": str(get_entity_id(source_root) or ""),
             "source": ability_name,
+        }
+    if ability == "nomad_strategist":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_member = None
+        source_sr = {}
+        attached_member_with_rule = getattr(mgr, "_attached_member_with_special_rule", None)
+        if callable(attached_member_with_rule):
+            source_root, source_member, source_sr = attached_member_with_rule(
+                source_root,
+                "enhancement_nomad_strategist",
+            )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or source_sr.get("enhancement_nomad_strategist_source", "")
+            or "Nomad Strategist"
+        ).strip() or "Nomad Strategist"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {
+                "action": "skip",
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "selected_unit_ids": [],
+                "yp_spend": 0,
+            }
+        selected_vals = payload.get("selected_unit_ids", ctx.get("selected_unit_ids"))
+        if not isinstance(selected_vals, (list, tuple, set)):
+            return None
+        selected_units = []
+        selected_unit_ids = []
+        for value in list(selected_vals or []):
+            selected_id = str(value or "").strip()
+            if not selected_id:
+                continue
+            target_unit = resolve_unit(game, selected_id)
+            if target_unit is None:
+                return None
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return None
+            target_root_id = str(get_entity_id(target_root) or "")
+            if not target_root_id or target_root_id in selected_unit_ids:
+                continue
+            selected_units.append(target_root)
+            selected_unit_ids.append(target_root_id)
+        if not selected_units:
+            return None
+        try:
+            yp_spend = int(payload.get("yp_spend", ctx.get("yp_spend", 0)) or 0)
+        except (TypeError, ValueError):
+            yp_spend = 0
+        yp_spend = max(0, int(yp_spend))
+        pe = getattr(army, "prioritised_efficiency", None)
+        if yp_spend > 0:
+            spend_fn = getattr(pe, "spend_yield_points", None) if pe is not None else None
+            owner_id = str(getattr(player, "id", "") or "")
+            if not callable(spend_fn) or not bool(spend_fn(int(yp_spend), game=game, turn_owner=owner_id)):
+                return None
+        moved_ids: list[str] = []
+        moved_labels: list[str] = []
+        for target_root in list(selected_units):
+            enter_reserves = getattr(target_root, "enter_strategic_reserves_midgame", None)
+            if not callable(enter_reserves):
+                continue
+            if not bool(enter_reserves(game=game, reason=ability_name)):
+                continue
+            moved_id = str(get_entity_id(target_root) or "")
+            if moved_id:
+                moved_ids.append(moved_id)
+            moved_labels.append(str(getattr(target_root, "name", "Unit") or "Unit"))
+        if not moved_ids:
+            if yp_spend > 0 and pe is not None:
+                refund_fn = getattr(pe, "add_yield_points", None)
+                if callable(refund_fn):
+                    refund_fn(int(yp_spend), game=game)
+            return None
+        once_key = str(
+            payload.get("ability_key")
+            or ctx.get("once_key")
+            or source_sr.get("enhancement_nomad_strategist_once_key")
+            or "nomad_strategist"
+        ).strip().lower() or "nomad_strategist"
+        root_mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(root_mark_used):
+            root_mark_used(once_key, ability_name=ability_name)
+        member_mark_used = getattr(source_member, "mark_unit_once_per_battle_used", None)
+        if source_member is not source_root and callable(member_mark_used):
+            member_mark_used(once_key, ability_name=ability_name)
+        if yp_spend > 0 and pe is not None:
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=game,
+                    delta=-int(yp_spend),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason=ability_name,
+                )
+        labels = ", ".join(moved_labels) if moved_labels else "selected units"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: spent {int(yp_spend)} YP and placed {labels} into Strategic Reserves.",
+        )
+        return {
+            "action": "use",
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "selected_unit_ids": [unit_id for unit_id in list(moved_ids) if unit_id],
+            "yp_spend": int(yp_spend),
         }
     if ability == "integrated_tactics":
         payload = _option_payload(request, result)
@@ -24127,7 +24426,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 }
 
         queue_more = getattr(mgr, "queue_delve_assault_shift_reinforcements_requests", None)
-        queued_more = bool(callable(queue_more) and queue_more(game=game, player=player))
+        queued_more = bool(
+            callable(queue_more)
+            and queue_more(
+                game=game,
+                player=player,
+                exclude_decision_id=str(getattr(request, "decision_id", "") or ""),
+            )
+        )
         if not queued_more:
             queue_standard = getattr(game, "_queue_movement_phase_reinforcements_selection", None)
             if callable(queue_standard):
@@ -24233,7 +24539,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 }
 
         queue_more = getattr(mgr, "queue_delve_assault_shift_reinforcements_requests", None)
-        queued_more = bool(callable(queue_more) and queue_more(game=game, player=player))
+        queued_more = bool(
+            callable(queue_more)
+            and queue_more(
+                game=game,
+                player=player,
+                exclude_decision_id=str(getattr(request, "decision_id", "") or ""),
+            )
+        )
         if not queued_more:
             queue_standard = getattr(game, "_queue_movement_phase_reinforcements_selection", None)
             if callable(queue_standard):

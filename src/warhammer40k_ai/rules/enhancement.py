@@ -1906,6 +1906,10 @@ class Enhancement:
         except Exception:
             is_mercenary_oathband = False
         try:
+            is_persecution_prospect = bool(lov_mgr and lov_mgr.is_persecution_prospect())
+        except Exception:
+            is_persecution_prospect = False
+        try:
             is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
         except Exception:
             is_needgaard_oathband = False
@@ -11022,6 +11026,101 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_asset_manipulator_bearer_model_id"] = bearer_id
+
+        if name == "eye for weakness" or enh_id == "000010439002":
+            if not is_persecution_prospect:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Eye for Weakness").strip()
+            if not source_name:
+                source_name = "Eye for Weakness"
+            wound_bonus = _coerce_int(params.get("wound_roll_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_eye_for_weakness"] = True
+            unit.special_rules["enhancement_eye_for_weakness_wound_bonus"] = int(max(1, wound_bonus))
+            unit.special_rules["enhancement_eye_for_weakness_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_eye_for_weakness_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_for_weakness_bearer_model_id"] = bearer_id
+
+        if name == "writ of acquisition" or enh_id == "000010439003":
+            if not is_persecution_prospect:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Writ of Acquisition").strip()
+            if not source_name:
+                source_name = "Writ of Acquisition"
+            yp_per_unit = _coerce_int(params.get("yield_points_per_hit_unit", 1) or 1, default=1)
+            max_gain = _coerce_int(params.get("max_yield_points_gain", 3) or 3, default=3)
+            unit.special_rules["enhancement_writ_of_acquisition"] = True
+            unit.special_rules["enhancement_writ_of_acquisition_yield_points_per_hit_unit"] = int(max(1, yp_per_unit))
+            unit.special_rules["enhancement_writ_of_acquisition_max_yield_points_gain"] = int(max(1, max_gain))
+            unit.special_rules["enhancement_writ_of_acquisition_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_writ_of_acquisition_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_writ_of_acquisition_bearer_model_id"] = bearer_id
+
+        if name == "surgical saboteur" or enh_id == "000010439004":
+            if not is_persecution_prospect:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Surgical Saboteur").strip()
+            if not source_name:
+                source_name = "Surgical Saboteur"
+            move_penalty = _coerce_int(params.get("move_penalty", -2) or -2, default=-2)
+            charge_penalty = _coerce_int(params.get("charge_penalty", -2) or -2, default=-2)
+            target_keywords_any = tuple(
+                str(value or "").strip().upper()
+                for value in tuple(params.get("target_keywords_any", ("MONSTER", "VEHICLE")) or ("MONSTER", "VEHICLE"))
+                if str(value or "").strip()
+            ) or ("MONSTER", "VEHICLE")
+            expires_phase = str(params.get("expires_phase", "SHOOTING_PHASE") or "SHOOTING_PHASE").strip().upper()
+            unit.special_rules["enhancement_surgical_saboteur"] = True
+            unit.special_rules["enhancement_surgical_saboteur_move_penalty"] = int(move_penalty)
+            unit.special_rules["enhancement_surgical_saboteur_charge_penalty"] = int(charge_penalty)
+            unit.special_rules["enhancement_surgical_saboteur_target_keywords_any"] = list(target_keywords_any)
+            unit.special_rules["enhancement_surgical_saboteur_expires_phase"] = expires_phase or "SHOOTING_PHASE"
+            unit.special_rules["enhancement_surgical_saboteur_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_surgical_saboteur_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_surgical_saboteur_bearer_model_id"] = bearer_id
+
+        if name == "nomad strategist" or enh_id == "000010439005":
+            if not is_persecution_prospect:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Nomad Strategist").strip()
+            if not source_name:
+                source_name = "Nomad Strategist"
+            once_key = str(params.get("once_per_battle_key", "nomad_strategist") or "nomad_strategist").strip().lower()
+            if not once_key:
+                once_key = "nomad_strategist"
+            max_yp_spend = _coerce_int(params.get("max_yp_spend", 4) or 4, default=4)
+            unit.special_rules["enhancement_nomad_strategist"] = True
+            unit.special_rules["enhancement_nomad_strategist_once_key"] = once_key
+            unit.special_rules["enhancement_nomad_strategist_max_yp_spend"] = int(max(0, max_yp_spend))
+            unit.special_rules["enhancement_nomad_strategist_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_nomad_strategist_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_nomad_strategist_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nomad_strategist_bearer_model_id"] = bearer_id
 
         if name == "oathbound speculator" or enh_id == "000010435002":
             if not is_needgaard_oathband:

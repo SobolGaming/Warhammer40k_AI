@@ -533,6 +533,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         abilities: tuple[str, ...],
         player_id: str = "",
         source_unit_id: str = "",
+        exclude_decision_id: str = "",
     ) -> bool:
         if game is None:
             return False
@@ -546,8 +547,12 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         }
         normalized_player_id = str(player_id or "").strip()
         normalized_source_id = str(source_unit_id or "").strip()
+        normalized_exclude_id = str(exclude_decision_id or "").strip()
         for request in list(queue.list() or []):
-            if str(getattr(request, "decision_type", "") or "").strip() != "choose_quarry":
+            request_id = str(getattr(request, "decision_id", "") or "").strip()
+            if normalized_exclude_id and request_id and request_id == normalized_exclude_id:
+                continue
+            if str(getattr(request, "decision_type", "") or "").strip().upper() != "CHOOSE_QUARRY":
                 continue
             request_player_id = str(getattr(request, "player_id", "") or "").strip()
             if normalized_player_id and request_player_id and request_player_id != normalized_player_id:
@@ -1061,6 +1066,170 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         )
         return int(penalty), source
 
+    def _unit_matches_hernkyn_keywords(self, unit) -> bool:
+        if unit is None:
+            return False
+        texts = [getattr(unit, "name", "")]
+        texts += list(getattr(unit, "keywords", []) or [])
+        texts += list(getattr(unit, "faction_keywords", []) or [])
+        for raw in texts:
+            norm = self._normalize_text(raw)
+            if "hernkyn" in norm:
+                return True
+        return False
+
+    def _unit_is_hernkyn(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if self._unit_matches_hernkyn_keywords(root):
+            return True
+        for member in self._attached_unit_members(root):
+            if self._unit_matches_hernkyn_keywords(member):
+                return True
+        return False
+
+    @staticmethod
+    def _persecution_assailed_for_owner(target_unit, owner_id: str) -> bool:
+        if target_unit is None:
+            return False
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("persecution_prospect_assailed_active", False)):
+            return False
+        if owner_id and str(sr.get("persecution_prospect_assailed_owner", "") or "") != str(owner_id or ""):
+            return False
+        return True
+
+    def persecution_eye_for_weakness_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del weapon_profile, attack_instance, game
+        if not self.is_persecution_prospect() or attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            attacker_unit,
+            "enhancement_eye_for_weakness",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._unit_in_army(source_root) or not self._unit_is_votann(source_root):
+            return 0, ""
+        if bool(source_sr.get("enhancement_eye_for_weakness_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, ""
+        owner_id = ""
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is not None:
+            owner_id = str(getattr(player, "id", "") or "")
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._persecution_assailed_for_owner(target_root, owner_id):
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_eye_for_weakness_wound_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_eye_for_weakness_source", "") or "Eye for Weakness").strip()
+        return int(bonus), source or "Eye for Weakness"
+
+    def writ_of_acquisition_gain(self, source_unit, hit_targets, *, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_persecution_prospect() or source_unit is None or not hit_targets:
+            return 0, ""
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            source_unit,
+            "enhancement_writ_of_acquisition",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self._unit_in_army(source_root):
+            return 0, ""
+        if bool(source_sr.get("enhancement_writ_of_acquisition_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, ""
+        owner_id = ""
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is not None:
+            owner_id = str(getattr(player, "id", "") or "")
+        seen_targets: set[str] = set()
+        total = 0
+        for target_unit, hits in list((hit_targets or {}).items()):
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            target_root = self._attached_root(target_unit)
+            if target_root is None:
+                continue
+            target_id = self._entity_id(target_root)
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if not self._persecution_assailed_for_owner(target_root, owner_id):
+                continue
+            try:
+                gain = int(source_sr.get("enhancement_writ_of_acquisition_yield_points_per_hit_unit", 1) or 1)
+            except (TypeError, ValueError):
+                gain = 1
+            total += max(0, int(gain))
+        try:
+            max_gain = int(source_sr.get("enhancement_writ_of_acquisition_max_yield_points_gain", 3) or 3)
+        except (TypeError, ValueError):
+            max_gain = 3
+        total = min(max(0, int(total)), max(0, int(max_gain)))
+        if total <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_writ_of_acquisition_source", "") or "Writ of Acquisition").strip()
+        return int(total), source or "Writ of Acquisition"
+
+    def nomad_strategist_target_eligible(self, unit, *, game, owner_id: str) -> bool:
+        if not self.is_persecution_prospect() or unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        if not self._unit_is_hernkyn(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        local_map = getattr(game, "map", None) if game is not None else None
+        if local_map is None:
+            return True
+        get_enemy_units = getattr(local_map, "get_enemy_units", None)
+        in_engagement = getattr(local_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(in_engagement):
+            return True
+        for enemy_unit in list(get_enemy_units(root) or []):
+            enemy_root = self._attached_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            if not self._unit_is_on_battlefield(enemy_root):
+                continue
+            if not bool(in_engagement(root, enemy_root)):
+                continue
+            if self._persecution_assailed_for_owner(enemy_root, owner_id):
+                continue
+            return False
+        return True
+
     def persecution_prospect_shooting_unit_eligible(self, unit) -> bool:
         if not self.is_persecution_prospect():
             return False
@@ -1194,7 +1363,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         return bool(self._bearer_can_see_unit(bearer, target_root, game=game))
 
-    def queue_delve_assault_shift_reinforcements_requests(self, *, game, player) -> bool:
+    def queue_delve_assault_shift_reinforcements_requests(self, *, game, player, exclude_decision_id: str = "") -> bool:
         if not self.is_delve_assault_shift() or self.army is None or game is None or player is None:
             return False
         if player is not getattr(self.army, "player", None):
@@ -1208,6 +1377,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             game,
             abilities=("multiwave_system_jammer", "delvwerke_navigator"),
             player_id=player_id,
+            exclude_decision_id=exclude_decision_id,
         ):
             return True
 
@@ -1246,6 +1416,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 abilities=("multiwave_system_jammer",),
                 player_id=player_id,
                 source_unit_id=source_unit_id,
+                exclude_decision_id=exclude_decision_id,
             ):
                 return True
             candidate_ids: list[str] = []
@@ -1319,6 +1490,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 abilities=("delvwerke_navigator",),
                 player_id=player_id,
                 source_unit_id=source_unit_id,
+                exclude_decision_id=exclude_decision_id,
             ):
                 return True
             candidate_ids: list[str] = []
