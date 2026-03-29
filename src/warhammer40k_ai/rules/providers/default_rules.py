@@ -520,8 +520,12 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(ctxs, "code_chivalric", ("_army_has_code_chivalric",))
             or any_manager(ctxs, "bondsman", ("_army_has_bondsman",)),
             subscriptions=[
+                ("unit_move_ended", "_on_unit_move_ended_imperial_knights_questoris_companions"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_code_chivalric"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_imperial_knights_questoris_companions"),
                 ("fight_unit_selected", "_on_fight_unit_selected_code_chivalric"),
+                ("fight_unit_selected", "_on_fight_unit_selected_imperial_knights_questoris_companions"),
+                ("fight_attacks_resolved", "_on_fight_attacks_resolved_imperial_knights_questoris_companions"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_code_chivalric"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_code_chivalric"),
                 ("model_destroyed", "_on_model_destroyed_code_chivalric"),

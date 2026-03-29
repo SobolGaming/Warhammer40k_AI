@@ -11922,6 +11922,307 @@ class GameShootingFightHandlersMixin:
             return
         self._queue_oathbound_speculator_confirmation(root, player=owner, trigger="fight")
 
+    def _on_shooting_targets_selected_imperial_knights_questoris_companions(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()):
+            return
+        source_sr = getattr(root, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_wyrmslayer_divination")):
+            return
+        is_expended = getattr(detachment_mgr, "is_questoris_companions_enhancement_expended", None)
+        if callable(is_expended) and bool(is_expended(root)):
+            return
+
+        has_fly_target = False
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            try:
+                if bool(target_root.has_any_keyword("FLY") or target_root.has_keyword("FLY")):
+                    has_fly_target = True
+                    break
+            except Exception:
+                continue
+        if not has_fly_target:
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        source_name = str(source_sr.get("enhancement_wyrmslayer_divination_source", "") or "Wyrmslayer Divination").strip()
+        source_name = source_name or "Wyrmslayer Divination"
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="imperial_knights_wyrmslayer_divination",
+            ability_name="Wyrmslayer Divination",
+            message=f"Wyrmslayer Divination: use {source_name} for {getattr(root, 'name', 'Unit')}?",
+            context={
+                "ability_name": "Wyrmslayer Divination",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "phase_name": phase_name,
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:{phase_name}:wyrmslayer_divination",
+        )
+
+    def _on_fight_unit_selected_imperial_knights_questoris_companions(
+        self,
+        unit=None,
+        selecting_player=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        if owner is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()):
+            return
+        source_sr = getattr(root, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_pennant_of_silvered_fury")):
+            return
+        is_expended = getattr(detachment_mgr, "is_questoris_companions_enhancement_expended", None)
+        if callable(is_expended) and bool(is_expended(root)):
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        source_name = str(source_sr.get("enhancement_pennant_of_silvered_fury_source", "") or "Pennant of Silvered Fury").strip()
+        source_name = source_name or "Pennant of Silvered Fury"
+        owner_id = str(getattr(owner, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        self._queue_optional_ability_confirmation(
+            player=owner,
+            ability_key="imperial_knights_pennant_of_silvered_fury",
+            ability_name="Pennant of Silvered Fury",
+            message=f"Pennant of Silvered Fury: use {source_name} for {getattr(root, 'name', 'Unit')}?",
+            context={
+                "ability_name": "Pennant of Silvered Fury",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "phase_name": phase_name,
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:{phase_name}:pennant_of_silvered_fury",
+        )
+
+    def _on_fight_attacks_resolved_imperial_knights_questoris_companions(
+        self,
+        unit=None,
+        attacker_unit=None,
+        target_unit=None,
+        killing_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        attacker_unit = attacker_unit if attacker_unit is not None else unit
+        if attacker_unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()):
+            return
+        source_sr = getattr(root, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_crushing_condemnation")):
+            return
+        is_expended = getattr(detachment_mgr, "is_questoris_companions_enhancement_expended", None)
+        if callable(is_expended) and bool(is_expended(root)):
+            return
+
+        destroyed_enemy = False
+        if isinstance(killing_models_by_target, dict):
+            for target in list((killing_models_by_target or {}).keys()):
+                if target is None:
+                    continue
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                if target_root is None:
+                    continue
+                try:
+                    if target_root.get_parent_army() is army:
+                        continue
+                except Exception:
+                    continue
+                if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                    destroyed_enemy = True
+                    break
+        if not destroyed_enemy and target_unit is not None:
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is not None:
+                try:
+                    destroyed_enemy = target_root.get_parent_army() is not army and not bool(target_root.is_alive())
+                except Exception:
+                    destroyed_enemy = False
+        if not destroyed_enemy:
+            return
+
+        candidate_fn = getattr(detachment_mgr, "questoris_companions_crushing_condemnation_candidates", None)
+        if not callable(candidate_fn):
+            return
+        candidates = list(candidate_fn(root, game=self, game_map=self.map) or [])
+        if not candidates:
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "FIGHT_PHASE"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "imperial_knights_crushing_condemnation":
+                    continue
+                if str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", turn) or turn) != int(turn or 0):
+                    continue
+                return
+
+        source_name = str(source_sr.get("enhancement_crushing_condemnation_source", "") or "Crushing Condemnation").strip()
+        source_name = source_name or "Crushing Condemnation"
+        bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        sorted_candidates = sorted(list(candidates), key=lambda candidate: str(maybe_entity_id(candidate) or ""))
+        for target in sorted_candidates:
+            target_id = str(get_entity_id(target) or "")
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if len(options) <= 1:
+            return
+        try:
+            range_in = float(source_sr.get("enhancement_crushing_condemnation_range", 12.0) or 12.0)
+        except Exception:
+            range_in = 12.0
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{source_name}: select an enemy unit for {getattr(root, 'name', 'Unit')} (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "imperial_knights_crushing_condemnation",
+                "ability_name": source_name,
+                "phase_name": phase_name,
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
+                "range": float(range_in),
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "allow_skip": True,
+                "candidate_unit_ids": [
+                    str(get_entity_id(candidate) or "")
+                    for candidate in sorted_candidates
+                    if str(get_entity_id(candidate) or "")
+                ],
+            },
+        )
+        self.request_decision(request)
+
     def _on_fight_unit_selected_etacarn_sb9_targeting_implant(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

@@ -5678,6 +5678,9 @@ class GameReactiveDecisionsMixin:
             "enhancement_charge_after_advance_once",
             "mist_wreathed_shadow_realms",
             "martial_espionage",
+            "imperial_knights_herald_of_triumph",
+            "imperial_knights_wyrmslayer_divination",
+            "imperial_knights_pennant_of_silvered_fury",
         ):
             return
         selected = None
@@ -8453,6 +8456,156 @@ class GameReactiveDecisionsMixin:
                 game=self,
                 player=player,
             )
+            return
+
+        if ability_key == "imperial_knights_herald_of_triumph":
+            if not choice:
+                return
+            unit_id = str(payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()):
+                return
+            target_fn = getattr(detachment_mgr, "questoris_companions_herald_of_triumph_targets", None)
+            mark_expended = getattr(detachment_mgr, "mark_questoris_companions_enhancement_expended", None)
+            if not callable(target_fn) or not callable(mark_expended):
+                return
+            targets = list(target_fn(root, game=self, game_map=self.map) or [])
+            if not targets:
+                return
+            if not bool(mark_expended(root)):
+                return
+            source_sr = getattr(root, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+            try:
+                modifier = int(source_sr.get("enhancement_herald_of_triumph_battle_shock_modifier", -1) or -1)
+            except Exception:
+                modifier = -1
+            ability_name = str(ctx.get("ability_name", "") or "Herald of Triumph").strip() or "Herald of Triumph"
+            try:
+                turn = int(getattr(self, "turn", 0) or 1)
+            except Exception:
+                turn = 1
+            from ...utility.event_bus import append_action
+
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                player = getattr(army, "player", None) if army is not None else None
+            for target_root in list(targets or []):
+                if target_root is None:
+                    continue
+                target_sr = getattr(target_root, "special_rules", None)
+                if not isinstance(target_sr, dict):
+                    target_sr = {}
+                current = 0
+                try:
+                    current = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                except Exception:
+                    current = 0
+                target_sr["battle_shock_test_modifier"] = int(current + int(modifier))
+                reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                reasons.append(f"{ability_name}: {int(modifier):+d}")
+                target_sr["battle_shock_test_modifier_reasons"] = reasons
+                target_root.special_rules = target_sr
+                target_root.take_battle_shock_test(int(turn or 1))
+                if player is not None:
+                    append_action(player, f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.")
+            return
+
+        if ability_key == "imperial_knights_wyrmslayer_divination":
+            if not choice:
+                return
+            unit_id = str(payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            mark_expended = getattr(detachment_mgr, "mark_questoris_companions_enhancement_expended", None) if detachment_mgr is not None else None
+            if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()) or not callable(mark_expended):
+                return
+            if not bool(mark_expended(root)):
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["enhancement_wyrmslayer_divination_active"] = True
+            sr["enhancement_wyrmslayer_divination_active_turn"] = int(turn or 0)
+            root.special_rules = sr
+            from ...utility.event_bus import append_action
+
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                player = getattr(army, "player", None) if army is not None else None
+            if player is not None:
+                ability_name = str(ctx.get("ability_name", "") or "Wyrmslayer Divination").strip() or "Wyrmslayer Divination"
+                append_action(player, f"{ability_name}: {getattr(root, 'name', 'Unit')} re-rolls Hit rolls against FLY units this phase.")
+            return
+
+        if ability_key == "imperial_knights_pennant_of_silvered_fury":
+            if not choice:
+                return
+            unit_id = str(payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            mark_expended = getattr(detachment_mgr, "mark_questoris_companions_enhancement_expended", None) if detachment_mgr is not None else None
+            if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()) or not callable(mark_expended):
+                return
+            if not bool(mark_expended(root)):
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["enhancement_pennant_of_silvered_fury_active"] = True
+            sr["enhancement_pennant_of_silvered_fury_active_turn"] = int(turn or 0)
+            root.special_rules = sr
+            from ...utility.event_bus import append_action
+
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                player = getattr(army, "player", None) if army is not None else None
+            if player is not None:
+                ability_name = str(ctx.get("ability_name", "") or "Pennant of Silvered Fury").strip() or "Pennant of Silvered Fury"
+                append_action(player, f"{ability_name}: {getattr(root, 'name', 'Unit')} gains Sustained Hits 2 for melee attacks this phase.")
             return
 
         if ability_key == "lord_of_the_storm":

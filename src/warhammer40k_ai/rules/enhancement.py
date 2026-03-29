@@ -2075,6 +2075,10 @@ class Enhancement:
             is_spearhead_at_arms = bool(ik_mgr and ik_mgr.is_spearhead_at_arms())
         except Exception:
             is_spearhead_at_arms = False
+        try:
+            is_questoris_companions = bool(ik_mgr and ik_mgr.is_questoris_companions())
+        except Exception:
+            is_questoris_companions = False
         gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
         try:
             is_brotherhood_strike = bool(gk_mgr and gk_mgr.is_brotherhood_strike())
@@ -15259,6 +15263,70 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "herald of triumph" or enh_id == "000010502002":
+            if not is_questoris_companions:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Herald of Triumph").strip() or "Herald of Triumph"
+            modifier = _coerce_int(params.get("battle_shock_test_modifier", -1) or -1, default=-1)
+            unit.special_rules["enhancement_herald_of_triumph"] = True
+            unit.special_rules["enhancement_herald_of_triumph_source"] = source_name
+            unit.special_rules["enhancement_herald_of_triumph_battle_shock_modifier"] = int(modifier)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_herald_of_triumph_bearer_model_id"] = bearer_id
+
+        if name == "wyrmslayer divination" or enh_id == "000010502003":
+            if not is_questoris_companions:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Wyrmslayer Divination").strip() or "Wyrmslayer Divination"
+            unit.special_rules["enhancement_wyrmslayer_divination"] = True
+            unit.special_rules["enhancement_wyrmslayer_divination_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wyrmslayer_divination_bearer_model_id"] = bearer_id
+
+        if name == "pennant of silvered fury" or enh_id == "000010502004":
+            if not is_questoris_companions:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Pennant of Silvered Fury").strip() or "Pennant of Silvered Fury"
+            sustained_hits = _coerce_int(params.get("sustained_hits", 2) or 2, default=2)
+            if sustained_hits <= 0:
+                sustained_hits = 2
+            unit.special_rules["enhancement_pennant_of_silvered_fury"] = True
+            unit.special_rules["enhancement_pennant_of_silvered_fury_source"] = source_name
+            unit.special_rules["enhancement_pennant_of_silvered_fury_sustained_hits"] = int(sustained_hits)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_pennant_of_silvered_fury_bearer_model_id"] = bearer_id
+
+        if name == "crushing condemnation" or enh_id == "000010502005":
+            if not is_questoris_companions:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Crushing Condemnation").strip() or "Crushing Condemnation"
+            range_in = _coerce_float(
+                params.get("range_in", getattr(desc, "range_in", 12.0)) or getattr(desc, "range_in", 12.0),
+                default=12.0,
+            )
+            if range_in <= 0:
+                range_in = 12.0
+            roll_count = _coerce_int(params.get("roll_count", 6) or 6, default=6)
+            threshold = _coerce_int(params.get("mortal_wound_threshold", 4) or 4, default=4)
+            unit.special_rules["enhancement_crushing_condemnation"] = True
+            unit.special_rules["enhancement_crushing_condemnation_source"] = source_name
+            unit.special_rules["enhancement_crushing_condemnation_range"] = float(range_in)
+            unit.special_rules["enhancement_crushing_condemnation_roll_count"] = int(max(1, roll_count))
+            unit.special_rules["enhancement_crushing_condemnation_threshold"] = int(max(1, threshold))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_crushing_condemnation_bearer_model_id"] = bearer_id
 
         if name == "martial tuition" or enh_id == "000010506005":
             if not is_spearhead_at_arms:

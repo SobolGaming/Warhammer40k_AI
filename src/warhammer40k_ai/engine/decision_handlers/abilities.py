@@ -8262,6 +8262,75 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(getattr(getattr(target_root, "round_state", None), "fell_back_this_round", False)):
             return ("Inescapable Judgement target unit has not Fallen Back this round.",)
         return ()
+    if ability == "imperial_knights_crushing_condemnation":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Crushing Condemnation source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Crushing Condemnation source unit was not found.",)
+        source_army = getattr(source_root, "get_parent_army", lambda: None)()
+        if source_army is None:
+            return ("Crushing Condemnation source army was not found.",)
+        mgr = getattr(source_army, "imperial_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_questoris_companions", lambda: False)()):
+            return ("Crushing Condemnation requires Questoris Companions detachment.",)
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_crushing_condemnation")):
+            return ("Source unit does not have Crushing Condemnation.",)
+        is_expended = getattr(mgr, "is_questoris_companions_enhancement_expended", None)
+        if callable(is_expended) and bool(is_expended(source_root)):
+            return ("Crushing Condemnation has already been expended.",)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return ("Crushing Condemnation can only be used in the Fight phase.",)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        turn_owner = str(ctx.get("turn_owner", "") or "").strip()
+        if turn_owner and current_owner_id and turn_owner != current_owner_id:
+            return ("Crushing Condemnation turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Crushing Condemnation turn context no longer matches.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Crushing Condemnation target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("Crushing Condemnation target unit was not found.",)
+        if target_root.get_parent_army() is source_army:
+            return ("Crushing Condemnation must target an enemy unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Crushing Condemnation selected unit is not an eligible candidate.",)
+        candidate_fn = getattr(mgr, "questoris_companions_crushing_condemnation_candidates", None)
+        if not callable(candidate_fn):
+            return ("Crushing Condemnation validation is unavailable.",)
+        candidates = list(candidate_fn(source_root, game=game, game_map=getattr(game, "map", None)) or [])
+        candidate_id_set = {str(get_entity_id(candidate) or "") for candidate in list(candidates or []) if candidate is not None}
+        if target_id not in candidate_id_set:
+            return ("Crushing Condemnation target is no longer a valid candidate.",)
+        return ()
     if ability in (
         "imperial_knights_magos_questoris",
         "imperial_knights_iron_chalice",
@@ -26413,6 +26482,98 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers no mortal wounds.",
                 )
             return target_root
+    if str(ctx.get("ability", "") or "") == "imperial_knights_crushing_condemnation":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        source_army = getattr(source_root, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "imperial_knights_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        ability_name = str(ctx.get("ability_name", "") or "Crushing Condemnation").strip() or "Crushing Condemnation"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {
+                "action": "skip",
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+            }
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+        mark_expended = getattr(mgr, "mark_questoris_companions_enhancement_expended", None)
+        if not callable(mark_expended) or not bool(mark_expended(source_root)):
+            return None
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        try:
+            roll_count = int(source_sr.get("enhancement_crushing_condemnation_roll_count", 6) or 6)
+        except (TypeError, ValueError):
+            roll_count = 6
+        try:
+            threshold = int(source_sr.get("enhancement_crushing_condemnation_threshold", 4) or 4)
+        except (TypeError, ValueError):
+            threshold = 4
+        roll_count = max(1, int(roll_count))
+        threshold = max(1, int(threshold))
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        rolls: list[int] = []
+        mortal_wounds = 0
+        for _ in range(int(roll_count)):
+            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            rolls.append(int(roll))
+            if int(roll) >= int(threshold):
+                mortal_wounds += 1
+        if callable(append_dice) and player is not None:
+            rolls_text = ", ".join(str(int(roll)) for roll in list(rolls or [])) or "no rolls"
+            append_dice(
+                player,
+                f"{ability_name}: rolled {rolls_text}; {int(mortal_wounds)} mortal wounds on {getattr(target_root, 'name', 'Unit')}.",
+            )
+        apply_mortal = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortal):
+            apply_mortal = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+        if int(mortal_wounds) > 0 and callable(apply_mortal):
+            try:
+                apply_mortal(target_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers {int(mortal_wounds)} mortal wounds.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers no mortal wounds.",
+            )
+        return target_root
     if str(ctx.get("ability", "") or "") in (
         "imperial_knights_magos_questoris",
         "imperial_knights_iron_chalice",

@@ -118,6 +118,12 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         root = self._attached_root(unit)
         if root is None or not self._unit_in_army(root):
             return False
+        return self._battlefield_root_active(root)
+
+    def _battlefield_root_active(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
         if not bool(getattr(root, "deployed", True)):
             return False
         if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
@@ -725,6 +731,16 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self._entity_id(bearer) == self._entity_id(model)
 
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        alive = getattr(model, "is_alive", True)
+        return bool(alive() if callable(alive) else alive)
+
+    def _enhancement_bearer_is_alive(self, unit) -> bool:
+        return self._model_is_alive(self._enhancement_bearer_model(unit))
+
     def _enemy_units_on_dauntless_defensive_line(self, *, game=None, game_map=None) -> list:
         if not self.is_gate_warden_lance():
             return []
@@ -1063,6 +1079,205 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if not self.is_questoris_companions():
             return
         self.clear_questoris_companions_expended_enhancements()
+
+    def questoris_companions_herald_of_triumph_targets(self, source_unit, *, game=None, game_map=None) -> list:
+        if not self.is_questoris_companions():
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        if self.is_questoris_companions_enhancement_expended(source_root):
+            return []
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_herald_of_triumph")):
+            return []
+        bearer = self._enhancement_bearer_model(source_root)
+        if not self._model_is_alive(bearer):
+            return []
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+        candidates: list = []
+        seen_ids: set[str] = set()
+        for enemy in self._iter_battlefield_roots(game=game, game_map=game_map):
+            if enemy is None or enemy.get_parent_army() is self.army:
+                continue
+            if not self._battlefield_root_active(enemy):
+                continue
+            enemy_id = self._entity_id(enemy) or f"obj:{id(enemy)}"
+            if enemy_id in seen_ids:
+                continue
+            if not bool(model_within_engagement_range_of_unit(bearer, enemy)):
+                continue
+            seen_ids.add(enemy_id)
+            candidates.append(enemy)
+        candidates.sort(key=lambda unit_obj: self._entity_id(unit_obj) or f"obj:{id(unit_obj)}")
+        return candidates
+
+    def _questoris_companions_effect_state(self, unit, *, active_key: str, expected_phase: str, game=None):
+        if not self.is_questoris_companions():
+            return None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return None, None
+        if not self._enhancement_bearer_is_alive(root):
+            return None, None
+        resolved_game = self._resolve_game(game)
+        if resolved_game is None:
+            return root, sr
+        phase_name = str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+        if expected_phase and phase_name != str(expected_phase or "").strip().upper():
+            return None, None
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        try:
+            effect_turn = int(sr.get(f"{active_key}_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if current_turn and effect_turn and effect_turn != current_turn:
+            return None, None
+        return root, sr
+
+    def questoris_companions_wyrmslayer_divination_reroll_hit(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return False, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root, sr = self._questoris_companions_effect_state(
+            attacker_unit,
+            active_key="enhancement_wyrmslayer_divination_active",
+            expected_phase="SHOOTING_PHASE",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return False, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model):
+            return False, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_has_keyword(target_root, "FLY"):
+            return False, ""
+        source = str(sr.get("enhancement_wyrmslayer_divination_source", "") or "Wyrmslayer Divination").strip()
+        return True, source or "Wyrmslayer Divination"
+
+    def questoris_companions_pennant_of_silvered_fury_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        if self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root, sr = self._questoris_companions_effect_state(
+            attacker_unit,
+            active_key="enhancement_pennant_of_silvered_fury_active",
+            expected_phase="FIGHT_PHASE",
+            game=game,
+        )
+        if attacker_root is None or sr is None:
+            return 0, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model):
+            return 0, ""
+        try:
+            sustained_hits = int(sr.get("enhancement_pennant_of_silvered_fury_sustained_hits", 2) or 2)
+        except (TypeError, ValueError):
+            sustained_hits = 2
+        if sustained_hits <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_pennant_of_silvered_fury_source", "") or "Pennant of Silvered Fury").strip()
+        return int(sustained_hits), source or "Pennant of Silvered Fury"
+
+    def _unit_within_engagement_range_of_any_friendly(self, target_unit, *, game=None, game_map=None) -> bool:
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+        for friendly in self._iter_army_roots():
+            if friendly is None or not self._unit_on_battlefield(friendly):
+                continue
+            for model in self._iter_unit_models(friendly):
+                if not self._model_is_alive(model):
+                    continue
+                if bool(model_within_engagement_range_of_unit(model, target_root)):
+                    return True
+        return False
+
+    def questoris_companions_crushing_condemnation_candidates(self, source_unit, *, game=None, game_map=None) -> list:
+        if not self.is_questoris_companions():
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        if self.is_questoris_companions_enhancement_expended(source_root):
+            return []
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_crushing_condemnation")):
+            return []
+        bearer = self._enhancement_bearer_model(source_root)
+        if not self._model_is_alive(bearer):
+            return []
+        try:
+            range_inches = float(sr.get("enhancement_crushing_condemnation_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        if range_inches <= 0:
+            range_inches = 12.0
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        within_fn = getattr(source_root, "_model_within_range_of_unit", None)
+        candidates: list = []
+        seen_ids: set[str] = set()
+        for enemy in self._iter_battlefield_roots(game=resolved_game, game_map=resolved_map):
+            if enemy is None or enemy.get_parent_army() is self.army:
+                continue
+            if not self._battlefield_root_active(enemy):
+                continue
+            enemy_id = self._entity_id(enemy) or f"obj:{id(enemy)}"
+            if enemy_id in seen_ids:
+                continue
+            in_range = False
+            if callable(within_fn):
+                in_range = bool(within_fn(bearer, enemy, float(range_inches)))
+            else:
+                in_range = self._unit_within_distance(
+                    source_root,
+                    enemy,
+                    max_distance=float(range_inches),
+                    game=resolved_game,
+                    game_map=resolved_map,
+                )
+            if not in_range:
+                continue
+            if not self._model_can_see_target_unit(bearer, enemy, game=resolved_game, game_map=resolved_map):
+                continue
+            if self._unit_within_engagement_range_of_any_friendly(enemy, game=resolved_game, game_map=resolved_map):
+                continue
+            seen_ids.add(enemy_id)
+            candidates.append(enemy)
+        candidates.sort(key=lambda unit_obj: self._entity_id(unit_obj) or f"obj:{id(unit_obj)}")
+        return candidates
 
     def _process_heroes_of_legend_start_of_turn(self, *, game=None, player=None) -> None:
         if not self.is_questoris_companions():

@@ -6029,6 +6029,73 @@ class Game(
                         f"{source}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                     )
 
+    def _on_unit_move_ended_imperial_knights_questoris_companions(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "charge":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        detachment_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        if detachment_mgr is None or not bool(getattr(detachment_mgr, "is_questoris_companions", lambda: False)()):
+            return
+        source_sr = getattr(root, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_herald_of_triumph")):
+            return
+        is_expended = getattr(detachment_mgr, "is_questoris_companions_enhancement_expended", None)
+        if callable(is_expended) and bool(is_expended(root)):
+            return
+        target_fn = getattr(detachment_mgr, "questoris_companions_herald_of_triumph_targets", None)
+        if not callable(target_fn):
+            return
+        targets = list(target_fn(root, game=self, game_map=self.map) or [])
+        if not targets:
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        source_name = str(source_sr.get("enhancement_herald_of_triumph_source", "") or "Herald of Triumph").strip()
+        source_name = source_name or "Herald of Triumph"
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="imperial_knights_herald_of_triumph",
+            ability_name="Herald of Triumph",
+            message=f"Herald of Triumph: use {source_name} for {getattr(root, 'name', 'Unit')}?",
+            context={
+                "ability_name": "Herald of Triumph",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:herald_of_triumph",
+        )
+
     def _stasis_bomb_model_used_once_per_battle(self, model, *, ability_key: str) -> bool:
         if model is None:
             return True

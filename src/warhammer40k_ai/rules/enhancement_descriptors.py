@@ -6843,6 +6843,70 @@ _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.values()
 }
 
+_IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010502002": EnhancementToolDescriptor(
+        enhancement_id="000010502002",
+        name="Herald of Triumph",
+        timing="on_charge_move_end",
+        target="enemy_units_within_engagement_range_of_bearer",
+        duration="instant_until_oath_fulfilled",
+        effect="optional_bearer_charge_end_battleshock_aura",
+        effect_params={
+            "battle_shock_test_modifier": -1,
+            "expended_until_oath_fulfilled": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010502003": EnhancementToolDescriptor(
+        enhancement_id="000010502003",
+        name="Wyrmslayer Divination",
+        timing="when_bearer_is_selected_to_shoot",
+        target="bearer_ranged_attacks_vs_fly",
+        duration="until_end_of_phase_until_oath_fulfilled",
+        effect="optional_bearer_ranged_attacks_reroll_hits_vs_fly",
+        effect_params={
+            "target_keywords_any": ("FLY",),
+            "expended_until_oath_fulfilled": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010502004": EnhancementToolDescriptor(
+        enhancement_id="000010502004",
+        name="Pennant of Silvered Fury",
+        timing="when_bearer_is_selected_to_fight",
+        target="bearer_melee_weapons",
+        duration="until_end_of_phase_until_oath_fulfilled",
+        effect="optional_grant_weapon_keywords",
+        effect_params={
+            "attack_type": "melee",
+            "keywords": ("SUSTAINED HITS 2",),
+            "expended_until_oath_fulfilled": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010502005": EnhancementToolDescriptor(
+        enhancement_id="000010502005",
+        name="Crushing Condemnation",
+        timing="after_bearer_fight_if_enemy_destroyed",
+        target="enemy_unit_within_12_visible_not_engaged_with_friendly",
+        duration="instant_until_oath_fulfilled",
+        effect="optional_select_enemy_and_roll_six_d6_for_mortal_wounds",
+        range_in=12.0,
+        effect_params={
+            "roll_count": 6,
+            "mortal_wound_threshold": 4,
+            "requires_visibility": True,
+            "disallow_units_within_engagement_range_of_friendly": True,
+            "expended_until_oath_fulfilled": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_DESCRIPTORS.values()
+}
+
 _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010506005": EnhancementToolDescriptor(
         enhancement_id="000010506005",
@@ -9709,6 +9773,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9973,6 +10040,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_QUESTOR_FORGEPACT_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME.get(key)
+        or _IMPERIAL_KNIGHTS_QUESTORIS_COMPANIONS_BY_NAME.get(key)
         or _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)

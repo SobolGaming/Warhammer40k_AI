@@ -14285,6 +14285,17 @@ class WargearProfile:
                 reroll_hit_values.add(1)
                 source_name = str(source or "Knight of the Opus Machina").strip() or "Knight of the Opus Machina"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        wyrmslayer_fn = getattr(ik_mgr, "questoris_companions_wyrmslayer_divination_reroll_hit", None) if ik_mgr is not None else None
+        if callable(wyrmslayer_fn):
+            reroll_full, source = wyrmslayer_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Wyrmslayer Divination").strip() or "Wyrmslayer Divination"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         purgations_hand_fn = getattr(ik_mgr, "gate_warden_purgations_hand_reroll_hit_wound_ones", None) if ik_mgr is not None else None
         if callable(purgations_hand_fn):
             reroll_hit_ones, _reroll_wound_ones, source = purgations_hand_fn(
@@ -16820,6 +16831,20 @@ class WargearProfile:
                 if len(dauntless_result) >= 2:
                     gate_warden_sustained_label = str(dauntless_result[1] or "").strip()
         gate_warden_sustained = bool(gate_warden_sustained_value)
+        pennant_sustained_value = 0
+        pennant_sustained_label = ""
+        pennant_sustained_fn = getattr(ik_mgr, "questoris_companions_pennant_of_silvered_fury_sustained_hits_value", None) if ik_mgr is not None else None
+        if callable(pennant_sustained_fn):
+            pennant_result = pennant_sustained_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if isinstance(pennant_result, tuple) and len(pennant_result) >= 1:
+                pennant_sustained_value = int(pennant_result[0] or 0)
+                if len(pennant_result) >= 2:
+                    pennant_sustained_label = str(pennant_result[1] or "").strip()
+        pennant_sustained = bool(pennant_sustained_value)
         bonus_sustained = bool(bonus_sustained_value or bonus_sustained_dice)
 
         sustained_base = (
@@ -16842,6 +16867,7 @@ class WargearProfile:
             or bonus_sustained
             or malefic_sustained
             or gate_warden_sustained
+            or pennant_sustained
         )
 
         def _resolve_bonus_sustained_hits() -> tuple[int, str]:
@@ -16921,7 +16947,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or gate_warden_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or gate_warden_sustained or pennant_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -16968,6 +16994,10 @@ class WargearProfile:
                     elif gate_warden_sustained_value:
                         sustained_val = max(int(sustained_val), int(gate_warden_sustained_value))
                         source = str(gate_warden_sustained_label or "Dauntless Defenders").strip() or "Dauntless Defenders"
+                        label = f"Sustained Hits (+{sustained_val}) [{source}]"
+                    elif pennant_sustained_value:
+                        sustained_val = max(int(sustained_val), int(pennant_sustained_value))
+                        source = str(pennant_sustained_label or "Pennant of Silvered Fury").strip() or "Pennant of Silvered Fury"
                         label = f"Sustained Hits (+{sustained_val}) [{source}]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
@@ -17018,7 +17048,7 @@ class WargearProfile:
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or gate_warden_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or gate_warden_sustained or pennant_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -17087,6 +17117,12 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{gate_warden_sustained_value}) [{source}]"
                             else:
                                 label = f"Sustained Hits (+1) [{source}]"
+                        elif pennant_sustained:
+                            source = str(pennant_sustained_label or "Pennant of Silvered Fury").strip() or "Pennant of Silvered Fury"
+                            if pennant_sustained_value > 1:
+                                label = f"Sustained Hits (+{pennant_sustained_value}) [{source}]"
+                            else:
+                                label = f"Sustained Hits (+1) [{source}]"
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
@@ -17109,6 +17145,8 @@ class WargearProfile:
                             sustained_vals.append(int(rolled_bonus_sustained_val or 0))
                         if gate_warden_sustained:
                             sustained_vals.append(int(gate_warden_sustained_value or 0))
+                        if pennant_sustained:
+                            sustained_vals.append(int(pennant_sustained_value or 0))
                         attack_instance['sustained_hit'] = max(sustained_vals)
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.
