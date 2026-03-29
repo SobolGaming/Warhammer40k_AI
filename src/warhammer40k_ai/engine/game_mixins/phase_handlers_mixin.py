@@ -13962,6 +13962,121 @@ class GamePhaseHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_phase_start_tactical_alchemy(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_brandfast_oathband", lambda: False)()):
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        if available_yp < 1:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj) or "")
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_roots:
+                continue
+            if root_id:
+                seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(getattr(mgr, "tactical_alchemy_unit_eligible", lambda *_args, **_kwargs: False)(root, game=self, player=player)):
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_tactical_alchemy", False)):
+                    continue
+                try:
+                    if (
+                        str(sr.get("enhancement_tactical_alchemy_resolved_turn_owner", "") or "") == owner_id
+                        and int(sr.get("enhancement_tactical_alchemy_resolved_turn", 0) or 0) == int(turn or 0)
+                    ):
+                        continue
+                except Exception:
+                    pass
+                source_unit_id = str(get_entity_id(member) or "")
+                if not source_unit_id:
+                    continue
+                ability_name = str(sr.get("enhancement_tactical_alchemy_source", "") or "Tactical Alchemy").strip()
+                if not ability_name:
+                    ability_name = "Tactical Alchemy"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="tactical_alchemy",
+                    ability_name=ability_name,
+                    message=f"{ability_name}: spend 1 YP to roll for 1CP?",
+                    context={
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "unit_id": root_id,
+                        "source_unit_id": source_unit_id,
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                        "cost": int(sr.get("enhancement_tactical_alchemy_cost", 1) or 1),
+                        "roll_threshold": int(sr.get("enhancement_tactical_alchemy_roll_threshold", 4) or 4),
+                        "cp_gain": int(sr.get("enhancement_tactical_alchemy_cp_gain", 1) or 1),
+                    },
+                    payload={
+                        "unit_id": root_id,
+                        "source_unit_id": source_unit_id,
+                        "cost": int(sr.get("enhancement_tactical_alchemy_cost", 1) or 1),
+                    },
+                    instance_key=f"{source_unit_id}:{turn}:{owner_id}:tactical_alchemy",
+                )
+
     def _on_phase_end_forgewrought_expertise(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "MOVEMENT_PHASE":

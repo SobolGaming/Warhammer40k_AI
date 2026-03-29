@@ -23832,6 +23832,21 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
 
+        restoration_bonus = 0
+        try:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        except Exception:
+            source_army = None
+        lov_mgr = getattr(source_army, "leagues_of_votann_detachments", None) if source_army is not None else None
+        restoration_fn = getattr(lov_mgr, "signature_restoration_repair_bonus", None) if lov_mgr is not None else None
+        if callable(restoration_fn):
+            try:
+                restoration_bonus = int(restoration_fn(source_root) or 0)
+            except Exception:
+                restoration_bonus = 0
+        if restoration_bonus > 0:
+            heal += int(restoration_bonus)
+
         tsr = getattr(target_root, "special_rules", None)
         if not isinstance(tsr, dict):
             tsr = {}

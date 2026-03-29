@@ -1886,6 +1886,10 @@ class Enhancement:
         except Exception:
             is_soulforged_warpack = False
         try:
+            is_brandfast_oathband = bool(lov_mgr and lov_mgr.is_brandfast_oathband())
+        except Exception:
+            is_brandfast_oathband = False
+        try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
             is_hearthband = False
@@ -10695,6 +10699,58 @@ class Enhancement:
             if not is_vessels_of_wrath:
                 return
             unit.special_rules["enhancement_gateways_to_glory"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tactical alchemy" or enh_id == "000010447002":
+            if not is_brandfast_oathband:
+                return
+            unit.special_rules["enhancement_tactical_alchemy"] = True
+            unit.special_rules["enhancement_tactical_alchemy_cost"] = 1
+            unit.special_rules["enhancement_tactical_alchemy_roll_threshold"] = 4
+            unit.special_rules["enhancement_tactical_alchemy_cp_gain"] = 1
+            unit.special_rules["enhancement_tactical_alchemy_source"] = str(
+                getattr(self, "name", "") or "Tactical Alchemy"
+            ).strip() or "Tactical Alchemy"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "trivärg cyber implant" or name == "trivarg cyber implant" or enh_id == "000010447003":
+            if not is_brandfast_oathband:
+                return
+            unit.special_rules["enhancement_trivarg_cyber_implant"] = True
+            unit.special_rules["enhancement_trivarg_cyber_implant_cost"] = 2
+            unit.special_rules["enhancement_trivarg_cyber_implant_sustained_hits_value"] = 2
+            unit.special_rules["enhancement_trivarg_cyber_implant_source"] = str(
+                getattr(self, "name", "") or "Trivärg Cyber Implant"
+            ).strip() or "Trivärg Cyber Implant"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "precursive judgement" or enh_id == "000010447004":
+            if not is_brandfast_oathband:
+                return
+            unit.special_rules["enhancement_precursive_judgement"] = True
+            unit.special_rules["enhancement_precursive_judgement_overwatch_hit_threshold"] = 5
+            unit.special_rules["enhancement_precursive_judgement_transport_range"] = 6.0
+            unit.special_rules["enhancement_precursive_judgement_stratagems"] = (
+                "OVERWATCH",
+                "FIRE OVERWATCH",
+            )
+            unit.special_rules["enhancement_precursive_judgement_source"] = str(
+                getattr(self, "name", "") or "Precursive Judgement"
+            ).strip() or "Precursive Judgement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "signature restoration" or enh_id == "000010447005":
+            if not is_brandfast_oathband:
+                return
+            unit.special_rules["enhancement_signature_restoration"] = True
+            unit.special_rules["enhancement_signature_restoration_bonus"] = 1
+            unit.special_rules["enhancement_signature_restoration_source"] = str(
+                getattr(self, "name", "") or "Signature Restoration"
+            ).strip() or "Signature Restoration"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

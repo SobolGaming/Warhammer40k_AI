@@ -3392,6 +3392,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_precursive_judgement_overwatch(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_precursive_judgement_overwatch", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_can_use_datasheet_overwatch_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -3566,6 +3574,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
+                or self._unit_can_use_precursive_judgement_overwatch(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
                 or self._unit_can_use_shriekworm_familiar_overwatch(
                     target_unit,
                     stratagem_name="OVERWATCH",
@@ -3592,6 +3604,11 @@ class StratagemManager(
             ):
                 return True
             if self._unit_can_use_protector_of_paths_overwatch(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_precursive_judgement_overwatch(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -17582,6 +17599,11 @@ class StratagemManager(
                 get_protector_threshold = getattr(shooter, "get_protector_of_paths_overwatch_hit_threshold", None)
                 if callable(get_protector_threshold):
                     threshold = int(get_protector_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
+                    if threshold > 0:
+                        thresholds.append(int(threshold))
+                get_precursive_threshold = getattr(shooter, "get_precursive_judgement_overwatch_hit_threshold", None)
+                if callable(get_precursive_threshold):
+                    threshold = int(get_precursive_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
                     if threshold > 0:
                         thresholds.append(int(threshold))
                 get_nemesis_rounds_threshold = getattr(shooter, "get_nemesis_rounds_overwatch_hit_threshold", None)

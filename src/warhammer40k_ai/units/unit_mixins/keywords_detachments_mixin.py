@@ -12176,6 +12176,184 @@ class KeywordsDetachmentsMixin:
         except Exception:
             return 0
 
+    def _precursive_judgement_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_precursive_judgement", False)):
+                continue
+            bearer = None
+            bearer_id = str(
+                sr.get("enhancement_precursive_judgement_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if model_id == bearer_id:
+                        bearer = model
+                        break
+            if bearer is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if bearer is None:
+                continue
+            try:
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                bearer_alive = False
+            if not bearer_alive:
+                continue
+            return member, sr
+        return None, None
+
+    def get_precursive_judgement_overwatch_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "precursive_judgement_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        source_unit, source_sr = root._precursive_judgement_source_unit()
+        if source_unit is not None and isinstance(source_sr, dict):
+            enhancement = getattr(source_unit, "enhancement", None)
+            source = str(
+                source_sr.get("enhancement_precursive_judgement_source", "")
+                or getattr(enhancement, "name", "")
+                or "Precursive Judgement"
+            ).strip() or "Precursive Judgement"
+            stratagems = [
+                str(v or "").strip().upper()
+                for v in list(
+                    source_sr.get(
+                        "enhancement_precursive_judgement_stratagems",
+                        ("OVERWATCH", "FIRE OVERWATCH"),
+                    )
+                    or ()
+                )
+                if str(v or "").strip()
+            ]
+            if not stratagems:
+                stratagems = ["OVERWATCH", "FIRE OVERWATCH"]
+            try:
+                base_threshold = int(source_sr.get("enhancement_precursive_judgement_overwatch_hit_threshold", 5) or 5)
+            except Exception:
+                base_threshold = 0
+            try:
+                transport_range_in = float(source_sr.get("enhancement_precursive_judgement_transport_range", 6.0) or 6.0)
+            except Exception:
+                transport_range_in = 6.0
+            if base_threshold > 0 and transport_range_in > 0:
+                rule = {
+                    "source": source,
+                    "stratagems": tuple(stratagems),
+                    "base_threshold": int(base_threshold),
+                    "transport_range_in": float(transport_range_in),
+                }
+                try:
+                    source_id = get_entity_id(source_unit)
+                except Exception:
+                    source_id = None
+                if source_id:
+                    rule["source_unit_id"] = str(source_id)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _precursive_judgement_transport_proximity_ok(self, game=None) -> bool:
+        _ = game
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_precursive_judgement_overwatch_rule()
+        if not rule:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        within_fn = getattr(mgr, "brandfast_unit_wholly_within_transport_range", None) if mgr is not None else None
+        if not callable(within_fn):
+            return False
+        try:
+            transport_range = float(rule.get("transport_range_in", 6.0) or 6.0)
+        except Exception:
+            transport_range = 6.0
+        return bool(within_fn(root, range_in=float(transport_range)))
+
+    def can_use_precursive_judgement_overwatch(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_precursive_judgement_overwatch_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return bool(root._precursive_judgement_transport_proximity_ok(game=game))
+
+    def get_precursive_judgement_overwatch_hit_threshold(self, *, enemy_unit=None, game=None) -> int:
+        _ = enemy_unit
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if not root.can_use_precursive_judgement_overwatch(game=game, stratagem_name="OVERWATCH"):
+            return 0
+        rule = root.get_precursive_judgement_overwatch_rule()
+        if not rule:
+            return 0
+        try:
+            return int(rule.get("base_threshold", 0) or 0)
+        except Exception:
+            return 0
+
     def _eye_of_the_augurium_battle_round_key(self, game=None) -> str:
         if game is None:
             try:

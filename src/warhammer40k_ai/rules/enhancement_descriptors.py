@@ -8835,6 +8835,54 @@ _ORKS_TAKTIKAL_BRIGADE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.values()
 }
 
+_LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010447002": EnhancementToolDescriptor(
+        enhancement_id="000010447002",
+        name="Tactical Alchemy",
+        timing="command_phase",
+        target="bearer_unit",
+        duration="immediate",
+        effect="spend_yp_then_roll_for_command_point_gain_if_bearer_unit_controls_midfield_objective",
+        effect_params={"yp_cost": 1, "roll": "D6", "success_on": 4, "cp_gain": 1},
+    ),
+    "000010447003": EnhancementToolDescriptor(
+        enhancement_id="000010447003",
+        name="Trivärg Cyber Implant",
+        timing="when_selected_to_shoot",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="grant_ranged_sustained_hits_after_disembark_or_optional_yp_spend",
+        effect_params={"yp_cost": 2, "sustained_hits_value": 2, "auto_if_disembarked_this_turn": True},
+    ),
+    "000010447004": EnhancementToolDescriptor(
+        enhancement_id="000010447004",
+        name="Precursive Judgement",
+        timing="overwatch_targeting",
+        target="bearer_unit",
+        duration="constant_while_wholly_within_transport_range",
+        effect="fire_overwatch_zero_cp_and_hit_threshold_while_within_transport",
+        range_in=6.0,
+        effect_params={
+            "stratagems": ("OVERWATCH", "FIRE OVERWATCH"),
+            "overwatch_hit_threshold": 5,
+            "transport_range_in": 6.0,
+        },
+    ),
+    "000010447005": EnhancementToolDescriptor(
+        enhancement_id="000010447005",
+        name="Signature Restoration",
+        timing="on_repair_resolution",
+        target="forgewrought_expertise_target",
+        duration="immediate",
+        effect="increase_forgewrought_expertise_repair",
+        effect_params={"additional_heal": 1},
+    ),
+}
+
+_LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -9330,6 +9378,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -9499,4 +9550,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_KULT_OF_SPEED_BY_NAME.get(key)
         or _ORKS_MORE_DAKKA_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
+        or _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME.get(key)
     )

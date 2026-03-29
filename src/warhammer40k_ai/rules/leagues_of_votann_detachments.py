@@ -270,6 +270,79 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return True
         return bool(is_alive)
 
+    def brandfast_unit_wholly_within_transport_range(self, unit, *, range_in: float = 6.0) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        try:
+            check_range = float(range_in)
+        except (TypeError, ValueError):
+            check_range = 6.0
+        if check_range <= 0:
+            return False
+
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+
+        root_id = self._entity_id(root)
+        for source in self._iter_unique_army_roots():
+            if source is None:
+                continue
+            if not self._unit_is_on_battlefield(source):
+                continue
+            if not self._unit_is_votann(source):
+                continue
+            if not self._unit_is_transport(source):
+                continue
+            source_id = self._entity_id(source)
+            if source_id and source_id == root_id:
+                continue
+            if unit_wholly_within_range_of_unit(source, root, check_range, use_attached_aggregate=True):
+                return True
+        return False
+
+    def tactical_alchemy_unit_eligible(self, unit, *, game, player) -> bool:
+        if not self.is_brandfast_oathband():
+            return False
+        if game is None or player is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+
+        get_attached_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_attached_models() or []) if callable(get_attached_models) else list(getattr(root, "models", []) or [])
+        active_models = [model for model in models if self._model_is_alive(model)]
+        if not active_models:
+            return False
+
+        in_player_deployment = getattr(game, "_objective_in_player_deployment", None)
+        for location in self._iter_objective_locations(game):
+            update_control = getattr(location, "update_control", None)
+            if callable(update_control):
+                update_control(game)
+            if getattr(location, "controlling_player", None) is not player:
+                continue
+            if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
+                continue
+            for model in active_models:
+                if self._model_within_objective_marker(model, location):
+                    return True
+        return False
+
     def mobile_sensor_relays_sustained_hits_value(self, model, weapon_profile=None, *, game_map=None) -> tuple[int, str]:
         del game_map
         if not self.is_brandfast_oathband():
@@ -293,25 +366,86 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if not self._unit_is_infantry(infantry_root):
             return 0, ""
-
-        from ..utility.aura_utils import unit_wholly_within_range_of_unit
-
-        infantry_root_id = self._entity_id(infantry_root)
-        for source in self._iter_unique_army_roots():
-            if source is None:
-                continue
-            if not self._unit_is_on_battlefield(source):
-                continue
-            if not self._unit_is_votann(source):
-                continue
-            if not self._unit_is_transport(source):
-                continue
-            source_id = self._entity_id(source)
-            if source_id and source_id == infantry_root_id:
-                continue
-            if unit_wholly_within_range_of_unit(source, infantry_root, 6.0, use_attached_aggregate=True):
-                return 1, self._MOBILE_SENSOR_RELAYS_SOURCE
+        if self.brandfast_unit_wholly_within_transport_range(infantry_root, range_in=6.0):
+            return 1, self._MOBILE_SENSOR_RELAYS_SOURCE
         return 0, ""
+
+    def trivarg_cyber_implant_sustained_hits_value(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
+        if not self.is_brandfast_oathband():
+            return 0, ""
+        if model is None or not self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        if not self._model_in_army(model):
+            return 0, ""
+        if not self._model_is_votann(model):
+            return 0, ""
+
+        unit = getattr(model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_votann(root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(root):
+            return 0, ""
+
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        turn, owner_id = self._current_turn_context(game_obj)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        for member in self._attached_unit_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_trivarg_cyber_implant_active", False)):
+                continue
+            effect_owner = str(sr.get("enhancement_trivarg_cyber_implant_turn_owner", "") or "")
+            if owner_id and effect_owner and effect_owner != owner_id:
+                continue
+            try:
+                effect_turn = int(sr.get("enhancement_trivarg_cyber_implant_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if turn and effect_turn and effect_turn != turn:
+                continue
+            effect_phase = str(sr.get("enhancement_trivarg_cyber_implant_expires_phase", "") or "").strip().upper()
+            if phase_name and effect_phase and effect_phase != phase_name:
+                continue
+            try:
+                sustained_hits_value = int(sr.get("enhancement_trivarg_cyber_implant_sustained_hits_value", 2) or 2)
+            except (TypeError, ValueError):
+                sustained_hits_value = 0
+            if sustained_hits_value <= 0:
+                continue
+            source = str(sr.get("enhancement_trivarg_cyber_implant_source", "") or "Trivärg Cyber Implant").strip()
+            return int(sustained_hits_value), source or "Trivärg Cyber Implant"
+        return 0, ""
+
+    def signature_restoration_repair_bonus(self, unit) -> int:
+        if not self.is_brandfast_oathband():
+            return 0
+        root = self._attached_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_in_army(root):
+            return 0
+        if not self._unit_is_votann(root):
+            return 0
+        for member in self._attached_unit_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_signature_restoration", False)):
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is not None and not self._model_is_alive(bearer):
+                continue
+            try:
+                return max(0, int(sr.get("enhancement_signature_restoration_bonus", 1) or 1))
+            except (TypeError, ValueError):
+                return 0
+        return 0
 
     def _current_turn_context(self, game) -> tuple[int, str]:
         if game is None:

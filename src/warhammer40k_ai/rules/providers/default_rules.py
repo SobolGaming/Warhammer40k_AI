@@ -607,6 +607,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ctxs,
                 "leagues_of_votann_detachments",
                 (
+                    "is_brandfast_oathband",
+                    "is_delve_assault_shift",
                     "is_needgaard_oathband",
                     "is_hearthband",
                     "is_hearthfyre_arsenal",
@@ -617,9 +619,11 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_martial_leverage"),
                 ("unit_destroyed", "_on_unit_destroyed_seized_opportunity"),
+                ("phase_start", "_on_phase_start_tactical_alchemy"),
                 ("phase_end", "_on_phase_end_forgewrought_expertise"),
                 ("phase_end", "_on_phase_end_ruthless_reinvestment"),
                 ("phase_start", "_on_phase_start_persecution_prospect_assailed_cleanup"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_trivarg_cyber_implant"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_oathbound_speculator"),
                 ("fight_unit_selected", "_on_fight_unit_selected_oathbound_speculator"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_iron_ambassador"),

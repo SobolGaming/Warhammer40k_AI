@@ -11635,6 +11635,118 @@ class GameShootingFightHandlersMixin:
             return
         self._queue_oathbound_speculator_confirmation(root, player=player, trigger="shoot")
 
+    def _on_shooting_targets_selected_trivarg_cyber_implant(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        _ = target_units
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            root,
+            "enhancement_trivarg_cyber_implant",
+        )
+        if source_member is None:
+            return
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "SHOOTING_PHASE"
+        if bool(source_sr.get("enhancement_trivarg_cyber_implant_active", False)):
+            active_owner = str(source_sr.get("enhancement_trivarg_cyber_implant_turn_owner", "") or "")
+            try:
+                active_turn = int(source_sr.get("enhancement_trivarg_cyber_implant_turn", 0) or 0)
+            except Exception:
+                active_turn = 0
+            active_phase = str(source_sr.get("enhancement_trivarg_cyber_implant_expires_phase", "") or "").strip().upper()
+            if (
+                (not active_owner or active_owner == owner_id)
+                and (not active_turn or active_turn == turn)
+                and (not active_phase or active_phase == phase_name)
+            ):
+                return
+
+        ability_name = str(source_sr.get("enhancement_trivarg_cyber_implant_source", "") or "Trivärg Cyber Implant").strip()
+        if not ability_name:
+            ability_name = "Trivärg Cyber Implant"
+        try:
+            sustained_hits_value = int(source_sr.get("enhancement_trivarg_cyber_implant_sustained_hits_value", 2) or 2)
+        except Exception:
+            sustained_hits_value = 2
+
+        round_state = getattr(root, "round_state", None)
+        disembarked_this_turn = bool(getattr(round_state, "disembarked_this_round", False))
+        if disembarked_this_turn:
+            updated = dict(source_sr)
+            updated["enhancement_trivarg_cyber_implant_active"] = True
+            updated["enhancement_trivarg_cyber_implant_sustained_hits_value"] = int(max(1, sustained_hits_value))
+            updated["enhancement_trivarg_cyber_implant_turn_owner"] = owner_id
+            updated["enhancement_trivarg_cyber_implant_turn"] = int(turn or 0)
+            updated["enhancement_trivarg_cyber_implant_expires_phase"] = phase_name
+            updated["enhancement_trivarg_cyber_implant_source"] = ability_name
+            source_member.special_rules = updated
+            return
+
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return
+        try:
+            cost = int(source_sr.get("enhancement_trivarg_cyber_implant_cost", 2) or 2)
+        except Exception:
+            cost = 2
+        if cost <= 0:
+            return
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        if available_yp < cost:
+            return
+
+        root_id = str(get_entity_id(root) or "")
+        source_unit_id = str(get_entity_id(source_member) or "")
+        if not root_id or not source_unit_id:
+            return
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="trivarg_cyber_implant",
+            ability_name=ability_name,
+            message=f"{ability_name}: spend {int(cost)} YP for [SUSTAINED HITS {int(max(1, sustained_hits_value))}] until end of phase?",
+            context={
+                "ability_name": ability_name,
+                "phase": "Shooting phase",
+                "unit_id": root_id,
+                "source_unit_id": source_unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "cost": int(cost),
+                "sustained_hits_value": int(max(1, sustained_hits_value)),
+            },
+            payload={
+                "unit_id": root_id,
+                "source_unit_id": source_unit_id,
+                "cost": int(cost),
+                "sustained_hits_value": int(max(1, sustained_hits_value)),
+            },
+            instance_key=f"{source_unit_id}:{turn}:{owner_id}:trivarg_cyber_implant",
+        )
+
     def _on_fight_unit_selected_oathbound_speculator(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

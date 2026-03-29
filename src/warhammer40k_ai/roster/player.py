@@ -2184,6 +2184,14 @@ class Player:
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _target_unit_can_use_precursive_judgement_overwatch(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_precursive_judgement_overwatch", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _target_unit_can_use_shriekworm_familiar_overwatch(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -2741,6 +2749,17 @@ class Player:
         if name not in ("OVERWATCH", "FIRE OVERWATCH"):
             return 0
         if not self._target_unit_can_use_protector_of_paths_overwatch(target_unit, stratagem_name=name):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_precursive_judgement_overwatch_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name not in ("OVERWATCH", "FIRE OVERWATCH"):
+            return 0
+        if not self._target_unit_can_use_precursive_judgement_overwatch(target_unit, stratagem_name=name):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3534,6 +3553,34 @@ class Player:
             }
             if self._should_preview_optional_ability(
                 "PROTECTOR_OF_PATHS_OVERWATCH",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Fire Overwatch for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        precursive = self._preview_precursive_judgement_overwatch_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if precursive:
+            ability_name = "Precursive Judgement"
+            try:
+                get_rule = getattr(target_unit, "get_precursive_judgement_overwatch_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "PRECURSIVE_JUDGEMENT_OVERWATCH",
                 ctx,
                 assume=assume_optional_discounts,
             ):
@@ -5144,6 +5191,12 @@ class Player:
                     stratagem_name=name_u,
                 )
             )
+            can_precursive = bool(
+                self._target_unit_can_use_precursive_judgement_overwatch(
+                    target_unit,
+                    stratagem_name=name_u,
+                )
+            )
             can_shriekworm = bool(
                 self._target_unit_can_use_shriekworm_familiar_overwatch(
                     target_unit,
@@ -5227,6 +5280,52 @@ class Player:
                     }
                 if overwatch_used and not can_traitor:
                     return {"denied": True, "reason": "Overwatch already used this turn"}
+            if can_precursive:
+                ability_name = "Precursive Judgement"
+                try:
+                    get_rule = getattr(target_unit, "get_precursive_judgement_overwatch_rule", None)
+                    rule = get_rule() if callable(get_rule) else None
+                    if isinstance(rule, dict):
+                        ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_precursive = self._should_use_optional_ability("PRECURSIVE_JUDGEMENT_OVERWATCH", ctx)
+                if use_precursive:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                    }
             if can_prophetic:
                 ability_name = "Prophetic Sentinels"
                 try:

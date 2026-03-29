@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+from ..decision_handlers._helpers import is_skip_choice
 
 
 class GameReactiveDecisionsMixin:
@@ -5652,6 +5653,8 @@ class GameReactiveDecisionsMixin:
             "seized_opportunity",
             "geomantic_hunters",
             "resource_transmutation",
+            "tactical_alchemy",
+            "trivarg_cyber_implant",
             "optimal_application",
             "ruthless_reinvestment",
             "oathbound_speculator",
@@ -6458,6 +6461,155 @@ class GameReactiveDecisionsMixin:
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Resource Transmutation",
+                )
+            return
+
+        if ability_key == "tactical_alchemy":
+            source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id") or "")
+            if not source_unit_id:
+                return
+            source_unit = self._resolve_unit_by_id(source_unit_id)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_tactical_alchemy", False)):
+                return
+            owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+            try:
+                turn = int(ctx.get("turn", 0) or getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = int(getattr(self, "turn", 0) or 0)
+            sr["enhancement_tactical_alchemy_resolved_turn_owner"] = owner_id
+            sr["enhancement_tactical_alchemy_resolved_turn"] = int(turn or 0)
+            source_unit.special_rules = sr
+            if is_skip_choice(request, result):
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 1)) or 1)
+            except Exception:
+                cost = 1
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Tactical Alchemy").strip() or "Tactical Alchemy"
+            try:
+                roll_threshold = int(ctx.get("roll_threshold", 4) or 4)
+            except Exception:
+                roll_threshold = 4
+            try:
+                cp_gain = int(ctx.get("cp_gain", 1) or 1)
+            except Exception:
+                cp_gain = 1
+            from ...utility.event_bus import append_action, append_dice
+
+            roll = int(get_roll("D6") or 0)
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+            gained_cp = 0
+            if roll >= max(2, int(roll_threshold)) and cp_gain > 0:
+                gained_cp = int(player.gain_command_points(int(cp_gain), reason=ability_name) or 0)
+            if gained_cp > 0:
+                append_action(player, f"{ability_name}: rolled {int(roll)} and gained {int(gained_cp)}CP.")
+            else:
+                append_action(player, f"{ability_name}: rolled {int(roll)} and gained 0CP.")
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Tactical Alchemy",
+                )
+            return
+
+        if ability_key == "trivarg_cyber_implant":
+            source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id") or "")
+            if not source_unit_id:
+                return
+            source_unit = self._resolve_unit_by_id(source_unit_id)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_trivarg_cyber_implant", False)):
+                return
+            if is_skip_choice(request, result):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 2)) or 2)
+            except Exception:
+                cost = 2
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            try:
+                sustained_hits_value = int(payload.get("sustained_hits_value", ctx.get("sustained_hits_value", 2)) or 2)
+            except Exception:
+                sustained_hits_value = 2
+            ability_name = str(ctx.get("ability_name", "") or "Trivärg Cyber Implant").strip() or "Trivärg Cyber Implant"
+            sr["enhancement_trivarg_cyber_implant_active"] = True
+            sr["enhancement_trivarg_cyber_implant_sustained_hits_value"] = int(max(1, sustained_hits_value))
+            sr["enhancement_trivarg_cyber_implant_turn_owner"] = owner_id
+            sr["enhancement_trivarg_cyber_implant_turn"] = int(turn or 0)
+            sr["enhancement_trivarg_cyber_implant_expires_phase"] = phase_name or "SHOOTING_PHASE"
+            sr["enhancement_trivarg_cyber_implant_source"] = ability_name
+            source_unit.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Trivärg Cyber Implant",
                 )
             return
 
