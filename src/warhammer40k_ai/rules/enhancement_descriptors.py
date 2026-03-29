@@ -7211,6 +7211,54 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME = {
     for desc in _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.values()
 }
 
+_AGENTS_OF_THE_IMPERIUM_ORDO_XENOS_ALIEN_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009126002": EnhancementToolDescriptor(
+        enhancement_id="000009126002",
+        name="Amulet of Auto-Chastisement",
+        timing="start_of_opponent_shooting_phase",
+        target="enemy_vehicle_unit_within_range_visible_excluding_titanic",
+        duration="until_end_of_phase",
+        effect="leadership_test_then_hit_penalty_or_ineligible_to_shoot",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "required_target_keywords": ("VEHICLE",),
+            "excluded_target_keywords": ("TITANIC",),
+            "resolution_mode": "leadership_test",
+        },
+    ),
+    "000009126003": EnhancementToolDescriptor(
+        enhancement_id="000009126003",
+        name="Beacon Angelis",
+        timing="passive_and_stratagem_targeting",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_deep_strike_and_rapid_ingress_zero_cp",
+        effect_params={
+            "grants_deep_strike": True,
+            "stratagem_name": "RAPID INGRESS",
+            "cp_reduction": "to_zero",
+        },
+    ),
+    "000009126005": EnhancementToolDescriptor(
+        enhancement_id="000009126005",
+        name="Universal Anathema",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="grant_bearer_melee_anti_infantry_and_monster",
+        effect_params={
+            "granted_keywords": ("ANTI-INFANTRY 2+", "ANTI-MONSTER 4+"),
+            "anti_specs": (("INFANTRY", 2), ("MONSTER", 4)),
+        },
+    ),
+}
+
+_AGENTS_OF_THE_IMPERIUM_ORDO_XENOS_ALIEN_HUNTERS_BY_NAME = {
+    _normalize_name(desc.name): desc
+    for desc in _AGENTS_OF_THE_IMPERIUM_ORDO_XENOS_ALIEN_HUNTERS_DESCRIPTORS.values()
+}
+
 _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009134002": EnhancementToolDescriptor(
         enhancement_id="000009134002",
@@ -9554,6 +9602,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AGENTS_OF_THE_IMPERIUM_ORDO_XENOS_ALIEN_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9865,6 +9916,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GENESTEALER_CULTS_OUTLANDER_CLAW_BY_NAME.get(key)
         or _GENESTEALER_CULTS_XENOCREED_CONGREGATION_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
+        or _AGENTS_OF_THE_IMPERIUM_ORDO_XENOS_ALIEN_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)
         or _TAU_KROOT_HUNTING_PACK_BY_NAME.get(key)

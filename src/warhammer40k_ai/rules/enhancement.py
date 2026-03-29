@@ -8745,8 +8745,50 @@ class Enhancement:
                 cache_key = f"model_start_opponent_shooting_phase_disrupt:{bearer_id}"
                 cache.pop(cache_key, None)
 
-        if name == "beacon angelis" or enh_id == "000008522004":
-            if not is_black_spear_task_force:
+        if name in ("amulet of auto-chastisement", "amulet of auto chastisement") or enh_id == "000009126002":
+            if not is_ordo_xenos_alien_hunters:
+                return
+            unit.special_rules["enhancement_amulet_of_auto_chastisement"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                amulet_range = float(params.get("range", 12.0) or 12.0)
+            except Exception:
+                amulet_range = 12.0
+            required_keywords: list[str] = []
+            seen_required: set[str] = set()
+            for kw in list(params.get("required_target_keywords", ("VEHICLE",)) or []):
+                norm_kw = str(kw or "").strip().upper()
+                if not norm_kw or norm_kw in seen_required:
+                    continue
+                seen_required.add(norm_kw)
+                required_keywords.append(norm_kw)
+            excluded_keywords: list[str] = []
+            seen_excluded: set[str] = set()
+            for kw in list(params.get("excluded_target_keywords", ("TITANIC",)) or []):
+                norm_kw = str(kw or "").strip().upper()
+                if not norm_kw or norm_kw in seen_excluded:
+                    continue
+                seen_excluded.add(norm_kw)
+                excluded_keywords.append(norm_kw)
+            resolution_mode = str(params.get("resolution_mode", "leadership_test") or "leadership_test").strip().lower()
+            if not resolution_mode:
+                resolution_mode = "leadership_test"
+            unit.special_rules["enhancement_amulet_of_auto_chastisement_range"] = float(max(0.0, amulet_range))
+            unit.special_rules["enhancement_amulet_of_auto_chastisement_required_target_keywords"] = required_keywords
+            unit.special_rules["enhancement_amulet_of_auto_chastisement_excluded_target_keywords"] = excluded_keywords
+            unit.special_rules["enhancement_amulet_of_auto_chastisement_resolution_mode"] = resolution_mode
+            unit.special_rules["enhancement_amulet_of_auto_chastisement_source"] = "Amulet of Auto-Chastisement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_amulet_of_auto_chastisement_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache_key = f"model_start_opponent_shooting_phase_disrupt:{bearer_id}"
+                cache.pop(cache_key, None)
+
+        if name == "beacon angelis" or enh_id in {"000008522004", "000009126003"}:
+            if not (is_black_spear_task_force or is_ordo_xenos_alien_hunters):
                 return
             unit.special_rules["enhancement_beacon_angelis"] = True
             unit.special_rules["enhancement_beacon_angelis_source"] = "Beacon Angelis"
@@ -8759,6 +8801,31 @@ class Enhancement:
             if isinstance(cache, dict):
                 cache.pop("deep_strike", None)
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "universal anathema" or enh_id == "000009126005":
+            if not is_ordo_xenos_alien_hunters:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Universal Anathema").strip() or "Universal Anathema"
+            granted_keywords: list[str] = []
+            for keyword in list(params.get("granted_keywords", ("ANTI-INFANTRY 2+", "ANTI-MONSTER 4+")) or ()):
+                token = str(keyword or "").strip().upper()
+                if token and token not in granted_keywords:
+                    granted_keywords.append(token)
+            unit.special_rules["enhancement_universal_anathema"] = True
+            unit.special_rules["enhancement_universal_anathema_source"] = source_name
+            if granted_keywords:
+                _append_enhancement_bearer_weapon_keyword_rule(
+                    unit,
+                    attack_type="melee",
+                    keywords=tuple(granted_keywords),
+                    source=source_name,
+                    source_model_id=bearer_id,
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_universal_anathema_bearer_model_id"] = bearer_id
 
         if name == "the tome of ectoclades" or enh_id == "000008522005":
             if not is_black_spear_task_force:

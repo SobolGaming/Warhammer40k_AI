@@ -11708,6 +11708,69 @@ class AbilitySpecsMixin:
                         }
                     )
 
+        if isinstance(sr, dict) and bool(sr.get("enhancement_amulet_of_auto_chastisement")):
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            bearer_model_id = str(
+                sr.get("enhancement_amulet_of_auto_chastisement_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if not bearer_model_id or not model_id or model_id == bearer_model_id:
+                source = (
+                    str(sr.get("enhancement_amulet_of_auto_chastisement_source", "") or "Amulet of Auto-Chastisement").strip()
+                    or "Amulet of Auto-Chastisement"
+                )
+                try:
+                    range_value = int(float(sr.get("enhancement_amulet_of_auto_chastisement_range", 12.0) or 12.0))
+                except Exception:
+                    range_value = 12
+                resolution_mode = str(
+                    sr.get("enhancement_amulet_of_auto_chastisement_resolution_mode", "") or "leadership_test"
+                ).strip().lower() or "leadership_test"
+                required_keywords: list[str] = []
+                for keyword in list(
+                    sr.get("enhancement_amulet_of_auto_chastisement_required_target_keywords", ()) or ()
+                ):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in required_keywords:
+                        required_keywords.append(kw)
+                excluded_keywords: list[str] = []
+                for keyword in list(
+                    sr.get("enhancement_amulet_of_auto_chastisement_excluded_target_keywords", ()) or ()
+                ):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in excluded_keywords:
+                        excluded_keywords.append(kw)
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    False,
+                    False,
+                    False,
+                    True,
+                    resolution_mode,
+                    tuple(required_keywords),
+                    tuple(excluded_keywords),
+                )
+                if range_value > 0 and key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(range_value),
+                            "mortal_on_one": False,
+                            "optional": False,
+                            "limit_one_per_army": True,
+                            "grant_ranged_hazardous": False,
+                            "resolution_mode": resolution_mode,
+                            "required_target_keywords": list(required_keywords),
+                            "excluded_target_keywords": list(excluded_keywords),
+                        }
+                    )
+
         if isinstance(sr, dict) and bool(sr.get("enhancement_lord_of_machines")):
             try:
                 model_id = str(get_entity_id(model) or "")
