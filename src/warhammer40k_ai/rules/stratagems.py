@@ -2151,6 +2151,8 @@ class StratagemManager(
             "YOUR TIME IS NIGH",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
+        if "JOIN THE HUNT" in names:
+            add("bodyguard_unit_destroyed", self._on_bodyguard_unit_destroyed)
 
         if names & {
             "SKULLS FOR THE SKULL THRONE!",
@@ -17038,6 +17040,14 @@ class StratagemManager(
             "target_unit": destroyed_by_unit,
             "enemy_unit": unit,
         })
+
+    def _on_bodyguard_unit_destroyed(self, bodyguard_unit=None, **kwargs) -> None:
+        if bodyguard_unit is None:
+            return
+        self._queue_tau_kroot_unit_destroyed_reactions(
+            unit=bodyguard_unit,
+            destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+        )
 
     # -------- Public API --------
     def list_available(self) -> List[Stratagem]:

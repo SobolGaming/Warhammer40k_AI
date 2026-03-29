@@ -1172,7 +1172,23 @@ class Player:
         if br > 0:
             self._ability_used_battle_round[usage_key] = br
 
-    def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[list[dict], list[str]]:
+    def _targeted_stratagem_cp_discount_blocked(self, *, target_unit, source_unit, stratagem=None) -> bool:
+        if target_unit is None or source_unit is None or stratagem is None:
+            return False
+        stratagem_name = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if stratagem_name != "JOIN THE HUNT":
+            return False
+        try:
+            if getattr(source_unit, "attached_to", None) is not target_unit:
+                return False
+        except Exception:
+            return False
+        try:
+            return len(list(getattr(target_unit, "models", []) or [])) == 0
+        except Exception:
+            return False
+
+    def _target_unit_has_stratagem_target_cp_discount(self, target_unit, *, stratagem=None) -> tuple[list[dict], list[str]]:
         if target_unit is None:
             return [], []
         parent = self._target_unit_parent_army(target_unit)
@@ -1182,6 +1198,8 @@ class Player:
         names: list[str] = []
         found_specs: list[dict] = []
         for u in members:
+            if self._targeted_stratagem_cp_discount_blocked(target_unit=target_unit, source_unit=u, stratagem=stratagem):
+                continue
             sr = getattr(u, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -1326,7 +1344,7 @@ class Player:
             deduped_names.append(str(n))
         return deduped_specs, deduped_names
 
-    def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None) -> tuple[int, list[str], list[dict]]:
+    def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None, stratagem=None) -> tuple[int, list[str], list[dict]]:
         """
         Generic targeted stratagem CP discount:
         Once per battle round, one unit from your army with this ability can use it when its unit
@@ -1337,7 +1355,10 @@ class Player:
         br = self._battle_round()
         if br <= 0:
             return 0, [], []
-        direct_specs, direct_names = self._target_unit_has_stratagem_target_cp_discount(target_unit)
+        direct_specs, direct_names = self._target_unit_has_stratagem_target_cp_discount(
+            target_unit,
+            stratagem=stratagem,
+        )
         aura_specs, aura_names = self._target_unit_has_stratagem_target_cp_discount_aura(target_unit)
         combined_specs = list(direct_specs or [])
         combined_specs.extend(list(aura_specs or []))
@@ -4205,7 +4226,10 @@ class Player:
                 discount += int(dts)
                 reasons.append("Direct the Slaughter: -1CP (once per battle round)")
 
-        tsd, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+        tsd, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(
+            target_unit=target_unit,
+            stratagem=stratagem,
+        )
         if tsd:
             label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
             ctx = {
@@ -6632,7 +6656,10 @@ class Player:
                     self._ability_used_battle_round["DIRECT_THE_SLAUGHTER"] = br
 
         # Decide whether to apply targeted stratagem discount if available.
-        tsd_available, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+        tsd_available, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(
+            target_unit=target_unit,
+            stratagem=stratagem,
+        )
         if tsd_available:
             label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
             ctx = {

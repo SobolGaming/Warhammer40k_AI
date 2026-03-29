@@ -397,11 +397,30 @@ def _unit_has_flying_base(unit: 'Unit') -> bool:
     return bool(getattr(base, "is_flying_base", False))
 
 
+def _unit_has_tau_crisis_faq_zero_pivot(unit: 'Unit') -> bool:
+    if unit is None:
+        return False
+    datasheet_id = ""
+    try:
+        datasheet_id = str(unit.get_datasheet_id() or "").strip()
+    except Exception:
+        datasheet_id = ""
+    if datasheet_id in {"000000418", "000003699", "000003700", "000003701"}:
+        return True
+    try:
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+    except Exception:
+        return False
+    return bool(name.startswith("crisis ") and name.endswith(" battlesuits"))
+
+
 def get_pivot_cost(unit: 'Unit') -> float:
     """
     Calculate the pivot cost for a unit based on its characteristics.
     """
     if bool(getattr(unit, "is_aircraft", False)):
+        return 0
+    if _unit_has_tau_crisis_faq_zero_pivot(unit):
         return 0
 
     is_vehicle = bool(getattr(unit, "is_vehicle", False))

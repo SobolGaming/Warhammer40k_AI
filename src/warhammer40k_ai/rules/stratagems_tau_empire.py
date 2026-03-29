@@ -1377,13 +1377,27 @@ class TauEmpireStratagemMixin:
             return []
         if not self._tau_owned_by_player(root, self.player):
             return []
-        if self._tau_is_alive(root):
+        if not self._tau_join_the_hunt_destroyed_state(root):
             return []
         if not self._is_tau_kroot_unit(root):
             return []
         if not (self._tau_has_any_keyword(root, "INFANTRY") or self._is_tau_kroot_hounds_unit(root)):
             return []
         return [root]
+
+    @staticmethod
+    def _tau_join_the_hunt_destroyed_state(unit: Any) -> bool:
+        if unit is None:
+            return False
+        try:
+            if not bool(unit.is_alive()):
+                return True
+        except Exception:
+            return False
+        try:
+            return len(list(getattr(unit, "models", []) or [])) == 0
+        except Exception:
+            return False
 
     def _tau_a_trap_well_laid_enemy_candidates(
         self,
@@ -4907,7 +4921,7 @@ class TauEmpireStratagemMixin:
         if not self._tau_owned_by_player(root, self.player):
             logger.error("ERROR: JOIN THE HUNT: target must be a friendly unit")
             return False
-        if self._tau_is_alive(root):
+        if not self._tau_join_the_hunt_destroyed_state(root):
             logger.error("ERROR: JOIN THE HUNT: target unit must have been just destroyed")
             return False
         if not self._is_tau_kroot_unit(root):

@@ -126,13 +126,50 @@ class ForTheGreaterGoodManager:
             return False
 
     @staticmethod
+    def _iter_attached_members(unit) -> list:
+        root = ForTheGreaterGoodManager._attached_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        if callable(get_members):
+            try:
+                members = [member for member in list(get_members() or []) if member is not None]
+            except Exception:
+                members = []
+            if members:
+                return members
+        return [root]
+
+    @staticmethod
     def _unit_has_markerlight(unit) -> bool:
         if unit is None:
             return False
-        try:
-            return bool(unit.has_any_keyword("MARKERLIGHT"))
-        except Exception:
+        for member in ForTheGreaterGoodManager._iter_attached_members(unit):
+            try:
+                if bool(member.has_any_keyword("MARKERLIGHT")):
+                    return True
+            except Exception:
+                pass
+            for model in list(getattr(member, "models", []) or []):
+                for optional_name in list(getattr(model, "optional_wargear", []) or []):
+                    if "marker drone" in str(optional_name or "").strip().lower():
+                        return True
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if "marker drone" in str(getattr(wargear, "name", "") or "").strip().lower():
+                        return True
+        return False
+
+    @staticmethod
+    def _unit_contains_ethereal(unit) -> bool:
+        if unit is None:
             return False
+        for member in ForTheGreaterGoodManager._iter_attached_members(unit):
+            try:
+                if bool(member.has_any_keyword("ETHEREAL")):
+                    return True
+            except Exception:
+                continue
+        return False
 
     @staticmethod
     def _unit_has_named_ability(unit, ability_name: str) -> bool:
@@ -150,11 +187,11 @@ class ForTheGreaterGoodManager:
         return False
 
     def _unit_has_ftgg(self, unit) -> bool:
-        if unit is None:
-            return False
-        if self._unit_has_named_ability(unit, "for the greater good"):
-            return True
         root = self._attached_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_named_ability(root, "for the greater good"):
+            return True
         checker = getattr(root, "_attached_unit_has_active_enhancement", None) if root is not None else None
         if callable(checker):
             if bool(
@@ -165,10 +202,14 @@ class ForTheGreaterGoodManager:
                 )
             ):
                 return True
+        # Preserve lightweight Tau test/unit stubs that omit the explicit named
+        # ability while still excluding auxiliaries that do not gain FTGG.
         try:
-            if unit.has_any_keyword("T'AU EMPIRE"):
+            if root.has_any_keyword("KROOT") or root.has_any_keyword("VESPID"):
+                return False
+            if root.has_any_keyword("T'AU EMPIRE"):
                 return True
-            if unit.has_any_keyword("TAU EMPIRE"):
+            if root.has_any_keyword("TAU EMPIRE"):
                 return True
         except Exception:
             pass
@@ -348,7 +389,18 @@ class ForTheGreaterGoodManager:
         return profiles
 
     def _unit_is_eligible_observer(self, unit, *, game=None, player=None) -> bool:
-        if unit is None or not self._unit_has_ftgg(unit):
+        root = self._attached_root(unit)
+        if root is None or not self._unit_has_ftgg(root):
+            return False
+        unit = root
+        try:
+            attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            attached_leaders = []
+        # Tau FAQ: a unit containing an ETHEREAL with a marker drone is not an
+        # Observer by itself; it only qualifies when attached to a bodyguard
+        # unit that already has For the Greater Good.
+        if self._unit_contains_ethereal(root) and self._unit_has_markerlight(root) and not attached_leaders:
             return False
         if not self._unit_is_alive(unit):
             return False

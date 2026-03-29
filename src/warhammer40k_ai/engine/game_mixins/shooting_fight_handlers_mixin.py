@@ -17521,8 +17521,42 @@ class GameShootingFightHandlersMixin:
         except Exception:
             return
 
-        snapshot = list(getattr(self, "_guns_blazing_shooting_targets", {}).get(attacking_unit, []) or [])
-        seen_ids = {str(get_entity_id(u) or "") for u in snapshot if u is not None}
+        snapshot = []
+        snapshot_by_source_id: dict[str, dict[str, Any]] = {}
+        for raw_entry in list(getattr(self, "_guns_blazing_shooting_targets", {}).get(attacking_unit, []) or []):
+            entry = self._normalize_guns_blazing_snapshot_entry(raw_entry)
+            if entry is None:
+                continue
+            try:
+                source_root = entry["unit"].get_attached_unit_root()
+            except Exception:
+                source_root = entry["unit"]
+            if source_root is None:
+                continue
+            source_id = str(get_entity_id(source_root) or "")
+            if not source_id:
+                continue
+            trigger_targets: list[Any] = []
+            seen_target_ids: set[str] = set()
+            for target in list(entry.get("trigger_targets", []) or []):
+                if target is None:
+                    continue
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                if target_root is None:
+                    continue
+                target_id = str(get_entity_id(target_root) or "")
+                if target_id and target_id in seen_target_ids:
+                    continue
+                if target_id:
+                    seen_target_ids.add(target_id)
+                trigger_targets.append(target_root)
+            normalized = {"unit": source_root, "trigger_targets": trigger_targets}
+            snapshot_by_source_id[source_id] = normalized
+            snapshot.append(normalized)
+        seen_ids = set(snapshot_by_source_id.keys())
 
         try:
             players = list(self.players or [])
@@ -17565,7 +17599,7 @@ class GameShootingFightHandlersMixin:
                     range_value = 3.0
                 if range_value <= 0.0:
                     range_value = 3.0
-                eligible = False
+                trigger_targets: list[Any] = []
                 for target in list(target_units or []):
                     if target is None:
                         continue
@@ -17595,12 +17629,23 @@ class GameShootingFightHandlersMixin:
                         if not matches_keyword:
                             continue
                     if unit_within_range_of_unit(root, target_root, float(range_value), use_attached_aggregate=True):
-                        eligible = True
-                        break
-                if not eligible:
+                        trigger_targets.append(target_root)
+                if not trigger_targets:
                     continue
-                snapshot.append(root)
-                seen_ids.add(rid)
+                entry = snapshot_by_source_id.get(rid)
+                if entry is None:
+                    entry = {"unit": root, "trigger_targets": []}
+                    snapshot_by_source_id[rid] = entry
+                    snapshot.append(entry)
+                    seen_ids.add(rid)
+                seen_target_ids = {str(get_entity_id(target) or "") for target in list(entry.get("trigger_targets", []) or []) if target is not None}
+                for target_root in trigger_targets:
+                    target_id = str(get_entity_id(target_root) or "")
+                    if target_id and target_id in seen_target_ids:
+                        continue
+                    if target_id:
+                        seen_target_ids.add(target_id)
+                    entry["trigger_targets"].append(target_root)
 
         if not snapshot:
             return
@@ -17609,6 +17654,67 @@ class GameShootingFightHandlersMixin:
         ):
             self._guns_blazing_shooting_targets = {}
         self._guns_blazing_shooting_targets[attacking_unit] = list(snapshot)
+
+    @staticmethod
+    def _normalize_guns_blazing_snapshot_entry(entry) -> dict[str, Any] | None:
+        if entry is None:
+            return None
+        if isinstance(entry, dict):
+            source = entry.get("unit")
+            trigger_targets = list(entry.get("trigger_targets", []) or [])
+        else:
+            source = entry
+            trigger_targets = []
+        if source is None:
+            return None
+        return {
+            "unit": source,
+            "trigger_targets": [target for target in trigger_targets if target is not None],
+        }
+
+    def _guns_blazing_trigger_target_invalidated_by_ranged_restriction(self, attacker_unit, trigger_target, game_map) -> bool:
+        if attacker_unit is None or trigger_target is None or game_map is None:
+            return False
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        try:
+            target_root = trigger_target.get_attached_unit_root()
+        except Exception:
+            target_root = trigger_target
+        if attacker_root is None or target_root is None:
+            return False
+        if not bool(getattr(target_root, "is_alive", lambda: False)()):
+            return False
+        try:
+            limit, _sources = target_root.get_ranged_targeting_restriction(
+                game_map=game_map,
+                ignore_lone_operative=False,
+            )
+        except Exception:
+            return False
+        if limit is None:
+            return False
+        for model in list(getattr(attacker_root, "models", []) or []):
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except Exception:
+                    continue
+                for profile in list((getattr(wargear, "profiles", {}) or {}).values()):
+                    if profile is None:
+                        continue
+                    try:
+                        if attacker_root._can_model_shoot_weapon_at_target(model, profile, target_root, game_map):
+                            return False
+                    except Exception:
+                        continue
+        return True
 
     def _on_unit_shooting_resolved_guns_blazing(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
@@ -17651,9 +17757,12 @@ class GameShootingFightHandlersMixin:
                 if uid:
                     pending_for_source.add(uid)
 
-        for source in list(targets):
-            if source is None:
+        for raw_entry in list(targets):
+            entry = self._normalize_guns_blazing_snapshot_entry(raw_entry)
+            if entry is None:
                 continue
+            source = entry["unit"]
+            trigger_targets = list(entry.get("trigger_targets", []) or [])
             try:
                 root = source.get_attached_unit_root()
             except Exception:
@@ -17664,6 +17773,11 @@ class GameShootingFightHandlersMixin:
             if not source_id:
                 continue
             if source_id in pending_for_source:
+                continue
+            if trigger_targets and all(
+                self._guns_blazing_trigger_target_invalidated_by_ranged_restriction(attacker_root, trigger_target, game_map)
+                for trigger_target in trigger_targets
+            ):
                 continue
             if not bool(getattr(root, "can_use_guns_blazing", lambda **_k: False)(game=self, game_map=game_map, enemy_unit=attacker_root)):
                 continue
