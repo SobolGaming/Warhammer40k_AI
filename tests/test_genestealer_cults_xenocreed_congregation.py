@@ -3,6 +3,8 @@ from __future__ import annotations
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 
 
@@ -96,6 +98,19 @@ def _has_fnp_value(entries: list[tuple[int, str | None]], value: int) -> bool:
     return False
 
 
+def _apply_xenocreed_enhancement(unit: Unit, *, enhancement_id: str, name: str, description: str) -> Enhancement:
+    enhancement = Enhancement(
+        id=enhancement_id,
+        name=name,
+        faction_id="GC",
+        detachment="Xenocreed Congregation",
+        description=description,
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+    return enhancement
+
+
 def test_unquestioning_fanaticism_grants_reroll_advance_and_charge_to_eligible_led_units():
     game, gsc_army, _enemy_army, _gsc_player, _enemy_player = _build_game()
 
@@ -184,3 +199,187 @@ def test_unquestioning_fanaticism_fnp_applies_only_to_magus_primus_or_iconward_l
     assert _has_fnp_value(primus_fnp, 3)
     assert not _has_fnp_value(acolyte_fnp, 3)
     assert not _has_fnp_value(clamavus_fnp, 3)
+
+
+def test_xenocreed_enhancement_descriptors_registered() -> None:
+    gene_sire = get_enhancement_tool_descriptor(enhancement_id="000009071002")
+    assert gene_sire is not None
+    assert gene_sire.name == "Gene-sire's Reliquant"
+    assert gene_sire.effect == "reroll_battleshock_tests"
+
+    denunciator = get_enhancement_tool_descriptor(enhancement_id="000009071003")
+    assert denunciator is not None
+    assert denunciator.name == "Denunciator of Tyrants"
+    assert denunciator.effect == "add_hit_and_wound_roll_modifier"
+    assert int(denunciator.effect_params.get("hit_roll_bonus", 0) or 0) == 1
+    assert int(denunciator.effect_params.get("wound_roll_bonus", 0) or 0) == 1
+
+    deeds = get_enhancement_tool_descriptor(enhancement_id="000009071004")
+    assert deeds is not None
+    assert deeds.name == "Deeds That Speak to the Masses"
+    assert deeds.effect == "additional_starting_resurgence_points"
+    assert int(deeds.effect_params.get("additional_resurgence_points", 0) or 0) == 2
+
+    incendiary = get_enhancement_tool_descriptor(enhancement_id="000009071005")
+    assert incendiary is not None
+    assert incendiary.name == "Incendiary Inspiration"
+    assert incendiary.effect == "charge_after_advance"
+    assert bool(incendiary.effect_params.get("charge_after_advance", False)) is True
+
+
+def test_gene_sires_reliquant_adds_battleshock_reroll_source_to_bearers_unit() -> None:
+    _game, gsc_army, _enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    neophytes = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(primus)
+    _attach_leader(neophytes, primus)
+
+    _apply_xenocreed_enhancement(
+        primus,
+        enhancement_id="000009071002",
+        name="Gene-sire's Reliquant",
+        description="MAGUS, PRIMUS or ACOLYTE ICONWARD model only. You can re-roll Battle-shock tests taken for the bearer's unit.",
+    )
+
+    assert "Gene-sire's Reliquant" in neophytes.leading_leadership_reroll_sources()
+
+
+def test_denunciator_of_tyrants_adds_hit_and_wound_against_character_targets() -> None:
+    _game, gsc_army, enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    neophytes = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(primus)
+    _attach_leader(neophytes, primus)
+
+    _apply_xenocreed_enhancement(
+        primus,
+        enhancement_id="000009071003",
+        name="Denunciator of Tyrants",
+        description=(
+            "MAGUS, PRIMUS or ACOLYTE ICONWARD model only. Each time a model in the bearer's unit makes an attack "
+            "that targets a CHARACTER unit, add 1 to the Hit roll and add 1 to the Wound roll."
+        ),
+    )
+
+    character_target = _make_unit(
+        "Enemy Character",
+        faction_name="Enemy",
+        keywords=["CHARACTER", "INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    non_character_target = _make_unit(
+        "Enemy Infantry",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    enemy_army.add_unit(character_target)
+    enemy_army.add_unit(non_character_target)
+
+    hit_vs_character = neophytes.get_unit_hit_reroll_modifiers("ranged", target=character_target)
+    wound_vs_character = neophytes.get_unit_wound_reroll_modifiers("ranged", target=character_target)
+    hit_vs_non_character = neophytes.get_unit_hit_reroll_modifiers("ranged", target=non_character_target)
+    wound_vs_non_character = neophytes.get_unit_wound_reroll_modifiers("ranged", target=non_character_target)
+
+    assert int(hit_vs_character.get("hit", 0) or 0) >= 1
+    assert any(
+        "denunciator of tyrants" in str(reason or "").strip().lower()
+        for reason in hit_vs_character.get("hit_reasons", ())
+    )
+    assert int(wound_vs_character.get("wound", 0) or 0) >= 1
+    assert any(
+        "denunciator of tyrants" in str(reason or "").strip().lower()
+        for reason in wound_vs_character.get("wound_reasons", ())
+    )
+    assert not any(
+        "denunciator of tyrants" in str(reason or "").strip().lower()
+        for reason in hit_vs_non_character.get("hit_reasons", ())
+    )
+    assert not any(
+        "denunciator of tyrants" in str(reason or "").strip().lower()
+        for reason in wound_vs_non_character.get("wound_reasons", ())
+    )
+
+
+def test_deeds_that_speak_to_the_masses_adds_two_starting_resurgence_points() -> None:
+    _game, gsc_army, _enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    neophytes = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(primus)
+    _attach_leader(neophytes, primus)
+
+    _apply_xenocreed_enhancement(
+        primus,
+        enhancement_id="000009071004",
+        name="Deeds That Speak to the Masses",
+        description="Magus, Primus or Acolyte Iconward model only. You start the battle with 2 additional Resurgence points.",
+    )
+
+    gsc_army.on_battle_round_start(1)
+
+    assert int(gsc_army.cult_ambush.resurgence_points or 0) == 12
+
+
+def test_incendiary_inspiration_allows_bearers_unit_to_charge_after_advancing() -> None:
+    _game, gsc_army, _enemy_army, _gsc_player, _enemy_player = _build_game()
+
+    neophytes = _make_unit(
+        "Neophyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    primus = _make_unit(
+        "Primus",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(neophytes)
+    gsc_army.add_unit(primus)
+    _attach_leader(neophytes, primus)
+
+    _apply_xenocreed_enhancement(
+        primus,
+        enhancement_id="000009071005",
+        name="Incendiary Inspiration",
+        description="MAGUS, PRIMUS or ACOLYTE ICONWARD model only. The bearer's unit is eligible to declare a charge in a turn in which it Advanced.",
+    )
+
+    assert bool(neophytes.can_charge_after_advance()) is True

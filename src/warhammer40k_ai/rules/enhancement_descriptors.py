@@ -6863,6 +6863,56 @@ _GENESTEALER_CULTS_OUTLANDER_CLAW_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_OUTLANDER_CLAW_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_XENOCREED_CONGREGATION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009071002": EnhancementToolDescriptor(
+        enhancement_id="000009071002",
+        name="Gene-sire's Reliquant",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="reroll_battleshock_tests",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000009071003": EnhancementToolDescriptor(
+        enhancement_id="000009071003",
+        name="Denunciator of Tyrants",
+        timing="on_attack_roll",
+        target="bearer_unit_attacks_vs_character",
+        duration="constant",
+        effect="add_hit_and_wound_roll_modifier",
+        effect_params={
+            "hit_roll_bonus": 1,
+            "wound_roll_bonus": 1,
+            "target_keywords_any": ("CHARACTER",),
+        },
+    ),
+    "000009071004": EnhancementToolDescriptor(
+        enhancement_id="000009071004",
+        name="Deeds That Speak to the Masses",
+        timing="start_of_battle",
+        target="cult_ambush_army_rule",
+        duration="battle_setup",
+        effect="additional_starting_resurgence_points",
+        effect_params={"additional_resurgence_points": 2},
+    ),
+    "000009071005": EnhancementToolDescriptor(
+        enhancement_id="000009071005",
+        name="Incendiary Inspiration",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="charge_after_advance",
+        effect_params={
+            "charge_after_advance": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_GENESTEALER_CULTS_XENOCREED_CONGREGATION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_XENOCREED_CONGREGATION_DESCRIPTORS.values()
+}
+
 _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009130003": EnhancementToolDescriptor(
         enhancement_id="000009130003",
@@ -8923,6 +8973,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_OUTLANDER_CLAW_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_XENOCREED_CONGREGATION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9152,6 +9205,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)
         or _GENESTEALER_CULTS_FINAL_DAY_BY_NAME.get(key)
         or _GENESTEALER_CULTS_OUTLANDER_CLAW_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_XENOCREED_CONGREGATION_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)

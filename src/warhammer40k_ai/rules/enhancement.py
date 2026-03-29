@@ -1137,6 +1137,55 @@ def _append_enhancement_bearer_unit_target_hit_penalty_rule(
     )
 
 
+def _append_enhancement_leadership_reroll_rule(
+    unit,
+    *,
+    target_scope: str,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    entry = {
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_leadership_reroll_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+        ),
+    )
+
+
+def _append_enhancement_bearer_unit_leadership_reroll_rule(
+    unit,
+    *,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_leadership_reroll_rule(
+        unit,
+        target_scope="bearer_unit",
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
 def _append_enhancement_charge_after_advance_rule(
     unit,
     *,
@@ -3306,6 +3355,80 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_assault_commando_bearer_model_id"] = bearer_id
+
+        if name == "gene-sire's reliquant" or enh_id == "000009071002":
+            if not is_xenocreed_congregation:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Gene-sire's Reliquant").strip() or "Gene-sire's Reliquant"
+            unit.special_rules["enhancement_gene_sires_reliquant"] = True
+            unit.special_rules["enhancement_gene_sires_reliquant_source"] = source_name
+            unit.special_rules["enhancement_gene_sires_reliquant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            _append_enhancement_bearer_unit_leadership_reroll_rule(
+                unit,
+                source=source_name,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gene_sires_reliquant_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "deeds that speak to the masses" or enh_id == "000009071004":
+            if not is_xenocreed_congregation:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = (
+                str(getattr(desc, "name", "") or "Deeds That Speak to the Masses").strip()
+                or "Deeds That Speak to the Masses"
+            )
+            bonus = int(
+                max(
+                    0,
+                    _coerce_int(
+                        params.get("additional_resurgence_points", params.get("resurgence_points_bonus", 2)) or 2,
+                        default=2,
+                    ),
+                )
+            )
+            unit.special_rules["enhancement_deeds_that_speak_to_the_masses"] = True
+            unit.special_rules["enhancement_deeds_that_speak_to_the_masses_source"] = source_name
+            unit.special_rules["enhancement_deeds_that_speak_to_the_masses_resurgence_points_bonus"] = int(bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_deeds_that_speak_to_the_masses_bearer_model_id"] = bearer_id
+
+        if name == "incendiary inspiration" or enh_id == "000009071005":
+            if not is_xenocreed_congregation:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = (
+                str(getattr(desc, "name", "") or "Incendiary Inspiration").strip()
+                or "Incendiary Inspiration"
+            )
+            unit.special_rules["enhancement_incendiary_inspiration"] = True
+            unit.special_rules["enhancement_incendiary_inspiration_source"] = source_name
+            unit.special_rules["enhancement_incendiary_inspiration_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            _append_enhancement_bearer_unit_charge_after_advance_rule(
+                unit,
+                source=source_name,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_incendiary_inspiration_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
 
         if name == "supernova launcher" or enh_id == "000009983002":
             if not is_experimental_prototype_cadre:

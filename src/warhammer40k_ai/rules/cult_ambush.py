@@ -178,7 +178,15 @@ class CultAmbushManager:
             return
         if self._initialized:
             return
-        self.resurgence_points = int(self._tokens_for_battlefield(game))
+        bonus = 0
+        gsc_mgr = getattr(self.army, "genestealer_cults_detachments", None) if self.army is not None else None
+        bonus_fn = getattr(gsc_mgr, "xenocreed_additional_starting_resurgence_points", None) if gsc_mgr is not None else None
+        if callable(bonus_fn):
+            try:
+                bonus = int(bonus_fn() or 0)
+            except (TypeError, ValueError):
+                bonus = 0
+        self.resurgence_points = int(self._tokens_for_battlefield(game)) + max(0, int(bonus))
         self._initialized = True
         self._publish_update(game)
 

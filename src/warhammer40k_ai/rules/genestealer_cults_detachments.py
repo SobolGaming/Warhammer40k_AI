@@ -117,6 +117,14 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         "primus",
         "acolyte iconward",
     )
+    _XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_RULE_NAME = "Deeds That Speak to the Masses"
+    _XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_ACTIVE_KEY = "enhancement_deeds_that_speak_to_the_masses"
+    _XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_SOURCE_KEY = (
+        "enhancement_deeds_that_speak_to_the_masses_source"
+    )
+    _XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_BONUS_KEY = (
+        "enhancement_deeds_that_speak_to_the_masses_resurgence_points_bonus"
+    )
 
     @staticmethod
     def _attached_root(unit):
@@ -819,6 +827,32 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             if token in self._UNQUESTIONING_FANATICISM_FNP_LEADER_TOKENS:
                 return 3, self._UNQUESTIONING_FANATICISM_RULE_NAME
         return 0, ""
+
+    def xenocreed_additional_starting_resurgence_points(self) -> int:
+        if not self.is_xenocreed_congregation():
+            return 0
+        total = 0
+        seen_sources: set[str] = set()
+        for root in self._iter_unit_roots():
+            if root is None:
+                continue
+            for member in self._iter_attached_members(root):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get(self._XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_ACTIVE_KEY, False)):
+                    continue
+                member_id = str(get_entity_id(member) or "")
+                if member_id and member_id in seen_sources:
+                    continue
+                if member_id:
+                    seen_sources.add(member_id)
+                try:
+                    bonus = int(sr.get(self._XENOCREED_DEEDS_THAT_SPEAK_TO_THE_MASSES_BONUS_KEY, 2) or 2)
+                except (TypeError, ValueError):
+                    bonus = 2
+                total += max(0, int(bonus))
+        return int(total)
 
     def _integrated_tactics_source_eligible(self, unit) -> bool:
         if not self.is_brood_brother_auxilia():

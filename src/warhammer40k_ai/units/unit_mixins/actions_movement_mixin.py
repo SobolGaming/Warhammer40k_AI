@@ -3284,6 +3284,19 @@ class ActionsMovementMixin:
                 seen.add(key)
                 sources.append(source)
 
+        iterator = getattr(root, "_iter_active_attached_enhancement_local_passive_rules", None)
+        if callable(iterator):
+            for _source_unit, rule in iterator("enhancement_leadership_reroll_rules"):
+                target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+                if target_scope != "bearer_unit":
+                    continue
+                source = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append(source)
+
         if not isinstance(cache, dict):
             cache = {}
         cache[cache_key] = list(sources)
