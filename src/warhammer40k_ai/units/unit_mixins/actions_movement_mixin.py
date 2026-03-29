@@ -7852,14 +7852,82 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _tau_alien_expertise_shoot_after_advance_active(self) -> bool:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("tau_alien_expertise_shoot_after_advance")):
+            return False
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        effect_owner = str(sr.get("tau_alien_expertise_turn_owner", "") or "").strip()
+        player_id = str(getattr(player, "id", "") or "").strip() if player is not None else ""
+        if effect_owner and player_id and effect_owner != player_id:
+            return False
+        try:
+            effect_turn = int(sr.get("tau_alien_expertise_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def _tau_alien_expertise_charge_after_advance_active(self) -> bool:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("tau_alien_expertise_charge_after_advance")):
+            return False
+        return self._tau_alien_expertise_shoot_after_advance_active()
+
+    def _tau_multisensory_scanning_reroll_mode(self, attack_type: str) -> tuple[str, str]:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("tau_multisensory_scanning_active")):
+            return "", ""
+        stored_attack_type = str(sr.get("tau_multisensory_scanning_attack_type", "") or "").strip().lower()
+        normalized_attack_type = str(attack_type or "").strip().lower()
+        if stored_attack_type and normalized_attack_type not in ("any", stored_attack_type):
+            return "", ""
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        effect_owner = str(sr.get("tau_multisensory_scanning_turn_owner", "") or "").strip()
+        player_id = str(getattr(player, "id", "") or "").strip() if player is not None else ""
+        if effect_owner and player_id and effect_owner != player_id:
+            return "", ""
+        expires_phase = str(sr.get("tau_multisensory_scanning_expires_phase", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return "", ""
+        try:
+            effect_turn = int(sr.get("tau_multisensory_scanning_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return "", ""
+        mode = str(sr.get("tau_multisensory_scanning_reroll_mode", "") or "").strip().lower()
+        if mode not in {"ones", "full"}:
+            return "", ""
+        source = str(sr.get("tau_multisensory_scanning_source", "") or "MULTISENSORY SCANNING").strip()
+        return mode, (source or "MULTISENSORY SCANNING")
+
     def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None, weapon_profile=None) -> dict:
         """
         Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.
         """
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
         atype = str(attack_type or "").strip().lower()
         if atype not in ("melee", "ranged"):
             atype = "any"
@@ -9202,6 +9270,14 @@ class ActionsMovementMixin:
                 for value in list(context.get("reroll_wound_values", ()) or ()):
                     reroll_wound_values.add(int(value))
                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of {int(value)}")
+
+        tau_reroll_mode, tau_reroll_source = ActionsMovementMixin._tau_multisensory_scanning_reroll_mode(self, atype)
+        if tau_reroll_mode == "full":
+            mods["reroll_wound_full"] = True
+            reroll_wound_full_reasons.append(f"{tau_reroll_source}: re-roll Wound roll")
+        elif tau_reroll_mode == "ones":
+            reroll_wound_values.add(1)
+            reroll_wound_reasons.append(f"{tau_reroll_source}: re-roll Wound rolls of 1")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
@@ -18350,6 +18426,8 @@ class ActionsMovementMixin:
         if callable(is_ranged_fn) and bool(is_ranged_fn()):
             if _has_orks_temp_movement_effect_for_unit(self, "assault_ranged"):
                 return True
+            if ActionsMovementMixin._tau_alien_expertise_shoot_after_advance_active(self):
+                return True
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("battle_focus_star_engines_active"):
@@ -19309,6 +19387,8 @@ class ActionsMovementMixin:
             bool: True if the unit can charge after advancing
         """
         if _has_orks_temp_movement_effect_for_unit(self, "charge_after_advance"):
+            return True
+        if ActionsMovementMixin._tau_alien_expertise_charge_after_advance_active(self):
             return True
         try:
             if Unit._advance_and_charge_always_available(self):

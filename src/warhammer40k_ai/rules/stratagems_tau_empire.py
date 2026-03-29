@@ -89,6 +89,18 @@ class TauEmpireStratagemMixin:
             return True
         return "KROOT" in str(getattr(root, "name", "") or "").strip().upper()
 
+    def _is_tau_vespid_unit(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if self._tau_has_any_keyword(root, "VESPID STINGWINGS"):
+            return True
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        return "VESPID" in name_u
+
+    def _is_tau_kroot_or_vespid_unit(self, unit: Any) -> bool:
+        return bool(self._is_tau_kroot_unit(unit) or self._is_tau_vespid_unit(unit))
+
     def _is_tau_battlesuit_unit(self, unit: Any) -> bool:
         root = self._tau_root(unit)
         if root is None:
@@ -337,6 +349,10 @@ class TauEmpireStratagemMixin:
         return sorted(out, key=self._tau_sort_key)
 
     @staticmethod
+    def _tau_normalized_phase_name(phase_name: Any) -> str:
+        return str(phase_name or "").strip().lower().replace("_", " ")
+
+    @staticmethod
     def _tau_selected_to_move_this_phase(unit: Any) -> bool:
         round_state = getattr(unit, "round_state", None)
         return bool(
@@ -344,6 +360,134 @@ class TauEmpireStratagemMixin:
             or getattr(round_state, "advanced_this_round", False)
             or getattr(round_state, "fell_back_this_round", False)
         )
+
+    def _tau_auxiliary_phase_candidates(
+        self,
+        *,
+        phase_name: Any,
+        require_kroot_or_vespid: bool = False,
+        exclude_kroot_or_vespid: bool = False,
+    ) -> list[Any]:
+        if not self._is_tau_auxiliary_cadre_detachment():
+            return []
+        phase_key = self._tau_normalized_phase_name(phase_name)
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            is_kroot_or_vespid = self._is_tau_kroot_or_vespid_unit(root)
+            if require_kroot_or_vespid and not is_kroot_or_vespid:
+                continue
+            if exclude_kroot_or_vespid and is_kroot_or_vespid:
+                continue
+            round_state = getattr(root, "round_state", None)
+            if phase_key == "shooting phase":
+                if bool(getattr(round_state, "shot_this_round", False)):
+                    continue
+            else:
+                if bool(getattr(round_state, "fought_this_phase", False)):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_pheromone_waypoints_candidates(self) -> list[Any]:
+        if not self._is_tau_auxiliary_cadre_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_kroot_or_vespid_unit(root):
+                continue
+            if self._tau_selected_to_move_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_guided_fire_candidates(self) -> list[Any]:
+        return self._tau_auxiliary_phase_candidates(
+            phase_name="shooting phase",
+            exclude_kroot_or_vespid=True,
+        )
+
+    def _tau_experimental_modifications_candidates(self, *, phase_name: Any) -> list[Any]:
+        return self._tau_auxiliary_phase_candidates(
+            phase_name=phase_name,
+            require_kroot_or_vespid=True,
+        )
+
+    def _tau_multisensory_scanning_candidates(self, *, phase_name: Any) -> list[Any]:
+        return self._tau_auxiliary_phase_candidates(
+            phase_name=phase_name,
+        )
+
+    def _tau_guided_fire_strength_bonus(self, unit: Any) -> int:
+        root = self._tau_root(unit)
+        if root is None:
+            return 0
+        if not self._is_tau_empire_unit(root):
+            return 0
+        if self._is_tau_kroot_or_vespid_unit(root):
+            return 0
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return 1
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+
+        seen: set[str] = set()
+        for unit_entry in list(getattr(army, "units", []) or []):
+            source = self._tau_root(unit_entry)
+            if source is None:
+                continue
+            uid = self._tau_sort_key(source)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(source, self.player):
+                continue
+            if not self._tau_on_battlefield(source, require_targetable=True):
+                continue
+            if not self._is_tau_kroot_or_vespid_unit(source):
+                continue
+            if unit_wholly_within_range_of_unit(source, root, 9.0, use_attached_aggregate=True):
+                return 2
+        return 1
 
     def _tau_aggressive_mobility_candidates(self) -> list[Any]:
         if not self._is_tau_montka_detachment():
@@ -709,6 +853,11 @@ class TauEmpireStratagemMixin:
     def _tau_has_shot_this_phase(unit: Any) -> bool:
         round_state = getattr(unit, "round_state", None)
         return bool(getattr(round_state, "shot_this_round", False))
+
+    @staticmethod
+    def _tau_has_fought_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "fought_this_phase", False))
 
     def _tau_phase_effect_active(
         self,
@@ -1629,8 +1778,18 @@ class TauEmpireStratagemMixin:
         if not self._is_tau_auxiliary_cadre_detachment():
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ALIEN EXPERTISE":
+            return self._use_tau_alien_expertise(stratagem, **kwargs)
+        if name_u == "EXPERIMENTAL MODIFICATIONS":
+            return self._use_tau_experimental_modifications(stratagem, **kwargs)
+        if name_u == "GUIDED FIRE":
+            return self._use_tau_guided_fire(stratagem, **kwargs)
         if name_u == "INTERLOCKING MANOUEVRES":
             return self._use_tau_interlocking_manoeuvres(stratagem, **kwargs)
+        if name_u == "MULTISENSORY SCANNING":
+            return self._use_tau_multisensory_scanning(stratagem, **kwargs)
+        if name_u == "PHEROMONE WAYPOINTS":
+            return self._use_tau_pheromone_waypoints(stratagem, **kwargs)
         return None
 
     def _use_tau_montka_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -1752,6 +1911,351 @@ class TauEmpireStratagemMixin:
             "INFO: INTERLOCKING MANOUEVRES: %s can make a %s move.",
             getattr(root, "name", "Unit"),
             "Fall Back" if engaged else "Normal",
+        )
+        return True
+
+    def _use_tau_alien_expertise(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: ALIEN EXPERTISE: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: ALIEN EXPERTISE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ALIEN EXPERTISE: not your Movement phase")
+            return False
+        if candidates and not self._tau_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ALIEN EXPERTISE: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: ALIEN EXPERTISE: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: ALIEN EXPERTISE: target must be a T'AU EMPIRE unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: ALIEN EXPERTISE: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "ALIEN EXPERTISE")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_alien_expertise_active"] = True
+        sr["tau_alien_expertise_shoot_after_advance"] = True
+        sr["tau_alien_expertise_charge_after_advance"] = bool(self._is_tau_kroot_or_vespid_unit(root))
+        sr["tau_alien_expertise_turn_owner"] = owner_id
+        sr["tau_alien_expertise_turn"] = int(current_turn)
+        sr["tau_alien_expertise_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ALIEN EXPERTISE: %s can shoot after Advancing this turn%s.",
+            getattr(root, "name", "Unit"),
+            " and charge after Advancing" if self._is_tau_kroot_or_vespid_unit(root) else "",
+        )
+        return True
+
+    def _use_tau_experimental_modifications(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_experimental_modifications_candidates(phase_name=phase_name)
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_or_vespid_unit(root):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: target must be a Kroot or Vespid unit")
+            return False
+        if phase_name == "shooting phase" and self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._tau_has_fought_this_phase(root):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: target has already been selected to fight this phase")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name=phase_label):
+            logger.error("ERROR: EXPERIMENTAL MODIFICATIONS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        expires_phase = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        attack_type = "ranged" if phase_name == "shooting phase" else "melee"
+        source_name = str(getattr(stratagem, "name", "") or "EXPERIMENTAL MODIFICATIONS")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_experimental_modifications_active"] = True
+        sr["tau_experimental_modifications_ap_bonus"] = 1
+        sr["tau_experimental_modifications_attack_type"] = attack_type
+        sr["tau_experimental_modifications_expires_phase"] = expires_phase
+        sr["tau_experimental_modifications_turn_owner"] = owner_id
+        sr["tau_experimental_modifications_turn"] = int(current_turn)
+        sr["tau_experimental_modifications_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXPERIMENTAL MODIFICATIONS: %s improves AP by 1 on %s weapons this phase.",
+            getattr(root, "name", "Unit"),
+            attack_type,
+        )
+        return True
+
+    def _use_tau_guided_fire(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: GUIDED FIRE: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: GUIDED FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: GUIDED FIRE: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_guided_fire_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: GUIDED FIRE: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: GUIDED FIRE: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: GUIDED FIRE: target must be a T'AU EMPIRE unit")
+            return False
+        if self._is_tau_kroot_or_vespid_unit(root):
+            logger.error("ERROR: GUIDED FIRE: target cannot be a Kroot or Vespid unit")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: GUIDED FIRE: target has already been selected to shoot this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: GUIDED FIRE: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        strength_bonus = self._tau_guided_fire_strength_bonus(root)
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "GUIDED FIRE")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_guided_fire_active"] = True
+        sr["tau_guided_fire_strength_bonus"] = int(strength_bonus)
+        sr["tau_guided_fire_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_guided_fire_turn_owner"] = owner_id
+        sr["tau_guided_fire_turn"] = int(current_turn)
+        sr["tau_guided_fire_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GUIDED FIRE: %s gains +%d Strength on ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+            int(strength_bonus),
+        )
+        return True
+
+    def _use_tau_multisensory_scanning(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: MULTISENSORY SCANNING: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MULTISENSORY SCANNING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: MULTISENSORY SCANNING: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_multisensory_scanning_candidates(phase_name=phase_name)
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: MULTISENSORY SCANNING: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: MULTISENSORY SCANNING: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: MULTISENSORY SCANNING: target must be a T'AU EMPIRE unit")
+            return False
+        if phase_name == "shooting phase" and self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: MULTISENSORY SCANNING: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and self._tau_has_fought_this_phase(root):
+            logger.error("ERROR: MULTISENSORY SCANNING: target has already been selected to fight this phase")
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name=phase_label):
+            logger.error("ERROR: MULTISENSORY SCANNING: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        reroll_mode = "full" if self._is_tau_kroot_or_vespid_unit(root) else "ones"
+        attack_type = "ranged" if phase_name == "shooting phase" else "melee"
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        expires_phase = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source_name = str(getattr(stratagem, "name", "") or "MULTISENSORY SCANNING")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_multisensory_scanning_active"] = True
+        sr["tau_multisensory_scanning_attack_type"] = attack_type
+        sr["tau_multisensory_scanning_reroll_mode"] = reroll_mode
+        sr["tau_multisensory_scanning_expires_phase"] = expires_phase
+        sr["tau_multisensory_scanning_turn_owner"] = owner_id
+        sr["tau_multisensory_scanning_turn"] = int(current_turn)
+        sr["tau_multisensory_scanning_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MULTISENSORY SCANNING: %s can re-roll %s Wound rolls on %s attacks this phase.",
+            getattr(root, "name", "Unit"),
+            "all" if reroll_mode == "full" else "Wound rolls of 1",
+            attack_type,
+        )
+        return True
+
+    def _use_tau_pheromone_waypoints(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: PHEROMONE WAYPOINTS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: PHEROMONE WAYPOINTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PHEROMONE WAYPOINTS: not your Movement phase")
+            return False
+
+        eligible = candidates or self._tau_pheromone_waypoints_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PHEROMONE WAYPOINTS: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: PHEROMONE WAYPOINTS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_kroot_or_vespid_unit(root):
+            logger.error("ERROR: PHEROMONE WAYPOINTS: target must be a Kroot or Vespid unit")
+            return False
+        if self._tau_selected_to_move_this_phase(root):
+            logger.error("ERROR: PHEROMONE WAYPOINTS: target has already been selected to move this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: PHEROMONE WAYPOINTS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "PHEROMONE WAYPOINTS")
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        effect_tag = "stratagem:tau_pheromone_waypoints"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": 6,
+                "source": source_name,
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+                "turn_owner": owner_id,
+                "turn": int(current_turn),
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PHEROMONE WAYPOINTS: %s treats its Advance this phase as a fixed +6\".",
+            getattr(root, "name", "Unit"),
         )
         return True
 

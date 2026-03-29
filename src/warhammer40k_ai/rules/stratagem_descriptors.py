@@ -5054,6 +5054,48 @@ _MONTKA_STRATAGEM_BY_NAME = {
 }
 
 _AUXILIARY_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009840006": StratagemToolDescriptor(
+        stratagem_id="000009840006",
+        name="Alien Expertise",
+        timing="your_movement_phase",
+        target="tau_empire_unit",
+        duration="until_end_of_turn",
+        effect="advance_shoot_and_conditional_charge_for_kroot_or_vespid",
+        cp_cost=1,
+        effect_params={
+            "advance_and_shoot": True,
+            "advance_and_charge_if_keywords_any": ["KROOT", "VESPID STINGWINGS"],
+        },
+    ),
+    "000009840002": StratagemToolDescriptor(
+        stratagem_id="000009840002",
+        name="Experimental Modifications",
+        timing="shooting_or_fight_phase",
+        target="kroot_or_vespid_stingwings_unit_not_yet_selected_for_phase",
+        duration="until_end_of_phase",
+        effect="phase_weapon_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "ap_bonus": 1,
+            "shooting_attack_type": "ranged",
+            "fight_attack_type": "melee",
+        },
+    ),
+    "000009840007": StratagemToolDescriptor(
+        stratagem_id="000009840007",
+        name="Guided Fire",
+        timing="your_shooting_phase",
+        target="tau_empire_non_kroot_non_vespid_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="conditional_ranged_strength_bonus_by_nearby_kroot_or_vespid",
+        cp_cost=1,
+        effect_params={
+            "base_strength_bonus": 1,
+            "boosted_strength_bonus": 2,
+            "boosted_range": 9.0,
+            "boosted_if_wholly_within_range_of_keywords_any": ["KROOT", "VESPID STINGWINGS"],
+        },
+    ),
     "000009840004": StratagemToolDescriptor(
         stratagem_id="000009840004",
         name="Interlocking Manoeuvres",
@@ -5067,6 +5109,29 @@ _AUXILIARY_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "fallback_when_engaged": True,
             "disembarked_this_turn_cannot_embark_after_move": True,
         },
+    ),
+    "000009840003": StratagemToolDescriptor(
+        stratagem_id="000009840003",
+        name="Multisensory Scanning",
+        timing="shooting_or_fight_phase",
+        target="tau_empire_unit_not_yet_selected_for_phase",
+        duration="until_end_of_phase",
+        effect="reroll_wound_ones_or_full_for_kroot_or_vespid",
+        cp_cost=1,
+        effect_params={
+            "reroll_wound_ones": True,
+            "reroll_wound_full_if_keywords_any": ["KROOT", "VESPID STINGWINGS"],
+        },
+    ),
+    "000009840005": StratagemToolDescriptor(
+        stratagem_id="000009840005",
+        name="Pheromone Waypoints",
+        timing="your_movement_phase",
+        target="kroot_or_vespid_stingwings_unit_not_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_plus_6",
+        cp_cost=1,
+        effect_params={"advance_distance": 6},
     ),
 }
 

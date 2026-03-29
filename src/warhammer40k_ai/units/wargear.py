@@ -2026,6 +2026,57 @@ class WargearProfile:
         )
         return (s_bonus, a_bonus, hazardous, source)
 
+    def _tau_experimental_modifications_bonus(self, attacker: 'Model') -> Tuple[int, str]:
+        """Return (ap_bonus, source) for EXPERIMENTAL MODIFICATIONS if active."""
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="tau_experimental_modifications_active",
+            expires_key="tau_experimental_modifications_expires_phase",
+            owner_key="tau_experimental_modifications_turn_owner",
+            turn_key="tau_experimental_modifications_turn",
+        )
+        if sr is None:
+            return (0, "")
+        attack_type = str(sr.get("tau_experimental_modifications_attack_type", "") or "").strip().lower()
+        parent = self.parent_wargear
+        is_ranged = bool(parent is not None and callable(getattr(parent, "is_ranged", None)) and parent.is_ranged())
+        is_melee = bool(parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee())
+        if attack_type == "ranged" and not is_ranged:
+            return (0, "")
+        if attack_type == "melee" and not is_melee:
+            return (0, "")
+        try:
+            ap_bonus = int(sr.get("tau_experimental_modifications_ap_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            ap_bonus = 0
+        source = (
+            str(sr.get("tau_experimental_modifications_source", "") or "EXPERIMENTAL MODIFICATIONS").strip()
+            or "EXPERIMENTAL MODIFICATIONS"
+        )
+        return (ap_bonus, source)
+
+    def _tau_guided_fire_bonus(self, attacker: 'Model') -> Tuple[int, str]:
+        """Return (strength_bonus, source) for GUIDED FIRE if active."""
+        parent = self.parent_wargear
+        is_ranged = bool(parent is not None and callable(getattr(parent, "is_ranged", None)) and parent.is_ranged())
+        if not is_ranged:
+            return (0, "")
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="tau_guided_fire_active",
+            expires_key="tau_guided_fire_expires_phase",
+            owner_key="tau_guided_fire_turn_owner",
+            turn_key="tau_guided_fire_turn",
+        )
+        if sr is None:
+            return (0, "")
+        try:
+            strength_bonus = int(sr.get("tau_guided_fire_strength_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            strength_bonus = 0
+        source = str(sr.get("tau_guided_fire_source", "") or "GUIDED FIRE").strip() or "GUIDED FIRE"
+        return (strength_bonus, source)
+
     @staticmethod
     def _normalize_weapon_name(text: Any) -> str:
         return re.sub(r"[^a-z0-9]+", " ", str(text or "").strip().lower()).strip()
@@ -3355,6 +3406,12 @@ class WargearProfile:
                 _s_bonus, tau_ap_bonus, _tau_hazardous, _tau_source = self._tau_experimental_ammunition_bonus(attacker)
                 if tau_ap_bonus:
                     ap_val -= int(tau_ap_bonus)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            tau_ap_bonus, _tau_source = self._tau_experimental_modifications_bonus(attacker)
+            if tau_ap_bonus:
+                ap_val -= int(tau_ap_bonus)
         except (AttributeError, TypeError, ValueError):
             pass
         try:
@@ -17647,6 +17704,14 @@ class WargearProfile:
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 tau_s_bonus, _tau_ap_bonus, _tau_hazardous, tau_source = self._tau_experimental_ammunition_bonus(attacker)
+                if tau_s_bonus and isinstance(strength, int):
+                    strength = strength + int(tau_s_bonus)
+                    wound_result.setdefault("modifiers", []).append(f"+{int(tau_s_bonus)}S from {tau_source}")
+        except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                tau_s_bonus, tau_source = self._tau_guided_fire_bonus(attacker)
                 if tau_s_bonus and isinstance(strength, int):
                     strength = strength + int(tau_s_bonus)
                     wound_result.setdefault("modifiers", []).append(f"+{int(tau_s_bonus)}S from {tau_source}")
