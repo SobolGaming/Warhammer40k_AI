@@ -99,6 +99,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS IRE",
     "EMP GRENADES",
     "EYE OF THE GODS",
+    "FAIL-SAFE DETONATOR",
     "FESTERING MIASMA",
     "MASSIVE IMPACT",
     "MULTISENSORY SCANNING",
@@ -132,6 +133,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
     "POINT-BLANK AMBUSH",
+    "GRAV-INHIBITOR FIELD",
     "PHOTON GRENADES",
     "POINT-BLANK DESTRUCTION",
     "OPPORTUNISTIC RAIDERS",
@@ -424,6 +426,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPOOR OF THE UNHOLY",
     "SUPPRESS AND OVERWHELM",
     "THE GRISLY FEAST",
+    "THE ARRO'KON PROTOCOL",
+    "THE SHORTENED BLADE",
+    "THE TORCHSTAR GAMBIT",
     "SUMMONED BY SLAUGHTER",
     "VOICE OF DEVOTION",
     "WALL OF MIRRORS",
@@ -809,6 +814,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMP GRENADES",
+    "FAIL-SAFE DETONATOR",
     "ONLY IN DEATH DOES DUTY END",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
@@ -824,6 +830,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GUIDED DISRUPTION",
     "GRIP OF THE WALKING POX",
     "HYPERSENSORY SCILLIA",
+    "GRAV-INHIBITOR FIELD",
     "IMPLACABLE GUARDIANS",
     "IMPETUOSITY",
     "INESCAPABLE JUSTICE",
@@ -2087,6 +2094,7 @@ class StratagemManager(
             "A DEADLY SNARE",
             "CALCULATED FEINT",
             "DREAD CRUSADERS",
+            "GRAV-INHIBITOR FIELD",
             "PHOTON GRENADES",
             "SHADE PATH",
             "CHRONOSORCEROUS BLEED",
@@ -2161,6 +2169,7 @@ class StratagemManager(
             "SANCTIFIED IMMOLATION",
             "STAGED DEATH",
             "VENGEFUL ANIMUS",
+            "FAIL-SAFE DETONATOR",
             "DETONATOR",
             "DISHARMONISATION CASCADE",
             "GIFT OF CHANGE",
@@ -2239,7 +2248,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if "REVENGE OF THE RUBRICAE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
-        if names & {"PULSE ONSLAUGHT", "A TRAP WELL LAID"}:
+        if names & {"PULSE ONSLAUGHT", "A TRAP WELL LAID", "THE TORCHSTAR GAMBIT"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
         if "EXEMPLAR'S WISDOM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_exemplars_wisdom)
@@ -2323,8 +2332,9 @@ class StratagemManager(
             "VENGEFUL SURGE",
             "CLOAK AND SHADOW",
             "SPIRALLING EVASION",
-            "VENGEFUL SORROW",
-            "VOID HARDENED",
+    "VENGEFUL SORROW",
+    "THE TORCHSTAR GAMBIT",
+    "VOID HARDENED",
             "HYPERSTIMMS",
             "ORBITAL OVERSIGHT",
             "ENTROPIC DAMPING",
@@ -2734,6 +2744,8 @@ class StratagemManager(
             "PRIME TARGET",
             "ORBITAL OVERSIGHT",
             "THE GRISLY FEAST",
+            "THE ARRO'KON PROTOCOL",
+            "THE SHORTENED BLADE",
             "WILL-SAPPING SALVO",
             "WILL‑SAPPING SALVO",
             "VOID HARDENED",
@@ -2831,6 +2843,59 @@ class StratagemManager(
         if not keywords:
             return True
         mode = str(spec.get("target_keyword_mode") or "all").strip().lower()
+        normalized_unit_keywords: list[str] | None = None
+
+        def _normalize_keyword_text(value: str) -> str:
+            text = str(value or "")
+            text = text.replace("\u2019", "'").replace("\u2018", "'")
+            text = re.sub(r"[^a-z0-9]+", " ", text.lower())
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _get_normalized_unit_keywords() -> list[str]:
+            nonlocal normalized_unit_keywords
+            if normalized_unit_keywords is not None:
+                return normalized_unit_keywords
+            values: list[str] = []
+            get_effective_keywords = getattr(unit, "get_effective_keywords", None)
+            if callable(get_effective_keywords):
+                values.extend(str(value or "") for value in list(get_effective_keywords() or []))
+            else:
+                values.extend(str(value or "") for value in list(getattr(unit, "keywords", []) or []))
+            get_effective_faction_keywords = getattr(unit, "get_effective_faction_keywords", None)
+            if callable(get_effective_faction_keywords):
+                values.extend(str(value or "") for value in list(get_effective_faction_keywords() or []))
+            else:
+                values.extend(str(value or "") for value in list(getattr(unit, "faction_keywords", []) or []))
+            normalized_unit_keywords = []
+            seen: set[str] = set()
+            for value in values:
+                normalized = _normalize_keyword_text(value)
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                normalized_unit_keywords.append(normalized)
+            return normalized_unit_keywords
+
+        def _keyword_phrase_matches(kw: str) -> bool:
+            normalized = _normalize_keyword_text(kw)
+            if not normalized or " " not in normalized:
+                return False
+            segments = [entry.split() for entry in _get_normalized_unit_keywords() if entry]
+            if not segments:
+                return False
+            tokens = normalized.split()
+            matched = [False] * (len(tokens) + 1)
+            matched[0] = True
+            for index in range(len(tokens)):
+                if not matched[index]:
+                    continue
+                for segment in segments:
+                    end = index + len(segment)
+                    if end > len(tokens):
+                        continue
+                    if tokens[index:end] == segment:
+                        matched[end] = True
+            return matched[len(tokens)]
 
         def _match_keyword(kw: str) -> bool:
             if not kw:
@@ -2839,6 +2904,8 @@ class StratagemManager(
             if callable(has_any_keyword) and has_any_keyword(kw):
                 return True
             if " " in kw:
+                if _keyword_phrase_matches(kw):
+                    return True
                 parts = [p for p in kw.split(" ") if p]
                 if parts and callable(has_any_keyword):
                     return all(has_any_keyword(p) for p in parts)
@@ -5669,6 +5736,92 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires Fight phase reaction after one of your KROOT units destroys an enemy unit"
             return result
+        if name_u == "THE SHORTENED BLADE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_retaliation_shortened_blade_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a friendly T'AU EMPIRE BATTLESUIT unit in Reserves with Deep Strike that can arrive this turn"
+            return result
+        if name_u == "THE ARRO'KON PROTOCOL":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_retaliation_arrokon_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a friendly T'AU EMPIRE BATTLESUIT unit on the battlefield that has not been selected to shoot"
+            return result
+        if name_u == "THE TORCHSTAR GAMBIT":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE TORCHSTAR GAMBIT":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacker_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("friendly_unit")
+                or context.get("unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates and attacker_unit is not None:
+                candidates = self._tau_retaliation_torchstar_candidates(attacker_unit=attacker_unit)
+            if attacker_unit is not None and candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase just-after-shooting trigger with a friendly T'AU EMPIRE BATTLESUIT FLY unit that just shot and is not within Engagement Range"
+            return result
+        if name_u == "GRAV-INHIBITOR FIELD":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GRAV-INHIBITOR FIELD":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_retaliation_grav_inhibitor_candidates(target_units=target_units)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Charge phase trigger with an enemy unit that declared a charge against one of your T'AU EMPIRE BATTLESUIT units"
+            return result
+        if name_u == "FAIL-SAFE DETONATOR":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "FAIL-SAFE DETONATOR":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("destroyed_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            destroyed_model = context.get("destroyed_model") or context.get("model") or context.get("target_model")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_retaliation_fail_safe_detonator_candidates(
+                    destroyed_unit=destroyed_unit,
+                    destroyed_model=destroyed_model,
+                )
+            if destroyed_model is not None and candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires any-phase reaction before removal after a friendly T'AU EMPIRE BATTLESUIT model is destroyed"
+            return result
         if name_u == "EXPERIMENTAL AMMUNITION":
             if self._tau_experimental_ammunition_candidates():
                 result["available"] = True
@@ -7203,7 +7356,12 @@ class StratagemManager(
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
             "COMBAT DEBARKATION": "Target: your T'AU EMPIRE INFANTRY unit that disembarked from a friendly TRANSPORT this turn; re-roll Wound rolls against the closest eligible enemy unit this phase",
             "COUNTERFIRE DEFENCE SYSTEMS": "Target: your T'AU EMPIRE unit selected as an enemy shooting target; subtract 1 from incoming Damage this phase",
+            "FAIL-SAFE DETONATOR": "Target: your just-destroyed T'AU EMPIRE BATTLESUIT model; choose its Deadly Demise result if it has that ability, or burst mortal wounds to units within 6\"",
             "FOCUSED FIRE": "Target: two of your T'AU EMPIRE units not yet selected to shoot, and one enemy unit; selected friendly units can only target that enemy unit and improve AP by 1 this phase (not battle rounds 4-5)",
+            "GRAV-INHIBITOR FIELD": "Target: your T'AU EMPIRE BATTLESUIT unit selected as a charge target; the charging enemy takes a Battle-shock test and suffers mortal wounds on 6s",
+            "THE ARRO'KON PROTOCOL": "Target: your T'AU EMPIRE BATTLESUIT unit that has not been selected to shoot; it gains stronger [SUSTAINED HITS] against larger targets this phase",
+            "THE SHORTENED BLADE": "Target: your T'AU EMPIRE BATTLESUIT unit arriving with Deep Strike this phase; it can set up more than 6\" away and cannot charge this turn",
+            "THE TORCHSTAR GAMBIT": "Target: your T'AU EMPIRE BATTLESUIT FLY unit that just shot and is not within Engagement Range; it can make a reactive Normal move up to its Move and cannot charge this turn",
             "COORDINATED TRAP": "Start of your Shooting/Fight phase: target two GENESTEALER CULTS units not yet selected to shoot/fight and one enemy unit; selected units can only target that enemy this phase and gain +1 to Wound rolls against it (Fight phase enemy must be in Engagement Range of both selected units)",
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
             "CHRONOSORCEROUS BLEED": "Target: your THOUSAND SONS PSYKER or SCINTILLATING LEGIONS unit selected as a target of an enemy charge; that enemy suffers -2 to its Charge roll this phase",
@@ -9520,6 +9678,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._cleanup_tau_retaliation_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_tyranids_vanguard_onslaught_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -11491,6 +11653,10 @@ class StratagemManager(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
+        self._queue_tau_retaliation_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
 
     def _on_ftgg_observer_selected(self, observer_unit=None, target_unit=None, player=None, **_kwargs):
         self._queue_tau_kauyon_ftgg_observer_reactions(
@@ -12340,6 +12506,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_kroot_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tau_retaliation_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )
@@ -16248,6 +16421,10 @@ class StratagemManager(
             raise
         try:
             self._queue_pantheon_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_tau_retaliation_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 

@@ -6742,6 +6742,74 @@ class PositioningMixin:
         try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("tau_arrokon_protocol_active")):
+                apply_bonus = True
+                exp = str(sr.get("tau_arrokon_protocol_expires_phase", "") or "").strip().upper()
+                owner_id = str(sr.get("tau_arrokon_protocol_turn_owner", "") or "")
+                try:
+                    turn = int(sr.get("tau_arrokon_protocol_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    turn = 0
+                if exp or owner_id or turn:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        try:
+                            cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            cur_phase = ""
+                        try:
+                            cur_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            cur_owner = ""
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                        except (TypeError, ValueError):
+                            cur_turn = 0
+                        if exp and cur_phase and cur_phase != exp:
+                            apply_bonus = False
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            apply_bonus = False
+                        if turn and cur_turn and turn != cur_turn:
+                            apply_bonus = False
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "ranged"):
+                    apply_bonus = False
+                if apply_bonus and target is not None:
+                    target_root = (
+                        target.get_attached_unit_root()
+                        if hasattr(target, "get_attached_unit_root")
+                        else target
+                    )
+                    target_models = []
+                    get_target_models = getattr(target_root, "get_attached_unit_models", None)
+                    if callable(get_target_models):
+                        target_models = list(get_target_models() or [])
+                    if not target_models:
+                        target_models = list(getattr(target_root, "models", []) or [])
+                    alive_models = 0
+                    for target_model in target_models:
+                        is_alive_attr = getattr(target_model, "is_alive", False)
+                        if bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                            alive_models += 1
+                    sustained_value = 0
+                    if alive_models >= 11:
+                        sustained_value = 2
+                    elif alive_models >= 6:
+                        sustained_value = 1
+                    if sustained_value > 0:
+                        source = str(sr.get("tau_arrokon_protocol_source", "") or "THE ARRO'KON PROTOCOL").strip()
+                        rules = list(rules or []) + [
+                            {
+                                "attack_type": "ranged",
+                                "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                                "source": source or "THE ARRO'KON PROTOCOL",
+                            }
+                        ]
+        except Exception:
+            pass
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("enhancement_wolf_master_active")):
                 apply_bonus = True
                 atype = str(attack_type or "").strip().lower()
@@ -9154,6 +9222,24 @@ class PositioningMixin:
                 if current_owner == owner and current_turn == turn:
                     return False
 
+        if isinstance(sr, dict) and sr.get("tau_shortened_blade_no_charge_turn_owner"):
+            owner = str(sr.get("tau_shortened_blade_no_charge_turn_owner") or "")
+            turn_raw = sr.get("tau_shortened_blade_no_charge_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if owner and game is not None:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if current_owner == owner and current_turn == turn:
+                    return False
+
         # Relic Teleportarium: cannot charge until end of turn after 6" Deep Strike option.
         if isinstance(sr, dict) and sr.get("space_marines_inner_circle_relic_teleportarium_no_charge_turn_owner"):
             owner = str(sr.get("space_marines_inner_circle_relic_teleportarium_no_charge_turn_owner") or "")
@@ -10409,6 +10495,42 @@ class PositioningMixin:
                     combat_manifestation_min
                     if min_dist is None
                     else min(min_dist, combat_manifestation_min)
+                )
+
+        try:
+            tau_shortened_blade_min = float(sr.get("tau_shortened_blade_deep_strike_min_distance", 0) or 0)
+        except (TypeError, ValueError):
+            tau_shortened_blade_min = 0.0
+        if tau_shortened_blade_min > 0:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None)
+            owner_id = str(sr.get("tau_shortened_blade_deep_strike_turn_owner", "") or "")
+            turn_raw = sr.get("tau_shortened_blade_deep_strike_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if game is not None:
+                try:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    cur_turn = 0
+                get_current_player = getattr(game, "get_current_player", None)
+                cur_player = get_current_player() if callable(get_current_player) else None
+                cur_owner = str(getattr(cur_player, "id", "") or "")
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                exp = str(sr.get("tau_shortened_blade_deep_strike_expires_phase", "") or "").strip().upper()
+                if owner_id and cur_owner and owner_id != cur_owner:
+                    tau_shortened_blade_min = 0.0
+                elif turn and cur_turn and turn != cur_turn:
+                    tau_shortened_blade_min = 0.0
+                elif exp and pname and exp != pname:
+                    tau_shortened_blade_min = 0.0
+            if tau_shortened_blade_min > 0:
+                min_dist = (
+                    tau_shortened_blade_min
+                    if min_dist is None
+                    else min(min_dist, tau_shortened_blade_min)
                 )
 
         try:

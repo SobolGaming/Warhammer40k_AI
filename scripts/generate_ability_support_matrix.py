@@ -20084,6 +20084,11 @@ def _stratagem_support(
         "000008822005": "Fight phase reaction after one of your KROOT units destroys an enemy unit: during your opponent's next Command phase, enemy units within 6\" of that KROOT unit must take Battle-shock tests, and below-half-strength enemies suffer -1 to those tests while ignoring other Battle-shock tests that phase.",
         "000008822006": "Your Movement phase reaction after one of your KROOT units Falls Back: that unit remains eligible to shoot and declare a charge this turn.",
         "000008822007": "Opponent Shooting phase reaction after an enemy unit selects its targets: selected friendly KROOT target can only be selected as the target of ranged attacks by attacking models within 18\" until end of phase.",
+        "000008816002": "Any phase reaction when one of your T'AU EMPIRE BATTLESUIT models is destroyed: if it has Deadly Demise, queue a deterministic choice to treat the explosion roll as 1 or 6; otherwise roll for each unit within 6\" and deal D3 mortal wounds on each 4+.",
+        "000008816004": "Your Movement phase: selected T'AU EMPIRE BATTLESUIT unit arriving from Reserves with Deep Strike can be set up more than 6\" horizontally away from enemy units this phase and cannot declare a charge this turn.",
+        "000008816005": "Your Shooting phase: selected T'AU EMPIRE BATTLESUIT unit that has not yet shot gains [SUSTAINED HITS 1] against targets with 6-10 models, or [SUSTAINED HITS 2] against targets with 11+ models, until end of phase.",
+        "000008816006": "Your Shooting phase reaction after a friendly T'AU EMPIRE BATTLESUIT FLY unit resolves its attacks: if it is not within Engagement Range, it can make a reactive Normal move up to its Move and cannot declare a charge this turn.",
+        "000008816007": "Opponent Charge phase reaction after an enemy unit declares a charge against your T'AU EMPIRE BATTLESUIT unit: that enemy must take a Battle-shock test, then you roll one D6 per model in that enemy unit and inflict 1 mortal wound for each 6.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",

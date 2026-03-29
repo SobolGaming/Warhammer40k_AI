@@ -5326,6 +5326,99 @@ _KROOT_HUNTING_PACK_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _KROOT_HUNTING_PACK_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RETALIATION_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008816002": StratagemToolDescriptor(
+        stratagem_id="000008816002",
+        name="Fail-Safe Detonator",
+        timing="any_phase_after_friendly_battlesuit_model_destroyed",
+        target="destroyed_tau_empire_battlesuit_model_or_its_unit",
+        duration="immediate",
+        effect="choose_deadly_demise_result_or_nearby_unit_mortal_burst",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "deadly_demise_choices": [1, 6],
+            "burst_range": 6.0,
+            "mortal_wound_roll": "D6_per_unit_within_6",
+            "success_threshold": 4,
+            "mortal_wounds_on_success": "D3",
+        },
+    ),
+    "000008816003": StratagemToolDescriptor(
+        stratagem_id="000008816003",
+        name="Stimm Injectors",
+        timing="shooting_or_fight_phase_after_enemy_targets_selected",
+        target="tau_empire_battlesuit_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain_value": 6, "attack_type": "any"},
+    ),
+    "000008816004": StratagemToolDescriptor(
+        stratagem_id="000008816004",
+        name="The Shortened Blade",
+        timing="movement_phase_reinforcements_step_before_setup",
+        target="tau_empire_battlesuit_unit_arriving_with_deep_strike",
+        duration="this_turn_no_charge",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=2,
+        effect_params={
+            "min_distance": 6,
+            "distance_type": "horizontal",
+            "cannot_charge_this_turn": True,
+        },
+    ),
+    "000008816005": StratagemToolDescriptor(
+        stratagem_id="000008816005",
+        name="The Arro'kon Protocol",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tau_empire_battlesuit_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="conditional_ranged_sustained_hits_by_target_model_count",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "thresholds": {
+                "6_to_10_models": 1,
+                "11_plus_models": 2,
+            },
+        },
+    ),
+    "000008816006": StratagemToolDescriptor(
+        stratagem_id="000008816006",
+        name="The Torchstar Gambit",
+        timing="your_shooting_phase_after_friendly_unit_shoots",
+        target="tau_empire_battlesuit_fly_unit_that_just_shot",
+        duration="immediate",
+        effect="post_shoot_reactive_normal_move_no_charge",
+        cp_cost=1,
+        effect_params={
+            "move_distance": "move_characteristic",
+            "requires_not_within_engagement_range_after_shooting": True,
+            "cannot_charge_this_turn": True,
+        },
+    ),
+    "000008816007": StratagemToolDescriptor(
+        stratagem_id="000008816007",
+        name="Grav-Inhibitor Field",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="tau_empire_battlesuit_charge_target",
+        duration="immediate",
+        effect="force_battleshock_and_roll_mortals_per_enemy_model",
+        cp_cost=1,
+        effect_params={
+            "force_battle_shock_test": True,
+            "roll": "D6_per_enemy_model",
+            "success_threshold": 6,
+            "mortal_wounds_on_success": 1,
+        },
+    ),
+}
+
+_RETALIATION_CADRE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RETALIATION_CADRE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008349002": StratagemToolDescriptor(
         stratagem_id="000008349002",
@@ -10702,6 +10795,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _KROOT_HUNTING_PACK_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RETALIATION_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -10961,6 +11057,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _AUXILIARY_CADRE_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _KROOT_HUNTING_PACK_STRATAGEM_BY_NAME.get(key)
+        or _RETALIATION_CADRE_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _ASSIMILATION_SWARM_STRATAGEM_BY_NAME.get(key)
         or _SUBTERRANEAN_ASSAULT_STRATAGEM_BY_NAME.get(key)

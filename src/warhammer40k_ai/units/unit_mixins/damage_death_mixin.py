@@ -2351,6 +2351,10 @@ class DamageDeathMixin:
         except Exception:
             vengeful_auto_trigger = False
         try:
+            tau_fail_safe_auto_trigger = bool(getattr(dying_model, "_tau_fail_safe_detonator_auto_trigger_once", False))
+        except Exception:
+            tau_fail_safe_auto_trigger = False
+        try:
             corrosive_auto_trigger = bool(getattr(dying_model, "_corrosive_viscera_auto_trigger_once", False))
         except Exception:
             corrosive_auto_trigger = False
@@ -2375,6 +2379,7 @@ class DamageDeathMixin:
             or putrid_auto_trigger
             or sanctified_auto_trigger
             or vengeful_auto_trigger
+            or tau_fail_safe_auto_trigger
             or corrosive_auto_trigger
             or emotionless_auto_trigger
         )
@@ -2396,6 +2401,11 @@ class DamageDeathMixin:
         if vengeful_auto_trigger:
             try:
                 setattr(dying_model, "_vengeful_animus_auto_trigger_once", False)
+            except Exception:
+                pass
+        if tau_fail_safe_auto_trigger:
+            try:
+                setattr(dying_model, "_tau_fail_safe_detonator_auto_trigger_once", False)
             except Exception:
                 pass
         if corrosive_auto_trigger:
@@ -2424,6 +2434,8 @@ class DamageDeathMixin:
                 logger.info("Deadly Demise auto-triggered (Sanctified Immolation).")
             elif vengeful_auto_trigger:
                 logger.info("Deadly Demise auto-triggered (Vengeful Animus).")
+            elif tau_fail_safe_auto_trigger:
+                logger.info("Deadly Demise auto-triggered (Fail-Safe Detonator).")
             elif corrosive_auto_trigger:
                 logger.info("Deadly Demise auto-triggered (Corrosive Viscera).")
             elif emotionless_auto_trigger:

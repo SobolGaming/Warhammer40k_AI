@@ -225,6 +225,18 @@ class TauEmpireStratagemMixin:
             out.append(model)
         return sorted(out, key=self._tau_sort_key)
 
+    def _tau_has_deep_strike(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        has_deep_strike = getattr(root, "has_deep_strike", None)
+        if callable(has_deep_strike):
+            return bool(has_deep_strike())
+        return bool(getattr(root, "deep_strike", False))
+
+    def _tau_alive_model_count(self, unit: Any) -> int:
+        return sum(1 for model in self._tau_unit_models(unit) if self._tau_model_is_alive(model))
+
     def _tau_unit_in_candidates(self, root: Any, candidates: list[Any]) -> bool:
         if root is None:
             return False
@@ -753,6 +765,178 @@ class TauEmpireStratagemMixin:
                 return True
         return False
 
+    def _tau_submit_decision_request(self, request: Any) -> bool:
+        if request is None:
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def _tau_build_fail_safe_detonator_choice_request(
+        self,
+        *,
+        stratagem_name: str,
+        unit: Any,
+        model: Any,
+        phase_name: str,
+    ) -> Any:
+        game = getattr(self, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        root = self._tau_root(unit)
+        if root is None or model is None:
+            return None
+        unit_id = str(get_entity_id(root) or "")
+        model_id = str(get_entity_id(model) or "")
+        if not unit_id or not model_id:
+            return None
+        if self._tau_pending_choose_quarry_request(
+            ability="tau_fail_safe_detonator_choice",
+            unit_id=unit_id,
+            model_id=model_id,
+            phase_name=str(phase_name or "").strip().upper(),
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'FAIL-SAFE DETONATOR'}: choose the Deadly Demise result.",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    "Treat roll as 1",
+                    payload={"choice_key": "roll_1", "unit_id": unit_id, "model_id": model_id},
+                ),
+                DecisionOption.create(
+                    "Treat roll as 6",
+                    payload={"choice_key": "roll_6", "unit_id": unit_id, "model_id": model_id},
+                ),
+            ],
+            context={
+                "ability": "tau_fail_safe_detonator_choice",
+                "ability_name": str(stratagem_name or "").strip() or "FAIL-SAFE DETONATOR",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "stratagem_name": str(stratagem_name or "").strip() or "FAIL-SAFE DETONATOR",
+                "phase_name": str(phase_name or "").strip().upper(),
+                "candidate_choice_keys": ["roll_1", "roll_6"],
+                "optional": False,
+            },
+        )
+
+    @staticmethod
+    def _tau_parse_fail_safe_detonator_choice(raw_choice: Any) -> Optional[str]:
+        choice = raw_choice
+        if isinstance(choice, dict):
+            choice = (
+                choice.get("choice_key")
+                or choice.get("choice")
+                or choice.get("selection")
+                or choice.get("effect")
+                or choice.get("option")
+            )
+        key = str(choice or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if key in {"1", "roll_1", "treat_roll_as_1", "no_explosion"}:
+            return "roll_1"
+        if key in {"6", "roll_6", "treat_roll_as_6", "explode"}:
+            return "roll_6"
+        return None
+
+    def validate_tau_fail_safe_detonator_choice(
+        self,
+        unit: Any,
+        model: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._tau_root(unit)
+        if root is None or model is None:
+            return False, "FAIL-SAFE DETONATOR choice source was not found."
+        if player is not None and player is not self.player:
+            return False, "FAIL-SAFE DETONATOR choice must be resolved by the owning player."
+        if not self._tau_owned_by_player(root, self.player):
+            return False, "FAIL-SAFE DETONATOR choice source unit must belong to you."
+        if not self._is_tau_battlesuit_unit(root):
+            return False, "FAIL-SAFE DETONATOR requires a T'AU EMPIRE BATTLESUIT unit."
+        if self._tau_model_is_alive(model):
+            return False, "FAIL-SAFE DETONATOR choice requires a destroyed model."
+        if phase_name and game is not None:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper().replace(" ", "_")
+            expected_phase = str(phase_name or "").strip().upper().replace(" ", "_")
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "FAIL-SAFE DETONATOR choice request is no longer in the current phase."
+        choice_key = self._tau_parse_fail_safe_detonator_choice(payload)
+        if choice_key not in {"roll_1", "roll_6"}:
+            return False, "FAIL-SAFE DETONATOR choice requires selecting 1 or 6."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "FAIL-SAFE DETONATOR":
+            return False, "FAIL-SAFE DETONATOR choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_tau_fail_safe_detonator_choice(
+        self,
+        unit: Any,
+        model: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        stratagem_name: str = "",
+    ):
+        valid, _reason = self.validate_tau_fail_safe_detonator_choice(
+            unit,
+            model,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._tau_root(unit)
+        if root is None:
+            return None
+
+        choice_key = self._tau_parse_fail_safe_detonator_choice(payload)
+        if choice_key is None:
+            return None
+        setattr(model, "_skip_deadly_demise_once", True)
+        if choice_key == "roll_6":
+            game_map = getattr(game, "map", None)
+            if game_map is None:
+                return None
+            setattr(model, "_tau_fail_safe_detonator_auto_trigger_once", True)
+            trigger_fn = getattr(root, "trigger_deadly_demise_manually", None)
+            if callable(trigger_fn):
+                trigger_fn(model, game_map)
+        return {
+            "unit_id": str(get_entity_id(root) or ""),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "model_id": str(get_entity_id(model) or ""),
+            "choice_key": choice_key,
+            "choice_label": "Treat roll as 6" if choice_key == "roll_6" else "Treat roll as 1",
+            "stratagem_name": str(stratagem_name or payload.get("stratagem_name", "") or "FAIL-SAFE DETONATOR"),
+        }
+
     @staticmethod
     def _tau_objective_sort_key(objective: Any) -> str:
         if objective is None:
@@ -1277,6 +1461,192 @@ class TauEmpireStratagemMixin:
             if not self._is_tau_battlesuit_unit(root):
                 continue
             if not self._tau_wounded_battlesuit_models(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_retaliation_battlesuit_candidates(
+        self,
+        *,
+        require_on_battlefield: bool,
+        require_not_shot: bool = False,
+        require_fly: bool = False,
+        require_in_reserves: bool = False,
+        require_deep_strike: bool = False,
+        require_can_arrive_from_reserves: bool = False,
+    ) -> list[Any]:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        game = getattr(self, "game", None)
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_is_alive(root):
+                continue
+            if not self._is_tau_battlesuit_unit(root):
+                continue
+            if require_on_battlefield and not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if require_not_shot and self._tau_has_shot_this_phase(root):
+                continue
+            if require_fly and not self._tau_has_any_keyword(root, "FLY"):
+                continue
+            in_reserves_fn = getattr(root, "is_in_reserves", None)
+            in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else False
+            if require_in_reserves and not in_reserves:
+                continue
+            if require_deep_strike and not self._tau_has_deep_strike(root):
+                continue
+            if require_can_arrive_from_reserves:
+                can_arrive = getattr(root, "can_arrive_from_reserves", None)
+                if not callable(can_arrive):
+                    continue
+                try:
+                    if not bool(can_arrive(current_turn)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_retaliation_arrokon_candidates(self) -> list[Any]:
+        return self._tau_retaliation_battlesuit_candidates(
+            require_on_battlefield=True,
+            require_not_shot=True,
+        )
+
+    def _tau_retaliation_shortened_blade_candidates(self) -> list[Any]:
+        out: list[Any] = []
+        for root in self._tau_retaliation_battlesuit_candidates(
+            require_on_battlefield=False,
+            require_in_reserves=True,
+            require_deep_strike=True,
+            require_can_arrive_from_reserves=True,
+        ):
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status not in {"reserves", "strategic_reserves"}:
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_retaliation_torchstar_candidates(self, *, attacker_unit: Any = None) -> list[Any]:
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None:
+            return []
+        if not self._tau_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._tau_on_battlefield(attacker_root, require_targetable=True):
+            return []
+        if not self._is_tau_battlesuit_unit(attacker_root):
+            return []
+        if not self._tau_has_any_keyword(attacker_root, "FLY"):
+            return []
+        if not self._tau_has_shot_this_phase(attacker_root):
+            return []
+        if self._tau_has_enemy_within_engagement_range(attacker_root):
+            return []
+        return [attacker_root]
+
+    def _tau_retaliation_grav_inhibitor_candidates(self, *, target_units: Any = None) -> list[Any]:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for target in self._tau_resolve_unit_list(target_units):
+            root = self._tau_root(target)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_battlesuit_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_retaliation_fail_safe_detonator_candidates(
+        self,
+        *,
+        destroyed_unit: Any = None,
+        destroyed_model: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return []
+        root = self._tau_root(destroyed_unit)
+        if root is None or destroyed_model is None:
+            return []
+        if not self._tau_owned_by_player(root, self.player):
+            return []
+        if not self._is_tau_battlesuit_unit(root):
+            return []
+        if self._tau_model_is_alive(destroyed_model):
+            return []
+        return [root]
+
+    def _tau_retaliation_units_within_range_of_model(
+        self,
+        *,
+        model: Any,
+        range_inches: float,
+        game_map: Any,
+    ) -> list[Any]:
+        position = getattr(model, "get_location", lambda: None)()
+        if not position or game_map is None:
+            return []
+        from ..utility.calcs import get_dist
+
+        x = float(position[0])
+        y = float(position[1])
+        z = float(position[2]) if len(position) > 2 else 0.0
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            closest_distance = None
+            for candidate_model in self._tau_unit_models(root):
+                if not self._tau_model_is_alive(candidate_model):
+                    continue
+                candidate_position = getattr(candidate_model, "get_location", lambda: None)()
+                if not candidate_position:
+                    continue
+                distance = float(
+                    get_dist(
+                        x - float(candidate_position[0]),
+                        y - float(candidate_position[1]),
+                        z - (float(candidate_position[2]) if len(candidate_position) > 2 else 0.0),
+                    )
+                )
+                if closest_distance is None or distance < closest_distance:
+                    closest_distance = distance
+            if closest_distance is None or closest_distance > float(range_inches):
                 continue
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
@@ -2361,6 +2731,163 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_tau_retaliation_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        _ = hits_by_target
+        if not self._is_tau_retaliation_cadre_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("THE TORCHSTAR GAMBIT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_retaliation_torchstar_candidates(attacker_unit=attacker_root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("unit") is attacker_root or reaction.get("attacker_unit") is attacker_root:
+                return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "friendly_unit": attacker_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_retaliation_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tau_root(charging_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("GRAV-INHIBITOR FIELD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_retaliation_grav_inhibitor_candidates(target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "charge_declared":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("attacking_unit") is attacker_root:
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_retaliation_model_destroyed_reactions(
+        self,
+        *,
+        unit: Any = None,
+        model: Any = None,
+    ) -> None:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return
+        root = self._tau_root(unit)
+        if root is None or model is None:
+            return
+        candidates = self._tau_retaliation_fail_safe_detonator_candidates(
+            destroyed_unit=root,
+            destroyed_model=model,
+        )
+        if not candidates:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("FAIL-SAFE DETONATOR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        destroyed_model_id = str(get_entity_id(model) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == destroyed_model_id:
+                return
+        payload = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_id": destroyed_model_id,
+            "unit": root,
+            "target_unit": root,
+            "candidates": list(candidates),
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     def _queue_tau_experimental_prototype_fight_reactions(
         self,
         *,
@@ -2891,6 +3418,52 @@ class TauEmpireStratagemMixin:
                 sr.pop("tau_photon_grenades_turn_owner", None)
                 root.special_rules = sr
 
+    def _cleanup_tau_retaliation_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_tau_retaliation_cadre_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "SHOOTING_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_name == "SHOOTING_PHASE":
+                exp = str(sr.get("tau_arrokon_protocol_expires_phase", "") or "").strip().upper()
+                if bool(sr.get("tau_arrokon_protocol_active")) and (not exp or exp == phase_name):
+                    for key in (
+                        "tau_arrokon_protocol_active",
+                        "tau_arrokon_protocol_turn_owner",
+                        "tau_arrokon_protocol_turn",
+                        "tau_arrokon_protocol_expires_phase",
+                        "tau_arrokon_protocol_source",
+                    ):
+                        sr.pop(key, None)
+            if phase_name == "MOVEMENT_PHASE":
+                exp = str(sr.get("tau_shortened_blade_deep_strike_expires_phase", "") or "").strip().upper()
+                if float(sr.get("tau_shortened_blade_deep_strike_min_distance", 0) or 0) > 0 and (not exp or exp == phase_name):
+                    for key in (
+                        "tau_shortened_blade_deep_strike_min_distance",
+                        "tau_shortened_blade_deep_strike_turn_owner",
+                        "tau_shortened_blade_deep_strike_turn",
+                        "tau_shortened_blade_deep_strike_expires_phase",
+                    ):
+                        sr.pop(key, None)
+            root.special_rules = sr
+
 
     def _queue_tau_auxiliary_cadre_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_tau_auxiliary_cadre_detachment():
@@ -3176,6 +3749,9 @@ class TauEmpireStratagemMixin:
         result = self._use_tau_kroot_hunting_pack_stratagem(stratagem, **kwargs)
         if result is not None:
             return result
+        result = self._use_tau_retaliation_cadre_stratagem(stratagem, **kwargs)
+        if result is not None:
+            return result
         return self._use_tau_kauyon_stratagem(stratagem, **kwargs)
 
     def _use_tau_experimental_prototype_cadre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -3238,6 +3814,24 @@ class TauEmpireStratagemMixin:
             return self._use_tau_pulse_onslaught(stratagem, **kwargs)
         return None
 
+    def _use_tau_retaliation_cadre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_tau_retaliation_cadre_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "FAIL-SAFE DETONATOR":
+            return self._use_tau_fail_safe_detonator(stratagem, **kwargs)
+        if name_u == "GRAV-INHIBITOR FIELD":
+            return self._use_tau_grav_inhibitor_field(stratagem, **kwargs)
+        if name_u == "THE ARRO'KON PROTOCOL":
+            return self._use_tau_the_arrokon_protocol(stratagem, **kwargs)
+        if name_u == "THE SHORTENED BLADE":
+            return self._use_tau_the_shortened_blade(stratagem, **kwargs)
+        if name_u == "THE TORCHSTAR GAMBIT":
+            return self._use_tau_the_torchstar_gambit(stratagem, **kwargs)
+        return None
+
     def _use_tau_kauyon_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -3277,6 +3871,423 @@ class TauEmpireStratagemMixin:
         if name_u == "THE GRISLY FEAST":
             return self._use_tau_the_grisly_feast(stratagem, **kwargs)
         return None
+
+    def _use_tau_the_shortened_blade(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: THE SHORTENED BLADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THE SHORTENED BLADE: not your turn")
+            return False
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THE SHORTENED BLADE: no target unit provided")
+            return False
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        eligible = candidates or self._tau_retaliation_shortened_blade_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THE SHORTENED BLADE: target unit is not eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: THE SHORTENED BLADE: target unit is not yours")
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: THE SHORTENED BLADE: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if not callable(in_reserves) or not bool(in_reserves()):
+            logger.error("ERROR: THE SHORTENED BLADE: target must be in Reserves")
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+        if reserve_status not in {"reserves", "strategic_reserves"}:
+            logger.error("ERROR: THE SHORTENED BLADE: target must be arriving from Reserves")
+            return False
+        if not self._tau_has_deep_strike(root):
+            logger.error("ERROR: THE SHORTENED BLADE: target must have Deep Strike")
+            return False
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        can_arrive = getattr(root, "can_arrive_from_reserves", None)
+        if not callable(can_arrive) or not bool(can_arrive(current_turn)):
+            logger.error("ERROR: THE SHORTENED BLADE: target cannot arrive from Reserves this turn")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: THE SHORTENED BLADE: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        source_name = str(getattr(stratagem, "name", "") or "THE SHORTENED BLADE").strip() or "THE SHORTENED BLADE"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_shortened_blade_deep_strike_min_distance"] = 6.0
+        sr["tau_shortened_blade_deep_strike_turn_owner"] = owner_id
+        sr["tau_shortened_blade_deep_strike_turn"] = current_turn
+        sr["tau_shortened_blade_deep_strike_expires_phase"] = "MOVEMENT_PHASE"
+        sr["tau_shortened_blade_no_charge_turn_owner"] = owner_id
+        sr["tau_shortened_blade_no_charge_turn"] = current_turn
+        sr["tau_shortened_blade_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THE SHORTENED BLADE: %s can be set up more than 6\" away and cannot charge this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_the_arrokon_protocol(self, stratagem: Any, **kwargs) -> bool:
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: not your turn")
+            return False
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: no target unit provided")
+            return False
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        eligible = candidates or self._tau_retaliation_arrokon_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: target unit is not eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: target has already shot this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: THE ARRO'KON PROTOCOL: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "THE ARRO'KON PROTOCOL").strip() or "THE ARRO'KON PROTOCOL"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_arrokon_protocol_active"] = True
+        sr["tau_arrokon_protocol_turn_owner"] = owner_id
+        sr["tau_arrokon_protocol_turn"] = current_turn
+        sr["tau_arrokon_protocol_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_arrokon_protocol_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THE ARRO'KON PROTOCOL: %s gains conditional [SUSTAINED HITS] against larger targets this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_the_torchstar_gambit(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacker_unit") or kwargs.get("attacking_unit") or kwargs.get("friendly_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or attacker_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "THE TORCHSTAR GAMBIT":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacker_unit is None:
+                    attacker_unit = reaction.get("attacker_unit") or reaction.get("attacking_unit") or reaction.get("friendly_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: no target unit provided")
+            return False
+        root = self._tau_root(target_unit)
+        attacker_root = self._tau_root(attacker_unit if attacker_unit is not None else target_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: not your turn")
+            return False
+        eligible = candidates or self._tau_retaliation_torchstar_candidates(attacker_unit=attacker_root)
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target unit is not eligible")
+            return False
+        if root is not attacker_root:
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target unit must be the unit that just shot")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+        if not self._tau_has_any_keyword(root, "FLY"):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target must have the FLY keyword")
+            return False
+        if not self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target must have just shot")
+            return False
+        if self._tau_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target cannot be within Engagement Range")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: reactive move decision queue unavailable")
+            return False
+        max_distance = int(getattr(root, "movement", 0) or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: target unit has no movement distance available")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            attacker_unit=root,
+            max_distance=int(max_distance),
+            kind="post_shoot_no_charge",
+            movement_type="reactive",
+            source=str(getattr(stratagem, "name", "THE TORCHSTAR GAMBIT") or "THE TORCHSTAR GAMBIT"),
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: THE TORCHSTAR GAMBIT: failed to queue reactive move decision")
+            return False
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THE TORCHSTAR GAMBIT: %s can make a Normal move up to %d\" and cannot charge this turn.",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_tau_grav_inhibitor_field(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or charging_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "GRAV-INHIBITOR FIELD":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if charging_unit is None:
+                    charging_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: no target unit provided")
+            return False
+        if charging_unit is None:
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: charging unit not provided")
+            return False
+        root = self._tau_root(target_unit)
+        attacker_root = self._tau_root(charging_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "charge phase":
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: not opponent's Charge phase")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: charging unit must be enemy")
+            return False
+        eligible = candidates or self._tau_retaliation_grav_inhibitor_candidates(target_units=target_units)
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: target unit is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: GRAV-INHIBITOR FIELD: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "GRAV-INHIBITOR FIELD").strip() or "GRAV-INHIBITOR FIELD"
+        force_test = getattr(attacker_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(current_turn=current_turn, source=source_name)
+
+        mortal_wounds = 0
+        for _index in range(self._tau_alive_model_count(attacker_root)):
+            if int(dice_module.get_roll("D6") or 0) == 6:
+                mortal_wounds += 1
+        if mortal_wounds > 0:
+            apply_mortal_wounds = getattr(attacker_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(attacker_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GRAV-INHIBITOR FIELD: %s takes a Battle-shock test and suffers %d mortal wound(s).",
+            getattr(attacker_root, "name", "Enemy Unit"),
+            int(mortal_wounds),
+        )
+        return True
+
+    def _use_tau_fail_safe_detonator(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        target_model = kwargs.get("destroyed_model") or kwargs.get("model") or kwargs.get("target_model")
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or target_model is None) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "FAIL-SAFE DETONATOR":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+                if target_model is None:
+                    target_model = reaction.get("destroyed_model") or reaction.get("model") or reaction.get("target_model")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None or target_model is None:
+            logger.error("ERROR: FAIL-SAFE DETONATOR: missing destroyed model context")
+            return False
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        eligible = candidates or self._tau_retaliation_fail_safe_detonator_candidates(
+            destroyed_unit=root,
+            destroyed_model=target_model,
+        )
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: FAIL-SAFE DETONATOR: target unit is not eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: FAIL-SAFE DETONATOR: target unit is not yours")
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: FAIL-SAFE DETONATOR: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+        if self._tau_model_is_alive(target_model):
+            logger.error("ERROR: FAIL-SAFE DETONATOR: target model is not destroyed")
+            return False
+        phase_label = str(kwargs.get("phase_name") or self._current_phase_name or "").strip() or "Any phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            target_unit=root,
+            destroyed_model=target_model,
+            target_model=target_model,
+            phase_name=phase_label,
+            candidates=[root],
+        ):
+            logger.error("ERROR: FAIL-SAFE DETONATOR: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        has_deadly_demise = getattr(root, "has_deadly_demise", None)
+        deadly_demise = has_deadly_demise() if callable(has_deadly_demise) else (False, None)
+        has_deadly = bool(isinstance(deadly_demise, tuple) and deadly_demise and deadly_demise[0])
+        if has_deadly:
+            request = self._tau_build_fail_safe_detonator_choice_request(
+                stratagem_name=str(getattr(stratagem, "name", "") or "FAIL-SAFE DETONATOR"),
+                unit=root,
+                model=target_model,
+                phase_name=str(phase_label or "").strip(),
+            )
+            if request is None:
+                logger.error("ERROR: FAIL-SAFE DETONATOR: failed to build choice request")
+                return False
+            setattr(target_model, "_skip_deadly_demise_once", True)
+            if not self._tau_submit_decision_request(request):
+                logger.error("ERROR: FAIL-SAFE DETONATOR: failed to queue choice request")
+                return False
+            self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: FAIL-SAFE DETONATOR: queued explosion choice for %s.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            logger.error("ERROR: FAIL-SAFE DETONATOR: map context unavailable")
+            return False
+        total_units_hit = 0
+        for affected_unit in self._tau_retaliation_units_within_range_of_model(
+            model=target_model,
+            range_inches=6.0,
+            game_map=game_map,
+        ):
+            if int(dice_module.get_roll("D6") or 0) < 4:
+                continue
+            mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            if mortal_wounds <= 0:
+                continue
+            apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(affected_unit, int(mortal_wounds), game_map=game_map)
+            total_units_hit += 1
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FAIL-SAFE DETONATOR: %s burst affects %d unit(s) within 6\".",
+            getattr(root, "name", "Unit"),
+            int(total_units_hit),
+        )
+        return True
 
     def _use_tau_interlocking_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")
