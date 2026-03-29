@@ -6500,6 +6500,48 @@ _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor
             "limit": "battle_round",
         },
     ),
+    "000010352003": EnhancementToolDescriptor(
+        enhancement_id="000010352003",
+        name="Inescapable Judgement (Psychic)",
+        timing="on_enemy_unit_fall_back_within_bearer_unit_engagement_range",
+        target="enemy_unit_that_fell_back_from_bearer_unit",
+        duration="instant",
+        effect="optional_enemy_fall_back_mortal_wound_table",
+        effect_params={
+            "low_roll_min": 2,
+            "low_roll_max": 5,
+            "low_mortal_wounds_roll": "D3",
+            "high_roll_threshold": 6,
+            "high_mortal_wounds_roll": "D3+3",
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000010352004": EnhancementToolDescriptor(
+        enhancement_id="000010352004",
+        name="Sanctic Reaper",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_attacks_bonus",
+        effect_params={
+            "bearer_melee_attacks_bonus": 3,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010352005": EnhancementToolDescriptor(
+        enhancement_id="000010352005",
+        name="Nemesis Rounds",
+        timing="when_targeted_with_fire_overwatch",
+        target="bearer_unit",
+        duration="while_resolving_fire_overwatch",
+        effect="fire_overwatch_hit_threshold",
+        effect_params={
+            "overwatch_hit_threshold": 5,
+            "stratagems": ("OVERWATCH", "FIRE OVERWATCH"),
+            "requires_bearer_alive": True,
+        },
+    ),
 }
 
 _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME = {

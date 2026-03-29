@@ -14804,6 +14804,80 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_eye_of_the_augurium_bearer_model_id"] = bearer_id
+        if name == "inescapable judgement psychic" or enh_id == "000010352003":
+            if not is_hallowed_conclave:
+                return
+            unit.special_rules["enhancement_inescapable_judgement"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_inescapable_judgement_low_roll_min"] = int(
+                max(0, _coerce_int(params.get("low_roll_min", 2) or 2, default=2))
+            )
+            unit.special_rules["enhancement_inescapable_judgement_low_roll_max"] = int(
+                max(0, _coerce_int(params.get("low_roll_max", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_inescapable_judgement_low_mortal_wounds_roll"] = str(
+                params.get("low_mortal_wounds_roll", "D3") or "D3"
+            ).strip().upper() or "D3"
+            unit.special_rules["enhancement_inescapable_judgement_high_roll_threshold"] = int(
+                max(0, _coerce_int(params.get("high_roll_threshold", 6) or 6, default=6))
+            )
+            unit.special_rules["enhancement_inescapable_judgement_high_mortal_wounds_roll"] = str(
+                params.get("high_mortal_wounds_roll", "D3+3") or "D3+3"
+            ).strip().upper() or "D3+3"
+            unit.special_rules["enhancement_inescapable_judgement_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_inescapable_judgement_optional"] = bool(
+                params.get("optional", True)
+            )
+            unit.special_rules["enhancement_inescapable_judgement_source"] = "Inescapable Judgement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_inescapable_judgement_bearer_model_id"] = bearer_id
+        if name == "sanctic reaper" or enh_id == "000010352004":
+            if not is_hallowed_conclave:
+                return
+            unit.special_rules["enhancement_sanctic_reaper"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attacks_bonus = int(
+                max(0, _coerce_int(params.get("bearer_melee_attacks_bonus", 3) or 3, default=3))
+            )
+            unit.special_rules["enhancement_sanctic_reaper_melee_attacks_bonus"] = int(attacks_bonus)
+            unit.special_rules["enhancement_sanctic_reaper_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(attacks_bonus)
+            unit.special_rules["enhancement_sanctic_reaper_source"] = "Sanctic Reaper"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sanctic_reaper_bearer_model_id"] = bearer_id
+        if name == "nemesis rounds" or enh_id == "000010352005":
+            if not is_hallowed_conclave:
+                return
+            unit.special_rules["enhancement_nemesis_rounds"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            stratagems = [
+                str(v or "").strip().upper()
+                for v in list(params.get("stratagems", ("OVERWATCH", "FIRE OVERWATCH")) or ())
+                if str(v or "").strip()
+            ]
+            if stratagems:
+                unit.special_rules["enhancement_nemesis_rounds_stratagems"] = stratagems
+            unit.special_rules["enhancement_nemesis_rounds_overwatch_hit_threshold"] = int(
+                max(0, _coerce_int(params.get("overwatch_hit_threshold", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_nemesis_rounds_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_nemesis_rounds_source"] = "Nemesis Rounds"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nemesis_rounds_bearer_model_id"] = bearer_id
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
         if callable(invalidate_fn):

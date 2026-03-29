@@ -8047,6 +8047,82 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_ids and target_id not in candidate_ids:
             return (f"{ability_name} target is not an eligible candidate.",)
         return ()
+    if ability == "grey_knights_hallowed_inescapable_judgement":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Inescapable Judgement source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Inescapable Judgement source unit must be on the battlefield.",)
+        source_army = getattr(source_root, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "grey_knights_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_hallowed_conclave", lambda: False)()):
+            return ("This selection requires a Grey Knights Hallowed Conclave army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_inescapable_judgement", False)):
+            return ("Source unit does not have Inescapable Judgement.",)
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_inescapable_judgement_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer = resolve_model(
+                game,
+                ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_inescapable_judgement_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id"),
+            )
+            if bearer is None:
+                return ("Inescapable Judgement bearer model was not found.",)
+            bearer_alive = getattr(bearer, "is_alive", True)
+            if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                return ("Inescapable Judgement bearer model must be alive.",)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return ("Inescapable Judgement can only be resolved in the Movement phase.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id != turn_owner_id:
+                return ("Inescapable Judgement turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Inescapable Judgement turn context no longer matches.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("moving_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Inescapable Judgement target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Inescapable Judgement target unit must be on the battlefield.",)
+        target_id = str(get_entity_id(target_root) or "")
+        moving_unit_id = str(ctx.get("moving_unit_id", "") or "")
+        if moving_unit_id and target_id != moving_unit_id:
+            return ("Inescapable Judgement target unit no longer matches the falling-back unit.",)
+        candidate_ids = {str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Inescapable Judgement selected unit is not an eligible candidate.",)
+        if target_root.get_parent_army() is source_army:
+            return ("Inescapable Judgement must target an enemy unit.",)
+        if not bool(getattr(getattr(target_root, "round_state", None), "fell_back_this_round", False)):
+            return ("Inescapable Judgement target unit has not Fallen Back this round.",)
+        return ()
     if ability in (
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",
@@ -25042,6 +25118,93 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains +2 Toughness until the end of the battle round.",
                 )
                 return target_root
+    if str(ctx.get("ability", "") or "") == "grey_knights_hallowed_inescapable_judgement":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None:
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_unit.get_parent_army().player
+                except Exception:
+                    player = None
+            ability_name = str(ctx.get("ability_name", "") or "Inescapable Judgement").strip() or "Inescapable Judgement"
+            if is_skip_choice(request, result):
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
+                return None
+            target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            if target_root is None or source_root is None:
+                return None
+            try:
+                from ...utility.dice import get_roll
+                from ...utility.event_bus import append_dice
+            except Exception:
+                get_roll = None
+                append_dice = None
+            try:
+                low_roll_min = int(ctx.get("low_roll_min", 2) or 2)
+            except Exception:
+                low_roll_min = 2
+            try:
+                low_roll_max = int(ctx.get("low_roll_max", 5) or 5)
+            except Exception:
+                low_roll_max = 5
+            try:
+                high_roll_threshold = int(ctx.get("high_roll_threshold", 6) or 6)
+            except Exception:
+                high_roll_threshold = 6
+            low_mortal_roll = str(ctx.get("low_mortal_wounds_roll", "D3") or "D3").strip().upper() or "D3"
+            high_mortal_roll = str(ctx.get("high_mortal_wounds_roll", "D3+3") or "D3+3").strip().upper() or "D3+3"
+            try:
+                trigger_roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            except Exception:
+                trigger_roll = 0
+            if callable(append_dice) and player is not None:
+                append_dice(
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} roll {int(trigger_roll)}",
+                )
+            mortal_wounds = 0
+            if int(low_roll_min) <= int(trigger_roll) <= int(low_roll_max):
+                try:
+                    mortal_wounds = int(get_roll(low_mortal_roll) or 0) if callable(get_roll) else 0
+                except Exception:
+                    mortal_wounds = 0
+                if callable(append_dice) and player is not None:
+                    append_dice(
+                        player,
+                        f"{ability_name}: {getattr(target_root, 'name', 'Unit')} {low_mortal_roll} = {int(max(0, mortal_wounds))}",
+                    )
+            elif int(trigger_roll) >= int(high_roll_threshold):
+                try:
+                    mortal_wounds = int(get_roll(high_mortal_roll) or 0) if callable(get_roll) else 0
+                except Exception:
+                    mortal_wounds = 0
+                if callable(append_dice) and player is not None:
+                    append_dice(
+                        player,
+                        f"{ability_name}: {getattr(target_root, 'name', 'Unit')} {high_mortal_roll} = {int(max(0, mortal_wounds))}",
+                    )
+            apply_mortal = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+            if not callable(apply_mortal):
+                apply_mortal = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+            if int(mortal_wounds) > 0 and callable(apply_mortal):
+                try:
+                    apply_mortal(target_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+                except Exception:
+                    pass
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers {int(mortal_wounds)} mortal wounds.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers no mortal wounds.",
+                )
+            return target_root
     if str(ctx.get("ability", "") or "") in (
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",

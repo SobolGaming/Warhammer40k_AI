@@ -17584,6 +17584,11 @@ class StratagemManager(
                     threshold = int(get_protector_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
                     if threshold > 0:
                         thresholds.append(int(threshold))
+                get_nemesis_rounds_threshold = getattr(shooter, "get_nemesis_rounds_overwatch_hit_threshold", None)
+                if callable(get_nemesis_rounds_threshold):
+                    threshold = int(get_nemesis_rounds_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
+                    if threshold > 0:
+                        thresholds.append(int(threshold))
                 if thresholds:
                     overwatch_threshold = int(min(thresholds))
             except Exception:

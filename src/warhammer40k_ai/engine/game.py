@@ -4635,6 +4635,21 @@ class Game(
         action_key = str(action or "").strip().lower()
         if action_key not in {"move", "advance", "fall_back"}:
             return
+        moving_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if moving_root is not None and action_key == "fall_back":
+            moving_owner = getattr(getattr(moving_root, "get_parent_army", lambda: None)(), "player", None)
+            for reacting_player in list(getattr(self, "players", []) or []):
+                if reacting_player is None or reacting_player is moving_owner:
+                    continue
+                reacting_army = self._get_player_army(reacting_player)
+                if reacting_army is None:
+                    continue
+                gk_mgr = getattr(reacting_army, "grey_knights_detachments", None)
+                if gk_mgr is None:
+                    continue
+                on_enemy_move_started = getattr(gk_mgr, "on_enemy_unit_move_started", None)
+                if callable(on_enemy_move_started):
+                    on_enemy_move_started(moving_root, game=self, action=action_key)
         if action_key in {"move", "advance"}:
             self._queue_chaos_cult_desperate_devotion(unit=unit, action=action_key)
         self._queue_csm_twisted_doctrine(unit=unit, action=action_key)
@@ -4934,6 +4949,12 @@ class Game(
                 on_enemy_move_fn = getattr(tyr_mgr, "on_enemy_unit_move_ended", None)
                 if callable(on_enemy_move_fn):
                     on_enemy_move_fn(moving_root, game=self)
+
+            gk_mgr = getattr(reacting_army, "grey_knights_detachments", None)
+            if gk_mgr is not None:
+                on_enemy_move_fn = getattr(gk_mgr, "on_enemy_unit_move_ended", None)
+                if callable(on_enemy_move_fn):
+                    on_enemy_move_fn(moving_root, game=self, action=action_key)
 
             sm_mgr = getattr(reacting_army, "space_marines_detachments", None)
             if sm_mgr is not None:

@@ -12,6 +12,7 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         self._hallowed_ground_phase_key: tuple | None = None
         self._hallowed_ground_nml_active: bool = False
         self._hallowed_ground_enemy_active: bool = False
+        self._hallowed_conclave_fall_back_candidates: dict[str, list[dict[str, str]]] = {}
 
     def is_brotherhood_strike(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -257,6 +258,68 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             turn_now = 0
         return owner_id, turn_now
 
+    def _hallowed_conclave_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        bearer_keys: tuple[str, ...],
+        require_bearer_alive: bool = True,
+    ):
+        if not self.is_hallowed_conclave():
+            return None, None, None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_is_active(root):
+            return None, None, None, None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None, None, None, None
+        except Exception:
+            return None, None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(str(flag_key), False)):
+                continue
+            bearer = self._resolve_member_bearer_model(member, bearer_keys=bearer_keys)
+            if require_bearer_alive and bearer is None:
+                continue
+            return root, member, sr, bearer
+        return None, None, None, None
+
+    def _pending_hallowed_inescapable_judgement_request(
+        self,
+        game,
+        *,
+        source_unit_id: str,
+        moving_unit_id: str,
+        turn: int,
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "grey_knights_hallowed_inescapable_judgement":
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                continue
+            if str(ctx.get("moving_unit_id", "") or "") != str(moving_unit_id or ""):
+                continue
+            if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                continue
+            return True
+        return False
+
     def _activate_brotherhood_strike_blinding_aura(self, root, *, game=None, source_name: str = "") -> bool:
         if root is None:
             return False
@@ -448,6 +511,182 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             self._queue_pyresoul_requests(game=game)
         if self.is_augurium_task_force():
             self._queue_grimoire_of_conjunctions_requests(game=game)
+
+    def on_enemy_unit_move_started(self, enemy_unit, *, game=None, action: str | None = None) -> None:
+        if game is None or enemy_unit is None:
+            return
+        if not self.is_hallowed_conclave():
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return
+        enemy_root = self._attached_root(enemy_unit)
+        enemy_root_id = str(get_entity_id(enemy_root) or "") if enemy_root is not None else ""
+        if enemy_root is None or not enemy_root_id:
+            return
+        entries: list[dict[str, str]] = []
+        for source_unit in sorted(
+            list(self._iter_unique_army_units() or []),
+            key=lambda item: str(get_entity_id(item) or ""),
+        ):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_inescapable_judgement", False)):
+                continue
+            root = self._attached_root(source_unit)
+            if root is None or not self._unit_is_active(root):
+                continue
+            source_root_id = str(get_entity_id(root) or "")
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            if not source_root_id or not source_unit_id:
+                continue
+            if bool(sr.get("enhancement_inescapable_judgement_requires_bearer_alive", True)):
+                bearer = self._resolve_member_bearer_model(
+                    source_unit,
+                    bearer_keys=("enhancement_inescapable_judgement_bearer_model_id",),
+                )
+                if bearer is None:
+                    continue
+            try:
+                if not bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    continue
+            except Exception:
+                continue
+            entries.append(
+                {
+                    "source_unit_id": source_unit_id,
+                    "source_root_id": source_root_id,
+                }
+            )
+        if not entries:
+            self._hallowed_conclave_fall_back_candidates.pop(enemy_root_id, None)
+            return
+        entries.sort(key=lambda item: (str(item.get("source_root_id", "")), str(item.get("source_unit_id", ""))))
+        self._hallowed_conclave_fall_back_candidates[enemy_root_id] = entries
+
+    def on_enemy_unit_move_ended(self, enemy_unit, *, game=None, action: str | None = None) -> None:
+        if game is None or enemy_unit is None:
+            return
+        if not self.is_hallowed_conclave():
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        enemy_root = self._attached_root(enemy_unit)
+        enemy_root_id = str(get_entity_id(enemy_root) or "") if enemy_root is not None else ""
+        if enemy_root is None or not enemy_root_id:
+            return
+        entries = list(self._hallowed_conclave_fall_back_candidates.pop(enemy_root_id, []) or [])
+        if not entries:
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        try:
+            turn_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        phase_name = self._phase_name(game)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        resolve_unit = getattr(game, "_resolve_unit_by_id", None)
+        for entry in list(entries or []):
+            source_unit_id = str(entry.get("source_unit_id", "") or "")
+            if not source_unit_id:
+                continue
+            source_unit = resolve_unit(source_unit_id) if callable(resolve_unit) else None
+            if source_unit is None:
+                continue
+            source_root = self._attached_root(source_unit)
+            if source_root is None or not self._unit_is_active(source_root):
+                continue
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_inescapable_judgement", False)):
+                continue
+            if bool(source_sr.get("enhancement_inescapable_judgement_requires_bearer_alive", True)):
+                bearer = self._resolve_member_bearer_model(
+                    source_unit,
+                    bearer_keys=("enhancement_inescapable_judgement_bearer_model_id",),
+                )
+                if bearer is None:
+                    continue
+            if self._pending_hallowed_inescapable_judgement_request(
+                game,
+                source_unit_id=source_unit_id,
+                moving_unit_id=enemy_root_id,
+                turn=int(turn_now),
+            ):
+                continue
+            ability_name = str(
+                source_sr.get("enhancement_inescapable_judgement_source", "") or "Inescapable Judgement"
+            ).strip() or "Inescapable Judgement"
+            low_roll_min = int(source_sr.get("enhancement_inescapable_judgement_low_roll_min", 2) or 2)
+            low_roll_max = int(source_sr.get("enhancement_inescapable_judgement_low_roll_max", 5) or 5)
+            high_roll_threshold = int(
+                source_sr.get("enhancement_inescapable_judgement_high_roll_threshold", 6) or 6
+            )
+            options = [
+                DecisionOption.create(
+                    f"Use on {getattr(enemy_root, 'name', 'Unit')}",
+                    payload={"target_unit_id": enemy_root_id},
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={"action": "skip", "skip": True},
+                ),
+            ]
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    (
+                        f"{ability_name}: choose whether {getattr(enemy_root, 'name', 'Unit')} suffers mortal wounds "
+                        f"on a {int(low_roll_min)}-{int(low_roll_max)}/{int(high_roll_threshold)} roll."
+                    ),
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "grey_knights_hallowed_inescapable_judgement",
+                        "ability_name": ability_name,
+                        "phase_name": phase_name,
+                        "phase": phase_name.replace("_", " ").title(),
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "moving_unit_id": enemy_root_id,
+                        "candidate_unit_ids": [enemy_root_id],
+                        "low_roll_min": int(low_roll_min),
+                        "low_roll_max": int(low_roll_max),
+                        "low_mortal_wounds_roll": str(
+                            source_sr.get("enhancement_inescapable_judgement_low_mortal_wounds_roll", "D3") or "D3"
+                        ).strip().upper()
+                        or "D3",
+                        "high_roll_threshold": int(high_roll_threshold),
+                        "high_mortal_wounds_roll": str(
+                            source_sr.get("enhancement_inescapable_judgement_high_mortal_wounds_roll", "D3+3")
+                            or "D3+3"
+                        ).strip().upper()
+                        or "D3+3",
+                        "bearer_model_id": str(
+                            source_sr.get("enhancement_inescapable_judgement_bearer_model_id", "")
+                            or source_sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        ).strip(),
+                        "requires_bearer_alive": bool(
+                            source_sr.get("enhancement_inescapable_judgement_requires_bearer_alive", True)
+                        ),
+                        "optional": bool(source_sr.get("enhancement_inescapable_judgement_optional", True)),
+                        "turn_owner_id": turn_owner_id,
+                        "turn": int(turn_now),
+                    },
+                )
+            )
 
     def _queue_ephemeral_tome_requests(self, *, game=None) -> None:
         if not self.is_banishers() or game is None:
