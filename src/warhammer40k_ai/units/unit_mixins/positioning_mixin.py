@@ -9168,6 +9168,25 @@ class PositioningMixin:
                 if current_owner == owner and current_turn == turn:
                     return False
 
+        # The Ephemeral Tome: cannot charge until end of turn after the start-of-Shooting move.
+        if isinstance(sr, dict) and sr.get("ephemeral_tome_no_charge_turn_owner"):
+            owner = str(sr.get("ephemeral_tome_no_charge_turn_owner") or "")
+            turn_raw = sr.get("ephemeral_tome_no_charge_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if owner and game is not None:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if current_owner == owner and current_turn == turn:
+                    return False
+
         # Flickerjump: cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)

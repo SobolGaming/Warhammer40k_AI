@@ -177,6 +177,19 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
     def _phase_name(game) -> str:
         return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
 
+    def _is_active_army_player_phase(self, game, *, phase_name: str) -> bool:
+        if game is None:
+            return False
+        if self._phase_name(game) != str(phase_name or "").strip().upper():
+            return False
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if current_player is None:
+            return False
+        return str(getattr(current_player, "id", "") or "") == str(getattr(player, "id", "") or "")
+
     @staticmethod
     def _pending_choose_quarry_request(
         game,
@@ -236,8 +249,200 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
                 zones = set(game._shadow_of_chaos_zones(player))
             self._hallowed_ground_nml_active = "nml" in zones
             self._hallowed_ground_enemy_active = "enemy" in zones
+        if self.is_banishers():
+            self._queue_ephemeral_tome_requests(game=game)
+            self._queue_pyresoul_requests(game=game)
         if self.is_augurium_task_force():
             self._queue_grimoire_of_conjunctions_requests(game=game)
+
+    def _queue_ephemeral_tome_requests(self, *, game=None) -> None:
+        if not self.is_banishers() or game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not self._is_active_army_player_phase(game, phase_name="SHOOTING_PHASE"):
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        unit_is_engaged = getattr(game, "_unit_is_engaged_with_enemy", None)
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for source_unit in list(self._iter_unique_army_units() or []):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_ephemeral_tome", False)):
+                continue
+            root = self._attached_root(source_unit)
+            if root is None or not self._unit_is_active(root):
+                continue
+            if callable(unit_is_engaged) and bool(unit_is_engaged(root)):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            root_id = str(get_entity_id(root) or "")
+            if not source_unit_id or not root_id:
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                ability="grey_knights_banishers_ephemeral_tome",
+                source_unit_id=source_unit_id,
+                turn=int(turn_now),
+                phase_name="SHOOTING_PHASE",
+            ):
+                continue
+            bearer = self._resolve_member_bearer_model(
+                source_unit,
+                bearer_keys=("enhancement_ephemeral_tome_bearer_model_id",),
+            )
+            if bool(sr.get("enhancement_ephemeral_tome_requires_bearer_alive", True)) and bearer is None:
+                continue
+            bearer_model_id = str(
+                sr.get("enhancement_ephemeral_tome_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            move_roll = str(sr.get("enhancement_ephemeral_tome_move_roll", "D6") or "D6").strip().upper() or "D6"
+            options = [
+                DecisionOption.create(
+                    f"Use on {getattr(root, 'name', 'Unit')}",
+                    payload={"target_unit_id": root_id},
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={"action": "skip", "skip": True},
+                ),
+            ]
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    (
+                        f"The Ephemeral Tome: choose whether {getattr(root, 'name', 'Unit')} makes a Normal move of up to "
+                        f"{move_roll}\" and cannot declare a charge this turn."
+                    ),
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "grey_knights_banishers_ephemeral_tome",
+                        "ability_name": "The Ephemeral Tome",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": [root_id],
+                        "move_roll": move_roll,
+                        "no_charge_this_turn": bool(sr.get("enhancement_ephemeral_tome_no_charge_this_turn", True)),
+                        "phase_name": "SHOOTING_PHASE",
+                        "phase": "Shooting phase",
+                        "turn_owner_id": str(getattr(player, "id", "") or ""),
+                        "turn": int(turn_now or 0),
+                        "bearer_model_id": bearer_model_id,
+                        "optional": bool(sr.get("enhancement_ephemeral_tome_optional", True)),
+                    },
+                )
+            )
+
+    def _queue_pyresoul_requests(self, *, game=None) -> None:
+        if not self.is_banishers() or game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not self._is_active_army_player_phase(game, phase_name="SHOOTING_PHASE"):
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        turn_now = int(getattr(game, "turn", 0) or 0)
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for source_unit in list(self._iter_unique_army_units() or []):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_pyresoul", False)):
+                continue
+            root = self._attached_root(source_unit)
+            if root is None or not self._unit_is_active(root):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            if not source_unit_id:
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                ability="grey_knights_banishers_pyresoul",
+                source_unit_id=source_unit_id,
+                turn=int(turn_now),
+                phase_name="SHOOTING_PHASE",
+            ):
+                continue
+            bearer = self._resolve_member_bearer_model(
+                source_unit,
+                bearer_keys=("enhancement_pyresoul_bearer_model_id",),
+            )
+            if bool(sr.get("enhancement_pyresoul_requires_bearer_alive", True)) and bearer is None:
+                continue
+            bearer_model_id = str(
+                sr.get("enhancement_pyresoul_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            range_value = int(sr.get("enhancement_pyresoul_range", 24) or 24)
+            requires_visibility = bool(sr.get("enhancement_pyresoul_requires_visibility", True))
+            candidates: list = []
+            for enemy_root in list(self._iter_enemy_roots(game, owner_player=player) or []):
+                if bearer is None:
+                    continue
+                in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+                if callable(in_range_fn):
+                    if not bool(in_range_fn(bearer, enemy_root, range_value=float(range_value))):
+                        continue
+                if requires_visibility:
+                    can_see_fn = getattr(game, "_model_can_see_unit", None)
+                    if callable(can_see_fn):
+                        if not bool(can_see_fn(bearer, enemy_root, game_map=getattr(game, "map", None))):
+                            continue
+                candidates.append(enemy_root)
+            if not candidates:
+                continue
+            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+            candidate_ids: list[str] = []
+            for enemy_root in list(candidates or []):
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id:
+                    continue
+                candidate_ids.append(enemy_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": enemy_id},
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Pyresoul: select one visible enemy unit within 24\" to suffer D3 mortal wounds (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "grey_knights_banishers_pyresoul",
+                        "ability_name": "Pyresoul",
+                        "phase_name": "SHOOTING_PHASE",
+                        "phase": "Shooting phase",
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "model_id": bearer_model_id,
+                        "range": int(range_value),
+                        "requires_visibility": bool(requires_visibility),
+                        "mortal_wounds_roll": str(sr.get("enhancement_pyresoul_mortal_wounds_roll", "D3") or "D3"),
+                        "candidate_unit_ids": list(candidate_ids),
+                        "optional": bool(sr.get("enhancement_pyresoul_optional", True)),
+                        "turn_owner_id": str(getattr(player, "id", "") or ""),
+                        "turn": int(turn_now or 0),
+                    },
+                )
+            )
 
     def _queue_grimoire_of_conjunctions_requests(self, *, game=None) -> None:
         if not self.is_augurium_task_force() or game is None:
@@ -884,6 +1089,92 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         if not self._unit_is_active(root):
             return False
         return True
+
+    def banishers_sigil_of_the_hunt_hit_reroll_mods(self, attacker_model, *, attack_type: str = "any", game=None) -> dict:
+        if not self.is_banishers():
+            return {}
+        if str(attack_type or "").strip().lower() != "ranged":
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None or not self._channelled_force_root_is_eligible(root):
+            return {}
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if not self._is_active_army_player_phase(game_obj, phase_name="SHOOTING_PHASE"):
+            return {}
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_sigil_of_the_hunt", False)):
+                continue
+            if bool(sr.get("enhancement_sigil_of_the_hunt_requires_bearer_alive", True)):
+                bearer = self._resolve_member_bearer_model(
+                    member,
+                    bearer_keys=("enhancement_sigil_of_the_hunt_bearer_model_id",),
+                )
+                if bearer is None:
+                    continue
+            source_name = str(
+                sr.get("enhancement_sigil_of_the_hunt_source", "") or "Sigil of the Hunt"
+            ).strip() or "Sigil of the Hunt"
+            return {
+                "reroll_values": (1,),
+                "reroll_reasons": (f"{source_name}: re-roll Hit rolls of 1",),
+            }
+        return {}
+
+    def banishers_sixty_sixth_seal_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = target_unit
+        if not self.is_banishers():
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None or not self._channelled_force_root_is_eligible(root):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if not self._is_active_army_player_phase(game_obj, phase_name="SHOOTING_PHASE"):
+            return 0, ""
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_sixty_sixth_seal", False)):
+                continue
+            if bool(sr.get("enhancement_sixty_sixth_seal_requires_bearer_alive", True)):
+                bearer = self._resolve_member_bearer_model(
+                    member,
+                    bearer_keys=("enhancement_sixty_sixth_seal_bearer_model_id",),
+                )
+                if bearer is None:
+                    continue
+            bonus = int(sr.get("enhancement_sixty_sixth_seal_ap_bonus", 1) or 1)
+            if bonus <= 0:
+                continue
+            source_name = str(
+                sr.get("enhancement_sixty_sixth_seal_source", "") or "The Sixty-sixth Seal"
+            ).strip() or "The Sixty-sixth Seal"
+            return int(bonus), source_name
+        return 0, ""
 
     def mailed_fist_applies(self, unit) -> bool:
         if not self.is_sanctic_spearhead():

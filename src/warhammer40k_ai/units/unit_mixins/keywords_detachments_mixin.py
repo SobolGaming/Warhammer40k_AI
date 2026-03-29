@@ -17269,6 +17269,31 @@ class KeywordsDetachmentsMixin:
                     reroll_values.add(1)
                     source_name = str(source or "Callous Competition").strip() or "Callous Competition"
                     reroll_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
+            gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            sigil_fn = getattr(gk_mgr, "banishers_sigil_of_the_hunt_hit_reroll_mods", None) if gk_mgr is not None else None
+            if callable(sigil_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sigil_mods = sigil_fn(model, attack_type=attack_scope, game=game)
+                if isinstance(sigil_mods, dict):
+                    for value in list(sigil_mods.get("reroll_values", sigil_mods.get("reroll_hit_values", ())) or ()):
+                        try:
+                            reroll_values.add(int(value))
+                        except Exception:
+                            continue
+                    for reason in list(
+                        sigil_mods.get("reroll_reasons", sigil_mods.get("reroll_hit_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_reasons.append(reason_text)
+                    for reason in list(
+                        sigil_mods.get("reroll_full_reasons", sigil_mods.get("reroll_hit_full_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_full_reasons.append(reason_text)
+                    if bool(sigil_mods.get("reroll_full", sigil_mods.get("reroll_hit_full", False))):
+                        reroll_full = True
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):

@@ -3615,6 +3615,18 @@ class WargearProfile:
                 _s_bonus, fb_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._fusion_blades_bonuses(attacker)
                 if fb_ap_bonus:
                     ap_val -= int(fb_ap_bonus)
+                gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+                gk_ap_bonus_fn = getattr(gk_mgr, "banishers_sixty_sixth_seal_ap_bonus", None) if gk_mgr is not None else None
+                if callable(gk_ap_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    ap_bonus, _source = gk_ap_bonus_fn(
+                        attacker,
+                        target_unit=target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(ap_bonus or 0) > 0:
+                        ap_val -= int(ap_bonus)
         except Exception:
             pass
         try:

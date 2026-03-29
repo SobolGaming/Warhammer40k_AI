@@ -9635,6 +9635,182 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_ids and target_id not in candidate_ids:
             return ("A Foot in the Future selected unit is not an eligible candidate.",)
         return ()
+    if ability == "grey_knights_banishers_ephemeral_tome":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("The Ephemeral Tome source unit was not found.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return ("The Ephemeral Tome target unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None:
+            return ("The Ephemeral Tome units were not found.",)
+        if source_root is not target_root:
+            return ("The Ephemeral Tome target unit must be the bearer's unit.",)
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("The Ephemeral Tome target unit must be on the battlefield.",)
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_ephemeral_tome", False)):
+            return ("The Ephemeral Tome enhancement is not active on the source unit.",)
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_ephemeral_tome_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_ephemeral_tome_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return ("The Ephemeral Tome requires bearer_model_id when bearer must be alive.",)
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return ("The Ephemeral Tome bearer model was not found.",)
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return ("The Ephemeral Tome bearer model must be alive.",)
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return ("The Ephemeral Tome bearer model does not belong to the source unit.",)
+
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id != turn_owner_id:
+                return ("The Ephemeral Tome turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("The Ephemeral Tome turn context no longer matches.",)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return ("The Ephemeral Tome can only be resolved in the Shooting phase.",)
+        unit_is_engaged = getattr(game, "_unit_is_engaged_with_enemy", None)
+        if callable(unit_is_engaged) and bool(unit_is_engaged(target_root)):
+            return ("The Ephemeral Tome target unit cannot be within Engagement Range of enemy units.",)
+
+        if is_skip_choice(request, result):
+            return ()
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("The Ephemeral Tome selected unit is not an eligible candidate.",)
+        return ()
+    if ability == "grey_knights_banishers_pyresoul":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Pyresoul source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Pyresoul source unit must be on the battlefield.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_pyresoul", False)):
+            return ("Pyresoul enhancement is not active on the source unit.",)
+        bearer_model_id = str(
+            payload.get("model_id")
+            or ctx.get("model_id")
+            or source_sr.get("enhancement_pyresoul_bearer_model_id")
+            or source_sr.get("enhancement_bearer_model_id")
+            or ""
+        ).strip()
+        if not bearer_model_id:
+            return ("Pyresoul requires bearer_model_id.",)
+        bearer_model = resolve_model(game, bearer_model_id)
+        if bearer_model is None:
+            return ("Pyresoul bearer model was not found.",)
+        if bool(source_sr.get("enhancement_pyresoul_requires_bearer_alive", True)):
+            bearer_alive = getattr(bearer_model, "is_alive", False)
+            if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                return ("Pyresoul bearer model must be alive.",)
+        if getattr(bearer_model, "parent_unit", None) is not source_unit:
+            return ("Pyresoul bearer model does not belong to the source unit.",)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return ("Pyresoul can only be resolved in the Shooting phase.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id != turn_owner_id:
+                return ("Pyresoul turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Pyresoul turn context no longer matches.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Pyresoul target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Pyresoul target unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Pyresoul target must be an enemy unit.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Pyresoul selected target is not an eligible candidate.",)
+        try:
+            range_value = float(ctx.get("range", source_sr.get("enhancement_pyresoul_range", 24)) or 24.0)
+        except (TypeError, ValueError):
+            range_value = 24.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(bearer_model, target_root, range_value=float(range_value))):
+                return ("Pyresoul target is out of range.",)
+        if bool(ctx.get("requires_visibility", source_sr.get("enhancement_pyresoul_requires_visibility", True))):
+            can_see_fn = getattr(game, "_model_can_see_unit", None)
+            if callable(can_see_fn):
+                if not bool(can_see_fn(bearer_model, target_root, game_map=getattr(game, "map", None))):
+                    return ("Pyresoul target must be visible to the bearer.",)
+        return ()
     if ability == "murdercall":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -15945,6 +16121,249 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "move_distance": int(move_distance),
             "no_charge_this_turn": bool(no_charge_this_turn),
+        }
+    if ability == "grey_knights_banishers_ephemeral_tome":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "The Ephemeral Tome").strip() or "The Ephemeral Tome"
+
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None or source_root is not target_root:
+            return None
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_ephemeral_tome", False)):
+            return None
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_ephemeral_tome_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_ephemeral_tome_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return None
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return None
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return None
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return None
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+
+        try:
+            from ...utility.dice import get_roll
+        except Exception:
+            return None
+
+        move_roll = str(
+            ctx.get("move_roll")
+            or source_sr.get("enhancement_ephemeral_tome_move_roll")
+            or "D6"
+        ).strip().upper() or "D6"
+        try:
+            move_distance = int(get_roll(move_roll) or 0)
+        except Exception:
+            move_distance = 0
+        if move_distance <= 0:
+            return None
+
+        no_charge_this_turn = bool(
+            ctx.get("no_charge_this_turn", source_sr.get("enhancement_ephemeral_tome_no_charge_this_turn", True))
+        )
+        if no_charge_this_turn:
+            target_sr = getattr(target_root, "special_rules", None)
+            if not isinstance(target_sr, dict):
+                target_sr = {}
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            turn_owner_id = str(ctx.get("turn_owner_id", "") or getattr(current_player, "id", "") or "")
+            try:
+                turn_value = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn_value = int(getattr(game, "turn", 0) or 0)
+            target_sr["ephemeral_tome_no_charge_turn_owner"] = turn_owner_id
+            target_sr["ephemeral_tome_no_charge_turn"] = int(turn_value)
+            target_root.special_rules = target_sr
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=player,
+                unit=target_root,
+                max_distance=int(move_distance),
+                kind="ephemeral_tome",
+                movement_type="reactive",
+                source=ability_name,
+                allow_skip=True,
+            )
+
+        from ...utility.event_bus import append_dice
+
+        append_dice(
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} move roll {int(move_distance)}.",
+        )
+        no_charge_text = " and cannot declare a charge this turn" if no_charge_this_turn else ""
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} can make a Normal move of up to {int(move_distance)}\"{no_charge_text}.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "move_distance": int(move_distance),
+            "no_charge_this_turn": bool(no_charge_this_turn),
+        }
+    if ability == "grey_knights_banishers_pyresoul":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Pyresoul").strip() or "Pyresoul"
+
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_pyresoul", False)):
+            return None
+        bearer_model_id = str(
+            payload.get("model_id")
+            or ctx.get("model_id")
+            or source_sr.get("enhancement_pyresoul_bearer_model_id")
+            or source_sr.get("enhancement_bearer_model_id")
+            or ""
+        ).strip()
+        if not bearer_model_id:
+            return None
+        bearer_model = resolve_model(game, bearer_model_id)
+        if bearer_model is None:
+            return None
+        bearer_alive = getattr(bearer_model, "is_alive", False)
+        if bool(source_sr.get("enhancement_pyresoul_requires_bearer_alive", True)):
+            if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                return None
+        if getattr(bearer_model, "parent_unit", None) is not source_unit:
+            return None
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return None
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        try:
+            range_value = float(ctx.get("range", source_sr.get("enhancement_pyresoul_range", 24)) or 24.0)
+        except (TypeError, ValueError):
+            range_value = 24.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(bearer_model, target_root, range_value=float(range_value))):
+                return None
+        if bool(ctx.get("requires_visibility", source_sr.get("enhancement_pyresoul_requires_visibility", True))):
+            can_see_fn = getattr(game, "_model_can_see_unit", None)
+            if callable(can_see_fn):
+                if not bool(can_see_fn(bearer_model, target_root, game_map=getattr(game, "map", None))):
+                    return None
+
+        mortal_wounds = 0
+        mortal_roll = str(
+            ctx.get("mortal_wounds_roll")
+            or source_sr.get("enhancement_pyresoul_mortal_wounds_roll")
+            or "D3"
+        ).strip().upper() or "D3"
+        try:
+            mortal_wounds = int(
+                _apply_mortal_wounds_roll_to_unit(
+                    game,
+                    source_root=source_root,
+                    source_model=bearer_model,
+                    target_root=target_root,
+                    roll_expr=mortal_roll,
+                    ability_name=ability_name,
+                    player=player,
+                )
+                or 0
+            )
+        except Exception:
+            mortal_wounds = 0
+        target_name = getattr(target_root, "name", "Unit")
+        if mortal_wounds > 0:
+            _log_action_for_players(game, player, f"{ability_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.")
+        else:
+            _log_action_for_players(game, player, f"{ability_name}: {target_name} suffers no mortal wounds.")
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "mortal_wounds": int(mortal_wounds),
         }
     if ability == "murdercall":
         payload = _option_payload(request, result)

@@ -21245,6 +21245,18 @@ class GamePhaseHandlersMixin:
                                 "a_foot_in_the_future_no_charge_turn",
                             ):
                                 sr.pop(k, None)
+                    owner = str(sr.get("ephemeral_tome_no_charge_turn_owner", "") or "")
+                    try:
+                        turn = int(sr.get("ephemeral_tome_no_charge_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "ephemeral_tome_no_charge_turn_owner",
+                                "ephemeral_tome_no_charge_turn",
+                            ):
+                                sr.pop(k, None)
                     owner = str(sr.get("symphony_of_pain_owner", "") or "")
                     try:
                         turn = int(sr.get("symphony_of_pain_turn", 0) or 0)

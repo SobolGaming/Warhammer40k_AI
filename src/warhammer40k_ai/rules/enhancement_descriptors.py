@@ -6382,6 +6382,69 @@ _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_GREY_KNIGHTS_BANISHERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010356002": EnhancementToolDescriptor(
+        enhancement_id="000010356002",
+        name="Sigil of the Hunt",
+        timing="passive",
+        target="bearer_unit_ranged_attacks",
+        duration="your_shooting_phase",
+        effect="reroll_hit_roll_of_1",
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_hit_values": (1,),
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010356003": EnhancementToolDescriptor(
+        enhancement_id="000010356003",
+        name="The Ephemeral Tome",
+        timing="start_of_your_shooting_phase",
+        target="bearer_unit",
+        duration="immediate_then_until_end_of_turn",
+        effect="optional_reactive_normal_move_start_of_shooting_no_charge",
+        effect_params={
+            "move_roll": "D6",
+            "no_charge_this_turn": True,
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000010356004": EnhancementToolDescriptor(
+        enhancement_id="000010356004",
+        name="The Sixty-sixth Seal",
+        timing="passive",
+        target="bearer_unit_ranged_attacks",
+        duration="your_shooting_phase",
+        effect="ranged_ap_bonus",
+        effect_params={
+            "attack_type": "ranged",
+            "ap_bonus": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010356005": EnhancementToolDescriptor(
+        enhancement_id="000010356005",
+        name="Pyresoul (Psychic)",
+        timing="start_of_your_shooting_phase",
+        target="enemy_unit_within_range_visible",
+        duration="instant",
+        effect="optional_select_enemy_mortal_wounds",
+        range_in=24.0,
+        effect_params={
+            "range": 24,
+            "mortal_wounds_roll": "D3",
+            "requires_visibility": True,
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+}
+
+_GREY_KNIGHTS_BANISHERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_BANISHERS_DESCRIPTORS.values()
+}
+
 _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010352002": EnhancementToolDescriptor(
         enhancement_id="000010352002",
@@ -8983,6 +9046,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GREY_KNIGHTS_BANISHERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9239,6 +9305,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
         or _GREY_KNIGHTS_BROTHERHOOD_STRIKE_BY_NAME.get(key)
         or _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME.get(key)
+        or _GREY_KNIGHTS_BANISHERS_BY_NAME.get(key)
         or _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)

@@ -2057,6 +2057,10 @@ class Enhancement:
         except Exception:
             is_brotherhood_strike = False
         try:
+            is_banishers = bool(gk_mgr and gk_mgr.is_banishers())
+        except Exception:
+            is_banishers = False
+        try:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
@@ -14545,6 +14549,84 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_tome_of_forbidden_ways_bearer_model_id"] = bearer_id
+
+        if name == "sigil of the hunt" or enh_id == "000010356002":
+            if not is_banishers:
+                return
+            unit.special_rules["enhancement_sigil_of_the_hunt"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_sigil_of_the_hunt_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sigil_of_the_hunt_source"] = "Sigil of the Hunt"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sigil_of_the_hunt_bearer_model_id"] = bearer_id
+
+        if name == "the ephemeral tome" or enh_id == "000010356003":
+            if not is_banishers:
+                return
+            unit.special_rules["enhancement_ephemeral_tome"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_roll = str(params.get("move_roll", "D6") or "D6").strip().upper()
+            if not move_roll:
+                move_roll = "D6"
+            unit.special_rules["enhancement_ephemeral_tome_move_roll"] = move_roll
+            unit.special_rules["enhancement_ephemeral_tome_no_charge_this_turn"] = bool(
+                params.get("no_charge_this_turn", True)
+            )
+            unit.special_rules["enhancement_ephemeral_tome_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_ephemeral_tome_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_ephemeral_tome_source"] = "The Ephemeral Tome"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ephemeral_tome_bearer_model_id"] = bearer_id
+
+        if name == "the sixty-sixth seal" or enh_id == "000010356004":
+            if not is_banishers:
+                return
+            unit.special_rules["enhancement_sixty_sixth_seal"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_sixty_sixth_seal_ap_bonus"] = int(
+                max(0, _coerce_int(params.get("ap_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_sixty_sixth_seal_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sixty_sixth_seal_source"] = "The Sixty-sixth Seal"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sixty_sixth_seal_bearer_model_id"] = bearer_id
+
+        if name == "pyresoul" or name == "pyresoul psychic" or enh_id == "000010356005":
+            if not is_banishers:
+                return
+            unit.special_rules["enhancement_pyresoul"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_pyresoul_range"] = int(
+                max(0, _coerce_int(params.get("range", 24) or 24, default=24))
+            )
+            mortal_wounds_roll = str(params.get("mortal_wounds_roll", "D3") or "D3").strip().upper()
+            if not mortal_wounds_roll:
+                mortal_wounds_roll = "D3"
+            unit.special_rules["enhancement_pyresoul_mortal_wounds_roll"] = mortal_wounds_roll
+            unit.special_rules["enhancement_pyresoul_requires_visibility"] = bool(
+                params.get("requires_visibility", True)
+            )
+            unit.special_rules["enhancement_pyresoul_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_pyresoul_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_pyresoul_source"] = "Pyresoul"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_pyresoul_bearer_model_id"] = bearer_id
 
         if name == "grimoire of conjunctions" or enh_id == "000010364002":
             if not is_augurium_task_force:
