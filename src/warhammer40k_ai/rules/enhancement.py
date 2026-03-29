@@ -15138,6 +15138,39 @@ class Enhancement:
                     if str(cache_key).startswith("model_allocated_damage_zero_specs:"):
                         cache.pop(cache_key, None)
 
+        if name == "acquisitor-at-arms" or enh_id == "000010497002":
+            if not is_gate_warden_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Acquisitor-at-Arms").strip() or "Acquisitor-at-Arms"
+            unit.special_rules["enhancement_acquisitor_at_arms"] = True
+            unit.special_rules["enhancement_acquisitor_at_arms_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_acquisitor_at_arms_bearer_model_id"] = bearer_id
+
+        if name == "purgation's hand" or enh_id == "000010497003":
+            if not is_gate_warden_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Purgation's Hand").strip() or "Purgation's Hand"
+            unit.special_rules["enhancement_purgations_hand"] = True
+            unit.special_rules["enhancement_purgations_hand_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_purgations_hand_bearer_model_id"] = bearer_id
+
+        if name == "augury halo" or enh_id == "000010497004":
+            if not is_gate_warden_lance:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source_name = str(getattr(desc, "name", "") or "Augury Halo").strip() or "Augury Halo"
+            unit.special_rules["enhancement_augury_halo"] = True
+            unit.special_rules["enhancement_augury_halo_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_augury_halo_bearer_model_id"] = bearer_id
+
         if name == "vengeful tread" or enh_id == "000010497005":
             if not is_gate_warden_lance:
                 return

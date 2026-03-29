@@ -1309,6 +1309,27 @@ class Unit(
                         )
             except Exception:
                 pass
+            try:
+                ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(ik_mgr, "gate_warden_acquisitor_at_arms_objective_control_bonus", None)
+                    if ik_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game, game_map=game_map)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Acquisitor-at-Arms").strip() or "Acquisitor-at-Arms"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"enhancement:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
 
             gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
             bonus_fn = (

@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -125,6 +126,50 @@ def _make_ranged_profile() -> WargearProfile:
         "description": "",
     }
     return WargearProfile("Test Cannon", wargear_data=data, parent_wargear=parent)
+
+
+def _make_melee_profile() -> WargearProfile:
+    parent = SimpleNamespace(
+        name="Test Blade",
+        is_melee=lambda: True,
+        is_ranged=lambda: False,
+    )
+    data = {
+        "range": "Melee",
+        "A": "1",
+        "BS_WS": "3+",
+        "S": "10",
+        "AP": "-2",
+        "D": "3",
+        "description": "",
+    }
+    return WargearProfile("Test Blade", wargear_data=data, parent_wargear=parent)
+
+
+def _apply_enhancement(unit: Unit, *, enh_id: str, name: str) -> Enhancement:
+    enhancement = Enhancement(
+        id=str(enh_id),
+        name=str(name),
+        faction_id="QI",
+        detachment="Gate Warden Lance",
+        detachment_id="000001107",
+        points=0,
+        description="",
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+    return enhancement
+
+
+def _select_dauntless_foundations(game: Game, ik_player: Player, *objectives: Objective) -> None:
+    for objective in objectives:
+        request = _find_dauntless_requests(game)[0]
+        _select_objective(
+            game,
+            request,
+            player_id=ik_player.id,
+            objective_id=str(get_entity_id(objective) or ""),
+        )
 
 
 def test_gate_warden_queues_first_foundation_selection_at_start_of_first_battle_round():
@@ -270,3 +315,174 @@ def test_dauntless_defenders_prompts_replacement_when_foundation_removed():
         str(get_entity_id(obj_beta) or ""),
         str(get_entity_id(obj_gamma) or ""),
     ]
+
+
+def test_gate_warden_acquisitor_at_arms_adds_bearers_oc_to_bondsman_targets_when_line_is_clear():
+    game, ik_army, enemy_army, ik_player, _enemy_player, obj_alpha, obj_beta, _obj_gamma = _build_game()
+    bearer = _make_unit(
+        "Knight Paladin",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    bondsman_target = _make_unit(
+        "Armiger Warglaive",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "ARMIGER", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Squad",
+        faction_name="Space Marines",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    ik_army.add_unit(bearer)
+    ik_army.add_unit(bondsman_target)
+    enemy_army.add_unit(enemy)
+    _apply_enhancement(bearer, enh_id="000010497002", name="Acquisitor-at-Arms")
+    game.map.units = [bearer, bondsman_target, enemy]
+    bearer.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    bondsman_target.models[0].set_location(14.0, 6.0, 0.0, 0.0)
+    enemy.models[0].set_location(18.0, 5.0, 0.0, 0.0)
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    ik_army.on_battle_round_start(1)
+    _select_dauntless_foundations(game, ik_player, obj_alpha, obj_beta)
+
+    bondsman_target.special_rules["bondsman_active"] = True
+    bondsman_target.special_rules["bondsman_source_unit_id"] = str(get_entity_id(bearer) or "")
+
+    assert int(bearer.models[0].objective_control or 0) == 8
+    assert int(bondsman_target.models[0].objective_control or 0) == 16
+
+
+def test_gate_warden_acquisitor_at_arms_turns_off_when_enemy_is_on_defensive_line():
+    game, ik_army, enemy_army, ik_player, _enemy_player, obj_alpha, obj_beta, _obj_gamma = _build_game()
+    bearer = _make_unit(
+        "Knight Paladin",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    bondsman_target = _make_unit(
+        "Armiger Warglaive",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "ARMIGER", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Squad",
+        faction_name="Space Marines",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    ik_army.add_unit(bearer)
+    ik_army.add_unit(bondsman_target)
+    enemy_army.add_unit(enemy)
+    _apply_enhancement(bearer, enh_id="000010497002", name="Acquisitor-at-Arms")
+    game.map.units = [bearer, bondsman_target, enemy]
+    bearer.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    bondsman_target.models[0].set_location(14.0, 6.0, 0.0, 0.0)
+    enemy.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    ik_army.on_battle_round_start(1)
+    _select_dauntless_foundations(game, ik_player, obj_alpha, obj_beta)
+
+    bondsman_target.special_rules["bondsman_active"] = True
+    bondsman_target.special_rules["bondsman_source_unit_id"] = str(get_entity_id(bearer) or "")
+
+    assert int(bondsman_target.models[0].objective_control or 0) == 8
+
+
+def test_gate_warden_purgations_hand_rerolls_hit_and_wound_ones_in_melee_on_line():
+    game, ik_army, enemy_army, ik_player, _enemy_player, obj_alpha, obj_beta, _obj_gamma = _build_game()
+    bearer = _make_unit(
+        "Knight Paladin",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Squad",
+        faction_name="Space Marines",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    ik_army.add_unit(bearer)
+    enemy_army.add_unit(enemy)
+    _apply_enhancement(bearer, enh_id="000010497003", name="Purgation's Hand")
+    game.map.units = [bearer, enemy]
+    bearer.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(11.0, 1.0, 0.0, 0.0)
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    ik_army.on_battle_round_start(1)
+    _select_dauntless_foundations(game, ik_player, obj_alpha, obj_beta)
+
+    profile = _make_melee_profile()
+    hit_result = profile._hit_target_with_tracking(
+        enemy,
+        bearer.models[0],
+        {"distance_to_target": 1.5},
+        roll_value=1,
+        allow_rerolls=True,
+        log_roll=False,
+    )
+    wound_result = profile._wound_target_with_tracking(
+        enemy,
+        bearer.models[0],
+        {"distance_to_target": 1.5},
+        roll_value=1,
+        allow_rerolls=True,
+        log_roll=False,
+    )
+
+    assert 1 in list(hit_result.get("reroll_values", []) or [])
+    assert any("Purgation's Hand" in str(reason) for reason in list(hit_result.get("reroll_value_reasons", []) or []))
+    assert 1 in list(wound_result.get("reroll_values", []) or [])
+    assert any("Purgation's Hand" in str(reason) for reason in list(wound_result.get("reroll_value_reasons", []) or []))
+
+
+def test_gate_warden_augury_halo_grants_ignores_cover_to_bearers_ranged_attacks_on_line():
+    game, ik_army, enemy_army, ik_player, _enemy_player, obj_alpha, obj_beta, _obj_gamma = _build_game()
+    bearer = _make_unit(
+        "Knight Paladin",
+        faction_name="Imperial Knights",
+        keywords=["IMPERIAL KNIGHTS", "VEHICLE"],
+        faction_keywords=["IMPERIAL KNIGHTS"],
+    )
+    enemy = _make_unit(
+        "Enemy Squad",
+        faction_name="Space Marines",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    ik_army.add_unit(bearer)
+    enemy_army.add_unit(enemy)
+    _apply_enhancement(bearer, enh_id="000010497004", name="Augury Halo")
+    game.map.units = [bearer, enemy]
+    bearer.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(10.0, 6.0, 0.0, 0.0)
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    ik_army.on_battle_round_start(1)
+    _select_dauntless_foundations(game, ik_player, obj_alpha, obj_beta)
+
+    profile = _make_ranged_profile()
+    attack_instance = {}
+    profile._hit_target_with_tracking(
+        enemy,
+        bearer.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert bool(attack_instance.get("ignores_cover", False))

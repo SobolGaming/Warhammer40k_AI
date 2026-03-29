@@ -10841,6 +10841,18 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+                ignores_cover_fn = getattr(ik_mgr, "gate_warden_augury_halo_ignores_cover", None) if ik_mgr is not None else None
+                if callable(ignores_cover_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    applies, _source = ignores_cover_fn(attacker, weapon_profile=self, game=game)
+                    if bool(applies):
+                        attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 if self._veteran_sharpshooters_ignores_cover_active(attacker):
                     attack_instance["ignores_cover"] = True
             except Exception:
@@ -14261,6 +14273,17 @@ class WargearProfile:
             if bool(reroll_hit_ones):
                 reroll_hit_values.add(1)
                 source_name = str(source or "Divine Inspiration").strip() or "Divine Inspiration"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        purgations_hand_fn = getattr(ik_mgr, "gate_warden_purgations_hand_reroll_hit_wound_ones", None) if ik_mgr is not None else None
+        if callable(purgations_hand_fn):
+            reroll_hit_ones, _reroll_wound_ones, source = purgations_hand_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Purgation's Hand").strip() or "Purgation's Hand"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         # Astra Militarum: Bridgehead Strike (Only the Best) re-roll Hit roll of 1
         # for ASTRA MILITARUM INFANTRY models making ranged attacks.
@@ -20415,6 +20438,17 @@ class WargearProfile:
             if bool(reroll_wound_ones):
                 reroll_wound_values.add(1)
                 source_name = str(source or "Divine Inspiration").strip() or "Divine Inspiration"
+                reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        purgations_hand_fn = getattr(ik_mgr, "gate_warden_purgations_hand_reroll_hit_wound_ones", None) if ik_mgr is not None else None
+        if callable(purgations_hand_fn):
+            _reroll_hit_ones, reroll_wound_ones, source = purgations_hand_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_wound_ones):
+                reroll_wound_values.add(1)
+                source_name = str(source or "Purgation's Hand").strip() or "Purgation's Hand"
                 reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         # Adeptus Custodes (Solar Spearhead): Auric Armour.
         try:

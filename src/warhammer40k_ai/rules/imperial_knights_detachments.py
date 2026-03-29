@@ -659,6 +659,104 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     def _forgepact_allied_units(self) -> list:
         return [unit for unit in self._iter_army_roots() if self._unit_is_adeptus_mechanicus(unit)]
 
+    def _iter_battlefield_roots(self, *, game=None, game_map=None) -> list:
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        pool = list(getattr(resolved_map, "units", []) or []) if resolved_map is not None else []
+        if not pool and resolved_game is not None:
+            for player in list(getattr(resolved_game, "players", []) or []):
+                army = getattr(player, "army", None)
+                pool.extend(list(getattr(army, "units", []) or []))
+        roots: list = []
+        seen_ids: set[str] = set()
+        for unit in pool:
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            dedupe_key = root_id if root_id else f"obj:{id(root)}"
+            if dedupe_key in seen_ids:
+                continue
+            seen_ids.add(dedupe_key)
+            roots.append(root)
+        roots.sort(key=lambda unit: self._entity_id(unit) or f"obj:{id(unit)}")
+        return roots
+
+    def _bondsman_target_roots(self, source_unit, *, required_keyword: str = "") -> list:
+        source_root = self._attached_root(source_unit)
+        if source_root is None or not self._unit_in_army(source_root):
+            return []
+        source_id = self._entity_id(source_root)
+        if not source_id:
+            return []
+        wanted_keyword = str(required_keyword or "").strip().upper()
+        targets: list = []
+        for candidate in self._iter_army_roots():
+            candidate_root = self._attached_root(candidate)
+            if candidate_root is None:
+                continue
+            if not self._unit_on_battlefield(candidate_root):
+                continue
+            sr = getattr(candidate_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("bondsman_active")):
+                continue
+            if str(sr.get("bondsman_source_unit_id", "") or "").strip() != source_id:
+                continue
+            if wanted_keyword and not self._unit_has_keyword(candidate_root, wanted_keyword):
+                continue
+            targets.append(candidate_root)
+        return targets
+
+    def _enhancement_bearer_model(self, unit):
+        root = self._attached_root(unit)
+        if root is None:
+            return None
+        getter = getattr(root, "_get_enhancement_bearer_model", None)
+        if callable(getter):
+            return getter()
+        models = self._iter_unit_models(root)
+        return models[0] if models else None
+
+    def _enhancement_bearer_matches(self, unit, model) -> bool:
+        bearer = self._enhancement_bearer_model(unit)
+        if bearer is None or model is None:
+            return False
+        return self._entity_id(bearer) == self._entity_id(model)
+
+    def _enemy_units_on_dauntless_defensive_line(self, *, game=None, game_map=None) -> list:
+        if not self.is_gate_warden_lance():
+            return []
+        line_points = self._line_points_for_dauntless(game=game, game_map=game_map)
+        if line_points is None:
+            return []
+        start_xy, end_xy = line_points
+        enemies: list = []
+        for unit in self._iter_battlefield_roots(game=game, game_map=game_map):
+            if unit is None:
+                continue
+            army = getattr(unit, "get_parent_army", lambda: None)()
+            if army is None or army is self.army:
+                continue
+            if not bool(getattr(unit, "deployed", True)):
+                continue
+            if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+                continue
+            is_in_reserves = getattr(unit, "is_in_reserves", None)
+            if callable(is_in_reserves) and bool(is_in_reserves()):
+                continue
+            is_alive = getattr(unit, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            for model in self._iter_unit_models(unit):
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                if self._model_crosses_line(model, start_xy=start_xy, end_xy=end_xy):
+                    enemies.append(unit)
+                    break
+        return enemies
+
     def _forgepact_points_cap(self) -> int:
         if self.army is None:
             return 0
@@ -938,6 +1036,110 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             "allow_hit": True,
             "default_choice": "ignore_negative",
         }
+
+    def gate_warden_acquisitor_at_arms_objective_control_bonus(
+        self,
+        model,
+        *,
+        unit=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        if not self.is_gate_warden_lance():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        target_root = self._attached_root(unit if unit is not None else getattr(model, "parent_unit", None))
+        if target_root is None or not self._unit_in_army(target_root):
+            return 0, ""
+        if not self._unit_on_battlefield(target_root):
+            return 0, ""
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        for source_root in self._iter_army_roots():
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_acquisitor_at_arms")):
+                continue
+            if not self._unit_on_battlefield(source_root):
+                continue
+            if not self.is_unit_on_dauntless_defensive_line(source_root, game=resolved_game, game_map=resolved_map):
+                continue
+            if self._enemy_units_on_dauntless_defensive_line(game=resolved_game, game_map=resolved_map):
+                continue
+            if target_root not in self._bondsman_target_roots(source_root):
+                continue
+            bearer = self._enhancement_bearer_model(source_root)
+            if bearer is None:
+                continue
+            try:
+                bonus = int(getattr(bearer, "objective_control", 0) or 0)
+            except (TypeError, ValueError):
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source_name = str(sr.get("enhancement_acquisitor_at_arms_source", "") or "Acquisitor-at-Arms").strip()
+            return int(bonus), source_name or "Acquisitor-at-Arms"
+        return 0, ""
+
+    def gate_warden_purgations_hand_reroll_hit_wound_ones(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, bool, str]:
+        if not self.is_gate_warden_lance():
+            return False, False, ""
+        if attacker_model is None or weapon_profile is None:
+            return False, False, ""
+        if self._weapon_is_ranged(weapon_profile):
+            return False, False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, False, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_purgations_hand")):
+            return False, False, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model):
+            return False, False, ""
+        resolved_game = self._resolve_game(game)
+        if not self.is_unit_on_dauntless_defensive_line(attacker_root, game=resolved_game, game_map=game_map):
+            return False, False, ""
+        source_name = str(sr.get("enhancement_purgations_hand_source", "") or "Purgation's Hand").strip()
+        return True, True, source_name or "Purgation's Hand"
+
+    def gate_warden_augury_halo_ignores_cover(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        if not self.is_gate_warden_lance():
+            return False, ""
+        if attacker_model is None or weapon_profile is None:
+            return False, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_augury_halo")):
+            return False, ""
+        if not self._enhancement_bearer_matches(attacker_root, attacker_model):
+            return False, ""
+        resolved_game = self._resolve_game(game)
+        if not self.is_unit_on_dauntless_defensive_line(attacker_root, game=resolved_game, game_map=game_map):
+            return False, ""
+        source_name = str(sr.get("enhancement_augury_halo_source", "") or "Augury Halo").strip()
+        return True, source_name or "Augury Halo"
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self.is_gate_warden_lance():

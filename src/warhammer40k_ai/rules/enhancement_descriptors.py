@@ -6759,6 +6759,36 @@ _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME = {
 }
 
 _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010497002": EnhancementToolDescriptor(
+        enhancement_id="000010497002",
+        name="Acquisitor-at-Arms",
+        timing="passive",
+        target="friendly_bondsman_models",
+        duration="constant",
+        effect="bondsman_models_gain_bearer_objective_control_while_bearer_holds_enemy_free_defensive_line",
+        effect_params={
+            "requires_bearer_on_defensive_line": True,
+            "requires_no_enemy_units_on_defensive_line": True,
+        },
+    ),
+    "000010497003": EnhancementToolDescriptor(
+        enhancement_id="000010497003",
+        name="Purgation's Hand",
+        timing="melee_attack",
+        target="bearer",
+        duration="constant",
+        effect="bearer_melee_attacks_reroll_hit_and_wound_ones_on_defensive_line",
+        effect_params={"requires_bearer_on_defensive_line": True},
+    ),
+    "000010497004": EnhancementToolDescriptor(
+        enhancement_id="000010497004",
+        name="Augury Halo",
+        timing="ranged_attack",
+        target="bearer",
+        duration="constant",
+        effect="bearer_ranged_weapons_gain_ignores_cover_on_defensive_line",
+        effect_params={"requires_bearer_on_defensive_line": True},
+    ),
     "000010497005": EnhancementToolDescriptor(
         enhancement_id="000010497005",
         name="Vengeful Tread",
