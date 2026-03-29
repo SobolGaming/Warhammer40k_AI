@@ -508,6 +508,15 @@ class ForTheGreaterGoodManager:
         if self._through_unity_devastation_applies(observer):
             self._spotted_through_unity_devastation[tgt_id] = True
         self._spotted_forward_observers[tgt_id] = self._unit_has_named_ability(observer, "forward observers")
+        event_system = getattr(game, "event_system", None) if game is not None else None
+        publish = getattr(event_system, "publish", None) if event_system is not None else None
+        if callable(publish):
+            publish(
+                "ftgg_observer_selected",
+                observer_unit=self._attached_root(observer),
+                target_unit=self._attached_root(target),
+                player=player,
+            )
         return True
 
     def is_observer(self, unit) -> bool:
@@ -517,6 +526,17 @@ class ForTheGreaterGoodManager:
     def is_spotted(self, target) -> bool:
         tid = self._unit_id(target)
         return bool(tid and tid in self._spotted_by)
+
+    def get_observer_target_id(self, observer) -> str:
+        obs_id = self._unit_id(observer)
+        if not obs_id:
+            return ""
+        return str(self._observer_to_target.get(obs_id, "") or "")
+
+    def observer_targets_unit(self, observer, target) -> bool:
+        observer_target_id = self.get_observer_target_id(observer)
+        target_id = self._unit_id(target)
+        return bool(observer_target_id and target_id and observer_target_id == target_id)
 
     def guided_attack_bonus(self, attacker_unit, target_unit) -> dict:
         if attacker_unit is None or target_unit is None:

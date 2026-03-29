@@ -3570,6 +3570,53 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "tau_kauyon_tempting_trap_objective":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ("A Tempting Trap objective selection cannot be skipped.",)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("A Tempting Trap army was not found.",)
+        mgr = getattr(army, "tau_empire_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_kauyon", lambda: False)()):
+            return ("A Tempting Trap requires the Kauyon detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("A Tempting Trap source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("A Tempting Trap source unit was not found.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("A Tempting Trap selection requires objective_id.",)
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            game_map = getattr(game, "map", None)
+            for candidate in list(getattr(game_map, "objectives", []) or []):
+                candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "").strip()
+                if candidate_id == objective_id:
+                    objective = candidate
+                    break
+        if objective is None:
+            return ("A Tempting Trap selected objective marker was not found.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("A Tempting Trap selected objective marker is not an eligible candidate.",)
+        return ()
     if ability == "warp_syphon":
         if is_skip_choice(request, result):
             return ()
@@ -11782,6 +11829,66 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "tau_kauyon_tempting_trap_objective":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        objective = None
+        resolve_objective = getattr(stratagems, "_tau_resolve_objective", None) if stratagems is not None else None
+        if callable(resolve_objective):
+            objective = resolve_objective(objective_id)
+        if objective is None:
+            objective = get_objective(game, objective_id)
+        if objective is None:
+            game_map = getattr(game, "map", None)
+            for candidate in list(getattr(game_map, "objectives", []) or []):
+                candidate_id = str(getattr(candidate, "id", "") or get_entity_id(candidate) or "").strip()
+                if candidate_id == objective_id:
+                    objective = candidate
+                    break
+        if objective is None:
+            return None
+        apply_selection = getattr(stratagems, "tau_kauyon_apply_tempting_trap_selection", None) if stratagems is not None else None
+        if not callable(apply_selection):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "A Tempting Trap").strip() or "A Tempting Trap"
+        if not bool(apply_selection(source_root, objective, source_name=ability_name)):
+            return None
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {objective_name}.",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "objective_id": objective_id,
+            "objective_name": objective_name,
+        }
     if ability == "warp_syphon":
         if is_skip_choice(request, result):
             return None

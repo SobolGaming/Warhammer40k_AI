@@ -5140,6 +5140,21 @@ _AUXILIARY_CADRE_STRATAGEM_BY_NAME = {
 }
 
 _KAUYON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008443002": StratagemToolDescriptor(
+        stratagem_id="000008443002",
+        name="A Tempting Trap",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tau_empire_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="conditional_ranged_wound_bonus_vs_selected_trap_objective",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "wound_bonus": 1,
+            "requires_selected_trap_objective": True,
+            "first_use_selects_objective_not_in_opponent_deployment_zone": True,
+        },
+    ),
     "000008443003": StratagemToolDescriptor(
         stratagem_id="000008443003",
         name="Point-Blank Ambush",
@@ -5154,6 +5169,47 @@ _KAUYON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "ap_bonus": 1,
             "max_range": 9.0,
             "min_battle_round": 3,
+        },
+    ),
+    "000008443004": StratagemToolDescriptor(
+        stratagem_id="000008443004",
+        name="Coordinate to Engage",
+        timing="shooting_phase_after_observer_selected",
+        target="tau_empire_observer_unit_just_selected",
+        duration="until_end_of_phase",
+        effect="observer_ballistic_skill_bonus_vs_spotted_unit",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "bs_improve": 1,
+            "ignores_cover_if_markerlight": True,
+        },
+    ),
+    "000008443005": StratagemToolDescriptor(
+        stratagem_id="000008443005",
+        name="Combat Embarkation",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="tau_empire_infantry_charge_target_and_friendly_transport",
+        duration="immediate",
+        effect="reactive_embark_and_charge_retarget",
+        cp_cost=1,
+        effect_params={
+            "transport_required": True,
+            "uses_normal_embark_range": True,
+            "allows_charge_retarget": True,
+        },
+    ),
+    "000008443006": StratagemToolDescriptor(
+        stratagem_id="000008443006",
+        name="Photon Grenades",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="tau_empire_grenades_charge_target",
+        duration="until_end_of_phase",
+        effect="force_battleshock_and_charge_penalty",
+        cp_cost=1,
+        effect_params={
+            "force_battle_shock_test": True,
+            "charge_roll_modifier": -2,
         },
     ),
     "000008443007": StratagemToolDescriptor(

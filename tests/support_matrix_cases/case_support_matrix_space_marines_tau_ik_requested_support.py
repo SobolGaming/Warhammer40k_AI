@@ -39,7 +39,11 @@ def test_support_matrix_marks_requested_stratagems_implemented():
     stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
     expected = {
         "000010397003": "objective range",
+        "000008443002": "objective",
         "000008443003": "within 9",
+        "000008443004": "spotted unit",
+        "000008443005": "embarkation",
+        "000008443006": "charge rolls",
         "000010507006": "worsens ap by 1",
         "000010507003": "bonded armiger",
     }
@@ -63,7 +67,11 @@ def test_support_matrix_marks_requested_stratagems_implemented():
 def test_requested_stratagem_descriptors_registered():
     expected = {
         "000010397003": ("Litanies of Purgation", "conditional_melee_ap_bonus_if_attacker_or_target_within_objective_range"),
+        "000008443002": ("A Tempting Trap", "conditional_ranged_wound_bonus_vs_selected_trap_objective"),
         "000008443003": ("Point-Blank Ambush", "conditional_ranged_ap_bonus_within_range"),
+        "000008443004": ("Coordinate to Engage", "observer_ballistic_skill_bonus_vs_spotted_unit"),
+        "000008443005": ("Combat Embarkation", "reactive_embark_and_charge_retarget"),
+        "000008443006": ("Photon Grenades", "force_battleshock_and_charge_penalty"),
         "000010507006": ("Let Duty Be Your Shield", "worsen_incoming_ap"),
         "000010507003": ("Exemplar's Wisdom", "selected_bondsman_armigers_gain_ap_against_selected_hit_enemy"),
     }

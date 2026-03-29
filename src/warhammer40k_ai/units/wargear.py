@@ -10639,6 +10639,50 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if attack_is_ranged and isinstance(sr, dict) and sr.get("tau_coordinate_to_engage_active"):
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                current_owner = (
+                    str(getattr(current_player, "id", "") or get_entity_id(current_player) or "")
+                    if current_player is not None
+                    else ""
+                )
+                effect_phase = str(sr.get("tau_coordinate_to_engage_expires_phase", "") or "").strip().upper()
+                effect_owner = str(sr.get("tau_coordinate_to_engage_turn_owner", "") or "").strip()
+                try:
+                    effect_turn = int(sr.get("tau_coordinate_to_engage_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                target_id = str(get_entity_id(target_root) or "")
+                spotted_id = str(sr.get("tau_coordinate_to_engage_spotted_unit_id", "") or "").strip()
+                applies = True
+                if effect_phase and current_phase and effect_phase != current_phase:
+                    applies = False
+                if effect_owner and current_owner and effect_owner != current_owner:
+                    applies = False
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                if spotted_id and target_id and spotted_id != target_id:
+                    applies = False
+                if applies:
+                    try:
+                        bonus = int(sr.get("tau_coordinate_to_engage_ballistic_skill_bonus", 0) or 0)
+                    except (TypeError, ValueError):
+                        bonus = 0
+                    if bonus:
+                        _add_skill_mod(bonus, f"Coordinate to Engage: +{int(bonus)} BS")
+                    if bool(sr.get("tau_coordinate_to_engage_ignores_cover")):
+                        attack_instance["ignores_cover"] = True
+        except Exception:
+            pass
+        try:
             if attack_is_melee:
                 sr = self._unit_special_rules(attacker)
                 ws_bonus = int(sr.get("enhancement_bearer_melee_weapon_skill_bonus", 0) or 0)
@@ -19406,6 +19450,63 @@ class WargearProfile:
                         )
                         dice_modifier -= int(penalty)
                         wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
+        # T'au Empire: A Tempting Trap (+1 to wound vs targets within the selected Trap objective range).
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if is_ranged and isinstance(sr, dict) and sr.get("tau_a_tempting_trap_active"):
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                current_owner = (
+                    str(getattr(current_player, "id", "") or get_entity_id(current_player) or "")
+                    if current_player is not None
+                    else ""
+                )
+                effect_phase = str(sr.get("tau_a_tempting_trap_expires_phase", "") or "").strip().upper()
+                effect_owner = str(sr.get("tau_a_tempting_trap_turn_owner", "") or "").strip()
+                try:
+                    effect_turn = int(sr.get("tau_a_tempting_trap_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                objective_id = str(sr.get("tau_a_tempting_trap_objective_id", "") or "").strip()
+                applies = True
+                if effect_phase and current_phase and effect_phase != current_phase:
+                    applies = False
+                if effect_owner and current_owner and effect_owner != current_owner:
+                    applies = False
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                if objective_id and applies:
+                    objective = None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                    for candidate in list(getattr(game_map, "objectives", []) or []):
+                        candidate_id = str(get_entity_id(candidate) or getattr(candidate, "id", "") or "").strip()
+                        if candidate_id == objective_id:
+                            objective = candidate
+                            break
+                    objective_location = getattr(objective, "location", None) if objective is not None else None
+                    target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                    if objective_location is None or target_root is None:
+                        applies = False
+                    else:
+                        within_range = False
+                        within_fn = getattr(target_root, "is_within_objective_range", None)
+                        if callable(within_fn):
+                            within_range = bool(within_fn(objective_location))
+                        applies = bool(within_range)
+                if applies:
+                    dice_modifier += 1
+                    wound_result["modifiers"].append("+1 to wound from A Tempting Trap")
         except Exception:
             pass
         # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).

@@ -6426,10 +6426,13 @@ class GameView:
                         pass
 
                 ability_name = str(ctx.get("ability_name", "") or "Emergency Combat Embarkation").strip()
+                subtitle = "Select one declared charge target to embark."
+                if skip_id:
+                    subtitle = "Select one declared charge target to embark, or choose None."
                 dlg.show(
                     title=ability_name,
                     header=ability_name,
-                    subtitle="Select one declared charge target to embark, or choose None.",
+                    subtitle=subtitle,
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,
                     decision_request=request,
@@ -7476,6 +7479,7 @@ class GameView:
                 "archons_will_objective",
                 "traitoris_tyrants_shadow_objective",
                 "traitoris_malevolent_heraldry",
+                "tau_kauyon_tempting_trap_objective",
                 "singular_purpose",
                 "vanguard_of_dark_city",
                 "battle_protocols",
@@ -16079,6 +16083,10 @@ class GameView:
             title = ability_name or "Archon's Will"
             subtitle = "Select one objective marker on the battlefield."
             header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "tau_kauyon_tempting_trap_objective":
+            title = ability_name or "A Tempting Trap"
+            subtitle = "Select one objective marker that is not in your opponent's deployment zone."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Trap objective marker."
         elif str(ability_key) == "traitoris_tyrants_shadow_objective":
             title = ability_name or "Tyrant's Shadow"
             subtitle = "Select one objective marker you control within range of the bearer."

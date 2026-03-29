@@ -129,6 +129,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PICK THEM OFF",
     "PINPOINT COUNTER-OFFENSIVE",
     "POINT-BLANK AMBUSH",
+    "PHOTON GRENADES",
     "POINT-BLANK DESTRUCTION",
     "OPPORTUNISTIC RAIDERS",
     "POUNCE ON THE PREY",
@@ -222,6 +223,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
     "TYRANNOFORMED",
+    "A TEMPTING TRAP",
     "ALPHA STRIKE",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -232,6 +234,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CALCULATED FEINT",
     "CHILLING HOWL",
     "CHOSEN FOR GLORY",
+    "COMBAT EMBARKATION",
+    "COORDINATE TO ENGAGE",
     "CODEX DISCIPLINE",
     "COURAGE AND HONOUR!",
     "CRAZED FOCUS",
@@ -786,6 +790,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REINFORCED HIVE NODE",
     "THE SMOTHERING SHADOW",
     "BLIND GRENADES",
+    "COMBAT EMBARKATION",
+    "COORDINATE TO ENGAGE",
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
@@ -857,6 +863,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
     "PINPOINT COUNTER-OFFENSIVE",
+    "PHOTON GRENADES",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "RELENTLESS ASSAULT",
@@ -2064,13 +2071,17 @@ class StratagemManager(
             "ANTI-GRAV REPULSION",
             "ANTI‑GRAV REPULSION",
             "BLIND GRENADES",
+            "COMBAT EMBARKATION",
             "A DEADLY SNARE",
             "CALCULATED FEINT",
             "DREAD CRUSADERS",
+            "PHOTON GRENADES",
             "SHADE PATH",
             "CHRONOSORCEROUS BLEED",
         }:
             add("charge_declared", self._on_charge_declared)
+        if "COORDINATE TO ENGAGE" in names:
+            add("ftgg_observer_selected", self._on_ftgg_observer_selected)
         if names & {
             "OVERWATCH",
             "FIRE OVERWATCH",
@@ -11325,6 +11336,17 @@ class StratagemManager(
         self._queue_canoptek_court_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
+        )
+        self._queue_tau_kauyon_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+
+    def _on_ftgg_observer_selected(self, observer_unit=None, target_unit=None, player=None, **_kwargs):
+        self._queue_tau_kauyon_ftgg_observer_reactions(
+            observer_unit=observer_unit,
+            target_unit=target_unit,
+            player=player,
         )
 
     def _on_charge_roll_resolved(self, unit=None, target_units=None, **_kwargs):
@@ -25473,6 +25495,8 @@ class StratagemManager(
                         trigger_label = "Trigger: enemy move end"
                 elif r.get("event") == "charge_declared":
                     trigger_label = "Trigger: enemy charge declared"
+                elif r.get("event") == "ftgg_observer_selected":
+                    trigger_label = "Trigger: observer selected"
                 elif r.get("event") in ("charge_move_ended", "heroic_intervention"):
                     trigger_label = "Trigger: enemy charge end"
                 elif r.get("event") == "unit_move_ended":

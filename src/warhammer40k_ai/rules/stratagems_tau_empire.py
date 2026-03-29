@@ -699,6 +699,253 @@ class TauEmpireStratagemMixin:
             out.append(root)
         return out
 
+    def _tau_pending_choose_quarry_request(self, *, ability: str, **match_context: Any) -> bool:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != str(DECISION_CHOOSE_QUARRY):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability or ""):
+                continue
+            matches = True
+            for key, value in dict(match_context or {}).items():
+                if isinstance(value, (list, tuple, set)):
+                    expected = [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+                    current = [
+                        str(item or "").strip()
+                        for item in list(ctx.get(key, []) or [])
+                        if str(item or "").strip()
+                    ]
+                    if current != expected:
+                        matches = False
+                        break
+                    continue
+                if str(ctx.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+    @staticmethod
+    def _tau_objective_sort_key(objective: Any) -> str:
+        if objective is None:
+            return ""
+        if isinstance(objective, str):
+            return str(objective).strip()
+        objective_id = str(getattr(objective, "id", "") or get_entity_id(objective) or "")
+        if objective_id:
+            return objective_id
+        location = getattr(objective, "location", None)
+        return str(getattr(location, "id", "") or get_entity_id(location) or "")
+
+    def _tau_resolve_objective(self, objective_or_id: Any) -> Any:
+        if objective_or_id is None:
+            return None
+        objective_key = self._tau_objective_sort_key(objective_or_id)
+        if objective_key and not isinstance(objective_or_id, str):
+            return objective_or_id
+        objective_key = str(objective_or_id or "").strip()
+        if not objective_key:
+            return None
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if self._tau_objective_sort_key(objective) == objective_key:
+                return objective
+            location = getattr(objective, "location", None)
+            if str(getattr(location, "id", "") or get_entity_id(location) or "") == objective_key:
+                return objective
+        registry = getattr(game, "entity_registry", None) if game is not None else None
+        if registry is not None:
+            objective = registry.get(objective_key, kind="objective")
+            if objective is not None:
+                return objective
+        return None
+
+    def _tau_objective_candidates_not_in_opponent_deployment_zone(self) -> list[Any]:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        opponent = getattr(game, "get_opponent", lambda: None)() if game is not None else None
+        opponent_id = str(getattr(opponent, "id", "") or "")
+        in_zone = getattr(game, "is_position_in_deployment_zone", None) if game is not None else None
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            marker = location if location is not None else objective
+            if marker is None or bool(getattr(marker, "removed", False)):
+                continue
+            objective_id = self._tau_objective_sort_key(objective)
+            if not objective_id or objective_id in seen:
+                continue
+            if opponent_id and callable(in_zone):
+                try:
+                    if bool(in_zone(float(getattr(marker, "x", 0.0) or 0.0), float(getattr(marker, "y", 0.0) or 0.0), opponent_id)):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+            seen.add(objective_id)
+            out.append(objective)
+        return sorted(out, key=self._tau_objective_sort_key)
+
+    def _tau_current_kauyon_trap_objective_id(self) -> str:
+        current = str(getattr(self, "_tau_kauyon_trap_objective_id", "") or "").strip()
+        if current:
+            return current
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return ""
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            current = str(sr.get("tau_kauyon_trap_objective_id", "") or "").strip()
+            if current:
+                self._tau_kauyon_trap_objective_id = current
+                self._tau_kauyon_trap_objective_name = str(sr.get("tau_kauyon_trap_objective_name", "") or "")
+                return current
+        return ""
+
+    def tau_kauyon_apply_tempting_trap_selection(self, source_unit: Any, objective: Any, *, source_name: str = "A Tempting Trap") -> bool:
+        root = self._tau_root(source_unit)
+        objective = self._tau_resolve_objective(objective)
+        if root is None or objective is None:
+            return False
+        objective_id = self._tau_objective_sort_key(objective)
+        if not objective_id:
+            return False
+        objective_name = str(getattr(objective, "name", "") or "Objective").strip() or "Objective"
+        self._tau_kauyon_trap_objective_id = objective_id
+        self._tau_kauyon_trap_objective_name = objective_name
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is not None:
+            seen: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                unit_root = self._tau_root(unit)
+                if unit_root is None:
+                    continue
+                uid = self._tau_sort_key(unit_root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(unit_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["tau_kauyon_trap_objective_id"] = objective_id
+                sr["tau_kauyon_trap_objective_name"] = objective_name
+                unit_root.special_rules = sr
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        sr["tau_a_tempting_trap_active"] = True
+        sr["tau_a_tempting_trap_objective_id"] = objective_id
+        sr["tau_a_tempting_trap_objective_name"] = objective_name
+        sr["tau_a_tempting_trap_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_a_tempting_trap_turn_owner"] = owner_id
+        sr["tau_a_tempting_trap_turn"] = current_turn
+        sr["tau_a_tempting_trap_source"] = str(source_name or "A Tempting Trap").strip() or "A Tempting Trap"
+        root.special_rules = sr
+        return True
+
+    def _tau_pending_charge_roll_request(self, charging_unit: Any) -> tuple[Any, Any]:
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if charging_unit is None or queue is None or not hasattr(queue, "list"):
+            return None, None
+
+        from ..engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
+
+        charging_unit_id = self._tau_sort_key(charging_unit)
+        if not charging_unit_id:
+            return None, None
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != str(DECISION_REQUEST_DICE_ROLL):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("roll_type", "") or "").strip().lower() != "charge":
+                continue
+            roll_spec = dict(ctx.get("roll_spec", {}) or {})
+            if str(roll_spec.get("unit_id", "") or "") != charging_unit_id:
+                continue
+            roll_id = ctx.get("roll_id")
+            state = None
+            roll_manager = getattr(game, "roll_manager", None)
+            if roll_id is not None and roll_manager is not None:
+                state = roll_manager.get_roll(int(roll_id))
+            return req, state
+        return None, None
+
+    def _tau_remove_pending_charge_roll_request(self, charging_unit: Any) -> bool:
+        req, state = self._tau_pending_charge_roll_request(charging_unit)
+        if req is None:
+            return False
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "pop"):
+            queue.pop(getattr(req, "decision_id", None))
+        if state is not None:
+            roll_manager = getattr(game, "roll_manager", None)
+            if roll_manager is not None:
+                roll_manager.rolls.pop(int(state.roll_id), None)
+        try:
+            charging_unit.round_state.charge_roll_id = None
+        except AttributeError:
+            pass
+        return True
+
+    def _tau_apply_pending_charge_roll_modifier(self, charging_unit: Any, *, value: int, source: str) -> None:
+        req, state = self._tau_pending_charge_roll_request(charging_unit)
+        if req is None or state is None:
+            return
+        reason = f"{source} ({int(value):+d})"
+        spec = dict(getattr(state, "spec", {}) or {})
+        breakdown = [
+            dict(entry or {})
+            for entry in list(spec.get("sum_modifier_breakdown", []) or [])
+            if str(dict(entry or {}).get("source", "") or "").strip() != str(source or "").strip()
+        ]
+        breakdown.append(
+            {
+                "source": str(source or "Charge roll modifier").strip() or "Charge roll modifier",
+                "value": int(value),
+                "reason": reason,
+                "contributor_type": "ability",
+            }
+        )
+        spec["sum_modifier_breakdown"] = list(breakdown)
+        spec["sum_modifier"] = sum(int(entry.get("value", 0) or 0) for entry in breakdown)
+        spec["sum_modifier_reasons"] = [str(entry.get("reason", "") or "") for entry in breakdown]
+        state.spec = spec
+
+        ctx = dict(getattr(req, "context", {}) or {})
+        ctx["roll_spec"] = dict(spec)
+        req.context = ctx
+
     def _tau_combat_debarkation_candidates(self) -> list[Any]:
         if not self._is_tau_montka_detachment():
             return []
@@ -1519,42 +1766,387 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _tau_kauyon_combat_embarkation_candidates(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[dict[str, Any]]:
+        if not self._is_tau_kauyon_detachment():
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game is None or game_map is None:
+            return []
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        attacker_root = self._tau_root(charging_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return []
+        declared_targets = []
+        for target in self._tau_resolve_unit_list(target_units):
+            if not self._tau_owned_by_player(target, self.player):
+                continue
+            if not self._tau_on_battlefield(target, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(target):
+                continue
+            if not self._tau_has_any_keyword(target, "INFANTRY"):
+                continue
+            declared_targets.append(target)
+        if not declared_targets:
+            return []
+
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[dict[str, Any]] = []
+        seen_pairs: set[tuple[str, str]] = set()
+        seen_transports: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            transport = self._tau_root(unit)
+            if transport is None:
+                continue
+            transport_id = self._tau_sort_key(transport)
+            if not transport_id or transport_id in seen_transports:
+                continue
+            seen_transports.add(transport_id)
+            if not self._tau_on_battlefield(transport, require_targetable=False):
+                continue
+            if not self._tau_has_any_keyword(transport, "TRANSPORT"):
+                continue
+            for target in list(declared_targets):
+                if target is None or target is transport:
+                    continue
+                if bool(getattr(target.round_state, "disembarked_this_round", False)):
+                    continue
+                if not bool(unit_wholly_within_range_of_unit(transport, target, 3.0)):
+                    continue
+                enemies = list(game_map.get_enemy_units(target) or [])
+                if any(enemy is not None and game_map.is_within_engagement_range(target, enemy) for enemy in enemies):
+                    continue
+                sr = getattr(target, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+                    owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+                    turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+                    if owner and owner == str(getattr(self.player, "id", "") or "") and int(getattr(game, "turn", 0) or 0) == turn:
+                        continue
+                can_transport = getattr(transport, "can_transport", None)
+                if not callable(can_transport) or not bool(can_transport(target)):
+                    continue
+                target_id = self._tau_sort_key(target)
+                pair_key = (transport_id, target_id)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                out.append(
+                    {
+                        "transport_id": transport_id,
+                        "transport_unit": transport,
+                        "target_unit_id": target_id,
+                        "target_unit": target,
+                        "label": f"{getattr(transport, 'name', 'Transport')}: {getattr(target, 'name', 'Unit')}",
+                        "spec": {
+                            "source": "Combat Embarkation",
+                            "range": 3.0,
+                            "allow_existing_passengers": True,
+                        },
+                    }
+                )
+        out.sort(key=lambda item: (str(item.get("transport_id", "") or ""), str(item.get("target_unit_id", "") or "")))
+        return out
+
+    def _tau_kauyon_photon_grenades_candidates(self, *, target_units: Any = None) -> list[Any]:
+        if not self._is_tau_kauyon_detachment():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for target in self._tau_resolve_unit_list(target_units):
+            target_id = self._tau_sort_key(target)
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            if not self._tau_owned_by_player(target, self.player):
+                continue
+            if not self._tau_on_battlefield(target, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(target):
+                continue
+            if not self._tau_has_any_keyword(target, "GRENADES"):
+                continue
+            out.append(target)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _queue_tau_kauyon_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_tau_kauyon_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tau_root(charging_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return
+
+        combat_embarkation = getattr(self, "get_by_name", lambda _name: None)("COMBAT EMBARKATION")
+        if combat_embarkation is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(combat_embarkation, "cp_cost", 0) or 0):
+                name_u = str(getattr(combat_embarkation, "name", "") or "").strip().upper()
+                if name_u not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    candidates = self._tau_kauyon_combat_embarkation_candidates(
+                        charging_unit=attacker_root,
+                        target_units=target_units,
+                    )
+                    if candidates:
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if (
+                                reaction.get("event") == "charge_declared"
+                                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                                and reaction.get("attacking_unit") is attacker_root
+                            ):
+                                already = True
+                                break
+                        if not already:
+                            payload = {
+                                "event": "charge_declared",
+                                "phase_name": "Charge phase",
+                                "stratagem": combat_embarkation.name,
+                                "cp_cost": combat_embarkation.cp_cost,
+                                "attacking_unit": attacker_root,
+                                "enemy_unit": attacker_root,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0].get("target_unit")
+                                payload["unit"] = candidates[0].get("target_unit")
+                                payload["transport_unit"] = candidates[0].get("transport_unit")
+                            queue_reaction = getattr(self, "_queue_reaction", None)
+                            if callable(queue_reaction):
+                                queue_reaction(payload)
+
+        photon_grenades = getattr(self, "get_by_name", lambda _name: None)("PHOTON GRENADES")
+        if photon_grenades is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(photon_grenades, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(photon_grenades, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_kauyon_photon_grenades_candidates(target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "charge_declared"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": photon_grenades.name,
+            "cp_cost": photon_grenades.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_kauyon_ftgg_observer_reactions(
+        self,
+        *,
+        observer_unit: Any = None,
+        target_unit: Any = None,
+        player: Any = None,
+    ) -> None:
+        if not self._is_tau_kauyon_detachment():
+            return
+        if player is not None and player is not self.player:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        observer_root = self._tau_root(observer_unit)
+        target_root = self._tau_root(target_unit)
+        if observer_root is None or target_root is None:
+            return
+        if not self._tau_owned_by_player(observer_root, self.player):
+            return
+        if self._tau_owned_by_player(target_root, self.player):
+            return
+        if not self._tau_on_battlefield(observer_root, require_targetable=True):
+            return
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        ftgg = getattr(army, "for_the_greater_good", None) if army is not None else None
+        if ftgg is None or not bool(getattr(ftgg, "observer_targets_unit", lambda *_args, **_kwargs: False)(observer_root, target_root)):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("COORDINATE TO ENGAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "ftgg_observer_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("observer_unit") is observer_root
+            ):
+                return
+        payload = {
+            "event": "ftgg_observer_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "observer_unit": observer_root,
+            "unit": observer_root,
+            "target_unit": target_root,
+            "enemy_unit": target_root,
+            "candidates": [observer_root],
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     def _cleanup_tau_kauyon_phase_end_effects(self, *, phase: Any = None) -> None:
         if not self._is_tau_kauyon_detachment():
             return
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name != "SHOOTING_PHASE":
-            return
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         if army is None:
             return
-        seen: set[str] = set()
-        for unit in list(getattr(army, "units", []) or []):
-            root = self._tau_root(unit)
-            if root is None:
-                continue
-            uid = self._tau_sort_key(root)
-            if uid and uid in seen:
-                continue
-            if uid:
-                seen.add(uid)
-            sr = getattr(root, "special_rules", None)
-            if not isinstance(sr, dict):
-                continue
-            exp = str(sr.get("tau_point_blank_ambush_expires_phase", "") or "").strip().upper()
-            if sr.get("tau_point_blank_ambush_active") is True and (not exp or exp == phase_name):
-                for key in (
-                    "tau_point_blank_ambush_active",
-                    "tau_point_blank_ambush_ap_bonus",
-                    "tau_point_blank_ambush_range",
-                    "tau_point_blank_ambush_expires_phase",
-                    "tau_point_blank_ambush_turn_owner",
-                    "tau_point_blank_ambush_turn",
-                    "tau_point_blank_ambush_source",
-                ):
-                    sr.pop(key, None)
+        if phase_name == "SHOOTING_PHASE":
+            seen: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._tau_root(unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                cleanup_specs = (
+                    (
+                        "tau_point_blank_ambush_expires_phase",
+                        (
+                            "tau_point_blank_ambush_active",
+                            "tau_point_blank_ambush_ap_bonus",
+                            "tau_point_blank_ambush_range",
+                            "tau_point_blank_ambush_expires_phase",
+                            "tau_point_blank_ambush_turn_owner",
+                            "tau_point_blank_ambush_turn",
+                            "tau_point_blank_ambush_source",
+                        ),
+                    ),
+                    (
+                        "tau_a_tempting_trap_expires_phase",
+                        (
+                            "tau_a_tempting_trap_active",
+                            "tau_a_tempting_trap_objective_id",
+                            "tau_a_tempting_trap_objective_name",
+                            "tau_a_tempting_trap_expires_phase",
+                            "tau_a_tempting_trap_turn_owner",
+                            "tau_a_tempting_trap_turn",
+                            "tau_a_tempting_trap_source",
+                        ),
+                    ),
+                    (
+                        "tau_coordinate_to_engage_expires_phase",
+                        (
+                            "tau_coordinate_to_engage_active",
+                            "tau_coordinate_to_engage_spotted_unit_id",
+                            "tau_coordinate_to_engage_ballistic_skill_bonus",
+                            "tau_coordinate_to_engage_ignores_cover",
+                            "tau_coordinate_to_engage_expires_phase",
+                            "tau_coordinate_to_engage_turn_owner",
+                            "tau_coordinate_to_engage_turn",
+                            "tau_coordinate_to_engage_source",
+                        ),
+                    ),
+                )
+                for expiry_key, keys in cleanup_specs:
+                    exp = str(sr.get(expiry_key, "") or "").strip().upper()
+                    if sr.get(keys[0]) is True and (not exp or exp == phase_name):
+                        for key in keys:
+                            sr.pop(key, None)
                 root.special_rules = sr
+            return
+
+        if phase_name != "CHARGE_PHASE":
+            return
+
+        for player_entry in list(getattr(getattr(self, "game", None), "players", []) or []):
+            get_player_army = getattr(player_entry, "get_army", None)
+            player_army = get_player_army() if callable(get_player_army) else getattr(player_entry, "army", None)
+            if player_army is None:
+                continue
+            seen: set[str] = set()
+            for unit in list(getattr(player_army, "units", []) or []):
+                root = self._tau_root(unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                modifiers = []
+                changed = False
+                for entry in list(sr.get("charge_roll_modifiers", []) or []):
+                    if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "tau_photon_grenades":
+                        changed = True
+                        continue
+                    modifiers.append(entry)
+                if changed:
+                    sr["charge_roll_modifiers"] = modifiers
+                sr.pop("tau_photon_grenades_source", None)
+                sr.pop("tau_photon_grenades_turn", None)
+                sr.pop("tau_photon_grenades_turn_owner", None)
+                root.special_rules = sr
+
 
     def _queue_tau_auxiliary_cadre_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_tau_auxiliary_cadre_detachment():
@@ -1818,6 +2410,14 @@ class TauEmpireStratagemMixin:
         if not self._is_tau_kauyon_detachment():
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "A TEMPTING TRAP":
+            return self._use_tau_a_tempting_trap(stratagem, **kwargs)
+        if name_u == "COORDINATE TO ENGAGE":
+            return self._use_tau_coordinate_to_engage(stratagem, **kwargs)
+        if name_u == "COMBAT EMBARKATION":
+            return self._use_tau_combat_embarkation(stratagem, **kwargs)
+        if name_u == "PHOTON GRENADES":
+            return self._use_tau_photon_grenades(stratagem, **kwargs)
         if name_u == "WALL OF MIRRORS":
             return self._use_tau_wall_of_mirrors(stratagem, **kwargs)
         if name_u == "POINT-BLANK AMBUSH":
@@ -2383,6 +2983,439 @@ class TauEmpireStratagemMixin:
         logger.info(
             "INFO: POINT-BLANK AMBUSH: %s improves AP by 1 against enemies within 9\" this phase.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_a_tempting_trap(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        objective = kwargs.get("objective") or kwargs.get("objective_marker") or kwargs.get("objective_id")
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: A TEMPTING TRAP: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: A TEMPTING TRAP: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: A TEMPTING TRAP: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_point_blank_ambush_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: A TEMPTING TRAP: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: A TEMPTING TRAP: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: A TEMPTING TRAP: target must be a T'AU EMPIRE unit")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: A TEMPTING TRAP: target has already been selected to shoot this phase")
+            return False
+
+        objective_candidates = self._tau_objective_candidates_not_in_opponent_deployment_zone()
+        trap_objective_id = self._tau_current_kauyon_trap_objective_id()
+        phase_label = "Shooting phase"
+        source_name = str(getattr(stratagem, "name", "") or "A TEMPTING TRAP").strip() or "A TEMPTING TRAP"
+
+        if not trap_objective_id and objective is None:
+            request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+            if not callable(request_decision):
+                logger.error("ERROR: A TEMPTING TRAP: decision queue unavailable")
+                return False
+            if not objective_candidates:
+                logger.error("ERROR: A TEMPTING TRAP: no eligible objective markers")
+                return False
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            unit_id = self._tau_sort_key(root)
+            candidate_objective_ids = [
+                self._tau_objective_sort_key(candidate)
+                for candidate in list(objective_candidates)
+                if self._tau_objective_sort_key(candidate)
+            ]
+            if not unit_id or not candidate_objective_ids:
+                logger.error("ERROR: A TEMPTING TRAP: source unit or objective candidates missing stable ids")
+                return False
+            if self._tau_pending_choose_quarry_request(
+                ability="tau_kauyon_tempting_trap_objective",
+                source_unit_id=unit_id,
+            ):
+                logger.error("ERROR: A TEMPTING TRAP: objective selection already queued")
+                return False
+            if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+                logger.error("ERROR: A TEMPTING TRAP: cannot be used in current state")
+                return False
+            if not self._tau_spend_cp(stratagem, target_unit=root):
+                return False
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: select one objective marker that is not in your opponent's deployment zone.",
+                player_id=getattr(self.player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        str(getattr(candidate, "name", "Objective") or "Objective"),
+                        payload={
+                            "unit_id": unit_id,
+                            "source_unit_id": unit_id,
+                            "objective_id": self._tau_objective_sort_key(candidate),
+                        },
+                    )
+                    for candidate in list(objective_candidates)
+                    if self._tau_objective_sort_key(candidate)
+                ],
+                context={
+                    "ability": "tau_kauyon_tempting_trap_objective",
+                    "ability_name": source_name,
+                    "phase": phase_label,
+                    "phase_name": phase_label,
+                    "unit_id": unit_id,
+                    "source_unit_id": unit_id,
+                    "candidate_objective_ids": list(candidate_objective_ids),
+                    "optional": False,
+                },
+            )
+            request_decision(request)
+            self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info("INFO: A TEMPTING TRAP: queued Trap objective selection for %s.", getattr(root, "name", "Unit"))
+            return True
+
+        selected_objective = self._tau_resolve_objective(trap_objective_id or objective)
+        if selected_objective is None:
+            logger.error("ERROR: A TEMPTING TRAP: Trap objective marker not found")
+            return False
+        if not trap_objective_id:
+            selected_objective_id = self._tau_objective_sort_key(selected_objective)
+            if selected_objective_id not in {self._tau_objective_sort_key(candidate) for candidate in list(objective_candidates)}:
+                logger.error("ERROR: A TEMPTING TRAP: selected objective is not eligible")
+                return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name=phase_label):
+            logger.error("ERROR: A TEMPTING TRAP: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self.tau_kauyon_apply_tempting_trap_selection(root, selected_objective, source_name=source_name):
+            logger.error("ERROR: A TEMPTING TRAP: failed to apply Trap objective")
+            return False
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: A TEMPTING TRAP: %s gains +1 to wound with ranged attacks against enemies within range of %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(selected_objective, "name", "Objective"),
+        )
+        return True
+
+    def _use_tau_coordinate_to_engage(self, stratagem: Any, **kwargs) -> bool:
+        observer_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("observer_unit")
+        target_unit = kwargs.get("enemy_unit") or kwargs.get("spotted_unit") or kwargs.get("target_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (observer_unit is None or target_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "COORDINATE TO ENGAGE":
+                    continue
+                if observer_unit is None:
+                    observer_unit = reaction.get("observer_unit") or reaction.get("unit") or reaction.get("target_unit")
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if observer_unit is None and len(candidates) == 1:
+            observer_unit = candidates[0]
+        if observer_unit is None:
+            logger.error("ERROR: COORDINATE TO ENGAGE: no observer unit provided")
+            return False
+
+        root = self._tau_root(observer_unit)
+        spotted_root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COORDINATE TO ENGAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: COORDINATE TO ENGAGE: not your Shooting phase")
+            return False
+        if candidates and not self._tau_unit_in_candidates(root, candidates):
+            logger.error("ERROR: COORDINATE TO ENGAGE: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: COORDINATE TO ENGAGE: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: COORDINATE TO ENGAGE: target must be a T'AU EMPIRE unit")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: COORDINATE TO ENGAGE: target has already been selected to shoot this phase")
+            return False
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        ftgg = getattr(army, "for_the_greater_good", None) if army is not None else None
+        if ftgg is None or not bool(getattr(ftgg, "is_observer", lambda *_args, **_kwargs: False)(root)):
+            logger.error("ERROR: COORDINATE TO ENGAGE: target is not currently an Observer unit")
+            return False
+        spotted_unit_id = str(getattr(ftgg, "get_observer_target_id", lambda *_args, **_kwargs: "")(root) or "")
+        if not spotted_unit_id:
+            logger.error("ERROR: COORDINATE TO ENGAGE: Observer has no Spotted unit")
+            return False
+        if spotted_root is not None and self._tau_sort_key(spotted_root) != spotted_unit_id:
+            logger.error("ERROR: COORDINATE TO ENGAGE: selected enemy is not the unit's Spotted unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: COORDINATE TO ENGAGE: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_coordinate_to_engage_active"] = True
+        sr["tau_coordinate_to_engage_spotted_unit_id"] = spotted_unit_id
+        sr["tau_coordinate_to_engage_ballistic_skill_bonus"] = 1
+        sr["tau_coordinate_to_engage_ignores_cover"] = bool(self._tau_has_any_keyword(root, "MARKERLIGHT"))
+        sr["tau_coordinate_to_engage_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_coordinate_to_engage_turn_owner"] = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        sr["tau_coordinate_to_engage_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["tau_coordinate_to_engage_source"] = str(getattr(stratagem, "name", "") or "COORDINATE TO ENGAGE")
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COORDINATE TO ENGAGE: %s improves BS by 1 against its Spotted unit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_combat_embarkation(self, stratagem: Any, **kwargs) -> bool:
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = [dict(candidate or {}) for candidate in list(kwargs.get("candidates") or []) if isinstance(candidate, dict)]
+        if (charging_unit is None or not target_units or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "COMBAT EMBARKATION":
+                    continue
+                if charging_unit is None:
+                    charging_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = [
+                        dict(candidate or {})
+                        for candidate in list(reaction.get("candidates") or [])
+                        if isinstance(candidate, dict)
+                    ]
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if charging_unit is None:
+            logger.error("ERROR: COMBAT EMBARKATION: charging unit not provided")
+            return False
+
+        attacker_root = self._tau_root(charging_unit)
+        if attacker_root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "charge phase":
+            logger.error("ERROR: COMBAT EMBARKATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COMBAT EMBARKATION: not opponent's Charge phase")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: COMBAT EMBARKATION: charging unit must be enemy")
+            return False
+
+        candidate_specs = candidates or self._tau_kauyon_combat_embarkation_candidates(
+            charging_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidate_specs:
+            logger.error("ERROR: COMBAT EMBARKATION: no eligible embarkation targets")
+            return False
+        if not stratagem.can_use(self.player, self.game, phase_name="Charge phase", attacking_unit=attacker_root, target_units=list(target_units or [])):
+            logger.error("ERROR: COMBAT EMBARKATION: cannot be used in current state")
+            return False
+
+        request_decision = getattr(self.game, "request_decision", None) if self.game is not None else None
+        if not callable(request_decision):
+            logger.error("ERROR: COMBAT EMBARKATION: decision queue unavailable")
+            return False
+        charging_unit_id = self._tau_sort_key(attacker_root)
+        target_unit_ids = [
+            self._tau_sort_key(unit)
+            for unit in self._tau_resolve_unit_list(target_units)
+            if self._tau_sort_key(unit)
+        ]
+        if self._tau_pending_choose_quarry_request(
+            ability="emergency_combat_embarkation",
+            charging_unit_id=charging_unit_id,
+        ):
+            logger.error("ERROR: COMBAT EMBARKATION: embarkation decision already queued")
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if not self._tau_spend_cp(stratagem, target_unit=None):
+            return False
+        self._tau_remove_pending_charge_roll_request(attacker_root)
+        options = []
+        for candidate in list(candidate_specs):
+            transport_id = str(candidate.get("transport_id", "") or "")
+            target_unit_id = str(candidate.get("target_unit_id", "") or "")
+            if not transport_id or not target_unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(candidate.get("label", "") or "Combat Embarkation"),
+                    payload={
+                        "transport_id": transport_id,
+                        "target_unit_id": target_unit_id,
+                        "spec": dict(candidate.get("spec", {}) or {}),
+                    },
+                )
+            )
+        if not options:
+            logger.error("ERROR: COMBAT EMBARKATION: embarkation options could not be constructed")
+            return False
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Combat Embarkation: select one declared charge target to embark.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "ability": "emergency_combat_embarkation",
+                "ability_name": "Combat Embarkation",
+                "phase": "Opponent Charge phase",
+                "charging_unit_id": charging_unit_id,
+                "target_unit_ids": list(target_unit_ids),
+                "out_of_turn": False,
+                "count_as_charged": True,
+                "optional": False,
+            },
+        )
+        request_decision(request)
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: COMBAT EMBARKATION: queued embarkation choice against %s.", getattr(attacker_root, "name", "Unit"))
+        return True
+
+    def _use_tau_photon_grenades(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or charging_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PHOTON GRENADES":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if charging_unit is None:
+                    charging_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: PHOTON GRENADES: no target unit provided")
+            return False
+        if charging_unit is None:
+            logger.error("ERROR: PHOTON GRENADES: charging unit not provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        attacker_root = self._tau_root(charging_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = self._tau_normalized_phase_name(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "charge phase":
+            logger.error("ERROR: PHOTON GRENADES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: PHOTON GRENADES: not opponent's Charge phase")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: PHOTON GRENADES: charging unit must be enemy")
+            return False
+
+        eligible = candidates or self._tau_kauyon_photon_grenades_candidates(target_units=target_units)
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PHOTON GRENADES: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: PHOTON GRENADES: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._tau_has_any_keyword(root, "GRENADES"):
+            logger.error("ERROR: PHOTON GRENADES: target must have the GRENADES keyword")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: PHOTON GRENADES: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "PHOTON GRENADES").strip() or "PHOTON GRENADES"
+        force_test = getattr(attacker_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(current_turn=current_turn, source=source_name)
+
+        attacker_sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(attacker_sr, dict):
+            attacker_sr = {}
+        modifiers = [
+            entry
+            for entry in list(attacker_sr.get("charge_roll_modifiers", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "tau_photon_grenades")
+        ]
+        modifiers.append(
+            {
+                "value": -2,
+                "source": source_name,
+                "source_key": "tau_photon_grenades",
+                "tag": "stratagem:tau_photon_grenades",
+            }
+        )
+        attacker_sr["charge_roll_modifiers"] = modifiers
+        attacker_sr["tau_photon_grenades_source"] = source_name
+        attacker_sr["tau_photon_grenades_turn"] = current_turn
+        attacker_sr["tau_photon_grenades_turn_owner"] = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        attacker_root.special_rules = attacker_sr
+        self._tau_apply_pending_charge_roll_modifier(attacker_root, value=-2, source=source_name)
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PHOTON GRENADES: %s takes a Battle-shock test and suffers -2 to Charge rolls this phase.",
+            getattr(attacker_root, "name", "Unit"),
         )
         return True
 
