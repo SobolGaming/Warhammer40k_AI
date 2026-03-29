@@ -7166,6 +7166,19 @@ _GENESTEALER_CULTS_XENOCREED_CONGREGATION_BY_NAME = {
 }
 
 _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009130002": EnhancementToolDescriptor(
+        enhancement_id="000009130002",
+        name="Ignis Judicium",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="grant_bearer_ranged_weapon_keywords",
+        effect_params={
+            "attack_type": "ranged",
+            "weapon_keywords": ("DEVASTATING WOUNDS", "MELTA 1", "PRECISION"),
+            "melta_bonus": 1,
+        },
+    ),
     "000009130003": EnhancementToolDescriptor(
         enhancement_id="000009130003",
         name="Liber Heresius",
@@ -7177,6 +7190,18 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, En
             "max_units": 3,
             "allow_strategic_reserves": True,
             "redeploy_filters": ("AGENTS OF THE IMPERIUM",),
+        },
+    ),
+    "000009130005": EnhancementToolDescriptor(
+        enhancement_id="000009130005",
+        name="Witch Hunter",
+        timing="while_bearer_is_leading_and_bearer_unit_targets_psyker_unit",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_reroll_hit_vs_keyword_while_leading",
+        effect_params={
+            "required_target_keywords": ("PSYKER",),
+            "requires_bearer_leading": True,
         },
     ),
 }

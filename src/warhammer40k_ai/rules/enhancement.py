@@ -2101,11 +2101,23 @@ class Enhancement:
             is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
         except Exception:
             is_veiled_blade_elimination_force = False
+        is_ordo_hereticus_purgation_force_fn = (
+            getattr(ia_mgr, "is_ordo_hereticus_purgation_force", None) if ia_mgr is not None else None
+        )
+        is_ordo_hereticus_purgation_force = bool(
+            callable(is_ordo_hereticus_purgation_force_fn) and is_ordo_hereticus_purgation_force_fn()
+        )
         is_ordo_malleus_daemon_hunters_fn = (
             getattr(ia_mgr, "is_ordo_malleus_daemon_hunters", None) if ia_mgr is not None else None
         )
         is_ordo_malleus_daemon_hunters = bool(
             callable(is_ordo_malleus_daemon_hunters_fn) and is_ordo_malleus_daemon_hunters_fn()
+        )
+        is_ordo_xenos_alien_hunters_fn = (
+            getattr(ia_mgr, "is_ordo_xenos_alien_hunters", None) if ia_mgr is not None else None
+        )
+        is_ordo_xenos_alien_hunters = bool(
+            callable(is_ordo_xenos_alien_hunters_fn) and is_ordo_xenos_alien_hunters_fn()
         )
         is_imperialis_fleet_fn = getattr(ia_mgr, "is_imperialis_fleet", None) if ia_mgr is not None else None
         is_imperialis_fleet = bool(callable(is_imperialis_fleet_fn) and is_imperialis_fleet_fn())
@@ -4237,6 +4249,49 @@ class Enhancement:
             ).strip().lower()
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "ignis judicium" or enh_id == "000009130002":
+            if not is_ordo_hereticus_purgation_force:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Ignis Judicium").strip() or "Ignis Judicium"
+            melta_bonus = int(max(1, _coerce_int(params.get("melta_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_ignis_judicium"] = True
+            unit.special_rules["enhancement_ignis_judicium_source"] = source_name
+            _append_enhancement_bearer_weapon_keyword_rule(
+                unit,
+                attack_type="ranged",
+                keywords=("DEVASTATING WOUNDS", f"MELTA {melta_bonus}", "PRECISION"),
+                source=source_name,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ignis_judicium_bearer_model_id"] = bearer_id
+
+        if name == "witch hunter" or enh_id == "000009130005":
+            if not is_ordo_hereticus_purgation_force:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Witch Hunter").strip() or "Witch Hunter"
+            required_keywords: list[str] = []
+            for value in list(params.get("required_target_keywords", ("PSYKER",)) or ("PSYKER",)):
+                token = str(value or "").strip().upper()
+                if token and token not in required_keywords:
+                    required_keywords.append(token)
+            if not required_keywords:
+                required_keywords = ["PSYKER"]
+            unit.special_rules["enhancement_witch_hunter"] = True
+            unit.special_rules["enhancement_witch_hunter_source"] = source_name
+            unit.special_rules["enhancement_witch_hunter_required_target_keywords"] = list(required_keywords)
+            unit.special_rules["enhancement_witch_hunter_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_witch_hunter_bearer_model_id"] = bearer_id
 
         if name == "gift of the prescient" or enh_id == "000009134004":
             if not is_ordo_malleus_daemon_hunters:

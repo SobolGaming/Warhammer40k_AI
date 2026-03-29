@@ -10952,6 +10952,8 @@ class WargearProfile:
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         bonus_precision = False
+        bonus_melta = 0
+        bonus_melta_source = ""
         bonus_pistol = False
         bonus_hazardous = False
         bonus_hazardous_label = ""
@@ -11164,6 +11166,7 @@ class WargearProfile:
             nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
+            nonlocal bonus_melta, bonus_melta_source
             nonlocal bonus_pistol, bonus_hazardous, bonus_hazardous_label, bonus_blast, bonus_blast_label
             if not isinstance(bonus, dict):
                 return
@@ -11179,6 +11182,10 @@ class WargearProfile:
                 bonus_lethal = True
             if bool(bonus.get("precision")):
                 bonus_precision = True
+            bonus_melta_value = int(bonus.get("melta_bonus", 0) or 0)
+            if bonus_melta_value > bonus_melta:
+                bonus_melta = int(bonus_melta_value)
+                bonus_melta_source = str(bonus.get("melta_source", "") or "").strip()
             if bool(bonus.get("pistol")):
                 bonus_pistol = True
             if bool(bonus.get("hazardous")):
@@ -11299,6 +11306,10 @@ class WargearProfile:
                 attack_instance["bonus_anti_specs"] = bonus_anti_specs
             if bonus_precision:
                 attack_instance["bonus_precision"] = True
+            if bonus_melta > 0:
+                attack_instance["bonus_melta"] = int(bonus_melta)
+                if bonus_melta_source:
+                    attack_instance["bonus_melta_source"] = bonus_melta_source
             if bonus_pistol:
                 attack_instance["bonus_pistol"] = True
             if bonus_hazardous:
@@ -11323,6 +11334,8 @@ class WargearProfile:
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
             bonus_precision = False
+            bonus_melta = 0
+            bonus_melta_source = ""
             bonus_pistol = False
             bonus_hazardous = False
             bonus_hazardous_label = ""
@@ -14354,6 +14367,25 @@ class WargearProfile:
                     reroll_hit_values.add(1)
                     source_name = str(source or "Destroy the Daemonic").strip() or "Destroy the Daemonic"
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
+        # Imperial Agents: Ordo Hereticus Purgation Force (Witch Hunter).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            reroll_fn = getattr(ia_mgr, "witch_hunter_hit_reroll", None) if ia_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    attacker_unit=unit,
+                    target_unit=target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Witch Hunter").strip() or "Witch Hunter"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         except Exception:
             pass
         mark_of_legend_hit_reason = ""
@@ -25481,6 +25513,8 @@ class WargearProfile:
             fusion_melta_source = ""
 
         if attack_instance.get('below_half_distance', False):
+            bonus_melta = int(attack_instance.get("bonus_melta", 0) or 0)
+            bonus_melta_source = str(attack_instance.get("bonus_melta_source", "") or "").strip()
             if fusion_melta_bonus > 0:
                 damage_mods.append(
                     Modifier(
@@ -25492,15 +25526,33 @@ class WargearProfile:
                 damage_result['special_effects'].append(
                     f"{fusion_melta_source} [MELTA {int(fusion_melta_bonus)}] (+{int(fusion_melta_bonus)}D)"
                 )
-            elif self.is_melta():
-                # Support Melta N / Melta D3 / Melta D6+X, etc.
-                try:
-                    melta = self.get_melta_bonus()
-                    melta_bonus = int(melta.resolve())
-                    damage_mods.append(Modifier(ModifierOp.ADD, melta_bonus, source="weapon:melta"))
-                    damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
-                except Exception as exc:
-                    logger.warning(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
+            else:
+                native_melta_bonus = 0
+                native_melta_expr = None
+                if self.is_melta():
+                    try:
+                        native_melta_expr = self.get_melta_bonus()
+                        native_melta_bonus = int(native_melta_expr.resolve())
+                    except Exception as exc:
+                        native_melta_bonus = 0
+                        native_melta_expr = None
+                        logger.warning(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
+                applied_melta_bonus = int(native_melta_bonus)
+                if native_melta_expr is not None and applied_melta_bonus > 0:
+                    damage_result['special_effects'].append(f"Melta +{applied_melta_bonus} ({native_melta_expr})")
+                if bonus_melta > applied_melta_bonus:
+                    applied_melta_bonus = int(bonus_melta)
+                    if native_melta_expr is not None:
+                        effects = list(damage_result.get('special_effects', []) or [])
+                        if effects and str(effects[-1]).startswith("Melta +"):
+                            effects.pop()
+                            damage_result['special_effects'] = effects
+                    source_name = bonus_melta_source or "Ability"
+                    damage_result['special_effects'].append(
+                        f"{source_name} [MELTA {int(applied_melta_bonus)}] (+{int(applied_melta_bonus)}D)"
+                    )
+                if applied_melta_bonus > 0:
+                    damage_mods.append(Modifier(ModifierOp.ADD, int(applied_melta_bonus), source="weapon:melta"))
 
         # Enhancement: improve melee weapons' Damage by X (bearer enhancement).
         try:

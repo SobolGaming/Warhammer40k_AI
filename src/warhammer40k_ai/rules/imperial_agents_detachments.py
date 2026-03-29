@@ -22,6 +22,7 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
     _DIGITAL_WEAPONS_ABILITY_KEY = "imperialis_fleet_digital_weapons"
     _ORDO_HERETICUS_PURGATION_FORCE_DETACHMENT_NAME = "Ordo Hereticus Purgation Force"
     _ROOT_OUT_HERESY_NAME = "Root out Heresy"
+    _WITCH_HUNTER_NAME = "Witch Hunter"
     _ROOT_OUT_HERESY_MODEL_KEYWORDS = (
         "ADEPTUS ARBITES",
         "INQUISITOR",
@@ -1785,6 +1786,48 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._unit_has_keyword(target_root, "DAEMON"):
             return False, ""
         return True, self._DESTROY_THE_DAEMONIC_NAME
+
+    def witch_hunter_hit_reroll(
+        self,
+        model,
+        *,
+        attacker_unit=None,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del weapon_profile, attack_instance
+        if not self.is_ordo_hereticus_purgation_force():
+            return False, ""
+        source_root = self._unit_root(attacker_unit if attacker_unit is not None else getattr(model, "parent_unit", None))
+        if source_root is None:
+            return False, ""
+        if model is None or not self._model_in_army(model) or not self._unit_in_army(source_root):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is not None and not self._unit_is_enemy_of_player(target_root, owner):
+            return False, ""
+        for member in self._attached_members(source_root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_witch_hunter", False)):
+                continue
+            if bool(sr.get("enhancement_witch_hunter_requires_bearer_leading", True)) and member is source_root:
+                continue
+            if not self._enhancement_bearer_alive(member):
+                continue
+            required_keywords = [
+                str(value or "").strip().upper()
+                for value in list(sr.get("enhancement_witch_hunter_required_target_keywords", ("PSYKER",)) or ("PSYKER",))
+                if str(value or "").strip()
+            ]
+            if required_keywords and not self._unit_has_any_keyword(target_root, tuple(required_keywords)):
+                continue
+            source_name = str(sr.get("enhancement_witch_hunter_source", "") or self._WITCH_HUNTER_NAME).strip()
+            return True, source_name or self._WITCH_HUNTER_NAME
+        return False, ""
 
     def _iter_unique_army_roots(self) -> list:
         if self.army is None:

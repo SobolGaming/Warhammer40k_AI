@@ -5146,6 +5146,8 @@ class PositioningMixin:
             "hazardous": False,
             "blast": False,
             "rapid_fire_bonus": 0,
+            "melta_bonus": 0,
+            "melta_source": "",
             "sustained_hits_value": 0,
             "sustained_hits_dice": "",
             "devastating_wounds": False,
@@ -5190,6 +5192,13 @@ class PositioningMixin:
                     rapid_fire_bonus = int(match.group(1))
                     bonuses["rapid_fire_bonus"] = max(int(bonuses["rapid_fire_bonus"] or 0), rapid_fire_bonus)
                     sources.append(f"Rapid Fire {rapid_fire_bonus} ({source})")
+            elif kw.startswith("MELTA"):
+                match = re.search(r"MELTA\s+(\d+)", kw)
+                melta_bonus = int(match.group(1)) if match else 1
+                if melta_bonus > int(bonuses["melta_bonus"] or 0):
+                    bonuses["melta_bonus"] = int(melta_bonus)
+                    bonuses["melta_source"] = source
+                sources.append(f"Melta {melta_bonus} ({source})")
             elif kw == "LETHAL HITS":
                 bonuses["lethal_hits"] = True
                 sources.append(f"Lethal Hits ({source})")
@@ -5241,6 +5250,7 @@ class PositioningMixin:
             or bonuses["hazardous"]
             or bonuses["blast"]
             or int(bonuses["rapid_fire_bonus"] or 0) > 0
+            or int(bonuses["melta_bonus"] or 0) > 0
             or bonuses["devastating_wounds"]
             or bonuses["twin_linked"]
             or bonuses["heavy"]
