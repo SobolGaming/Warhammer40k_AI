@@ -492,6 +492,46 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         if not bool(valid):
             return (str(reason or "Informant Network selection is invalid."),)
         return ()
+    if ability_key == "imperialis_fleet_clandestine_operation_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Clandestine Operation requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Clandestine Operation requires an army.",)
+        mgr = getattr(army, "imperial_agents_detachments", None)
+        if mgr is None or not getattr(mgr, "is_imperialis_fleet", lambda: False)():
+            return ("Clandestine Operation requires the Imperialis Fleet detachment.",)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Clandestine Operation source unit was not found.",)
+        validate_fn = getattr(mgr, "clandestine_operation_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Clandestine Operation validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game, player=player, source_unit=source_unit)
+        if not bool(valid):
+            return (str(reason or "Clandestine Operation selection is invalid."),)
+        return ()
+    if ability_key == "imperialis_fleet_combat_landers_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Combat Landers requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Combat Landers requires an army.",)
+        mgr = getattr(army, "imperial_agents_detachments", None)
+        if mgr is None or not getattr(mgr, "is_imperialis_fleet", lambda: False)():
+            return ("Combat Landers requires the Imperialis Fleet detachment.",)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Combat Landers source unit was not found.",)
+        validate_fn = getattr(mgr, "combat_landers_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Combat Landers validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game, player=player, source_unit=source_unit)
+        if not bool(valid):
+            return (str(reason or "Combat Landers selection is invalid."),)
+        return ()
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -926,6 +966,80 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
             )
         else:
             _log_action_for_players(game, player, "Informant Network: no units selected.")
+        return units
+    if ability_key == "imperialis_fleet_clandestine_operation_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Clandestine Operation player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Clandestine Operation army not found.")
+        mgr = getattr(army, "imperial_agents_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Clandestine Operation detachment manager not found.")
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            raise RuntimeError("Clandestine Operation source unit not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_clandestine_operation_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Clandestine Operation apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game, player=player, source_unit=source_unit) or [])
+        labels = []
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is None:
+                continue
+            labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            units.append(unit)
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                "Clandestine Operation: " + ", ".join(labels) + " gain Infiltrators for this battle.",
+            )
+        else:
+            _log_action_for_players(game, player, "Clandestine Operation: no units selected.")
+        return units
+    if ability_key == "imperialis_fleet_combat_landers_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Combat Landers player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Combat Landers army not found.")
+        mgr = getattr(army, "imperial_agents_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Combat Landers detachment manager not found.")
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            raise RuntimeError("Combat Landers source unit not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_combat_landers_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Combat Landers apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game, player=player, source_unit=source_unit) or [])
+        labels = []
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is None:
+                continue
+            labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            units.append(unit)
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                "Combat Landers: " + ", ".join(labels) + " gain Deep Strike for this battle.",
+            )
+        else:
+            _log_action_for_players(game, player, "Combat Landers: no units selected.")
         return units
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)
@@ -7645,6 +7759,31 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         for unit_id in selected_ids:
             if unit_id not in allowed_ids:
                 return ("Student of Kauyon selection includes an ineligible unit.",)
+        return ()
+    if ability == "imperialis_fleet_digital_weapons":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Digital Weapons source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "imperial_agents_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_imperialis_fleet", lambda: False)()):
+            return ("Digital Weapons requires an Imperial Agents Imperialis Fleet army.",)
+        target_unit_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+        if not target_unit_id:
+            return ("Digital Weapons requires target_unit_id.",)
+        target_model_id = str(payload.get("target_model_id", "") or "").strip()
+        candidates = list(getattr(mgr, "digital_weapons_candidate_entries")(source_unit, game=game) or [])
+        allowed = {
+            (str(entry.get("target_unit_id", "") or "").strip(), str(entry.get("target_model_id", "") or "").strip())
+            for entry in list(candidates or [])
+        }
+        if (target_unit_id, target_model_id) not in allowed:
+            return ("Digital Weapons target is not an eligible candidate.",)
+        if resolve_unit(game, target_unit_id) is None:
+            return ("Digital Weapons target unit was not found.",)
+        if target_model_id and resolve_model(game, target_model_id) is None:
+            return ("Digital Weapons target model was not found.",)
         return ()
     if ability == "naturalised_camouflage":
         payload = _option_payload(request, result)
@@ -19600,6 +19739,53 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Student of Kauyon: {source_name} selected none.",
             )
         return selected_roots
+    if ability == "imperialis_fleet_digital_weapons":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "imperial_agents_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_model = resolve_model(game, payload.get("target_model_id") or ctx.get("target_model_id"))
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        ability_name = str(ctx.get("ability_name", "") or "Digital Weapons").strip() or "Digital Weapons"
+        apply_mortal = getattr(source_unit, "_apply_mortal_wounds_to_unit", None)
+        if callable(apply_mortal):
+            apply_mortal(
+                target_unit,
+                1,
+                game_map=getattr(game, "map", None),
+                initial_model=target_model,
+                allow_initial_model_outside_candidates=True,
+            )
+        target_name = str(getattr(target_unit, "name", "Unit") or "Unit")
+        if target_model is not None:
+            model_name = str(getattr(target_model, "name", "Character") or "Character")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {model_name} in {target_name} suffers 1 mortal wound.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {target_name} suffers 1 mortal wound.",
+            )
+        advance_fn = getattr(mgr, "advance_digital_weapons_state", None)
+        if callable(advance_fn):
+            advance_fn(source_unit, game=game, player=player)
+        return target_unit
     if ability == "naturalised_camouflage":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

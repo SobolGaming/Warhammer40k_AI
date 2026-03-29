@@ -14,6 +14,12 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
     _AT_ALL_COSTS_ABILITY_KEY = "imperialis_fleet_at_all_costs"
     _AT_ALL_COSTS_MODE_ELIMINATE = "eliminate"
     _AT_ALL_COSTS_MODE_ACQUIRE = "acquire"
+    _CLANDESTINE_OPERATION_NAME = "Clandestine Operation"
+    _CLANDESTINE_OPERATION_ABILITY_KEY = "imperialis_fleet_clandestine_operation_selection"
+    _COMBAT_LANDERS_NAME = "Combat Landers"
+    _COMBAT_LANDERS_ABILITY_KEY = "imperialis_fleet_combat_landers_selection"
+    _DIGITAL_WEAPONS_NAME = "Digital Weapons"
+    _DIGITAL_WEAPONS_ABILITY_KEY = "imperialis_fleet_digital_weapons"
     _ORDO_HERETICUS_PURGATION_FORCE_DETACHMENT_NAME = "Ordo Hereticus Purgation Force"
     _ROOT_OUT_HERESY_NAME = "Root out Heresy"
     _ROOT_OUT_HERESY_MODEL_KEYWORDS = (
@@ -78,6 +84,20 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
     @staticmethod
     def _entity_id(entity) -> str:
         return str(get_entity_id(entity) or "")
+
+    @staticmethod
+    def _coerce_int(value, *, default: int = 0) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if re.fullmatch(r"[+-]?\d+", text):
+                return int(text)
+        return int(default)
 
     def is_imperialis_fleet(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -184,6 +204,85 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
                     return True
         source_unit = self._unit_root(getattr(model, "parent_unit", None))
         return self._unit_has_any_keyword(source_unit, keywords)
+
+    @staticmethod
+    def _enhancement_bearer_alive(unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            return get_bearer() is not None
+        return False
+
+    @staticmethod
+    def _enhancement_bearer_model(unit):
+        if unit is None:
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return bearer
+        sr = getattr(unit, "special_rules", None)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    return model
+        return None
+
+    def _unit_name_matches_any_pattern(self, unit, patterns) -> bool:
+        normalized_name = self._normalize_name(str(getattr(unit, "name", "") or ""))
+        if not normalized_name:
+            return False
+        for value in list(patterns or ()):
+            pattern = self._normalize_name(str(value or ""))
+            if pattern and pattern in normalized_name:
+                return True
+        return False
+
+    def _unit_has_all_keywords(self, unit, keywords) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        for keyword in list(keywords or ()):
+            if not self._unit_has_keyword(root, str(keyword)):
+                return False
+        return True
+
+    def _unit_available_for_prebattle_selection(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        return True
+
+    def _attached_members(self, unit) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: self._entity_id(member))
+        return members
 
     def _unit_alive_model_count(self, unit) -> int:
         root = self._unit_root(unit)
@@ -668,6 +767,703 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._deathwatch_mission_tactics_recipient(attacker_unit):
             return False, ""
         return True, f"{self._DEATHWATCH_MISSION_TACTICS_NAME} ({self.deathwatch_mission_tactic_label(self._DEATHWATCH_MISSION_TACTIC_PURGATUS)})"
+
+    def _imperialis_fleet_source_units(self, *, flag_key: str) -> list:
+        if not self.is_imperialis_fleet() or self.army is None:
+            return []
+        sources = {}
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            if not self._enhancement_bearer_alive(unit):
+                continue
+            unit_id = self._entity_id(unit)
+            if not unit_id or unit_id in sources:
+                continue
+            sources[unit_id] = unit
+        return [sources[key] for key in sorted(sources.keys())]
+
+    def _imperialis_fleet_selected_units_pending_request(self, game, *, ability_key: str, source_unit_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "SELECT_REALM_OF_CHAOS_UNITS":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != str(ability_key or "").strip().lower():
+                continue
+            if str(ctx.get("source_unit_id", "") or "").strip() != str(source_unit_id or "").strip():
+                continue
+            return True
+        return False
+
+    def _imperialis_fleet_selected_units_candidates(
+        self,
+        source_unit,
+        *,
+        required_keywords,
+        excluded_unit_name_patterns=(),
+    ) -> list:
+        if not self.is_imperialis_fleet():
+            return []
+        if source_unit is None or not self._unit_in_army(source_unit):
+            return []
+        if not self._enhancement_bearer_alive(source_unit):
+            return []
+
+        candidates = []
+        for root in self._iter_unique_army_roots():
+            if not self._unit_available_for_prebattle_selection(root):
+                continue
+            if not self._unit_has_all_keywords(root, required_keywords):
+                continue
+            if excluded_unit_name_patterns and self._unit_name_matches_any_pattern(root, excluded_unit_name_patterns):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: self._entity_id(unit))
+        return candidates
+
+    def clandestine_operation_selectable_units(self, source_unit, *, game=None) -> list:
+        del game
+        sr = getattr(source_unit, "special_rules", None)
+        required_keywords = list(
+            sr.get(
+                "enhancement_imperialis_fleet_clandestine_operation_required_keywords",
+                ("AGENTS OF THE IMPERIUM", "INFANTRY"),
+            )
+            if isinstance(sr, dict)
+            else ("AGENTS OF THE IMPERIUM", "INFANTRY")
+        )
+        excluded = list(
+            sr.get(
+                "enhancement_imperialis_fleet_clandestine_operation_excluded_unit_name_patterns",
+                ("GREY KNIGHTS TERMINATOR SQUAD",),
+            )
+            if isinstance(sr, dict)
+            else ("GREY KNIGHTS TERMINATOR SQUAD",)
+        )
+        return self._imperialis_fleet_selected_units_candidates(
+            source_unit,
+            required_keywords=required_keywords,
+            excluded_unit_name_patterns=excluded,
+        )
+
+    def combat_landers_selectable_units(self, source_unit, *, game=None) -> list:
+        del game
+        sr = getattr(source_unit, "special_rules", None)
+        required_keywords = list(
+            sr.get(
+                "enhancement_imperialis_fleet_combat_landers_required_keywords",
+                ("VOIDFARERS",),
+            )
+            if isinstance(sr, dict)
+            else ("VOIDFARERS",)
+        )
+        return self._imperialis_fleet_selected_units_candidates(
+            source_unit,
+            required_keywords=required_keywords,
+        )
+
+    def _queue_imperialis_fleet_selected_units_request(
+        self,
+        *,
+        game=None,
+        player=None,
+        source_unit=None,
+        ability_key: str,
+        ability_name: str,
+        max_units: int,
+        candidates: list,
+        subtitle: str,
+        instruction: str,
+        resolved_key: str,
+        selected_ids_key: str,
+    ) -> None:
+        if game is None or source_unit is None or self.army is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        source_unit_id = self._entity_id(source_unit)
+        if not source_unit_id:
+            return
+        if self._imperialis_fleet_selected_units_pending_request(
+            game,
+            ability_key=ability_key,
+            source_unit_id=source_unit_id,
+        ):
+            return
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        if int(max_units or 0) <= 0 or not list(candidates or []):
+            source_sr[resolved_key] = True
+            source_sr[selected_ids_key] = []
+            source_unit.special_rules = source_sr
+            return
+
+        candidate_ids = [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)]
+        if not candidate_ids:
+            source_sr[resolved_key] = True
+            source_sr[selected_ids_key] = []
+            source_unit.special_rules = source_sr
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            f"{ability_name}: select up to {int(max_units)} eligible unit(s).",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "ability": str(ability_key or "").strip().lower(),
+                "ability_name": ability_name,
+                "army_id": self._entity_id(self.army),
+                "source_unit_id": source_unit_id,
+                "unit_id": source_unit_id,
+                "max_units": int(max_units),
+                "allowed_unit_ids": list(candidate_ids),
+                "title": ability_name,
+                "subtitle": subtitle,
+                "instruction": instruction,
+                "skip_label": "None (do not select units)",
+                "optional": True,
+            },
+        )
+        request_fn = getattr(game, "request_decision", None)
+        if callable(request_fn):
+            request_fn(request)
+
+    def clandestine_operation_selection_is_valid(self, unit_ids, *, game=None, player=None, source_unit=None) -> tuple[bool, str]:
+        del game
+        if not self.is_imperialis_fleet():
+            return False, "Clandestine Operation requires the Imperialis Fleet detachment."
+        if source_unit is None or not self._unit_in_army(source_unit):
+            return False, "Clandestine Operation source unit was not found."
+        if player is not None and player is not getattr(self.army, "player", None):
+            return False, "Clandestine Operation can only be selected by the controlling player."
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_imperialis_fleet_clandestine_operation")):
+            return False, "Clandestine Operation source unit does not have this enhancement."
+        if bool(source_sr.get("enhancement_imperialis_fleet_clandestine_operation_resolved")):
+            return False, "Clandestine Operation has already resolved."
+        if not isinstance(unit_ids, list):
+            return False, "Clandestine Operation selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_units = int(source_sr.get("enhancement_imperialis_fleet_clandestine_operation_max_units", 3) or 3)
+        if len(selected) > max_units:
+            return False, f"Clandestine Operation can select up to {int(max_units)} units."
+        candidates_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self.clandestine_operation_selectable_units(source_unit) or [])
+            if self._entity_id(unit)
+        }
+        for unit_id in selected:
+            if unit_id not in candidates_by_id:
+                return False, "Clandestine Operation selection contains an ineligible unit."
+        return True, ""
+
+    def combat_landers_selection_is_valid(self, unit_ids, *, game=None, player=None, source_unit=None) -> tuple[bool, str]:
+        del game
+        if not self.is_imperialis_fleet():
+            return False, "Combat Landers requires the Imperialis Fleet detachment."
+        if source_unit is None or not self._unit_in_army(source_unit):
+            return False, "Combat Landers source unit was not found."
+        if player is not None and player is not getattr(self.army, "player", None):
+            return False, "Combat Landers can only be selected by the controlling player."
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_imperialis_fleet_combat_landers")):
+            return False, "Combat Landers source unit does not have this enhancement."
+        if bool(source_sr.get("enhancement_imperialis_fleet_combat_landers_resolved")):
+            return False, "Combat Landers has already resolved."
+        if not isinstance(unit_ids, list):
+            return False, "Combat Landers selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_units = int(source_sr.get("enhancement_imperialis_fleet_combat_landers_max_units", 3) or 3)
+        if len(selected) > max_units:
+            return False, f"Combat Landers can select up to {int(max_units)} units."
+        candidates_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self.combat_landers_selectable_units(source_unit) or [])
+            if self._entity_id(unit)
+        }
+        for unit_id in selected:
+            if unit_id not in candidates_by_id:
+                return False, "Combat Landers selection contains an ineligible unit."
+        return True, ""
+
+    def _clear_imperialis_fleet_selected_unit_flag(self, *, flag_key: str, source_id_key: str) -> None:
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            updated = dict(sr)
+            updated.pop(flag_key, None)
+            updated.pop(source_id_key, None)
+            if updated != sr:
+                unit.special_rules = updated
+                invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+
+    def apply_clandestine_operation_selection(self, unit_ids, *, game=None, player=None, source_unit=None) -> list[str]:
+        del game
+        if source_unit is None:
+            source_units = self._imperialis_fleet_source_units(
+                flag_key="enhancement_imperialis_fleet_clandestine_operation"
+            )
+            if not source_units:
+                return []
+            source_unit = source_units[0]
+        valid, _reason = self.clandestine_operation_selection_is_valid(
+            unit_ids,
+            player=player,
+            source_unit=source_unit,
+        )
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        if not valid:
+            return []
+        source_unit_id = self._entity_id(source_unit)
+        self._clear_imperialis_fleet_selected_unit_flag(
+            flag_key="imperialis_fleet_clandestine_operation_infiltrators",
+            source_id_key="imperialis_fleet_clandestine_operation_source_unit_id",
+        )
+        candidates_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self.clandestine_operation_selectable_units(source_unit) or [])
+            if self._entity_id(unit)
+        }
+        applied_ids: list[str] = []
+        for unit_id in selected:
+            root = candidates_by_id.get(unit_id)
+            if root is None:
+                continue
+            for member in self._attached_members(root):
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    member_sr = {}
+                member_sr["imperialis_fleet_clandestine_operation_infiltrators"] = True
+                member_sr["imperialis_fleet_clandestine_operation_source_unit_id"] = source_unit_id
+                member.special_rules = member_sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+            applied_ids.append(unit_id)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["enhancement_imperialis_fleet_clandestine_operation_resolved"] = True
+        source_sr["enhancement_imperialis_fleet_clandestine_operation_selected_unit_ids"] = list(applied_ids)
+        source_unit.special_rules = source_sr
+        return list(applied_ids)
+
+    def apply_combat_landers_selection(self, unit_ids, *, game=None, player=None, source_unit=None) -> list[str]:
+        del game
+        if source_unit is None:
+            source_units = self._imperialis_fleet_source_units(
+                flag_key="enhancement_imperialis_fleet_combat_landers"
+            )
+            if not source_units:
+                return []
+            source_unit = source_units[0]
+        valid, _reason = self.combat_landers_selection_is_valid(
+            unit_ids,
+            player=player,
+            source_unit=source_unit,
+        )
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        if not valid:
+            return []
+        source_unit_id = self._entity_id(source_unit)
+        self._clear_imperialis_fleet_selected_unit_flag(
+            flag_key="imperialis_fleet_combat_landers_deep_strike",
+            source_id_key="imperialis_fleet_combat_landers_source_unit_id",
+        )
+        candidates_by_id = {
+            self._entity_id(unit): unit
+            for unit in list(self.combat_landers_selectable_units(source_unit) or [])
+            if self._entity_id(unit)
+        }
+        applied_ids: list[str] = []
+        for unit_id in selected:
+            root = candidates_by_id.get(unit_id)
+            if root is None:
+                continue
+            for member in self._attached_members(root):
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    member_sr = {}
+                member_sr["imperialis_fleet_combat_landers_deep_strike"] = True
+                member_sr["imperialis_fleet_combat_landers_source_unit_id"] = source_unit_id
+                member.special_rules = member_sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+            applied_ids.append(unit_id)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["enhancement_imperialis_fleet_combat_landers_resolved"] = True
+        source_sr["enhancement_imperialis_fleet_combat_landers_selected_unit_ids"] = list(applied_ids)
+        source_unit.special_rules = source_sr
+        return list(applied_ids)
+
+    def _attached_member_with_flag(self, unit, flag_key: str):
+        root = self._unit_root(unit)
+        if root is None:
+            return None, {}
+        for member in self._attached_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            return member, sr
+        return None, {}
+
+    def _digital_weapons_pending_request(self, game, *, source_unit_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._DIGITAL_WEAPONS_ABILITY_KEY:
+                continue
+            if str(ctx.get("source_unit_id", "") or "").strip() != str(source_unit_id or "").strip():
+                continue
+            return True
+        return False
+
+    def digital_weapons_candidate_entries(self, source_unit, *, game=None) -> list[dict]:
+        if not self.is_imperialis_fleet() or game is None:
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_on_battlefield(root):
+            return []
+        source_member, source_sr = self._attached_member_with_flag(
+            root,
+            "enhancement_imperialis_fleet_digital_weapons",
+        )
+        if source_member is None or not self._enhancement_bearer_alive(source_member):
+            return []
+        bearer_model = self._enhancement_bearer_model(source_member)
+        if bearer_model is None:
+            return []
+        within_fn = getattr(root, "_model_within_engagement_range_of_unit", None)
+        if not callable(within_fn):
+            return []
+
+        entries: list[dict] = []
+        seen_units: set[str] = set()
+        enemy_units = list(getattr(game_map, "get_enemy_units", lambda *_args: [])(root) or [])
+        for enemy in list(enemy_units or []):
+            enemy_root = self._unit_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._entity_id(enemy_root)
+            if not enemy_id or enemy_id in seen_units:
+                continue
+            seen_units.add(enemy_id)
+            if not self._unit_on_battlefield(enemy_root):
+                continue
+            if not bool(within_fn(bearer_model, enemy_root)):
+                continue
+            entries.append(
+                {
+                    "target_unit_id": enemy_id,
+                    "target_model_id": "",
+                    "label": str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                }
+            )
+            if not bool(source_sr.get("enhancement_imperialis_fleet_digital_weapons_precision_allocation", True)):
+                continue
+            has_attached_leaders = bool(getattr(enemy_root, "attached_leaders", []) or [])
+            if not has_attached_leaders:
+                continue
+            get_models_for_collision = getattr(enemy_root, "get_models_for_collision", None)
+            if callable(get_models_for_collision):
+                all_models = list(get_models_for_collision() or [])
+            else:
+                all_models = list(getattr(enemy_root, "models", []) or [])
+            character_models = []
+            for model in list(all_models or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                is_character = bool(getattr(model, "is_character", False))
+                if not is_character:
+                    has_keyword = getattr(model, "has_keyword", None)
+                    if callable(has_keyword):
+                        is_character = bool(has_keyword("CHARACTER"))
+                if not is_character:
+                    continue
+                can_see_fn = getattr(game_map, "can_model_see_model", None)
+                if callable(can_see_fn) and not bool(can_see_fn(bearer_model, model)):
+                    continue
+                character_models.append(model)
+            character_models.sort(key=lambda model: self._entity_id(model))
+            for model in list(character_models or []):
+                model_id = self._entity_id(model)
+                if not model_id:
+                    continue
+                entries.append(
+                    {
+                        "target_unit_id": enemy_id,
+                        "target_model_id": model_id,
+                        "label": f"{getattr(enemy_root, 'name', 'Unit')} -> {getattr(model, 'name', 'Character')}",
+                    }
+                )
+        entries.sort(
+            key=lambda entry: (
+                str(entry.get("target_unit_id", "") or ""),
+                str(entry.get("target_model_id", "") or ""),
+                str(entry.get("label", "") or "").lower(),
+            )
+        )
+        return entries
+
+    def queue_digital_weapons_request(
+        self,
+        source_unit,
+        *,
+        game=None,
+        player=None,
+        allow_existing_request: bool = False,
+    ) -> None:
+        if game is None or self.army is None:
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        source_member, source_sr = self._attached_member_with_flag(
+            source_unit,
+            "enhancement_imperialis_fleet_digital_weapons",
+        )
+        if source_member is None:
+            return
+        source_unit_id = self._entity_id(source_member)
+        if not source_unit_id:
+            return
+        if (not allow_existing_request) and self._digital_weapons_pending_request(game, source_unit_id=source_unit_id):
+            return
+        remaining = self._coerce_int(
+            source_sr.get("enhancement_imperialis_fleet_digital_weapons_pending_successes", 0),
+            default=0,
+        )
+        if remaining <= 0:
+            return
+        candidates = list(self.digital_weapons_candidate_entries(source_member, game=game) or [])
+        if not candidates:
+            cleared_sr = dict(source_sr)
+            cleared_sr.pop("enhancement_imperialis_fleet_digital_weapons_pending_successes", None)
+            source_member.special_rules = cleared_sr
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = []
+        for entry in list(candidates or []):
+            options.append(
+                DecisionOption.create(
+                    str(entry.get("label", "") or "Unit"),
+                    payload={
+                        "target_unit_id": str(entry.get("target_unit_id", "") or ""),
+                        "target_model_id": str(entry.get("target_model_id", "") or ""),
+                    },
+                )
+            )
+        if not options:
+            return
+        ability_name = str(
+            source_sr.get("enhancement_imperialis_fleet_digital_weapons_source", "")
+            or self._DIGITAL_WEAPONS_NAME
+        ).strip() or self._DIGITAL_WEAPONS_NAME
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target for 1 mortal wound ({int(remaining)} remaining).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._DIGITAL_WEAPONS_ABILITY_KEY,
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "source_unit_id": source_unit_id,
+                "unit_id": source_unit_id,
+                "remaining_successes": int(remaining),
+            },
+        )
+        request_fn = getattr(game, "request_decision", None)
+        if callable(request_fn):
+            request_fn(request)
+
+    def trigger_digital_weapons_on_fight_selected(self, unit, *, game=None, player=None) -> bool:
+        if not self.is_imperialis_fleet() or game is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_on_battlefield(root):
+            return False
+        source_member, source_sr = self._attached_member_with_flag(
+            root,
+            "enhancement_imperialis_fleet_digital_weapons",
+        )
+        if source_member is None or not self._enhancement_bearer_alive(source_member):
+            return False
+        source_unit_id = self._entity_id(source_member)
+        if not source_unit_id:
+            return False
+        pending = self._coerce_int(
+            source_sr.get("enhancement_imperialis_fleet_digital_weapons_pending_successes", 0),
+            default=0,
+        )
+        if pending > 0 or self._digital_weapons_pending_request(game, source_unit_id=source_unit_id):
+            return False
+        candidates = list(self.digital_weapons_candidate_entries(source_member, game=game) or [])
+        if not candidates:
+            return False
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        ability_name = str(
+            source_sr.get("enhancement_imperialis_fleet_digital_weapons_source", "")
+            or self._DIGITAL_WEAPONS_NAME
+        ).strip() or self._DIGITAL_WEAPONS_NAME
+        dice_count = int(source_sr.get("enhancement_imperialis_fleet_digital_weapons_dice", 3) or 3)
+        threshold = int(source_sr.get("enhancement_imperialis_fleet_digital_weapons_threshold", 4) or 4)
+        dice_count = max(1, int(dice_count))
+        threshold = max(2, min(6, int(threshold)))
+        rolls: list[int] = []
+        successes = 0
+        for _ in range(dice_count):
+            roll = int(get_roll("D6") or 0)
+            rolls.append(int(roll))
+            if int(roll) >= int(threshold):
+                successes += 1
+        if owner is not None:
+            append_dice(
+                owner,
+                f"{ability_name}: {', '.join(str(v) for v in rolls)} ({int(successes)} success(es) on {int(threshold)}+).",
+            )
+        if successes <= 0:
+            return False
+        updated_sr = dict(source_sr)
+        updated_sr["enhancement_imperialis_fleet_digital_weapons_pending_successes"] = int(successes)
+        source_member.special_rules = updated_sr
+        self.queue_digital_weapons_request(source_member, game=game, player=owner)
+        return True
+
+    def advance_digital_weapons_state(self, source_unit, *, game=None, player=None) -> int:
+        source_member, source_sr = self._attached_member_with_flag(
+            source_unit,
+            "enhancement_imperialis_fleet_digital_weapons",
+        )
+        if source_member is None:
+            return 0
+        remaining = self._coerce_int(
+            source_sr.get("enhancement_imperialis_fleet_digital_weapons_pending_successes", 0),
+            default=0,
+        )
+        remaining = max(0, int(remaining) - 1)
+        updated_sr = dict(source_sr)
+        if remaining > 0:
+            updated_sr["enhancement_imperialis_fleet_digital_weapons_pending_successes"] = int(remaining)
+        else:
+            updated_sr.pop("enhancement_imperialis_fleet_digital_weapons_pending_successes", None)
+        source_member.special_rules = updated_sr
+        if remaining > 0:
+            self.queue_digital_weapons_request(
+                source_member,
+                game=game,
+                player=player,
+                allow_existing_request=True,
+            )
+        return int(remaining)
+
+    def on_prebattle_rules_start(self, *, game=None) -> None:
+        if not self.is_imperialis_fleet() or self.army is None:
+            return
+        player = getattr(self.army, "player", None)
+        if game is None:
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        for source_unit in self._imperialis_fleet_source_units(
+            flag_key="enhancement_imperialis_fleet_clandestine_operation"
+        ):
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict) or bool(
+                source_sr.get("enhancement_imperialis_fleet_clandestine_operation_resolved")
+            ):
+                continue
+            self._queue_imperialis_fleet_selected_units_request(
+                game=game,
+                player=player,
+                source_unit=source_unit,
+                ability_key=self._CLANDESTINE_OPERATION_ABILITY_KEY,
+                ability_name=str(
+                    source_sr.get("enhancement_imperialis_fleet_clandestine_operation_source", "")
+                    or self._CLANDESTINE_OPERATION_NAME
+                ).strip()
+                or self._CLANDESTINE_OPERATION_NAME,
+                max_units=int(
+                    source_sr.get("enhancement_imperialis_fleet_clandestine_operation_max_units", 3) or 3
+                ),
+                candidates=list(self.clandestine_operation_selectable_units(source_unit) or []),
+                subtitle='Select up to 3 AGENTS OF THE IMPERIUM INFANTRY units (excluding Grey Knights Terminator Squad units).',
+                instruction="Selected units gain Infiltrators for this battle.",
+                resolved_key="enhancement_imperialis_fleet_clandestine_operation_resolved",
+                selected_ids_key="enhancement_imperialis_fleet_clandestine_operation_selected_unit_ids",
+            )
+        for source_unit in self._imperialis_fleet_source_units(
+            flag_key="enhancement_imperialis_fleet_combat_landers"
+        ):
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict) or bool(
+                source_sr.get("enhancement_imperialis_fleet_combat_landers_resolved")
+            ):
+                continue
+            self._queue_imperialis_fleet_selected_units_request(
+                game=game,
+                player=player,
+                source_unit=source_unit,
+                ability_key=self._COMBAT_LANDERS_ABILITY_KEY,
+                ability_name=str(
+                    source_sr.get("enhancement_imperialis_fleet_combat_landers_source", "")
+                    or self._COMBAT_LANDERS_NAME
+                ).strip()
+                or self._COMBAT_LANDERS_NAME,
+                max_units=int(source_sr.get("enhancement_imperialis_fleet_combat_landers_max_units", 3) or 3),
+                candidates=list(self.combat_landers_selectable_units(source_unit) or []),
+                subtitle='Select up to 3 VOIDFARERS units.',
+                instruction="Selected units gain Deep Strike for this battle.",
+                resolved_key="enhancement_imperialis_fleet_combat_landers_resolved",
+                selected_ids_key="enhancement_imperialis_fleet_combat_landers_selected_unit_ids",
+            )
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if game is None or player is None:

@@ -7212,6 +7212,45 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME = {
 }
 
 _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009138002": EnhancementToolDescriptor(
+        enhancement_id="000009138002",
+        name="Clandestine Operation",
+        timing="declare_battle_formations",
+        target="friendly_agents_of_the_imperium_infantry_units",
+        duration="battle_setup",
+        effect="select_up_to_three_units_gain_infiltrators",
+        effect_params={
+            "max_units": 3,
+            "required_keywords": ("AGENTS OF THE IMPERIUM", "INFANTRY"),
+            "excluded_unit_name_patterns": ("GREY KNIGHTS TERMINATOR SQUAD",),
+        },
+    ),
+    "000009138003": EnhancementToolDescriptor(
+        enhancement_id="000009138003",
+        name="Combat Landers",
+        timing="declare_battle_formations",
+        target="friendly_voidfarers_units",
+        duration="battle_setup",
+        effect="grant_deep_strike_to_selected_units",
+        effect_params={
+            "max_units": 3,
+            "required_keywords": ("VOIDFARERS",),
+        },
+    ),
+    "000009138004": EnhancementToolDescriptor(
+        enhancement_id="000009138004",
+        name="Digital Weapons",
+        timing="when_bearer_is_selected_to_fight",
+        target="enemy_units_within_engagement_range_of_bearer",
+        duration="instant",
+        effect="selected_to_fight_precision_mortal_wounds",
+        effect_params={
+            "dice": 3,
+            "threshold": 4,
+            "mortal_wounds_per_success": 1,
+            "precision_allocation": True,
+        },
+    ),
     "000009138005": EnhancementToolDescriptor(
         enhancement_id="000009138005",
         name="Fleetmaster",

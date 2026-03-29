@@ -211,6 +211,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_dagger"),
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_blessing"),
                 ("fight_unit_selected", "_on_fight_unit_selected_twisted_sorceries"),
+                ("fight_unit_selected", "_on_fight_unit_selected_imperial_agents_digital_weapons"),
                 ("fight_unit_selected", "_on_fight_unit_selected_enemy_melee_hit_penalty"),
                 ("fight_unit_selected", "_on_fight_unit_selected_selected_to_fight_reroll_choice"),
                 ("fight_unit_selected", "_on_fight_unit_selected_harbinger_of_death"),

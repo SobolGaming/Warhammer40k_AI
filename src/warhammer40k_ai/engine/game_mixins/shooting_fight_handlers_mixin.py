@@ -10286,6 +10286,41 @@ class GameShootingFightHandlersMixin:
                 instance_key=f"{model_id}:twisted_sorceries:fight",
             )
 
+    def _on_fight_unit_selected_imperial_agents_digital_weapons(
+        self,
+        unit=None,
+        selecting_player=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "is_in_reserves", lambda: False)()):
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return
+        player = getattr(army, "player", None)
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+        ia_mgr = getattr(army, "imperial_agents_detachments", None)
+        trigger_fn = getattr(ia_mgr, "trigger_digital_weapons_on_fight_selected", None) if ia_mgr is not None else None
+        if not callable(trigger_fn):
+            return
+        trigger_fn(root, game=self, player=player)
+
     def _on_fight_unit_selected_hammer_aflame(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

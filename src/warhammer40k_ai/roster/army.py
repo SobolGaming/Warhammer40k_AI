@@ -2906,6 +2906,9 @@ class Army:
         mgr = getattr(self, "tau_empire_detachments", None)
         if mgr is not None and hasattr(mgr, "on_prebattle_rules_start"):
             mgr.on_prebattle_rules_start(game=game)
+        ia_mgr = getattr(self, "imperial_agents_detachments", None)
+        if ia_mgr is not None and hasattr(ia_mgr, "on_prebattle_rules_start"):
+            ia_mgr.on_prebattle_rules_start(game=game)
 
     def on_battle_round_start(self, battle_round: int) -> None:
         """Army-level start-of-battle-round hook for faction rules/state resets."""

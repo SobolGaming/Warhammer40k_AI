@@ -9774,7 +9774,11 @@ class PositioningMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict):
-                if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
+                if (
+                    sr.get("bearer_unit_deep_strike")
+                    or sr.get("realm_of_chaos_temp_deep_strike")
+                    or sr.get("imperialis_fleet_combat_landers_deep_strike")
+                ):
                     found = True
                 elif sr.get("attached_unit_bodyguard_leader_deep_strike") and bool(
                     getattr(self, "is_attached_leader", False)
@@ -11008,7 +11012,13 @@ class PositioningMixin:
         except Exception:
             root = self
         try:
+            sr = getattr(self, "special_rules", None)
             rsr = getattr(root, "special_rules", None)
+            if (
+                (isinstance(sr, dict) and sr.get("imperialis_fleet_clandestine_operation_infiltrators"))
+                or (isinstance(rsr, dict) and rsr.get("imperialis_fleet_clandestine_operation_infiltrators"))
+            ):
+                found = True
             if isinstance(rsr, dict) and rsr.get("masters_of_misdirection_infiltrators"):
                 if self is root:
                     found = True

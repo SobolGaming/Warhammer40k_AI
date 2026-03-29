@@ -4291,6 +4291,92 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_bearer_model_id"] = bearer_id
 
+        if name == "clandestine operation" or enh_id == "000009138002":
+            if not is_imperialis_fleet:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Clandestine Operation").strip() or "Clandestine Operation"
+            unit.special_rules["enhancement_imperialis_fleet_clandestine_operation"] = True
+            unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_source"] = source_name
+            unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_selection_ability"] = (
+                "imperialis_fleet_clandestine_operation_selection"
+            )
+            unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_max_units"] = int(
+                max(0, _coerce_int(params.get("max_units", 3) or 3, default=3))
+            )
+            required_keywords = []
+            for value in list(params.get("required_keywords", ("AGENTS OF THE IMPERIUM", "INFANTRY")) or ()):
+                token = str(value or "").strip().upper()
+                if token and token not in required_keywords:
+                    required_keywords.append(token)
+            if required_keywords:
+                unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_required_keywords"] = list(
+                    required_keywords
+                )
+            excluded_patterns = []
+            for value in list(params.get("excluded_unit_name_patterns", ("GREY KNIGHTS TERMINATOR SQUAD",)) or ()):
+                token = str(value or "").strip().upper()
+                if token and token not in excluded_patterns:
+                    excluded_patterns.append(token)
+            if excluded_patterns:
+                unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_excluded_unit_name_patterns"] = list(
+                    excluded_patterns
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_imperialis_fleet_clandestine_operation_bearer_model_id"] = bearer_id
+
+        if name == "combat landers" or enh_id == "000009138003":
+            if not is_imperialis_fleet:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Combat Landers").strip() or "Combat Landers"
+            unit.special_rules["enhancement_imperialis_fleet_combat_landers"] = True
+            unit.special_rules["enhancement_imperialis_fleet_combat_landers_source"] = source_name
+            unit.special_rules["enhancement_imperialis_fleet_combat_landers_selection_ability"] = (
+                "imperialis_fleet_combat_landers_selection"
+            )
+            unit.special_rules["enhancement_imperialis_fleet_combat_landers_max_units"] = int(
+                max(0, _coerce_int(params.get("max_units", 3) or 3, default=3))
+            )
+            required_keywords = []
+            for value in list(params.get("required_keywords", ("VOIDFARERS",)) or ()):
+                token = str(value or "").strip().upper()
+                if token and token not in required_keywords:
+                    required_keywords.append(token)
+            if required_keywords:
+                unit.special_rules["enhancement_imperialis_fleet_combat_landers_required_keywords"] = list(
+                    required_keywords
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_imperialis_fleet_combat_landers_bearer_model_id"] = bearer_id
+
+        if name == "digital weapons" or enh_id == "000009138004":
+            if not is_imperialis_fleet:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Digital Weapons").strip() or "Digital Weapons"
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons"] = True
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons_source"] = source_name
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons_dice"] = int(
+                max(1, _coerce_int(params.get("dice", 3) or 3, default=3))
+            )
+            threshold = _coerce_int(params.get("threshold", 4) or 4, default=4)
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons_threshold"] = int(max(2, min(6, threshold)))
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons_mortal_wounds_per_success"] = int(
+                max(1, _coerce_int(params.get("mortal_wounds_per_success", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_imperialis_fleet_digital_weapons_precision_allocation"] = bool(
+                params.get("precision_allocation", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_imperialis_fleet_digital_weapons_bearer_model_id"] = bearer_id
+
         if name == "fleetmaster" or enh_id == "000009138005":
             if not is_imperialis_fleet:
                 return
