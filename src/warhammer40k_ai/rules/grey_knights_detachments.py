@@ -190,6 +190,200 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return str(getattr(current_player, "id", "") or "") == str(getattr(player, "id", "") or "")
 
+    def _brotherhood_strike_used_deep_strike_setup(
+        self,
+        unit,
+        *,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+    ) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        used_deep_strike_setup = bool(used_deep_strike)
+        if not used_deep_strike_setup and bool(set_up_as_reinforcements):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if callable(has_deep_strike):
+                used_deep_strike_setup = bool(has_deep_strike())
+        return bool(used_deep_strike_setup)
+
+    def _brotherhood_strike_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        bearer_keys: tuple[str, ...],
+        require_bearer_alive: bool = True,
+    ):
+        if not self.is_brotherhood_strike():
+            return None, None, None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_is_active(root):
+            return None, None, None, None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None, None, None, None
+        except Exception:
+            return None, None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(str(flag_key), False)):
+                continue
+            bearer = self._resolve_member_bearer_model(member, bearer_keys=bearer_keys)
+            if require_bearer_alive and bearer is None:
+                continue
+            return root, member, sr, bearer
+        return None, None, None, None
+
+    def _brotherhood_strike_turn_context(self, game) -> tuple[str, int]:
+        owner_id = ""
+        turn_now = 0
+        if game is None:
+            return owner_id, turn_now
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            player = getattr(self.army, "player", None)
+            owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        return owner_id, turn_now
+
+    def _activate_brotherhood_strike_blinding_aura(self, root, *, game=None, source_name: str = "") -> bool:
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id, turn_now = self._brotherhood_strike_turn_context(game)
+        sr["brotherhood_strike_blinding_aura_no_overwatch"] = True
+        if owner_id:
+            sr["brotherhood_strike_blinding_aura_turn_owner"] = owner_id
+        if turn_now:
+            sr["brotherhood_strike_blinding_aura_turn"] = int(turn_now)
+        if source_name:
+            sr["brotherhood_strike_blinding_aura_source"] = str(source_name).strip()
+        root.special_rules = sr
+        player = getattr(self.army, "player", None)
+        if player is not None:
+            from ..utility.event_bus import append_action
+
+            append_action(
+                player,
+                f"{str(source_name or 'Blinding Aura').strip() or 'Blinding Aura'}: "
+                f"{getattr(root, 'name', 'Unit')} cannot be targeted with Fire Overwatch until end of turn.",
+            )
+        return True
+
+    def _activate_brotherhood_strike_purity_of_purpose(self, root, *, game=None, source_name: str = "") -> bool:
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner_id, turn_now = self._brotherhood_strike_turn_context(game)
+        sr["brotherhood_strike_purity_of_purpose_charge_reroll"] = True
+        if owner_id:
+            sr["brotherhood_strike_purity_of_purpose_turn_owner"] = owner_id
+        if turn_now:
+            sr["brotherhood_strike_purity_of_purpose_turn"] = int(turn_now)
+        if source_name:
+            sr["brotherhood_strike_purity_of_purpose_source"] = str(source_name).strip()
+        root.special_rules = sr
+        player = getattr(self.army, "player", None)
+        if player is not None:
+            from ..utility.event_bus import append_action
+
+            append_action(
+                player,
+                f"{str(source_name or 'Purity of Purpose').strip() or 'Purity of Purpose'}: "
+                f"{getattr(root, 'name', 'Unit')} can re-roll Charge rolls until end of turn.",
+            )
+        return True
+
+    def _resolve_banishing_wave_on_unit_set_up(self, unit, *, game=None) -> None:
+        if game is None:
+            return
+        root, _source_unit, sr, bearer = self._brotherhood_strike_enhancement_source_member(
+            unit,
+            flag_key="enhancement_banishing_wave",
+            bearer_keys=("enhancement_banishing_wave_bearer_model_id",),
+            require_bearer_alive=True,
+        )
+        if root is None or not isinstance(sr, dict) or bearer is None:
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        try:
+            range_value = int(sr.get("enhancement_banishing_wave_range", 12) or 12)
+        except Exception:
+            range_value = 12
+        try:
+            low_roll_min = int(sr.get("enhancement_banishing_wave_low_roll_min", 2) or 2)
+        except Exception:
+            low_roll_min = 2
+        try:
+            low_roll_max = int(sr.get("enhancement_banishing_wave_low_roll_max", 5) or 5)
+        except Exception:
+            low_roll_max = 5
+        try:
+            low_mortal_wounds = int(sr.get("enhancement_banishing_wave_low_mortal_wounds", 1) or 1)
+        except Exception:
+            low_mortal_wounds = 1
+        try:
+            high_roll_threshold = int(sr.get("enhancement_banishing_wave_high_roll_threshold", 6) or 6)
+        except Exception:
+            high_roll_threshold = 6
+        high_mortal_wounds_roll = str(
+            sr.get("enhancement_banishing_wave_high_mortal_wounds_roll", "D3") or "D3"
+        ).strip().upper() or "D3"
+        source_name = str(sr.get("enhancement_banishing_wave_source", "") or "Banishing Wave").strip() or "Banishing Wave"
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        apply_mortal = getattr(root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortal):
+            apply_mortal = None
+        game_map = getattr(game, "map", None)
+        for enemy_root in list(self._iter_enemy_roots(game, owner_player=player) or []):
+            if callable(in_range_fn):
+                if not bool(in_range_fn(bearer, enemy_root, range_value=float(range_value))):
+                    continue
+            enemy_name = str(getattr(enemy_root, "name", "Unit") or "Unit")
+            try:
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            append_dice(player, f"{source_name}: {enemy_name} roll {int(roll)}")
+            mortal_wounds = 0
+            if int(low_roll_min) <= int(roll) <= int(low_roll_max):
+                mortal_wounds = int(max(0, low_mortal_wounds))
+            elif int(roll) >= int(high_roll_threshold):
+                try:
+                    mortal_wounds = int(get_roll(high_mortal_wounds_roll) or 0)
+                except Exception:
+                    mortal_wounds = 0
+                append_dice(
+                    player,
+                    f"{source_name}: {enemy_name} {high_mortal_wounds_roll} = {int(max(0, mortal_wounds))}",
+                )
+            if int(mortal_wounds) > 0 and callable(apply_mortal):
+                apply_mortal(enemy_root, int(mortal_wounds), game_map=game_map)
+                append_action(player, f"{source_name}: {enemy_name} suffers {int(mortal_wounds)} mortal wounds.")
+            else:
+                append_action(player, f"{source_name}: {enemy_name} suffers no mortal wounds.")
+
     @staticmethod
     def _pending_choose_quarry_request(
         game,
@@ -672,17 +866,46 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         set_up_as_reinforcements: bool = False,
         used_deep_strike: bool = False,
     ) -> None:
-        _ = used_deep_strike
         if game is None or unit is None:
             return
         if not bool(getattr(game, "is_authoritative", True)):
             return
         if not bool(set_up_as_reinforcements):
             return
-        if not self.is_augurium_task_force():
-            return
         root = self._attached_root(unit)
         if root is None or not self._unit_is_active(root):
+            return
+        if self.is_brotherhood_strike() and self._brotherhood_strike_used_deep_strike_setup(
+            root,
+            set_up_as_reinforcements=set_up_as_reinforcements,
+            used_deep_strike=used_deep_strike,
+        ):
+            self._resolve_banishing_wave_on_unit_set_up(root, game=game)
+            aura_root, _aura_source_unit, aura_sr, _aura_bearer = self._brotherhood_strike_enhancement_source_member(
+                root,
+                flag_key="enhancement_blinding_aura",
+                bearer_keys=("enhancement_blinding_aura_bearer_model_id",),
+                require_bearer_alive=True,
+            )
+            if aura_root is not None and isinstance(aura_sr, dict):
+                self._activate_brotherhood_strike_blinding_aura(
+                    aura_root,
+                    game=game,
+                    source_name=str(aura_sr.get("enhancement_blinding_aura_source", "") or "Blinding Aura"),
+                )
+            purity_root, _purity_source_unit, purity_sr, _purity_bearer = self._brotherhood_strike_enhancement_source_member(
+                root,
+                flag_key="enhancement_purity_of_purpose",
+                bearer_keys=("enhancement_purity_of_purpose_bearer_model_id",),
+                require_bearer_alive=True,
+            )
+            if purity_root is not None and isinstance(purity_sr, dict):
+                self._activate_brotherhood_strike_purity_of_purpose(
+                    purity_root,
+                    game=game,
+                    source_name=str(purity_sr.get("enhancement_purity_of_purpose_source", "") or "Purity of Purpose"),
+                )
+        if not self.is_augurium_task_force():
             return
         player = getattr(self.army, "player", None)
         if player is None:
@@ -1030,6 +1253,67 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         if unit is None or not used_deep_strike:
             return False
         return True
+
+    def _brotherhood_strike_turn_scoped_effect_active(
+        self,
+        unit,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        game=None,
+    ) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(str(active_key), False)):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            if player is not None:
+                game = getattr(player, "game", None)
+        if game is None:
+            return True
+        owner_id = str(sr.get(str(owner_key), "") or "")
+        if owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id and current_owner_id != owner_id:
+                return False
+        try:
+            marked_turn = int(sr.get(str(turn_key), 0) or 0)
+        except Exception:
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return False
+        return True
+
+    def brotherhood_strike_blinding_aura_no_overwatch_applies(self, unit, *, game=None) -> bool:
+        if not self.is_brotherhood_strike():
+            return False
+        return self._brotherhood_strike_turn_scoped_effect_active(
+            unit,
+            active_key="brotherhood_strike_blinding_aura_no_overwatch",
+            owner_key="brotherhood_strike_blinding_aura_turn_owner",
+            turn_key="brotherhood_strike_blinding_aura_turn",
+            game=game,
+        )
+
+    def brotherhood_strike_purity_of_purpose_charge_reroll_applies(self, unit, *, game=None) -> bool:
+        if not self.is_brotherhood_strike():
+            return False
+        return self._brotherhood_strike_turn_scoped_effect_active(
+            unit,
+            active_key="brotherhood_strike_purity_of_purpose_charge_reroll",
+            owner_key="brotherhood_strike_purity_of_purpose_turn_owner",
+            turn_key="brotherhood_strike_purity_of_purpose_turn",
+            game=game,
+        )
 
     def apply_fury_of_titan(self, unit) -> bool:
         if unit is None:

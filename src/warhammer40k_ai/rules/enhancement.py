@@ -14532,6 +14532,70 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "banishing wave" or name == "banishing wave psychic" or enh_id == "000010348002":
+            if not is_brotherhood_strike:
+                return
+            unit.special_rules["enhancement_banishing_wave"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_banishing_wave_range"] = int(
+                max(0, _coerce_int(params.get("range", 12) or 12, default=12))
+            )
+            unit.special_rules["enhancement_banishing_wave_low_roll_min"] = int(
+                max(1, _coerce_int(params.get("low_roll_min", 2) or 2, default=2))
+            )
+            unit.special_rules["enhancement_banishing_wave_low_roll_max"] = int(
+                max(1, _coerce_int(params.get("low_roll_max", 5) or 5, default=5))
+            )
+            unit.special_rules["enhancement_banishing_wave_low_mortal_wounds"] = int(
+                max(0, _coerce_int(params.get("low_mortal_wounds", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_banishing_wave_high_roll_threshold"] = int(
+                max(1, _coerce_int(params.get("high_roll_threshold", 6) or 6, default=6))
+            )
+            high_mortal_wounds_roll = str(params.get("high_mortal_wounds_roll", "D3") or "D3").strip().upper()
+            if not high_mortal_wounds_roll:
+                high_mortal_wounds_roll = "D3"
+            unit.special_rules["enhancement_banishing_wave_high_mortal_wounds_roll"] = high_mortal_wounds_roll
+            unit.special_rules["enhancement_banishing_wave_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_banishing_wave_source"] = "Banishing Wave"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_banishing_wave_bearer_model_id"] = bearer_id
+
+        if name == "blinding aura" or enh_id == "000010348003":
+            if not is_brotherhood_strike:
+                return
+            unit.special_rules["enhancement_blinding_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_blinding_aura_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_blinding_aura_source"] = "Blinding Aura"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blinding_aura_bearer_model_id"] = bearer_id
+
+        if name == "purity of purpose" or enh_id == "000010348004":
+            if not is_brotherhood_strike:
+                return
+            unit.special_rules["enhancement_purity_of_purpose"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_purity_of_purpose_charge_reroll"] = bool(
+                params.get("charge_reroll", True)
+            )
+            unit.special_rules["enhancement_purity_of_purpose_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_purity_of_purpose_source"] = "Purity of Purpose"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_purity_of_purpose_bearer_model_id"] = bearer_id
+
         if name == "tome of forbidden ways" or enh_id == "000010348005":
             if not is_brotherhood_strike:
                 return

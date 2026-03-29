@@ -6297,6 +6297,48 @@ _WARPBANE_TASK_FORCE_BY_NAME = {
 }
 
 _GREY_KNIGHTS_BROTHERHOOD_STRIKE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010348002": EnhancementToolDescriptor(
+        enhancement_id="000010348002",
+        name="Banishing Wave (Psychic)",
+        timing="on_unit_set_up_as_reinforcements",
+        target="enemy_units_within_range_of_bearer",
+        duration="instant",
+        effect="deep_strike_setup_enemy_mortal_wound_table",
+        range_in=12.0,
+        effect_params={
+            "range": 12,
+            "trigger_roll": "D6",
+            "low_roll_min": 2,
+            "low_roll_max": 5,
+            "low_mortal_wounds": 1,
+            "high_roll_threshold": 6,
+            "high_mortal_wounds_roll": "D3",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010348003": EnhancementToolDescriptor(
+        enhancement_id="000010348003",
+        name="Blinding Aura",
+        timing="on_unit_set_up_as_reinforcements",
+        target="bearer_unit",
+        duration="until_end_of_turn",
+        effect="prevent_fire_overwatch_against_bearer_unit_on_deep_strike_setup_turn",
+        effect_params={
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010348004": EnhancementToolDescriptor(
+        enhancement_id="000010348004",
+        name="Purity of Purpose",
+        timing="on_unit_set_up_as_reinforcements",
+        target="bearer_unit",
+        duration="until_end_of_turn",
+        effect="grant_charge_reroll_on_deep_strike_setup_turn",
+        effect_params={
+            "charge_reroll": True,
+            "requires_bearer_alive": True,
+        },
+    ),
     "000010348005": EnhancementToolDescriptor(
         enhancement_id="000010348005",
         name="Tome of Forbidden Ways",

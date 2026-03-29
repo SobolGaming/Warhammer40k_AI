@@ -12398,6 +12398,15 @@ class ActionsMovementMixin:
         if callable(taktikal_get_stuck_in):
             if bool(taktikal_get_stuck_in(self, game=game)):
                 return True
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        gk_charge_reroll = (
+            getattr(gk_mgr, "brotherhood_strike_purity_of_purpose_charge_reroll_applies", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(gk_charge_reroll):
+            if bool(gk_charge_reroll(self, game=game)):
+                return True
         try:
             active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
             if callable(active_fn) and bool(active_fn()):
@@ -13555,6 +13564,19 @@ class ActionsMovementMixin:
             return True
         if self._spearhead_striker_no_overwatch_active(game=game):
             return True
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        gk_no_overwatch = (
+            getattr(gk_mgr, "brotherhood_strike_blinding_aura_no_overwatch_applies", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(gk_no_overwatch):
+            if bool(gk_no_overwatch(self, game=game)):
+                return True
         if self._periapt_of_torments_no_overwatch_active(target_unit=target_unit):
             return True
         if self._blazing_icon_no_overwatch_active(target_unit=target_unit):
