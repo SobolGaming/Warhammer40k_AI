@@ -14546,6 +14546,50 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_tome_of_forbidden_ways_bearer_model_id"] = bearer_id
 
+        if name == "grimoire of conjunctions" or enh_id == "000010364002":
+            if not is_augurium_task_force:
+                return
+            unit.special_rules["enhancement_grimoire_of_conjunctions"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_grimoire_of_conjunctions_bearer_melee_strength_bonus"] = int(
+                max(0, _coerce_int(params.get("bearer_melee_strength_bonus", 4) or 4, default=4))
+            )
+            once_key = str(params.get("once_per_battle_key", "grimoire_of_conjunctions") or "grimoire_of_conjunctions").strip().lower()
+            if not once_key:
+                once_key = "grimoire_of_conjunctions"
+            unit.special_rules["enhancement_grimoire_of_conjunctions_once_key"] = once_key
+            unit.special_rules["enhancement_grimoire_of_conjunctions_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_grimoire_of_conjunctions_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_grimoire_of_conjunctions_source"] = "Grimoire of Conjunctions"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_grimoire_of_conjunctions_bearer_model_id"] = bearer_id
+
+        if name == "shield of prophecy" or enh_id == "000010364003":
+            if not is_augurium_task_force:
+                return
+            unit.special_rules["enhancement_shield_of_prophecy"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_shield_of_prophecy_bearer_unit_toughness_bonus"] = int(
+                max(0, _coerce_int(params.get("bearer_unit_toughness_bonus", 2) or 2, default=2))
+            )
+            once_key = str(params.get("once_per_battle_key", "shield_of_prophecy") or "shield_of_prophecy").strip().lower()
+            if not once_key:
+                once_key = "shield_of_prophecy"
+            unit.special_rules["enhancement_shield_of_prophecy_once_key"] = once_key
+            unit.special_rules["enhancement_shield_of_prophecy_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_shield_of_prophecy_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_shield_of_prophecy_source"] = "Shield of Prophecy"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_shield_of_prophecy_bearer_model_id"] = bearer_id
+
         if name == "a foot in the future" or enh_id == "000010364004":
             if not is_augurium_task_force:
                 return
@@ -14567,6 +14611,30 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_a_foot_in_the_future_bearer_model_id"] = bearer_id
+
+        if name == "doomseer's amulet" or enh_id == "000010364005":
+            if not is_augurium_task_force:
+                return
+            unit.special_rules["enhancement_doomseers_amulet"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_doomseers_amulet_range"] = int(
+                max(0, _coerce_int(params.get("range", 12) or 12, default=12))
+            )
+            unit.special_rules["enhancement_doomseers_amulet_test_penalty"] = int(
+                max(0, _coerce_int(params.get("test_penalty", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_doomseers_amulet_requires_visibility"] = bool(
+                params.get("requires_visibility", True)
+            )
+            unit.special_rules["enhancement_doomseers_amulet_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_doomseers_amulet_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_doomseers_amulet_source"] = "Doomseer's Amulet"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_doomseers_amulet_bearer_model_id"] = bearer_id
 
         if name == "eye of the augurium" or enh_id == "000010352002":
             if not is_hallowed_conclave:

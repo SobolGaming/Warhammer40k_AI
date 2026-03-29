@@ -92,6 +92,123 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _iter_unique_army_units(self) -> list:
+        army = getattr(self, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        units: list = []
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            unit_id = str(get_entity_id(unit) or "")
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            units.append(unit)
+        return units
+
+    def _iter_enemy_roots(self, game, *, owner_player=None) -> list:
+        if game is None:
+            return []
+        enemies: list = []
+        seen: set[str] = set()
+        for player in list(getattr(game, "players", []) or []):
+            if player is None or player is owner_player:
+                continue
+            army = getattr(player, "army", None)
+            if army is None:
+                get_army = getattr(player, "get_army", None)
+                army = get_army() if callable(get_army) else None
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in seen:
+                    continue
+                if root_id:
+                    seen.add(root_id)
+                if not self._unit_is_active(root):
+                    continue
+                enemies.append(root)
+        enemies.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return enemies
+
+    def _resolve_member_bearer_model(self, member, *, bearer_keys: tuple[str, ...]) -> object | None:
+        if member is None:
+            return None
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = ""
+        for key in list(bearer_keys or ()):
+            value = str(sr.get(str(key), "") or "").strip()
+            if value:
+                bearer_id = value
+                break
+        if not bearer_id:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        models = list(getattr(member, "models", []) or [])
+        if bearer_id:
+            for model in models:
+                if model is None:
+                    continue
+                model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return model if bool(alive_attr() if callable(alive_attr) else alive_attr) else None
+            return None
+        for model in models:
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return model
+        return None
+
+    @staticmethod
+    def _phase_name(game) -> str:
+        return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+
+    @staticmethod
+    def _pending_choose_quarry_request(
+        game,
+        *,
+        ability: str,
+        source_unit_id: str,
+        turn: int = 0,
+        battle_round: int = 0,
+        phase_name: str = "",
+    ):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability or ""):
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                continue
+            if phase_name and str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name).strip().upper():
+                continue
+            if int(turn or 0) and int(ctx.get("turn", 0) or 0) != int(turn):
+                continue
+            if int(battle_round or 0) and int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return req
+        return None
+
     def _hallowed_ground_phase_key_for_game(self, game) -> tuple:
         try:
             round_num = int(getattr(game, "turn", 0) or 0)
@@ -104,22 +221,370 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         return (round_num, phase_name)
 
     def on_phase_start(self, *, game=None) -> None:
-        if not self.is_warpbane_task_force():
-            return
         if game is None:
+            return
+        player = getattr(self.army, "player", None)
+        if self.is_warpbane_task_force():
+            if player is None:
+                return
+            phase_key = self._hallowed_ground_phase_key_for_game(game)
+            self._hallowed_ground_phase_key = phase_key
+            self._hallowed_ground_nml_active = False
+            self._hallowed_ground_enemy_active = False
+            zones = set()
+            if hasattr(game, "_shadow_of_chaos_zones"):
+                zones = set(game._shadow_of_chaos_zones(player))
+            self._hallowed_ground_nml_active = "nml" in zones
+            self._hallowed_ground_enemy_active = "enemy" in zones
+        if self.is_augurium_task_force():
+            self._queue_grimoire_of_conjunctions_requests(game=game)
+
+    def _queue_grimoire_of_conjunctions_requests(self, *, game=None) -> None:
+        if not self.is_augurium_task_force() or game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self._phase_name(game) != "FIGHT_PHASE":
             return
         player = getattr(self.army, "player", None)
         if player is None:
             return
-        phase_key = self._hallowed_ground_phase_key_for_game(game)
-        self._hallowed_ground_phase_key = phase_key
-        self._hallowed_ground_nml_active = False
-        self._hallowed_ground_enemy_active = False
-        zones = set()
-        if hasattr(game, "_shadow_of_chaos_zones"):
-            zones = set(game._shadow_of_chaos_zones(player))
-        self._hallowed_ground_nml_active = "nml" in zones
-        self._hallowed_ground_enemy_active = "enemy" in zones
+        try:
+            turn_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for source_unit in list(self._iter_unique_army_units() or []):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_grimoire_of_conjunctions", False)):
+                continue
+            root = self._attached_root(source_unit)
+            if root is None or not self._unit_is_active(root):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            root_id = str(get_entity_id(root) or "")
+            if not source_unit_id or not root_id:
+                continue
+            once_key = str(
+                sr.get("enhancement_grimoire_of_conjunctions_once_key", "") or "grimoire_of_conjunctions"
+            ).strip().lower() or "grimoire_of_conjunctions"
+            used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once(once_key)):
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                ability="grey_knights_augurium_grimoire_of_conjunctions",
+                source_unit_id=source_unit_id,
+                turn=int(turn_now),
+                phase_name="FIGHT_PHASE",
+            ):
+                continue
+            bearer = self._resolve_member_bearer_model(
+                source_unit,
+                bearer_keys=("enhancement_grimoire_of_conjunctions_bearer_model_id",),
+            )
+            if bool(sr.get("enhancement_grimoire_of_conjunctions_requires_bearer_alive", True)) and bearer is None:
+                continue
+            bearer_model_id = str(
+                sr.get("enhancement_grimoire_of_conjunctions_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            options = [
+                DecisionOption.create(
+                    f"Use on {getattr(root, 'name', 'Unit')}",
+                    payload={"target_unit_id": root_id},
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={"action": "skip", "skip": True},
+                ),
+            ]
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    (
+                        f"Grimoire of Conjunctions: choose whether {getattr(root, 'name', 'Unit')} gains "
+                        "the bearer's +4 Strength melee bonus this phase."
+                    ),
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "grey_knights_augurium_grimoire_of_conjunctions",
+                        "ability_name": "Grimoire of Conjunctions",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": [root_id],
+                        "phase_name": "FIGHT_PHASE",
+                        "phase": "Fight phase",
+                        "turn": int(turn_now or 0),
+                        "once_key": once_key,
+                        "bearer_model_id": bearer_model_id,
+                        "optional": True,
+                    },
+                )
+            )
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        if not self.is_augurium_task_force() or game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        try:
+            round_now = int(battle_round or 0)
+        except Exception:
+            round_now = 0
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for source_unit in list(self._iter_unique_army_units() or []):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_shield_of_prophecy", False)):
+                continue
+            root = self._attached_root(source_unit)
+            if root is None or not self._unit_is_active(root):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            root_id = str(get_entity_id(root) or "")
+            if not source_unit_id or not root_id:
+                continue
+            once_key = str(
+                sr.get("enhancement_shield_of_prophecy_once_key", "") or "shield_of_prophecy"
+            ).strip().lower() or "shield_of_prophecy"
+            used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once(once_key)):
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                ability="grey_knights_augurium_shield_of_prophecy",
+                source_unit_id=source_unit_id,
+                battle_round=int(round_now),
+            ):
+                continue
+            bearer = self._resolve_member_bearer_model(
+                source_unit,
+                bearer_keys=("enhancement_shield_of_prophecy_bearer_model_id",),
+            )
+            if bool(sr.get("enhancement_shield_of_prophecy_requires_bearer_alive", True)) and bearer is None:
+                continue
+            bearer_model_id = str(
+                sr.get("enhancement_shield_of_prophecy_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            options = [
+                DecisionOption.create(
+                    f"Use on {getattr(root, 'name', 'Unit')}",
+                    payload={"target_unit_id": root_id},
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={"action": "skip", "skip": True},
+                ),
+            ]
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    (
+                        f"Shield of Prophecy: choose whether {getattr(root, 'name', 'Unit')} gains "
+                        "+2 Toughness until the end of the battle round."
+                    ),
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "grey_knights_augurium_shield_of_prophecy",
+                        "ability_name": "Shield of Prophecy",
+                        "source_unit_id": source_unit_id,
+                        "target_unit_id": root_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": [root_id],
+                        "battle_round": int(round_now or 0),
+                        "turn": int(round_now or 0),
+                        "once_key": once_key,
+                        "bearer_model_id": bearer_model_id,
+                        "optional": True,
+                    },
+                )
+            )
+
+    def shield_of_prophecy_toughness_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        if not self.is_augurium_task_force():
+            return 0, ""
+        source_unit = unit
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        root = self._attached_root(source_unit)
+        if root is None:
+            return 0, ""
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        try:
+            current_round = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            current_round = 0
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_shield_of_prophecy_active", False)):
+                continue
+            try:
+                effect_round = int(sr.get("enhancement_shield_of_prophecy_battle_round", 0) or 0)
+            except Exception:
+                effect_round = 0
+            if effect_round and current_round and effect_round != current_round:
+                continue
+            try:
+                bonus = int(sr.get("enhancement_shield_of_prophecy_bearer_unit_toughness_bonus", 2) or 2)
+            except Exception:
+                bonus = 2
+            if bonus <= 0:
+                continue
+            source_name = str(
+                sr.get("enhancement_shield_of_prophecy_active_source", "")
+                or sr.get("enhancement_shield_of_prophecy_source", "")
+                or "Shield of Prophecy"
+            ).strip() or "Shield of Prophecy"
+            return int(bonus), source_name
+        return 0, ""
+
+    def on_unit_set_up(
+        self,
+        unit,
+        *,
+        game=None,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+    ) -> None:
+        _ = used_deep_strike
+        if game is None or unit is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not bool(set_up_as_reinforcements):
+            return
+        if not self.is_augurium_task_force():
+            return
+        root = self._attached_root(unit)
+        if root is None or not self._unit_is_active(root):
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        try:
+            turn_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        phase_name = self._phase_name(game)
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for source_unit in list(members or []):
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_doomseers_amulet", False)):
+                continue
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            if not source_unit_id:
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                ability="phase_select_enemy_battleshock",
+                source_unit_id=source_unit_id,
+                turn=int(turn_now),
+                phase_name=phase_name,
+            ):
+                continue
+            bearer = self._resolve_member_bearer_model(
+                source_unit,
+                bearer_keys=("enhancement_doomseers_amulet_bearer_model_id",),
+            )
+            if bool(sr.get("enhancement_doomseers_amulet_requires_bearer_alive", True)) and bearer is None:
+                continue
+            bearer_model_id = str(
+                sr.get("enhancement_doomseers_amulet_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            try:
+                range_value = int(sr.get("enhancement_doomseers_amulet_range", 12) or 12)
+            except Exception:
+                range_value = 12
+            try:
+                test_penalty = int(sr.get("enhancement_doomseers_amulet_test_penalty", 1) or 1)
+            except Exception:
+                test_penalty = 1
+            requires_visibility = bool(sr.get("enhancement_doomseers_amulet_requires_visibility", True))
+            candidates: list = []
+            for enemy_root in list(self._iter_enemy_roots(game, owner_player=player) or []):
+                if bearer is None:
+                    continue
+                in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+                if callable(in_range_fn):
+                    if not bool(in_range_fn(bearer, enemy_root, range_value=float(range_value))):
+                        continue
+                if requires_visibility:
+                    can_see_fn = getattr(game, "_model_can_see_unit", None)
+                    if callable(can_see_fn):
+                        if not bool(can_see_fn(bearer, enemy_root, game_map=getattr(game, "map", None))):
+                            continue
+                candidates.append(enemy_root)
+            if not candidates:
+                continue
+            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+            candidate_ids: list[str] = []
+            for enemy_root in list(candidates or []):
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id:
+                    continue
+                candidate_ids.append(enemy_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": enemy_id},
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Doomseer's Amulet: select one visible enemy unit within 12\" to take a Battle-shock test (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "phase_select_enemy_battleshock",
+                        "ability_name": "Doomseer's Amulet",
+                        "ability_key": "doomseers_amulet",
+                        "phase_name": phase_name,
+                        "phase": phase_name.replace("_", " ").title(),
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "model_id": bearer_model_id,
+                        "range": int(range_value),
+                        "test_penalty": int(max(0, test_penalty)),
+                        "requires_visibility": bool(requires_visibility),
+                        "candidate_unit_ids": list(candidate_ids),
+                        "optional": bool(sr.get("enhancement_doomseers_amulet_optional", True)),
+                        "once_per_turn": False,
+                        "turn": int(turn_now or 0),
+                    },
+                )
+            )
 
     def _active_hallowed_ground_zones(self, game) -> set[str]:
         zones = {"own"}

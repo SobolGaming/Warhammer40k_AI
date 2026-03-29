@@ -6316,6 +6316,36 @@ _GREY_KNIGHTS_BROTHERHOOD_STRIKE_BY_NAME = {
 }
 
 _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010364002": EnhancementToolDescriptor(
+        enhancement_id="000010364002",
+        name="Grimoire of Conjunctions",
+        timing="start_of_fight_phase_once_per_battle",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="optional_bearer_melee_strength_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_melee_strength_bonus": 4,
+            "once_per_battle_key": "grimoire_of_conjunctions",
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000010364003": EnhancementToolDescriptor(
+        enhancement_id="000010364003",
+        name="Shield of Prophecy",
+        timing="start_of_battle_round_once_per_battle",
+        target="bearer_unit",
+        duration="until_end_of_battle_round",
+        effect="optional_bearer_unit_toughness_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_unit_toughness_bonus": 2,
+            "once_per_battle_key": "shield_of_prophecy",
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
     "000010364004": EnhancementToolDescriptor(
         enhancement_id="000010364004",
         name="A Foot in the Future",
@@ -6328,6 +6358,22 @@ _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescript
             "no_charge_this_turn": True,
             "requires_bearer_alive": True,
             "optional": True,
+        },
+    ),
+    "000010364005": EnhancementToolDescriptor(
+        enhancement_id="000010364005",
+        name="Doomseer's Amulet",
+        timing="on_unit_set_up_as_reinforcements",
+        target="enemy_unit_within_range_visible",
+        duration="instant",
+        effect="optional_select_enemy_battleshock_on_reinforcements_setup",
+        range_in=12.0,
+        effect_params={
+            "range": 12,
+            "test_penalty": 1,
+            "requires_visibility": True,
+            "optional": True,
+            "requires_bearer_alive": True,
         },
     ),
 }

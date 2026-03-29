@@ -7945,6 +7945,109 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 return ("Righteous Purpose units must be on the battlefield or embarked within a Transport.")
         return ()
     if ability in (
+        "grey_knights_augurium_grimoire_of_conjunctions",
+        "grey_knights_augurium_shield_of_prophecy",
+    ):
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Grey Knights source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "grey_knights_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_augurium_task_force", lambda: False)()):
+            return ("This selection requires a Grey Knights Augurium Task Force army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        ability_name = str(ctx.get("ability_name", "") or "Grey Knights enhancement").strip() or "Grey Knights enhancement"
+        if ability == "grey_knights_augurium_grimoire_of_conjunctions":
+            if not bool(source_sr.get("enhancement_grimoire_of_conjunctions", False)):
+                return ("Source unit does not have Grimoire of Conjunctions.",)
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name != "FIGHT_PHASE":
+                return ("Grimoire of Conjunctions can only be resolved in the Fight phase.",)
+            try:
+                queued_turn = int(ctx.get("turn", 0) or 0)
+            except (TypeError, ValueError):
+                queued_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if queued_turn and current_turn and queued_turn != current_turn:
+                return ("Grimoire of Conjunctions decision is no longer valid this turn.",)
+            once_key = str(
+                ctx.get("once_key")
+                or source_sr.get("enhancement_grimoire_of_conjunctions_once_key", "")
+                or "grimoire_of_conjunctions"
+            ).strip().lower() or "grimoire_of_conjunctions"
+            used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once(once_key)):
+                return ("Grimoire of Conjunctions has already been used this battle.",)
+            if bool(source_sr.get("enhancement_grimoire_of_conjunctions_requires_bearer_alive", True)):
+                bearer = resolve_model(
+                    game,
+                    ctx.get("bearer_model_id")
+                    or source_sr.get("enhancement_grimoire_of_conjunctions_bearer_model_id")
+                    or source_sr.get("enhancement_bearer_model_id"),
+                )
+                if bearer is None:
+                    return ("Grimoire of Conjunctions bearer model was not found.",)
+                bearer_alive = getattr(bearer, "is_alive", True)
+                if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                    return ("Grimoire of Conjunctions bearer model must be alive.",)
+        else:
+            if not bool(source_sr.get("enhancement_shield_of_prophecy", False)):
+                return ("Source unit does not have Shield of Prophecy.",)
+            try:
+                queued_round = int(ctx.get("battle_round", ctx.get("turn", 0)) or 0)
+            except (TypeError, ValueError):
+                queued_round = 0
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if queued_round and current_round and queued_round != current_round:
+                return ("Shield of Prophecy decision is no longer valid this battle round.",)
+            once_key = str(
+                ctx.get("once_key")
+                or source_sr.get("enhancement_shield_of_prophecy_once_key", "")
+                or "shield_of_prophecy"
+            ).strip().lower() or "shield_of_prophecy"
+            used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once(once_key)):
+                return ("Shield of Prophecy has already been used this battle.",)
+            if bool(source_sr.get("enhancement_shield_of_prophecy_requires_bearer_alive", True)):
+                bearer = resolve_model(
+                    game,
+                    ctx.get("bearer_model_id")
+                    or source_sr.get("enhancement_shield_of_prophecy_bearer_model_id")
+                    or source_sr.get("enhancement_bearer_model_id"),
+                )
+                if bearer is None:
+                    return ("Shield of Prophecy bearer model was not found.",)
+                bearer_alive = getattr(bearer, "is_alive", True)
+                if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                    return ("Shield of Prophecy bearer model must be alive.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return (f"{ability_name} target unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return (f"{ability_name} source/target root was not found.",)
+        if target_root is not source_root:
+            return (f"{ability_name} must target the bearer's unit.",)
+        candidate_ids = {str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return (f"{ability_name} target is not an eligible candidate.",)
+        return ()
+    if ability in (
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",
         "imperial_knights_judicants_helm",
@@ -24448,6 +24551,78 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") in (
+        "grey_knights_augurium_grimoire_of_conjunctions",
+        "grey_knights_augurium_shield_of_prophecy",
+    ):
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None:
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_unit.get_parent_army().player
+                except Exception:
+                    player = None
+            ability_key = str(ctx.get("ability", "") or "").strip().lower()
+            ability_name = str(ctx.get("ability_name", "") or "Grey Knights enhancement").strip() or "Grey Knights enhancement"
+            once_key = str(ctx.get("once_key", "") or "").strip().lower()
+            if is_skip_choice(request, result):
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
+                return None
+            target_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            if target_root is None:
+                return None
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            if once_key:
+                mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(once_key, ability_name=ability_name)
+
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+
+            if ability_key == "grey_knights_augurium_grimoire_of_conjunctions":
+                owner_id = ""
+                try:
+                    owner_army = source_unit.get_parent_army()
+                    owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+                    owner_id = str(getattr(owner_player, "id", "") or "")
+                except Exception:
+                    owner_id = ""
+                source_sr["enhancement_bearer_melee_strength_bonus"] = int(
+                    source_sr.get("enhancement_grimoire_of_conjunctions_bearer_melee_strength_bonus", 4) or 4
+                )
+                source_sr["enhancement_bearer_melee_strength_bonus_source"] = ability_name
+                source_sr["enhancement_bearer_melee_strength_bonus_expires_phase"] = "FIGHT_PHASE"
+                source_sr["enhancement_bearer_melee_strength_bonus_turn"] = int(turn or 0)
+                if owner_id:
+                    source_sr["enhancement_bearer_melee_strength_bonus_owner"] = owner_id
+                source_sr["enhancement_grimoire_of_conjunctions_active"] = True
+                source_sr["enhancement_grimoire_of_conjunctions_active_turn"] = int(turn or 0)
+                source_sr["enhancement_grimoire_of_conjunctions_active_source"] = ability_name
+                source_unit.special_rules = source_sr
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains the bearer's +4 Strength melee bonus this phase.",
+                )
+                return target_root
+
+            if ability_key == "grey_knights_augurium_shield_of_prophecy":
+                source_sr["enhancement_shield_of_prophecy_active"] = True
+                source_sr["enhancement_shield_of_prophecy_battle_round"] = int(turn or 0)
+                source_sr["enhancement_shield_of_prophecy_active_source"] = ability_name
+                source_unit.special_rules = source_sr
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains +2 Toughness until the end of the battle round.",
+                )
+                return target_root
     if str(ctx.get("ability", "") or "") in (
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",

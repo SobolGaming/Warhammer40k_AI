@@ -1941,6 +1941,23 @@ class Unit(
             except Exception:
                 pass
             try:
+                gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+                bonus_fn = getattr(gk_mgr, "shield_of_prophecy_toughness_bonus", None) if gk_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Shield of Prophecy").strip() or "Shield of Prophecy"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"enhancement:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
+            try:
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 bonus_fn = getattr(sm_mgr, "ironstorm_ancient_fury_toughness_bonus", None) if sm_mgr is not None else None
                 if callable(bonus_fn):
