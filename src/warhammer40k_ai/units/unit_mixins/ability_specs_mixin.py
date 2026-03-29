@@ -7677,6 +7677,17 @@ class AbilitySpecsMixin:
             seen=seen,
             specs=specs,
         )
+        self._append_prefixed_unit_start_any_phase_clear_battleshock_spec(
+            special_rules=root_special_rules if isinstance(root_special_rules, dict) else {},
+            prefix="enhancement_formidable_resolve",
+            default_source="Formidable Resolve",
+            default_range=12,
+            default_keyword="IMPERIUM",
+            default_once_per_battle=True,
+            default_once_per_battle_round=False,
+            seen=seen,
+            specs=specs,
+        )
         for member in list(members or []):
             if member is None or member is root:
                 continue
@@ -7689,6 +7700,17 @@ class AbilitySpecsMixin:
                 default_keyword="ORKS",
                 default_once_per_battle=False,
                 default_once_per_battle_round=True,
+                seen=seen,
+                specs=specs,
+            )
+            self._append_prefixed_unit_start_any_phase_clear_battleshock_spec(
+                special_rules=member_special_rules if isinstance(member_special_rules, dict) else {},
+                prefix="enhancement_formidable_resolve",
+                default_source="Formidable Resolve",
+                default_range=12,
+                default_keyword="IMPERIUM",
+                default_once_per_battle=True,
+                default_once_per_battle_round=False,
                 seen=seen,
                 specs=specs,
             )

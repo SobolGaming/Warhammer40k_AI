@@ -4293,6 +4293,90 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_witch_hunter_bearer_model_id"] = bearer_id
 
+        if name == "daemon slayer" or enh_id == "000009134002":
+            if not is_ordo_malleus_daemon_hunters:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Daemon Slayer").strip() or "Daemon Slayer"
+            attacks_bonus = int(
+                max(0, _coerce_int(params.get("bearer_melee_attacks_bonus", 1) or 1, default=1))
+            )
+            anti_keyword = str(params.get("anti_keyword", "DAEMON") or "DAEMON").strip().upper()
+            anti_value = int(max(2, _coerce_int(params.get("anti_value", 3) or 3, default=3)))
+            unit.special_rules["enhancement_daemon_slayer"] = True
+            unit.special_rules["enhancement_daemon_slayer_source"] = source_name
+            unit.special_rules["enhancement_daemon_slayer_bearer_melee_attacks_bonus"] = int(attacks_bonus)
+            if attacks_bonus > 0:
+                unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+                ) + int(attacks_bonus)
+            if anti_keyword:
+                unit.special_rules["enhancement_daemon_slayer_anti_keyword"] = anti_keyword
+                unit.special_rules["enhancement_daemon_slayer_anti_value"] = int(anti_value)
+                _append_enhancement_bearer_weapon_keyword_rule(
+                    unit,
+                    attack_type="melee",
+                    keywords=(f"ANTI-{anti_keyword} {anti_value}+",),
+                    source=source_name,
+                    source_model_id=bearer_id,
+                )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_daemon_slayer_bearer_model_id"] = bearer_id
+
+        if name == "formidable resolve" or enh_id == "000009134003":
+            if not is_ordo_malleus_daemon_hunters:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Formidable Resolve").strip() or "Formidable Resolve"
+            leadership_improvement = int(
+                max(0, _coerce_int(params.get("leadership_improvement", 1) or 1, default=1))
+            )
+            wounds_bonus = int(max(0, _coerce_int(params.get("wounds_bonus", 1) or 1, default=1)))
+            range_inches = int(max(1, _coerce_int(params.get("range", 12.0) or 12.0, default=12)))
+            keyword_phrase = str(params.get("keyword_phrase", "IMPERIUM") or "IMPERIUM").strip() or "IMPERIUM"
+            once_key = str(params.get("once_per_battle_key", "formidable_resolve") or "formidable_resolve").strip().lower()
+            if not once_key:
+                once_key = "formidable_resolve"
+            unit.special_rules["enhancement_formidable_resolve"] = True
+            unit.special_rules["enhancement_formidable_resolve_source"] = source_name
+            unit.special_rules["enhancement_formidable_resolve_range"] = int(range_inches)
+            unit.special_rules["enhancement_formidable_resolve_keyword_phrase"] = keyword_phrase
+            unit.special_rules["enhancement_formidable_resolve_ability_key"] = once_key
+            unit.special_rules["enhancement_formidable_resolve_once_per_battle"] = True
+            unit.special_rules["enhancement_formidable_resolve_requires_bearer_alive"] = True
+            unit.special_rules["enhancement_formidable_resolve_leadership_improvement"] = int(leadership_improvement)
+            unit.special_rules["enhancement_formidable_resolve_wounds_bonus"] = int(wounds_bonus)
+            unit.special_rules["enhancement_formidable_resolve_selection_prompt"] = (
+                f"{source_name}: select a friendly Battle-shocked unit within {int(range_inches)}\" to clear Battle-shock (or None)."
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_formidable_resolve_bearer_model_id"] = bearer_id
+            if bearer is not None and not bool(
+                unit.special_rules.get("enhancement_formidable_resolve_bearer_stats_applied", False)
+            ):
+                if leadership_improvement > 0:
+                    current_leadership = int(getattr(bearer, "leadership", getattr(bearer, "_leadership", 0)) or 0)
+                    if current_leadership > 0:
+                        bearer.leadership = int(max(2, current_leadership - leadership_improvement))
+                if wounds_bonus > 0:
+                    current_base_wounds = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+                    if current_base_wounds > 0 and _set_bearer_model_wounds_characteristic(
+                        bearer,
+                        int(current_base_wounds + wounds_bonus),
+                    ):
+                        unit.starting_total_wounds = sum(
+                            int(getattr(model, "_base_wounds", 0) or 0)
+                            for model in list(getattr(unit, "models", []) or [])
+                        )
+                unit.special_rules["enhancement_formidable_resolve_bearer_stats_applied"] = True
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("unit_start_any_phase_clear_battleshock_specs", None)
+
         if name == "gift of the prescient" or enh_id == "000009134004":
             if not is_ordo_malleus_daemon_hunters:
                 return
@@ -4345,6 +4429,43 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_bearer_model_id"] = bearer_id
+
+        if name in ("grimoire of true names aura", "grimoire of true names (aura)") or enh_id == "000009134005":
+            if not is_ordo_malleus_daemon_hunters:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Grimoire of True Names (Aura)").strip() or "Grimoire of True Names (Aura)"
+            aura_range = float(
+                max(
+                    0.0,
+                    _coerce_float(params.get("range", getattr(desc, "range_in", 9.0)) or 9.0, default=9.0),
+                )
+            )
+            leadership_penalty = int(max(0, _coerce_int(params.get("leadership_penalty", 1) or 1, default=1)))
+            hit_roll_penalty = int(max(0, _coerce_int(params.get("hit_roll_penalty", 1) or 1, default=1)))
+            wound_roll_penalty = int(max(0, _coerce_int(params.get("wound_roll_penalty", 1) or 1, default=1)))
+            required_target_keywords: list[str] = []
+            for value in list(params.get("required_target_keywords", ("DAEMON",)) or ("DAEMON",)):
+                token = str(value or "").strip().upper()
+                if token and token not in required_target_keywords:
+                    required_target_keywords.append(token)
+            if not required_target_keywords:
+                required_target_keywords = ["DAEMON"]
+            unit.special_rules["enhancement_grimoire_of_true_names_aura"] = True
+            unit.special_rules["enhancement_grimoire_of_true_names_source"] = source_name
+            unit.special_rules["enhancement_grimoire_of_true_names_aura_range"] = float(aura_range)
+            unit.special_rules["enhancement_grimoire_of_true_names_aura_penalty"] = int(leadership_penalty)
+            unit.special_rules["enhancement_grimoire_of_true_names_required_target_keywords"] = list(
+                required_target_keywords
+            )
+            unit.special_rules["enhancement_grimoire_of_true_names_daemon_hit_roll_penalty"] = int(hit_roll_penalty)
+            unit.special_rules["enhancement_grimoire_of_true_names_daemon_wound_roll_penalty"] = int(
+                wound_roll_penalty
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_grimoire_of_true_names_bearer_model_id"] = bearer_id
 
         if name == "clandestine operation" or enh_id == "000009138002":
             if not is_imperialis_fleet:

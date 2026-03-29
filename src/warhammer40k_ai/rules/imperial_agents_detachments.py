@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from ..utility.aura_utils import model_within_range_of_unit
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
@@ -31,6 +32,7 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
     )
     _ORDO_MALLEUS_DAEMON_HUNTERS_DETACHMENT_NAME = "Ordo Malleus Daemon Hunters"
     _DESTROY_THE_DAEMONIC_NAME = "Destroy the Daemonic"
+    _GRIMOIRE_OF_TRUE_NAMES_AURA_NAME = "Grimoire of True Names (Aura)"
     _DESTROY_THE_DAEMONIC_MODEL_KEYWORDS = (
         "INQUISITOR",
         "INQUISITORIAL AGENTS",
@@ -1786,6 +1788,82 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._unit_has_keyword(target_root, "DAEMON"):
             return False, ""
         return True, self._DESTROY_THE_DAEMONIC_NAME
+
+    def _grimoire_of_true_names_daemon_attack_penalty(self, attacker_unit, *, penalty_key: str) -> tuple[int, str]:
+        if not self.is_ordo_malleus_daemon_hunters():
+            return 0, ""
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None:
+            return 0, ""
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is not None and not self._unit_is_enemy_of_player(attacker_root, owner):
+            return 0, ""
+        for source_root in self._iter_unique_army_roots():
+            for member in self._attached_members(source_root):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_grimoire_of_true_names_aura", False)):
+                    continue
+                if not self._enhancement_bearer_alive(member):
+                    continue
+                required_keywords = [
+                    str(value or "").strip().upper()
+                    for value in list(sr.get("enhancement_grimoire_of_true_names_required_target_keywords", ("DAEMON",)) or ("DAEMON",))
+                    if str(value or "").strip()
+                ]
+                if required_keywords and not self._unit_has_any_keyword(attacker_root, tuple(required_keywords)):
+                    continue
+                try:
+                    aura_range = float(sr.get("enhancement_grimoire_of_true_names_aura_range", 9.0) or 9.0)
+                except (TypeError, ValueError):
+                    aura_range = 9.0
+                if aura_range <= 0.0:
+                    continue
+                bearer_model = self._enhancement_bearer_model(member)
+                if bearer_model is None:
+                    continue
+                if not model_within_range_of_unit(
+                    bearer_model,
+                    attacker_root,
+                    float(aura_range),
+                    use_attached_aggregate=True,
+                ):
+                    continue
+                penalty = self._coerce_int(sr.get(penalty_key, 1), default=1)
+                if penalty <= 0:
+                    continue
+                source_name = str(
+                    sr.get("enhancement_grimoire_of_true_names_source", "") or self._GRIMOIRE_OF_TRUE_NAMES_AURA_NAME
+                ).strip()
+                return int(penalty), source_name or self._GRIMOIRE_OF_TRUE_NAMES_AURA_NAME
+        return 0, ""
+
+    def grimoire_of_true_names_hit_roll_penalty(
+        self,
+        attacker_unit,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit, weapon_profile, attack_instance
+        return self._grimoire_of_true_names_daemon_attack_penalty(
+            attacker_unit,
+            penalty_key="enhancement_grimoire_of_true_names_daemon_hit_roll_penalty",
+        )
+
+    def grimoire_of_true_names_wound_roll_penalty(
+        self,
+        attacker_unit,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit, weapon_profile, attack_instance
+        return self._grimoire_of_true_names_daemon_attack_penalty(
+            attacker_unit,
+            penalty_key="enhancement_grimoire_of_true_names_daemon_wound_roll_penalty",
+        )
 
     def witch_hunter_hit_reroll(
         self,

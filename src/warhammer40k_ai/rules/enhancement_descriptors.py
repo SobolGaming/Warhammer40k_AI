@@ -7212,6 +7212,36 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME = {
 }
 
 _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009134002": EnhancementToolDescriptor(
+        enhancement_id="000009134002",
+        name="Daemon Slayer",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_attacks_bonus_and_anti_daemon",
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "anti_keyword": "DAEMON",
+            "anti_value": 3,
+        },
+    ),
+    "000009134003": EnhancementToolDescriptor(
+        enhancement_id="000009134003",
+        name="Formidable Resolve",
+        timing="passive_and_start_of_any_phase_once_per_battle",
+        target="bearer_and_friendly_imperium_battleshocked_unit_within_range",
+        duration="constant_and_instant",
+        effect="improve_bearer_leadership_and_wounds_and_clear_battleshock_for_friendly_unit_in_range",
+        range_in=12.0,
+        once_per_battle=True,
+        effect_params={
+            "leadership_improvement": 1,
+            "wounds_bonus": 1,
+            "range": 12.0,
+            "keyword_phrase": "IMPERIUM",
+            "once_per_battle_key": "formidable_resolve",
+        },
+    ),
     "000009134004": EnhancementToolDescriptor(
         enhancement_id="000009134004",
         name="Gift of the Prescient",
@@ -7227,6 +7257,23 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS: dict[str, Enhan
             "requires_bearer_on_battlefield": True,
             "deep_strike_min_distance": 3.0,
             "expires_phase": "MOVEMENT_PHASE",
+        },
+    ),
+    "000009134005": EnhancementToolDescriptor(
+        enhancement_id="000009134005",
+        name="Grimoire of True Names (Aura)",
+        timing="passive_aura",
+        target="enemy_units_within_range_of_bearer_and_enemy_daemon_attacks",
+        duration="constant",
+        effect="enemy_leadership_characteristic_penalty_aura_and_daemon_attack_penalties",
+        range_in=9.0,
+        effect_params={
+            "range": 9.0,
+            "leadership_penalty": 1,
+            "required_target_keywords": ("DAEMON",),
+            "hit_roll_penalty": 1,
+            "wound_roll_penalty": 1,
+            "bearer_only": True,
         },
     ),
 }

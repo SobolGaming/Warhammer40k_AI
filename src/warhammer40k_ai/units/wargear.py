@@ -12317,6 +12317,29 @@ class WargearProfile:
                     _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
         except Exception:
             pass
+        # Imperial Agents: Ordo Malleus Daemon Hunters (Grimoire of True Names (Aura)).
+        try:
+            target_army = None
+            try:
+                get_parent_army = getattr(target, "get_parent_army", None)
+                if callable(get_parent_army):
+                    target_army = get_parent_army()
+            except Exception:
+                target_army = None
+            ia_mgr = getattr(target_army, "imperial_agents_detachments", None) if target_army is not None else None
+            penalty_fn = getattr(ia_mgr, "grimoire_of_true_names_hit_roll_penalty", None) if ia_mgr is not None else None
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(
+                    attacker_unit=getattr(attacker, "parent_unit", None),
+                    target_unit=target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if penalty:
+                    source_name = str(source or "Grimoire of True Names (Aura)").strip() or "Grimoire of True Names (Aura)"
+                    _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
+        except Exception:
+            pass
         # Warhost: Lightning-Fast Reactions (-1 to hit while active).
         try:
             try:
@@ -20431,6 +20454,23 @@ class WargearProfile:
                     reroll_wound_values.add(1)
                     source_name = str(source or "Destroy the Daemonic").strip() or "Destroy the Daemonic"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Imperial Agents: Ordo Malleus Daemon Hunters (Grimoire of True Names (Aura)).
+        try:
+            target_army = target.get_parent_army()
+            ia_mgr = getattr(target_army, "imperial_agents_detachments", None) if target_army is not None else None
+            if ia_mgr is not None and callable(getattr(ia_mgr, "grimoire_of_true_names_wound_roll_penalty", None)):
+                penalty, source = ia_mgr.grimoire_of_true_names_wound_roll_penalty(
+                    attacker_unit=getattr(attacker, "parent_unit", None),
+                    target_unit=target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if penalty:
+                    source_name = str(source or "Grimoire of True Names (Aura)").strip() or "Grimoire of True Names (Aura)"
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+                    dice_modifier -= int(penalty)
         except Exception:
             pass
         # Leagues of Votann: Geomantic Hunters (optional activation, up to twice per battle).
