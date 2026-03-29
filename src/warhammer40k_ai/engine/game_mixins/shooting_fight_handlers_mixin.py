@@ -12304,6 +12304,48 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_shooting_targets_selected_grey_knights_sigil_of_exigence(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        try:
+            unique_targets = sorted(
+                {
+                    str(get_entity_id(t.get_attached_unit_root() if hasattr(t, "get_attached_unit_root") else t) or ""):
+                    (t.get_attached_unit_root() if hasattr(t, "get_attached_unit_root") else t)
+                    for t in list(target_units or [])
+                    if t is not None
+                }.values(),
+                key=lambda u: str(get_entity_id(u) or ""),
+            )
+        except Exception:
+            unique_targets = []
+        for target_root in list(unique_targets or []):
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() == attacker_root.get_parent_army():
+                    continue
+            except Exception:
+                continue
+            target_army = target_root.get_parent_army()
+            mgr = getattr(target_army, "grey_knights_detachments", None) if target_army is not None else None
+            queue_fn = getattr(mgr, "queue_sanctic_sigil_of_exigence_for_target", None) if mgr is not None else None
+            if callable(queue_fn):
+                queue_fn(target_root, attacking_unit=attacker_root, game=self)
+
     def _on_shooting_targets_selected_geomantic_hunters(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

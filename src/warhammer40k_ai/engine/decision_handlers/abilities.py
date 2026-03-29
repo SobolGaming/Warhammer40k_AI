@@ -9796,6 +9796,104 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_ids and target_id not in candidate_ids:
             return ("The Ephemeral Tome selected unit is not an eligible candidate.",)
         return ()
+    if ability == "grey_knights_sanctic_sigil_of_exigence":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Sigil of Exigence source unit was not found.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return ("Sigil of Exigence target unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None:
+            return ("Sigil of Exigence units were not found.",)
+        if source_root is not target_root:
+            return ("Sigil of Exigence target unit must be the bearer's unit.",)
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Sigil of Exigence target unit must be on the battlefield.",)
+
+        source_army = getattr(source_root, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "grey_knights_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_sanctic_spearhead", lambda: False)()):
+            return ("This selection requires a Grey Knights Sanctic Spearhead army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_sigil_of_exigence", False)):
+            return ("Sigil of Exigence enhancement is not active on the source unit.",)
+
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_sigil_of_exigence_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_sigil_of_exigence_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return ("Sigil of Exigence requires bearer_model_id when bearer must be alive.",)
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return ("Sigil of Exigence bearer model was not found.",)
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return ("Sigil of Exigence bearer model must be alive.",)
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return ("Sigil of Exigence bearer model does not belong to the source unit.",)
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return ("Sigil of Exigence can only be resolved in the Shooting phase.",)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        source_player = getattr(source_army, "player", None) if source_army is not None else None
+        if current_player is None or source_player is None:
+            return ("Sigil of Exigence player context is unavailable.",)
+        if current_player is source_player:
+            return ("Sigil of Exigence can only be resolved in your opponent's Shooting phase.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id and str(getattr(current_player, "id", "") or "") != turn_owner_id:
+            return ("Sigil of Exigence turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Sigil of Exigence turn context no longer matches.",)
+        once_key = str(
+            ctx.get("once_key")
+            or source_sr.get("enhancement_sigil_of_exigence_once_key", "")
+            or "sigil_of_exigence"
+        ).strip().lower() or "sigil_of_exigence"
+        used_once = getattr(target_root, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once(once_key)):
+            return ("Sigil of Exigence has already been used this battle.",)
+
+        if is_skip_choice(request, result):
+            return ()
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Sigil of Exigence selected unit is not an eligible candidate.",)
+        return ()
     if ability == "grey_knights_banishers_pyresoul":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -16329,6 +16427,150 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "move_distance": int(move_distance),
             "no_charge_this_turn": bool(no_charge_this_turn),
+        }
+    if ability == "grey_knights_sanctic_sigil_of_exigence":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Sigil of Exigence").strip() or "Sigil of Exigence"
+
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None or source_root is not target_root:
+            return None
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_sigil_of_exigence", False)):
+            return None
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_sigil_of_exigence_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_sigil_of_exigence_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return None
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return None
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return None
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return None
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+
+        try:
+            min_enemy_distance_horiz = int(
+                ctx.get("min_enemy_distance_horiz")
+                or source_sr.get("enhancement_sigil_of_exigence_min_enemy_distance_horiz")
+                or 9
+            )
+        except (TypeError, ValueError):
+            min_enemy_distance_horiz = 9
+        once_key = str(
+            ctx.get("once_key")
+            or source_sr.get("enhancement_sigil_of_exigence_once_key")
+            or "sigil_of_exigence"
+        ).strip().lower() or "sigil_of_exigence"
+        get_models = getattr(target_root, "get_attached_unit_models", None)
+        if callable(get_models):
+            attached_models = [model for model in list(get_models() or []) if _model_is_alive(model)]
+        else:
+            attached_models = [model for model in list(getattr(target_root, "models", []) or []) if _model_is_alive(model)]
+        allowed_model_ids = [str(get_entity_id(model) or "") for model in list(attached_models or [])]
+        allowed_model_ids = [model_id for model_id in allowed_model_ids if model_id]
+        root_id = str(get_entity_id(target_root) or "")
+        if not allowed_model_ids or not root_id:
+            return None
+
+        queue = getattr(game, "decision_queue", None)
+        duplicate_move = False
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("placement_kind", "") or "") != "normal_move_redeploy_9h":
+                    continue
+                if str(req_ctx.get("unit_id", "") or "") != root_id:
+                    continue
+                duplicate_move = True
+                break
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not duplicate_move and callable(queue_move):
+            attacker_unit = resolve_unit(game, ctx.get("attacking_unit_id"))
+            queue_move(
+                player=player,
+                unit=target_root,
+                max_distance=0,
+                kind="grey_knights_sigil_of_exigence",
+                movement_type="reactive",
+                reactive_movement_type="redeploy",
+                source=ability_name,
+                attacker_unit=attacker_unit,
+                allowed_model_ids=list(allowed_model_ids),
+                allow_skip=True,
+                extra_context={
+                    "ability_name": ability_name,
+                    "placement_kind": "normal_move_redeploy_9h",
+                    "min_enemy_distance_horiz": int(min_enemy_distance_horiz),
+                    "source_unit_id": str(get_entity_id(source_unit) or ""),
+                    "source_root_unit_id": root_id,
+                    "once_key": once_key,
+                },
+            )
+
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} will be set up again more than "
+                f"{int(min_enemy_distance_horiz)}\" horizontally from enemy units."
+            ),
+        )
+        return {
+            "target_unit_id": root_id,
+            "queued_move": True,
+            "min_enemy_distance_horiz": int(min_enemy_distance_horiz),
         }
     if ability == "grey_knights_banishers_pyresoul":
         payload = _option_payload(request, result)

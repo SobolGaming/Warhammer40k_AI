@@ -8076,6 +8076,16 @@ class ActionsMovementMixin:
         if callable(get_parent_army):
             army = get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        spiritus_fn = getattr(gk_mgr, "spiritus_machina_wound_reroll", None) if gk_mgr is not None else None
+        if callable(spiritus_fn):
+            spiritus_mods = spiritus_fn(root, attack_type=atype, game=game)
+            if isinstance(spiritus_mods, dict) and bool(spiritus_mods.get("reroll_wound_full", False)):
+                mods["reroll_wound_full"] = True
+                for reason in list(spiritus_mods.get("reroll_wound_full_reasons", ()) or ()):
+                    text = str(reason or "").strip()
+                    if text:
+                        reroll_wound_full_reasons.append(text)
         if target is not None and attacker_model is not None and weapon_profile is not None:
             closest_rule_fn = getattr(root, "get_closest_eligible_wound_reroll_rule", None)
             closest_target_fn = getattr(root, "is_target_closest_eligible", None)
@@ -12181,6 +12191,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         army = self.get_parent_army()
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        quickening_foci_reroll_charge = (
+            getattr(gk_mgr, "quickening_foci_reroll_charge_applies", None)
+            if gk_mgr is not None
+            else None
+        )
+        if callable(quickening_foci_reroll_charge):
+            if bool(quickening_foci_reroll_charge(self, game=game)):
+                return True
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         xenocreed_reroll_charge = (
             getattr(gsc_mgr, "xenocreed_unquestioning_fanaticism_reroll_charge_applies", None)

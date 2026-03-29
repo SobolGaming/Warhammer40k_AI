@@ -6548,6 +6548,65 @@ _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS.values()
 }
 
+_GREY_KNIGHTS_SANCTIC_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010360002": EnhancementToolDescriptor(
+        enhancement_id="000010360002",
+        name="Driven by Duty",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_pile_in_and_consolidate_distance_override",
+        effect_params={
+            "pile_in_distance_override": 6,
+            "consolidate_distance_override": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010360003": EnhancementToolDescriptor(
+        enhancement_id="000010360003",
+        name="Quickening Foci",
+        timing="on_unit_disembark_from_transport",
+        target="bearer_unit",
+        duration="until_end_of_turn",
+        effect="disembark_this_turn_charge_reroll",
+        effect_params={
+            "charge_reroll": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010360004": EnhancementToolDescriptor(
+        enhancement_id="000010360004",
+        name="Sigil of Exigence",
+        timing="when_targeted_by_ranged_attack_once_per_battle",
+        target="bearer_unit",
+        duration="instant",
+        effect="optional_redeploy_bearer_unit_more_than_9_horizontal_from_enemy_models",
+        once_per_battle=True,
+        effect_params={
+            "min_enemy_distance_horiz": 9,
+            "once_per_battle_key": "sigil_of_exigence",
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+    "000010360005": EnhancementToolDescriptor(
+        enhancement_id="000010360005",
+        name="Spiritus Machina",
+        timing="when_selected_to_shoot_after_disembark",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="disembarked_this_turn_shooting_wound_reroll",
+        effect_params={
+            "reroll_wound": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_GREY_KNIGHTS_SANCTIC_SPEARHEAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_SANCTIC_SPEARHEAD_DESCRIPTORS.values()
+}
+
 _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010312002": EnhancementToolDescriptor(
         enhancement_id="000010312002",
@@ -9136,6 +9195,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GREY_KNIGHTS_SANCTIC_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9391,6 +9453,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME.get(key)
         or _GREY_KNIGHTS_BANISHERS_BY_NAME.get(key)
         or _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME.get(key)
+        or _GREY_KNIGHTS_SANCTIC_SPEARHEAD_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)

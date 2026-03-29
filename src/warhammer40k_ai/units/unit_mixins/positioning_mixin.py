@@ -8209,6 +8209,54 @@ class PositioningMixin:
         except Exception:
             pass
 
+        try:
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict):
+                    continue
+                if not bool(sr_member.get("enhancement_driven_by_duty", False)):
+                    continue
+                bearer = None
+                bearer_id = str(
+                    sr_member.get("enhancement_driven_by_duty_bearer_model_id", "")
+                    or sr_member.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if bearer_id:
+                    for model in list(getattr(member, "models", []) or []):
+                        model_entity_id = str(get_entity_id(model) or "").strip()
+                        model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                        if bearer_id != model_entity_id and bearer_id != model_local_id:
+                            continue
+                        bearer = model
+                        break
+                if bearer is None:
+                    get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                    if callable(get_bearer):
+                        bearer = get_bearer()
+                if bearer is None:
+                    continue
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not bearer_alive:
+                    continue
+                if kind == "pile_in":
+                    distance = int(
+                        sr_member.get("enhancement_driven_by_duty_pile_in_distance_override", 6) or 6
+                    )
+                else:
+                    distance = int(
+                        sr_member.get("enhancement_driven_by_duty_consolidate_distance_override", 6) or 6
+                    )
+                if distance <= 0:
+                    continue
+                override = max(float(override or 0.0), float(distance))
+        except Exception:
+            pass
+
         if kind == "consolidate":
             try:
                 sr = getattr(root, "special_rules", None)

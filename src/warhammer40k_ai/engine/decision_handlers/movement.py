@@ -2753,6 +2753,19 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 mark_used_fn(unit, game=game)
             except Exception:
                 pass
+    if movement_type == "reactive" and reactive_kind == "grey_knights_sigil_of_exigence":
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        except Exception:
+            army = None
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        mark_used_fn = getattr(gk_mgr, "mark_sanctic_sigil_of_exigence_used", None) if gk_mgr is not None else None
+        if callable(mark_used_fn):
+            try:
+                ability_name = str(ctx.get("ability_name", "") or "Sigil of Exigence").strip() or "Sigil of Exigence"
+                mark_used_fn(unit, ability_name=ability_name)
+            except Exception:
+                pass
     if movement_type == "gleaming_pinions" or reactive_kind == "gleaming_pinions":
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None

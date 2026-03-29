@@ -2072,6 +2072,10 @@ class Enhancement:
             is_hallowed_conclave = bool(gk_mgr and gk_mgr.is_hallowed_conclave())
         except Exception:
             is_hallowed_conclave = False
+        try:
+            is_sanctic_spearhead = bool(gk_mgr and gk_mgr.is_sanctic_spearhead())
+        except Exception:
+            is_sanctic_spearhead = False
         ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
         try:
             is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
@@ -14691,6 +14695,82 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_pyresoul_bearer_model_id"] = bearer_id
+
+        if name == "driven by duty" or enh_id == "000010360002":
+            if not is_sanctic_spearhead:
+                return
+            unit.special_rules["enhancement_driven_by_duty"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_driven_by_duty_pile_in_distance_override"] = int(
+                max(0, _coerce_int(params.get("pile_in_distance_override", 6) or 6, default=6))
+            )
+            unit.special_rules["enhancement_driven_by_duty_consolidate_distance_override"] = int(
+                max(0, _coerce_int(params.get("consolidate_distance_override", 6) or 6, default=6))
+            )
+            unit.special_rules["enhancement_driven_by_duty_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_driven_by_duty_source"] = "Driven by Duty"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_driven_by_duty_bearer_model_id"] = bearer_id
+
+        if name == "quickening foci" or enh_id == "000010360003":
+            if not is_sanctic_spearhead:
+                return
+            unit.special_rules["enhancement_quickening_foci"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_quickening_foci_charge_reroll"] = bool(
+                params.get("charge_reroll", True)
+            )
+            unit.special_rules["enhancement_quickening_foci_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_quickening_foci_source"] = "Quickening Foci"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_quickening_foci_bearer_model_id"] = bearer_id
+
+        if name == "sigil of exigence" or enh_id == "000010360004":
+            if not is_sanctic_spearhead:
+                return
+            unit.special_rules["enhancement_sigil_of_exigence"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "sigil_of_exigence") or "sigil_of_exigence").strip().lower()
+            if not once_key:
+                once_key = "sigil_of_exigence"
+            unit.special_rules["enhancement_sigil_of_exigence_once_key"] = once_key
+            unit.special_rules["enhancement_sigil_of_exigence_min_enemy_distance_horiz"] = int(
+                max(0, _coerce_int(params.get("min_enemy_distance_horiz", 9) or 9, default=9))
+            )
+            unit.special_rules["enhancement_sigil_of_exigence_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sigil_of_exigence_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_sigil_of_exigence_source"] = "Sigil of Exigence"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sigil_of_exigence_bearer_model_id"] = bearer_id
+
+        if name == "spiritus machina" or enh_id == "000010360005":
+            if not is_sanctic_spearhead:
+                return
+            unit.special_rules["enhancement_spiritus_machina"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_spiritus_machina_reroll_wound"] = bool(
+                params.get("reroll_wound", True)
+            )
+            unit.special_rules["enhancement_spiritus_machina_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_spiritus_machina_source"] = "Spiritus Machina"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_spiritus_machina_bearer_model_id"] = bearer_id
 
         if name == "grimoire of conjunctions" or enh_id == "000010364002":
             if not is_augurium_task_force:

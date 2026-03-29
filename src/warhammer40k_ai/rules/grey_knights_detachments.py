@@ -292,6 +292,40 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return root, member, sr, bearer
         return None, None, None, None
 
+    def _sanctic_spearhead_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        bearer_keys: tuple[str, ...],
+        require_bearer_alive: bool = True,
+    ):
+        if not self.is_sanctic_spearhead():
+            return None, None, None, None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_is_active(root):
+            return None, None, None, None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None, None, None, None
+        except Exception:
+            return None, None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(str(flag_key), False)):
+                continue
+            bearer = self._resolve_member_bearer_model(member, bearer_keys=bearer_keys)
+            if require_bearer_alive and bearer is None:
+                continue
+            return root, member, sr, bearer
+        return None, None, None, None
+
     def _pending_hallowed_inescapable_judgement_request(
         self,
         game,
@@ -489,6 +523,18 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
         except Exception:
             phase_name = ""
         return (round_num, phase_name)
+
+    def _attached_unit_disembarked_from_transport_this_round(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        return bool(transport_id)
 
     def on_phase_start(self, *, game=None) -> None:
         if game is None:
@@ -1698,6 +1744,206 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             ).strip() or "The Sixty-sixth Seal"
             return int(bonus), source_name
         return 0, ""
+
+    def quickening_foci_reroll_charge_applies(self, unit, *, game=None) -> bool:
+        if not self.is_sanctic_spearhead():
+            return False
+        root, _member, sr, _bearer = self._sanctic_spearhead_enhancement_source_member(
+            unit,
+            flag_key="enhancement_quickening_foci",
+            bearer_keys=("enhancement_quickening_foci_bearer_model_id",),
+            require_bearer_alive=True,
+        )
+        if root is None or not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("enhancement_quickening_foci_charge_reroll", True)):
+            return False
+        if not self._attached_unit_disembarked_from_transport_this_round(root):
+            return False
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is None:
+            return True
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        player = getattr(self.army, "player", None)
+        if current_player is None or player is None:
+            return False
+        return str(getattr(current_player, "id", "") or "") == str(getattr(player, "id", "") or "")
+
+    def spiritus_machina_wound_reroll(self, unit, *, attack_type: str = "any", game=None) -> dict:
+        if not self.is_sanctic_spearhead():
+            return {}
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("any", "ranged"):
+            return {}
+        root, _member, sr, _bearer = self._sanctic_spearhead_enhancement_source_member(
+            unit,
+            flag_key="enhancement_spiritus_machina",
+            bearer_keys=("enhancement_spiritus_machina_bearer_model_id",),
+            require_bearer_alive=True,
+        )
+        if root is None or not isinstance(sr, dict):
+            return {}
+        if not bool(sr.get("enhancement_spiritus_machina_reroll_wound", True)):
+            return {}
+        if not self._attached_unit_disembarked_from_transport_this_round(root):
+            return {}
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None)
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if not self._is_active_army_player_phase(game_obj, phase_name="SHOOTING_PHASE"):
+            return {}
+        source_name = str(
+            sr.get("enhancement_spiritus_machina_source", "") or "Spiritus Machina"
+        ).strip() or "Spiritus Machina"
+        return {
+            "reroll_wound_full": True,
+            "reroll_wound_full_reasons": (f"{source_name}: re-roll Wound roll",),
+        }
+
+    def queue_sanctic_sigil_of_exigence_for_target(self, target_unit, *, attacking_unit=None, game=None) -> bool:
+        if not self.is_sanctic_spearhead() or game is None or target_unit is None:
+            return False
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if self._phase_name(game) != "SHOOTING_PHASE":
+            return False
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if current_player is None:
+            return False
+        if str(getattr(current_player, "id", "") or "") == str(getattr(player, "id", "") or ""):
+            return False
+        root, source_unit, sr, bearer = self._sanctic_spearhead_enhancement_source_member(
+            target_unit,
+            flag_key="enhancement_sigil_of_exigence",
+            bearer_keys=("enhancement_sigil_of_exigence_bearer_model_id",),
+            require_bearer_alive=True,
+        )
+        if root is None or source_unit is None or not isinstance(sr, dict) or bearer is None:
+            return False
+        attacker_root = self._attached_root(attacking_unit)
+        if attacker_root is None or not self._unit_is_active(attacker_root):
+            return False
+        try:
+            if attacker_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        root_id = str(get_entity_id(root) or "")
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        attacker_root_id = str(get_entity_id(attacker_root) or "")
+        if not root_id or not source_unit_id or not attacker_root_id:
+            return False
+        once_key = str(
+            sr.get("enhancement_sigil_of_exigence_once_key", "") or "sigil_of_exigence"
+        ).strip().lower() or "sigil_of_exigence"
+        used_once = getattr(root, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once(once_key)):
+            return False
+        try:
+            turn_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        existing = self._pending_choose_quarry_request(
+            game,
+            ability="grey_knights_sanctic_sigil_of_exigence",
+            source_unit_id=source_unit_id,
+            turn=int(turn_now or 0),
+            phase_name="SHOOTING_PHASE",
+        )
+        if existing is not None:
+            return True
+        ability_name = str(
+            sr.get("enhancement_sigil_of_exigence_source", "") or "Sigil of Exigence"
+        ).strip() or "Sigil of Exigence"
+        bearer_model_id = str(
+            sr.get("enhancement_sigil_of_exigence_bearer_model_id", "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        min_enemy_distance_horiz = int(
+            sr.get("enhancement_sigil_of_exigence_min_enemy_distance_horiz", 9) or 9
+        )
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        options = [
+            DecisionOption.create(
+                f"Use on {getattr(root, 'name', 'Unit')}",
+                payload={"target_unit_id": root_id},
+            ),
+            DecisionOption.create(
+                "None",
+                payload={"action": "skip", "skip": True},
+            ),
+        ]
+        game.request_decision(
+            DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"{ability_name}: choose whether {getattr(root, 'name', 'Unit')} is removed and set up again "
+                    f"more than {int(min_enemy_distance_horiz)}\" horizontally from enemy units."
+                ),
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "grey_knights_sanctic_sigil_of_exigence",
+                    "ability_name": ability_name,
+                    "source_unit_id": source_unit_id,
+                    "target_unit_id": root_id,
+                    "unit_id": root_id,
+                    "attacking_unit_id": attacker_root_id,
+                    "candidate_unit_ids": [root_id],
+                    "phase_name": "SHOOTING_PHASE",
+                    "phase": "Shooting phase",
+                    "turn_owner_id": str(getattr(current_player, "id", "") or ""),
+                    "turn": int(turn_now or 0),
+                    "once_key": once_key,
+                    "bearer_model_id": bearer_model_id,
+                    "requires_bearer_alive": bool(
+                        sr.get("enhancement_sigil_of_exigence_requires_bearer_alive", True)
+                    ),
+                    "min_enemy_distance_horiz": int(min_enemy_distance_horiz),
+                    "optional": bool(sr.get("enhancement_sigil_of_exigence_optional", True)),
+                },
+            )
+        )
+        return True
+
+    def mark_sanctic_sigil_of_exigence_used(
+        self,
+        unit,
+        *,
+        ability_name: str = "Sigil of Exigence",
+    ) -> bool:
+        if not self.is_sanctic_spearhead():
+            return False
+        root, _source_unit, sr, _bearer = self._sanctic_spearhead_enhancement_source_member(
+            unit,
+            flag_key="enhancement_sigil_of_exigence",
+            bearer_keys=("enhancement_sigil_of_exigence_bearer_model_id",),
+            require_bearer_alive=False,
+        )
+        if root is None or not isinstance(sr, dict):
+            return False
+        once_key = str(
+            sr.get("enhancement_sigil_of_exigence_once_key", "") or "sigil_of_exigence"
+        ).strip().lower() or "sigil_of_exigence"
+        mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+        if not callable(mark_used):
+            return False
+        mark_used(
+            once_key,
+            ability_name=str(ability_name or "Sigil of Exigence").strip() or "Sigil of Exigence",
+        )
+        return True
 
     def mailed_fist_applies(self, unit) -> bool:
         if not self.is_sanctic_spearhead():

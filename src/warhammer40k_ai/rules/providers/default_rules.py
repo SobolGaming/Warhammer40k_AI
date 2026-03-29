@@ -417,6 +417,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
                 ("phase_start", "_on_phase_start_master_of_mechanisms"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_grey_knights_sigil_of_exigence"),
                 ("fight_unit_selected", "_on_fight_unit_selected_hammer_aflame"),
                 ("fight_unit_selected", "_on_fight_unit_selected_channelled_force"),
             ],
