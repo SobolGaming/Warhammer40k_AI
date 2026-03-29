@@ -65,6 +65,15 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _FINAL_DAY_PSIONIC_TURN_KEY = "gsc_final_day_psionic_parasitism_turn"
     _FINAL_DAY_PSIONIC_SOURCE_KEY = "gsc_final_day_psionic_parasitism_source"
     _FINAL_DAY_CATALYST_RULE_NAME = "Catalyst (Aura)"
+    _FINAL_DAY_SYNAPTIC_AUGER_RULE_NAME = "Synaptic Auger"
+    _FINAL_DAY_SYNAPTIC_AUGER_ACTIVE_KEY = "enhancement_synaptic_auger"
+    _FINAL_DAY_SYNAPTIC_AUGER_MULTIPLIER_KEY = "enhancement_synaptic_auger_heal_multiplier"
+    _FINAL_DAY_SYNAPTIC_AUGER_SOURCE_KEY = "enhancement_synaptic_auger_source"
+    _FINAL_DAY_INHUMAN_INTEGRATION_RULE_NAME = "Inhuman Integration"
+    _FINAL_DAY_INHUMAN_INTEGRATION_ACTIVE_KEY = "enhancement_inhuman_integration"
+    _FINAL_DAY_INHUMAN_INTEGRATION_RANGE_KEY = "enhancement_inhuman_integration_range"
+    _FINAL_DAY_INHUMAN_INTEGRATION_VALUE_KEY = "enhancement_inhuman_integration_sustained_hits_value"
+    _FINAL_DAY_INHUMAN_INTEGRATION_SOURCE_KEY = "enhancement_inhuman_integration_source"
     _FINAL_DAY_GSC_EXCLUDED_NAME_TOKENS = (
         "purestrain genestealer",
         "patriarch",
@@ -287,6 +296,36 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             [model for model in models if model is not None],
             key=lambda m: str(get_entity_id(m) or ""),
         )
+
+    def _iter_attached_members(self, unit) -> list:
+        root = self._attached_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        return sorted(
+            [member for member in members if member is not None],
+            key=lambda member: (str(get_entity_id(member) or ""), str(get_entity_id(root) or "")),
+        )
+
+    def _attached_member_active_enhancement_record(self, unit, *, active_key: str) -> tuple | None:
+        root = self._attached_root(unit)
+        if root is None:
+            return None
+        for member in self._iter_attached_members(root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(active_key, False)):
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            return root, member, sr, bearer
+        return None
 
     @staticmethod
     def _name_token(name: str) -> str:
@@ -1095,7 +1134,7 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                 pairs[f"{gsc_id}:{tyr_id}"] = (gsc_root, tyr_root)
         return [pairs[k] for k in sorted(pairs.keys())]
 
-    def _heal_one_model_in_unit(self, unit, amount: int) -> tuple[int, str]:
+    def _heal_one_model_in_unit(self, unit, amount: int, *, preferred_model_id: str = "") -> tuple[int, str]:
         root = self._attached_root(unit)
         if root is None:
             return 0, ""
@@ -1106,6 +1145,14 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if heal_amount <= 0:
             return 0, ""
         models = self._iter_attached_models(root)
+        preferred_id = str(preferred_model_id or "").strip()
+        if preferred_id:
+            models.sort(
+                key=lambda model: (
+                    0 if str(get_entity_id(model) or "") == preferred_id else 1,
+                    str(get_entity_id(model) or ""),
+                )
+            )
         for model in models:
             is_alive = getattr(model, "is_alive", True)
             if callable(is_alive):
@@ -1125,6 +1172,57 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                 setattr(model, "wounds", int(current_wounds + healed))
             return int(healed), str(get_entity_id(model) or "")
         return 0, ""
+
+    def _final_day_target_within_range_of_friendly_tyranids(
+        self,
+        target_unit,
+        *,
+        range_in: float,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if not self.is_final_day():
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return False
+        target_army = getattr(target_root, "get_parent_army", lambda: None)()
+        if target_army is self.army:
+            return False
+        try:
+            max_range = float(range_in or 0.0)
+        except (TypeError, ValueError):
+            max_range = 0.0
+        if max_range <= 0.0:
+            return False
+        local_map = self._resolve_game_map(game=game, game_map=game_map)
+        get_distance = getattr(local_map, "get_distance_between_units", None) if local_map is not None else None
+        if not callable(get_distance):
+            return False
+        for tyr_root in self._iter_unit_roots():
+            if not self._unit_is_tyranids(tyr_root):
+                continue
+            if not self._unit_is_on_battlefield(tyr_root):
+                continue
+            try:
+                distance = float(get_distance(tyr_root, target_root))
+            except (TypeError, ValueError):
+                continue
+            if distance <= max_range:
+                return True
+        return False
+
+    def _final_day_synaptic_auger_record(self, unit) -> tuple | None:
+        return self._attached_member_active_enhancement_record(
+            unit,
+            active_key=self._FINAL_DAY_SYNAPTIC_AUGER_ACTIVE_KEY,
+        )
+
+    def _final_day_inhuman_integration_record(self, unit) -> tuple | None:
+        return self._attached_member_active_enhancement_record(
+            unit,
+            active_key=self._FINAL_DAY_INHUMAN_INTEGRATION_ACTIVE_KEY,
+        )
 
     def apply_final_day_psionic_parasitism_choice(
         self,
@@ -1168,7 +1266,25 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             if callable(apply_mortals):
                 apply_mortals(gsc_root, int(mortal), game_map=game_map)
 
-        healed, healed_model_id = self._heal_one_model_in_unit(tyr_root, int(mortal))
+        heal_amount = int(mortal)
+        preferred_model_id = ""
+        synaptic_auger_record = self._final_day_synaptic_auger_record(tyr_root)
+        if synaptic_auger_record is not None:
+            _source_root, _source_member, source_sr, bearer = synaptic_auger_record
+            current_wounds = int(getattr(bearer, "wounds", 0) or 0)
+            base_wounds = int(getattr(bearer, "_base_wounds", current_wounds) or current_wounds)
+            if int(base_wounds - current_wounds) > 0 and heal_amount > 0:
+                preferred_model_id = str(get_entity_id(bearer) or "")
+                try:
+                    heal_multiplier = int(source_sr.get(self._FINAL_DAY_SYNAPTIC_AUGER_MULTIPLIER_KEY, 2) or 2)
+                except (TypeError, ValueError):
+                    heal_multiplier = 2
+                heal_amount = int(heal_amount) * int(max(2, heal_multiplier))
+        healed, healed_model_id = self._heal_one_model_in_unit(
+            tyr_root,
+            int(heal_amount),
+            preferred_model_id=preferred_model_id,
+        )
         owner_player = player if player is not None else getattr(self.army, "player", None)
         owner_id = str(getattr(owner_player, "id", "") or "")
         try:
@@ -1259,24 +1375,64 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if self._unit_is_tyranids(attacker_root):
             return 0, ""
-        target_army = getattr(target_root, "get_parent_army", lambda: None)()
-        if target_army is self.army:
-            return 0, ""
-        get_distance = getattr(game_map, "get_distance_between_units", None)
-        if not callable(get_distance):
-            return 0, ""
-        for tyr_root in self._iter_unit_roots():
-            if not self._unit_is_tyranids(tyr_root):
-                continue
-            if not self._unit_is_on_battlefield(tyr_root):
-                continue
-            try:
-                distance = float(get_distance(tyr_root, target_root))
-            except (TypeError, ValueError):
-                continue
-            if distance <= 6.0:
-                return 1, self._FINAL_DAY_CATALYST_RULE_NAME
+        if self._final_day_target_within_range_of_friendly_tyranids(
+            target_root,
+            range_in=6.0,
+            game=game,
+            game_map=game_map,
+        ):
+            return 1, self._FINAL_DAY_CATALYST_RULE_NAME
         return 0, ""
+
+    def final_day_inhuman_integration_sustained_hits_value(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        game_map=None,
+        weapon_profile=None,
+    ) -> tuple[int, str]:
+        del weapon_profile  # Unused; parity with other keyword hooks.
+        if not self.is_final_day():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        target_root = self._attached_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return 0, ""
+        if self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        source_record = self._final_day_inhuman_integration_record(attacker_root)
+        if source_record is None:
+            return 0, ""
+        _source_root, _source_member, source_sr, _bearer = source_record
+        try:
+            range_in = float(source_sr.get(self._FINAL_DAY_INHUMAN_INTEGRATION_RANGE_KEY, 6.0) or 6.0)
+        except (TypeError, ValueError):
+            range_in = 6.0
+        if not self._final_day_target_within_range_of_friendly_tyranids(
+            target_root,
+            range_in=range_in,
+            game=game,
+            game_map=game_map,
+        ):
+            return 0, ""
+        try:
+            sustained_hits_value = int(source_sr.get(self._FINAL_DAY_INHUMAN_INTEGRATION_VALUE_KEY, 1) or 1)
+        except (TypeError, ValueError):
+            sustained_hits_value = 1
+        if sustained_hits_value <= 0:
+            return 0, ""
+        source_name = str(
+            source_sr.get(self._FINAL_DAY_INHUMAN_INTEGRATION_SOURCE_KEY, "") or self._FINAL_DAY_INHUMAN_INTEGRATION_RULE_NAME
+        ).strip() or self._FINAL_DAY_INHUMAN_INTEGRATION_RULE_NAME
+        return int(sustained_hits_value), source_name
 
     def _clear_final_day_psionic_bonus(self, unit) -> None:
         root = self._attached_root(unit)

@@ -2094,6 +2094,18 @@ class Enhancement:
         except Exception:
             is_brood_brother_auxilia = False
         try:
+            is_final_day = bool(gsc_mgr and gsc_mgr.is_final_day())
+        except Exception:
+            is_final_day = False
+        try:
+            is_outlander_claw = bool(gsc_mgr and gsc_mgr.is_outlander_claw())
+        except Exception:
+            is_outlander_claw = False
+        try:
+            is_xenocreed_congregation = bool(gsc_mgr and gsc_mgr.is_xenocreed_congregation())
+        except Exception:
+            is_xenocreed_congregation = False
+        try:
             is_assimilation_swarm = bool(tyr_mgr and tyr_mgr.is_assimilation_swarm())
         except Exception:
             is_assimilation_swarm = False
@@ -3106,6 +3118,106 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_firepoint_commander_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "synaptic auger" or enh_id == "000009827002":
+            if not is_final_day:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_synaptic_auger"] = True
+            unit.special_rules["enhancement_synaptic_auger_source"] = str(
+                getattr(desc, "name", "") or "Synaptic Auger"
+            ).strip() or "Synaptic Auger"
+            unit.special_rules["enhancement_synaptic_auger_heal_multiplier"] = int(
+                max(2, _coerce_int(params.get("heal_multiplier", 2) or 2, default=2))
+            )
+            unit.special_rules["enhancement_synaptic_auger_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_synaptic_auger_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "enraptured damnation" or enh_id == "000009827003":
+            if not is_final_day:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_enraptured_damnation"] = True
+            unit.special_rules["enhancement_enraptured_damnation_source"] = str(
+                getattr(desc, "name", "") or "Enraptured Damnation"
+            ).strip() or "Enraptured Damnation"
+            unit.special_rules["enhancement_enraptured_damnation_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_enraptured_damnation_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "vanguard tyrant" or enh_id == "000009827004":
+            if not is_final_day:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Vanguard Tyrant").strip() or "Vanguard Tyrant"
+            strength_bonus = int(max(0, _coerce_int(params.get("strength_bonus", 1) or 1, default=1)))
+            ap_bonus = int(max(0, _coerce_int(params.get("ap_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_vanguard_tyrant"] = True
+            unit.special_rules["enhancement_vanguard_tyrant_source"] = source_name
+            unit.special_rules["enhancement_vanguard_tyrant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if strength_bonus:
+                unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+                ) + int(strength_bonus)
+                unit.special_rules["enhancement_bearer_melee_strength_bonus_source"] = source_name
+            if ap_bonus:
+                unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+                ) + int(ap_bonus)
+                unit.special_rules["enhancement_bearer_melee_ap_bonus_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vanguard_tyrant_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "inhuman integration" or enh_id == "000009827005":
+            if not is_final_day:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                aura_range = float(params.get("range", 6.0) or 6.0)
+            except (TypeError, ValueError):
+                aura_range = 6.0
+            if aura_range <= 0.0:
+                aura_range = 6.0
+            unit.special_rules["enhancement_inhuman_integration"] = True
+            unit.special_rules["enhancement_inhuman_integration_source"] = str(
+                getattr(desc, "name", "") or "Inhuman Integration"
+            ).strip() or "Inhuman Integration"
+            unit.special_rules["enhancement_inhuman_integration_range"] = float(aura_range)
+            unit.special_rules["enhancement_inhuman_integration_sustained_hits_value"] = int(
+                max(1, _coerce_int(params.get("sustained_hits_value", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_inhuman_integration_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_inhuman_integration_bearer_model_id"] = bearer_id
             invalidate = getattr(unit, "_invalidate_ability_cache", None)
             if callable(invalidate):
                 invalidate()

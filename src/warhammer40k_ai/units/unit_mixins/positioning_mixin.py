@@ -7097,6 +7097,27 @@ class PositioningMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        if model is not None and target is not None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            sustained_fn = getattr(gsc_mgr, "final_day_inhuman_integration_sustained_hits_value", None) if gsc_mgr is not None else None
+            if callable(sustained_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sustained_value, source = sustained_fn(
+                    model,
+                    target,
+                    game=game,
+                    game_map=game_map,
+                    weapon_profile=weapon_profile,
+                )
+                if int(sustained_value or 0) > 0:
+                    rules.append(
+                        {
+                            "attack_type": "any",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": str(source or "Inhuman Integration").strip() or "Inhuman Integration",
+                        }
+                    )
         atype = str(attack_type or "").strip().lower()
         is_melee_attack = atype in ("", "any", "melee")
         if (

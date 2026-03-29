@@ -6302,6 +6302,7 @@ class KeywordsDetachmentsMixin:
         Return rule info for static datasheet abilities like:
         - "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
         - "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this model."
+        - "Enemy units cannot use the Fire Overwatch Stratagem to shoot at the bearer's unit."
         """
         try:
             root = self.get_attached_unit_root()
@@ -6312,7 +6313,7 @@ class KeywordsDetachmentsMixin:
             return root._ability_cache[cache_key]
 
         direct_pattern = re.compile(
-            r"enemy units cannot use the fire overwatch stratagem to shoot at this (?:unit|model)"
+            r"enemy units cannot use the fire overwatch stratagem to shoot at (?:this (?:unit|model)|the bearer s unit)"
         )
         equipped_pattern = re.compile(
             r"if this model is equipped with [a-z0-9 ]+ enemy units cannot use the fire overwatch stratagem to shoot at this model"

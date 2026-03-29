@@ -6762,6 +6762,49 @@ _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_FINAL_DAY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009827002": EnhancementToolDescriptor(
+        enhancement_id="000009827002",
+        name="Synaptic Auger",
+        timing="when_bearer_regains_wounds_from_psionic_parasitism",
+        target="bearer",
+        duration="instant",
+        effect="double_psionic_parasitism_healing_for_bearer",
+        effect_params={"heal_multiplier": 2, "requires_bearer_alive": True},
+    ),
+    "000009827003": EnhancementToolDescriptor(
+        enhancement_id="000009827003",
+        name="Enraptured Damnation",
+        timing="while_targeting_bearers_unit_with_fire_overwatch",
+        target="bearers_unit",
+        duration="constant_while_bearer_alive",
+        effect="prevent_enemy_fire_overwatch_against_bearers_unit",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000009827004": EnhancementToolDescriptor(
+        enhancement_id="000009827004",
+        name="Vanguard Tyrant",
+        timing="while_bearer_alive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_ap_bonus",
+        effect_params={"strength_bonus": 1, "ap_bonus": 1, "requires_bearer_alive": True},
+    ),
+    "000009827005": EnhancementToolDescriptor(
+        enhancement_id="000009827005",
+        name="Inhuman Integration",
+        timing="while_targeting_enemy_within_range_of_friendly_tyranids",
+        target="bearers_unit_weapons",
+        duration="constant_while_bearer_alive",
+        effect="grant_sustained_hits_one_vs_enemies_near_friendly_tyranids",
+        effect_params={"range": 6.0, "sustained_hits_value": 1, "requires_bearer_alive": True},
+    ),
+}
+
+_GENESTEALER_CULTS_FINAL_DAY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_FINAL_DAY_DESCRIPTORS.values()
+}
+
 _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009130003": EnhancementToolDescriptor(
         enhancement_id="000009130003",
@@ -8816,6 +8859,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_FINAL_DAY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9043,6 +9089,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
         or _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_FINAL_DAY_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)
