@@ -3222,6 +3222,91 @@ class Enhancement:
             if callable(invalidate):
                 invalidate()
 
+        if name == "serpentine tactics" or enh_id == "000009079002":
+            if not is_outlander_claw:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Serpentine Tactics").strip() or "Serpentine Tactics"
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower() or "ranged"
+            unit.special_rules["enhancement_serpentine_tactics"] = True
+            unit.special_rules["enhancement_serpentine_tactics_source"] = source_name
+            _append_enhancement_bearer_unit_fall_back_shoot_rule(
+                unit,
+                attack_type=attack_type,
+                source=source_name,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_serpentine_tactics_bearer_model_id"] = bearer_id
+            invalidate = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+        if name == "cartographic data-leech" or enh_id == "000009079003":
+            if not is_outlander_claw:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Cartographic Data-leech").strip() or "Cartographic Data-leech"
+            bs_improvement = int(
+                max(
+                    1,
+                    _coerce_int(
+                        params.get("ballistic_skill_improvement", params.get("bs_improve", 1)) or 1,
+                        default=1,
+                    ),
+                )
+            )
+            unit.special_rules["enhancement_cartographic_data_leech"] = True
+            unit.special_rules["enhancement_cartographic_data_leech_source"] = source_name
+            unit.special_rules["enhancement_cartographic_data_leech_bs_improvement"] = int(bs_improvement)
+            unit.special_rules["enhancement_cartographic_data_leech_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_cartographic_data_leech_bearer_model_id"] = bearer_id
+
+        if name == "starfall shells" or enh_id == "000009079004":
+            if not is_outlander_claw:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Starfall Shells").strip() or "Starfall Shells"
+            weapon_name = str(params.get("weapon_name", "cult sniper rifle") or "cult sniper rifle").strip()
+            hit_roll_penalty = int(max(1, _coerce_int(params.get("hit_roll_penalty", 1) or 1, default=1)))
+            unit.special_rules["enhancement_starfall_shells"] = True
+            unit.special_rules["enhancement_starfall_shells_source"] = source_name
+            unit.special_rules["enhancement_starfall_shells_weapon_name"] = weapon_name or "cult sniper rifle"
+            unit.special_rules["enhancement_starfall_shells_hit_roll_penalty"] = int(hit_roll_penalty)
+            unit.special_rules["enhancement_starfall_shells_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_starfall_shells_bearer_model_id"] = bearer_id
+
+        if name == "assault commando" or enh_id == "000009079005":
+            if not is_outlander_claw:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or "Assault Commando").strip() or "Assault Commando"
+            unit.special_rules["enhancement_assault_commando"] = True
+            unit.special_rules["enhancement_assault_commando_source"] = source_name
+            unit.special_rules["enhancement_assault_commando_attack_type"] = str(
+                params.get("attack_type", "ranged") or "ranged"
+            ).strip().lower() or "ranged"
+            unit.special_rules["enhancement_assault_commando_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_assault_commando_bearer_model_id"] = bearer_id
+
         if name == "supernova launcher" or enh_id == "000009983002":
             if not is_experimental_prototype_cadre:
                 return

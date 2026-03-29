@@ -10648,6 +10648,23 @@ class WargearProfile:
             if int(shadowmark_bonus or 0):
                 source_name = str(shadowmark_source or "Stunning Fusillade").strip() or "Stunning Fusillade"
                 _add_skill_mod(int(shadowmark_bonus), f"{source_name}: +{int(shadowmark_bonus)} BS")
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        cartographic_bonus_fn = (
+            getattr(gsc_mgr, "outlander_claw_cartographic_data_leech_bs_bonus", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(cartographic_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            cartographic_bonus, cartographic_source = cartographic_bonus_fn(
+                attacker,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+                game=game,
+            )
+            if int(cartographic_bonus or 0):
+                source_name = str(cartographic_source or "Cartographic Data-leech").strip() or "Cartographic Data-leech"
+                _add_skill_mod(int(cartographic_bonus), f"{source_name}: +{int(cartographic_bonus)} BS (Firing Deck)")
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
@@ -12414,6 +12431,17 @@ class WargearProfile:
                             or "Atavistic Instigation"
                         )
                         _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name} (duck for cover)")
+                if sr.get("gsc_starfall_shells_active"):
+                    try:
+                        penalty = int(sr.get("gsc_starfall_shells_hit_roll_penalty", 1) or 1)
+                    except Exception:
+                        penalty = 1
+                    if penalty > 0:
+                        source_name = (
+                            str(sr.get("gsc_starfall_shells_source", "") or "Starfall Shells").strip()
+                            or "Starfall Shells"
+                        )
+                        _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
                 if sr.get("tripwires_stunned_active"):
                     try:
                         penalty = int(sr.get("tripwires_stunned_hit_roll_modifier", -1) or -1)

@@ -5884,6 +5884,20 @@ class GamePhaseHandlersMixin:
                         sr.pop(key, None)
                 if (
                     pname == "SHOOTING_PHASE"
+                    and str(sr.get("gsc_starfall_shells_owner", "") or "") == owner_id
+                    and bool(sr.get("gsc_starfall_shells_active"))
+                ):
+                    for key in (
+                        "gsc_starfall_shells_active",
+                        "gsc_starfall_shells_owner",
+                        "gsc_starfall_shells_turn",
+                        "gsc_starfall_shells_source",
+                        "gsc_starfall_shells_hit_roll_penalty",
+                        "gsc_starfall_shells_expires_timing",
+                    ):
+                        sr.pop(key, None)
+                if (
+                    pname == "SHOOTING_PHASE"
                     and str(sr.get("shocked_owner", "") or "") == owner_id
                     and str(sr.get("shocked_expires_timing", "") or "").strip().upper() == "OWNER_NEXT_SHOOTING_START"
                     and bool(sr.get("shocked_active"))

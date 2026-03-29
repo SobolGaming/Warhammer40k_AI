@@ -7405,6 +7405,29 @@ class ActionsMovementMixin:
                         )
                         crit_hit_reasons.append(f"{source}: critical hit on {threshold}+")
 
+        # Genestealer Cults: Outlander Claw (Assault Commando) grants ranged full hit re-rolls
+        # after the bearer's unit disembarked from a Transport this turn.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            reroll_fn = getattr(gsc_mgr, "outlander_claw_assault_commando_hit_reroll_mods", None) if gsc_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                mods_outlander = reroll_fn(
+                    attacker_model,
+                    target_unit=target,
+                    weapon_profile=weapon_profile,
+                    game=game,
+                )
+                if isinstance(mods_outlander, dict) and bool(mods_outlander.get("reroll_full")):
+                    source = str(mods_outlander.get("source", "") or "Assault Commando").strip() or "Assault Commando"
+                    mods["reroll_hit_full"] = True
+                    reason = f"{source}: re-roll Hit roll"
+                    if reason not in reroll_hit_full_reasons:
+                        reroll_hit_full_reasons.append(reason)
+        except Exception:
+            pass
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold

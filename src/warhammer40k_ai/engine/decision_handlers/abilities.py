@@ -25057,6 +25057,48 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "gsc_starfall_shells":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            try:
+                hit_roll_penalty = int(ctx.get("hit_roll_penalty", 1) or 1)
+            except Exception:
+                hit_roll_penalty = 1
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["gsc_starfall_shells_active"] = True
+            sr["gsc_starfall_shells_owner"] = owner_id
+            sr["gsc_starfall_shells_turn"] = int(turn or 0)
+            sr["gsc_starfall_shells_source"] = str(ctx.get("ability_name", "") or "Starfall Shells").strip()
+            sr["gsc_starfall_shells_hit_roll_penalty"] = int(max(1, hit_roll_penalty))
+            sr["gsc_starfall_shells_expires_timing"] = "OWNER_NEXT_SHOOTING_START"
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    (
+                        f"{sr['gsc_starfall_shells_source']}: {tname} suffers -{int(max(1, hit_roll_penalty))} to hit "
+                        "until the start of your next Shooting phase."
+                    ),
+                )
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "start_shooting_phase_visible_hit_bonus":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

@@ -6805,6 +6805,64 @@ _GENESTEALER_CULTS_FINAL_DAY_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_FINAL_DAY_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_OUTLANDER_CLAW_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009079002": EnhancementToolDescriptor(
+        enhancement_id="000009079002",
+        name="Serpentine Tactics",
+        timing="while_bearer_alive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="eligible_to_shoot_after_fall_back",
+        effect_params={
+            "attack_type": "ranged",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009079003": EnhancementToolDescriptor(
+        enhancement_id="000009079003",
+        name="Cartographic Data-leech",
+        timing="while_bearer_embarked_in_transport_that_shoots_using_firing_deck",
+        target="transport_firing_deck_weapons",
+        duration="constant",
+        effect="improve_firing_deck_ballistic_skill_while_bearer_embarked",
+        effect_params={
+            "ballistic_skill_improvement": 1,
+            "requires_bearer_alive": True,
+            "requires_bearer_embarked": True,
+        },
+    ),
+    "000009079004": EnhancementToolDescriptor(
+        enhancement_id="000009079004",
+        name="Starfall Shells",
+        timing="after_bearer_shoots",
+        target="enemy_unit_hit_by_bearers_cult_sniper_rifle",
+        duration="until_start_of_next_owner_shooting_phase",
+        effect="post_shoot_select_hit_enemy_for_hit_penalty",
+        effect_params={
+            "weapon_name": "cult sniper rifle",
+            "hit_roll_penalty": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009079005": EnhancementToolDescriptor(
+        enhancement_id="000009079005",
+        name="Assault Commando",
+        timing="while_bearer_alive_after_disembarking_from_transport_this_turn",
+        target="bearer_unit_ranged_attacks",
+        duration="turn",
+        effect="reroll_hit_rolls_after_disembarking_from_transport",
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_scope": "full",
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_GENESTEALER_CULTS_OUTLANDER_CLAW_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_OUTLANDER_CLAW_DESCRIPTORS.values()
+}
+
 _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009130003": EnhancementToolDescriptor(
         enhancement_id="000009130003",
@@ -8862,6 +8920,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_FINAL_DAY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_OUTLANDER_CLAW_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -9090,6 +9151,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GENESTEALER_CULTS_BIOSANCTIC_BROODSURGE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)
         or _GENESTEALER_CULTS_FINAL_DAY_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_OUTLANDER_CLAW_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)

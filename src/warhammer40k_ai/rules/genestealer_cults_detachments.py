@@ -87,6 +87,25 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _RAPID_TAKEOVER_RULE_NAME = "Rapid Takeover"
     _RAPID_TAKEOVER_STICKY_SOURCE = "rapid_takeover"
     _RAPID_TAKEOVER_ATALAN_JACKALS_TOKEN = "atalan jackals"
+    _OUTLANDER_CARTOGRAPHIC_DATA_LEECH_RULE_NAME = "Cartographic Data-leech"
+    _OUTLANDER_CARTOGRAPHIC_DATA_LEECH_ACTIVE_KEY = "enhancement_cartographic_data_leech"
+    _OUTLANDER_CARTOGRAPHIC_DATA_LEECH_BS_KEY = "enhancement_cartographic_data_leech_bs_improvement"
+    _OUTLANDER_CARTOGRAPHIC_DATA_LEECH_SOURCE_KEY = "enhancement_cartographic_data_leech_source"
+    _OUTLANDER_ASSAULT_COMMANDO_RULE_NAME = "Assault Commando"
+    _OUTLANDER_ASSAULT_COMMANDO_ACTIVE_KEY = "enhancement_assault_commando"
+    _OUTLANDER_ASSAULT_COMMANDO_SOURCE_KEY = "enhancement_assault_commando_source"
+    _OUTLANDER_ASSAULT_COMMANDO_ATTACK_TYPE_KEY = "enhancement_assault_commando_attack_type"
+    _OUTLANDER_STARFALL_SHELLS_RULE_NAME = "Starfall Shells"
+    _OUTLANDER_STARFALL_SHELLS_ACTIVE_KEY = "enhancement_starfall_shells"
+    _OUTLANDER_STARFALL_SHELLS_SOURCE_KEY = "enhancement_starfall_shells_source"
+    _OUTLANDER_STARFALL_SHELLS_WEAPON_NAME_KEY = "enhancement_starfall_shells_weapon_name"
+    _OUTLANDER_STARFALL_SHELLS_HIT_PENALTY_KEY = "enhancement_starfall_shells_hit_roll_penalty"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_ACTIVE_KEY = "gsc_starfall_shells_active"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_OWNER_KEY = "gsc_starfall_shells_owner"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_TURN_KEY = "gsc_starfall_shells_turn"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_SOURCE_KEY = "gsc_starfall_shells_source"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_PENALTY_KEY = "gsc_starfall_shells_hit_roll_penalty"
+    _OUTLANDER_STARFALL_SHELLS_TARGET_EXPIRES_TIMING_KEY = "gsc_starfall_shells_expires_timing"
     _UNQUESTIONING_FANATICISM_RULE_NAME = "Unquestioning Fanaticism"
     _UNQUESTIONING_FANATICISM_ELIGIBLE_UNIT_PREFIXES = (
         "acolyte hybrids",
@@ -486,6 +505,229 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     loc.controlling_player = player
                 applied += 1
         return int(applied)
+
+    def _outlander_cartographic_data_leech_record(self, unit) -> tuple | None:
+        return self._attached_member_active_enhancement_record(
+            unit,
+            active_key=self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_ACTIVE_KEY,
+        )
+
+    def _outlander_assault_commando_record(self, unit) -> tuple | None:
+        return self._attached_member_active_enhancement_record(
+            unit,
+            active_key=self._OUTLANDER_ASSAULT_COMMANDO_ACTIVE_KEY,
+        )
+
+    def _outlander_starfall_shells_record(self, unit) -> tuple | None:
+        return self._attached_member_active_enhancement_record(
+            unit,
+            active_key=self._OUTLANDER_STARFALL_SHELLS_ACTIVE_KEY,
+        )
+
+    @staticmethod
+    def _collection_contains_source_entity(items, source_entity_id: str) -> bool:
+        source_id = str(source_entity_id or "").strip()
+        if not source_id:
+            return bool(list(items or []))
+        for item in list(items or []):
+            if item is None:
+                continue
+            if str(get_entity_id(item) or "") == source_id:
+                return True
+        return False
+
+    def outlander_claw_cartographic_data_leech_bs_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del attack_instance  # Unused; parity with other modifier hooks.
+        del game  # Unused; parity with other modifier hooks.
+        if not self.is_outlander_claw():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return 0, ""
+
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        if callable(is_ranged) and not bool(is_ranged()):
+            return 0, ""
+
+        firing_deck_sources = getattr(attacker_root, "_firing_deck_virtual_sources", None)
+        profile_id = str(getattr(weapon_profile, "id", getattr(weapon_profile, "_id", "")) or "")
+        is_firing_deck_weapon = bool(
+            isinstance(firing_deck_sources, dict)
+            and profile_id
+            and profile_id in firing_deck_sources
+        )
+        if not is_firing_deck_weapon:
+            weapon_name = str(getattr(parent_wargear, "name", "") or "").strip()
+            if "(firing deck)" not in weapon_name.lower():
+                return 0, ""
+
+        for source_root in list(self._iter_unit_roots() or []):
+            if source_root is None:
+                continue
+            embarked_in = self._attached_root(getattr(source_root, "embarked_in", None))
+            if embarked_in is not attacker_root:
+                continue
+            source_record = self._outlander_cartographic_data_leech_record(source_root)
+            if source_record is None:
+                continue
+            _record_root, _record_member, source_sr, _bearer = source_record
+            try:
+                bonus = int(source_sr.get(self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_BS_KEY, 1) or 1)
+            except (TypeError, ValueError):
+                bonus = 1
+            if bonus <= 0:
+                continue
+            source_name = str(
+                source_sr.get(
+                    self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_SOURCE_KEY,
+                    self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_RULE_NAME,
+                )
+                or self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_RULE_NAME
+            ).strip() or self._OUTLANDER_CARTOGRAPHIC_DATA_LEECH_RULE_NAME
+            return int(bonus), source_name
+        return 0, ""
+
+    def outlander_claw_assault_commando_hit_reroll_mods(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> dict:
+        del target_unit  # Unused; parity with other reroll hooks.
+        del attack_instance  # Unused; parity with other reroll hooks.
+        del game  # Unused; parity with other reroll hooks.
+        if not self.is_outlander_claw():
+            return {}
+        if attacker_model is None:
+            return {}
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return {}
+        if not self._unit_in_army(attacker_root):
+            return {}
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return {}
+        source_record = self._outlander_assault_commando_record(attacker_root)
+        if source_record is None:
+            return {}
+        _source_root, _source_member, source_sr, _bearer = source_record
+
+        attack_type = str(
+            source_sr.get(self._OUTLANDER_ASSAULT_COMMANDO_ATTACK_TYPE_KEY, "ranged") or "ranged"
+        ).strip().lower() or "ranged"
+        if attack_type == "ranged" and weapon_profile is not None:
+            parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged) and not bool(is_ranged()):
+                return {}
+
+        round_state = getattr(attacker_root, "round_state", None)
+        if round_state is None:
+            return {}
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return {}
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        if not transport_id:
+            return {}
+
+        source_name = str(
+            source_sr.get(self._OUTLANDER_ASSAULT_COMMANDO_SOURCE_KEY, self._OUTLANDER_ASSAULT_COMMANDO_RULE_NAME)
+            or self._OUTLANDER_ASSAULT_COMMANDO_RULE_NAME
+        ).strip() or self._OUTLANDER_ASSAULT_COMMANDO_RULE_NAME
+        return {
+            "reroll_full": True,
+            "source": source_name,
+        }
+
+    def outlander_claw_starfall_shells_candidates_for_attacker(
+        self,
+        attacker_unit,
+        *,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+    ) -> tuple[list, dict]:
+        if not self.is_outlander_claw():
+            return [], {}
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None:
+            return [], {}
+        if not self._unit_in_army(attacker_root):
+            return [], {}
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return [], {}
+        if not isinstance(hits_by_target, dict) or not isinstance(hit_models_by_target_weapon, dict):
+            return [], {}
+
+        source_record = self._outlander_starfall_shells_record(attacker_root)
+        if source_record is None:
+            return [], {}
+        _source_root, _source_member, source_sr, bearer = source_record
+        source_name = str(
+            source_sr.get(self._OUTLANDER_STARFALL_SHELLS_SOURCE_KEY, self._OUTLANDER_STARFALL_SHELLS_RULE_NAME)
+            or self._OUTLANDER_STARFALL_SHELLS_RULE_NAME
+        ).strip() or self._OUTLANDER_STARFALL_SHELLS_RULE_NAME
+        weapon_name = str(
+            source_sr.get(self._OUTLANDER_STARFALL_SHELLS_WEAPON_NAME_KEY, "cult sniper rifle") or "cult sniper rifle"
+        ).strip() or "cult sniper rifle"
+        weapon_key = self._weapon_name_token(weapon_name)
+        if not weapon_key:
+            return [], {}
+        try:
+            hit_roll_penalty = int(source_sr.get(self._OUTLANDER_STARFALL_SHELLS_HIT_PENALTY_KEY, 1) or 1)
+        except (TypeError, ValueError):
+            hit_roll_penalty = 1
+        source_model_id = str(get_entity_id(bearer) or "")
+
+        candidates_by_id: dict[str, object] = {}
+        for target_unit, hits in list(hits_by_target.items() or []):
+            try:
+                if int(hits or 0) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            target_root = self._attached_root(target_unit)
+            if target_root is None:
+                continue
+            target_army = getattr(target_root, "get_parent_army", lambda: None)()
+            if target_army is self.army:
+                continue
+            if not bool(getattr(target_root, "is_alive", lambda: True)()):
+                continue
+            target_map = hit_models_by_target_weapon.get(target_unit)
+            if not isinstance(target_map, dict):
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                continue
+            hit_models = target_map.get(weapon_key)
+            if not self._collection_contains_source_entity(hit_models, source_model_id):
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in candidates_by_id:
+                continue
+            candidates_by_id[target_id] = target_root
+
+        candidate_ids = sorted(candidates_by_id.keys())
+        return [candidates_by_id[target_id] for target_id in candidate_ids], {
+            "source": source_name,
+            "hit_roll_penalty": int(max(1, hit_roll_penalty)),
+        }
 
     def _xenocreed_unquestioning_fanaticism_bodyguard_eligible(self, unit) -> bool:
         root = self._attached_root(unit)

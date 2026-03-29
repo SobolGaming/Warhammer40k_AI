@@ -4581,6 +4581,71 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_gsc_starfall_shells(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            raise RuntimeError("Starfall Shells requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+        gsc_mgr = getattr(attacker_army, "genestealer_cults_detachments", None) if attacker_army is not None else None
+        candidate_fn = (
+            getattr(gsc_mgr, "outlander_claw_starfall_shells_candidates_for_attacker", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if not callable(candidate_fn):
+            return
+
+        candidates, metadata = candidate_fn(
+            attacker_unit,
+            hits_by_target=hits_by_target,
+            hit_models_by_target_weapon=hit_models_by_target_weapon,
+        )
+        if not candidates:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(candidate)},
+            )
+            for candidate in list(candidates or [])
+        ]
+        if not options:
+            return
+
+        ability_name = str((metadata or {}).get("source", "") or "Starfall Shells").strip() or "Starfall Shells"
+        try:
+            hit_roll_penalty = int((metadata or {}).get("hit_roll_penalty", 1) or 1)
+        except Exception:
+            hit_roll_penalty = 1
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a unit hit by the bearer's cult sniper rifle.",
+            player_id=getattr(attacker_player, "id", None),
+            options=options,
+            context={
+                "attacker_unit_id": get_entity_id(attacker_unit),
+                "ability": "gsc_starfall_shells",
+                "ability_name": ability_name,
+                "hit_roll_penalty": int(max(1, hit_roll_penalty)),
+            },
+        )
+        self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_ap_bonus(
         self,
         attacker_unit=None,
