@@ -12916,6 +12916,20 @@ class WargearProfile:
                         _add_hit_mod(bonus, f"+{bonus} to hit from {source}")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            bonus_fn = getattr(lov_mgr, "quake_supervisor_artillery_hit_bonus", None) if lov_mgr is not None else None
+            is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+            if callable(bonus_fn) and is_ranged:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, target, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Quake Supervisor").strip() or "Quake Supervisor"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
+        except Exception:
+            pass
 
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:
@@ -25515,6 +25529,29 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            temporary_bearer_d_bonus = int(sr.get("enhancement_bearer_melee_damage_bonus_temporary", 0) or 0)
+            if temporary_bearer_d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_melee_damage_bonus_temporary_expires_phase",
+                    turn_key="enhancement_bearer_melee_damage_bonus_temporary_turn",
+                    owner_key="enhancement_bearer_melee_damage_bonus_temporary_owner",
+                ):
+                    source_name = str(
+                        sr.get("enhancement_bearer_melee_damage_bonus_temporary_source", "")
+                        or "Enhancement bearer"
+                    ).strip() or "Enhancement bearer"
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(temporary_bearer_d_bonus),
+                            source="enhancement:bearer_melee_damage_temporary_add",
+                        )
+                    )
+                    damage_result['special_effects'].append(
+                        f"{source_name} +{int(temporary_bearer_d_bonus)}D (bearer melee)"
+                    )
             _mark_attacks_bonus, mark_damage_bonus, mark_source = self._mark_of_devotion_bonuses(attacker, sr)
             if mark_damage_bonus:
                 damage_mods.append(

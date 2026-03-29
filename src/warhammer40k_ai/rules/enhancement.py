@@ -1890,6 +1890,10 @@ class Enhancement:
         except Exception:
             is_brandfast_oathband = False
         try:
+            is_delve_assault_shift = bool(lov_mgr and lov_mgr.is_delve_assault_shift())
+        except Exception:
+            is_delve_assault_shift = False
+        try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
             is_hearthband = False
@@ -10751,6 +10755,50 @@ class Enhancement:
             unit.special_rules["enhancement_signature_restoration_source"] = str(
                 getattr(self, "name", "") or "Signature Restoration"
             ).strip() or "Signature Restoration"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "dêlvwerke navigator" or name == "delvwerke navigator" or enh_id == "000010443002":
+            if not is_delve_assault_shift:
+                return
+            unit.special_rules["enhancement_delvwerke_navigator"] = True
+            unit.special_rules["enhancement_delvwerke_navigator_source"] = str(
+                getattr(self, "name", "") or "Dêlvwerke Navigator"
+            ).strip() or "Dêlvwerke Navigator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "multiwave system jammer" or enh_id == "000010443003":
+            if not is_delve_assault_shift:
+                return
+            unit.special_rules["enhancement_multiwave_system_jammer"] = True
+            unit.special_rules["enhancement_multiwave_system_jammer_round_bonus"] = 1
+            unit.special_rules["enhancement_multiwave_system_jammer_source"] = str(
+                getattr(self, "name", "") or "Multiwave System Jammer"
+            ).strip() or "Multiwave System Jammer"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "quake supervisor" or enh_id == "000010443004":
+            if not is_delve_assault_shift:
+                return
+            unit.special_rules["enhancement_quake_supervisor"] = True
+            unit.special_rules["enhancement_quake_supervisor_range"] = 3.0
+            unit.special_rules["enhancement_quake_supervisor_hit_bonus"] = 1
+            unit.special_rules["enhancement_quake_supervisor_source"] = str(
+                getattr(self, "name", "") or "Quake Supervisor"
+            ).strip() or "Quake Supervisor"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "piledriver" or enh_id == "000010443005":
+            if not is_delve_assault_shift:
+                return
+            unit.special_rules["enhancement_piledriver"] = True
+            unit.special_rules["enhancement_piledriver_max_spend"] = 2
+            unit.special_rules["enhancement_piledriver_source"] = str(
+                getattr(self, "name", "") or "Piledriver"
+            ).strip() or "Piledriver"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

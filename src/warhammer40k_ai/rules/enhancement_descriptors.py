@@ -8883,6 +8883,50 @@ _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_DESCRIPTORS.values()
 }
 
+_LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010443002": EnhancementToolDescriptor(
+        enhancement_id="000010443002",
+        name="Dêlvwerke Navigator",
+        timing="reinforcements_step",
+        target="friendly_cthonian_beserks_unit_visible_to_bearer",
+        duration="immediate",
+        effect="return_destroyed_cthonian_beserks_models_after_optional_yp_spend",
+        effect_params={"base_models_returned": 1, "additional_model_per_yp": 2},
+    ),
+    "000010443003": EnhancementToolDescriptor(
+        enhancement_id="000010443003",
+        name="Multiwave System Jammer",
+        timing="movement_phase",
+        target="friendly_cthonian_unit_in_reserves",
+        duration="until_end_of_phase",
+        effect="treat_current_battle_round_as_one_higher_for_reserves_setup",
+        effect_params={"once_per_battle": True, "round_bonus": 1},
+    ),
+    "000010443004": EnhancementToolDescriptor(
+        enhancement_id="000010443004",
+        name="Quake Supervisor",
+        timing="passive",
+        target="bearer_and_friendly_artillery_within_3",
+        duration="constant_while_within_artillery_range",
+        effect="grant_bearer_lone_operative_and_artillery_ranged_hit_bonus_vs_targets_visible_to_bearer",
+        range_in=3.0,
+        effect_params={"range_in": 3.0, "hit_bonus": 1},
+    ),
+    "000010443005": EnhancementToolDescriptor(
+        enhancement_id="000010443005",
+        name="Piledriver",
+        timing="fight_unit_selected",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="optional_yp_spend_adds_to_bearer_melee_damage",
+        effect_params={"max_yp_spend": 2},
+    ),
+}
+
+_LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -9381,6 +9425,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -9551,4 +9598,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_MORE_DAKKA_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME.get(key)
+        or _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME.get(key)
     )

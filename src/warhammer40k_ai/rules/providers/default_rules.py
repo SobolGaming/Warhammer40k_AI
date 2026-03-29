@@ -626,6 +626,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_trivarg_cyber_implant"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_oathbound_speculator"),
                 ("fight_unit_selected", "_on_fight_unit_selected_oathbound_speculator"),
+                ("fight_unit_selected", "_on_fight_unit_selected_piledriver"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_iron_ambassador"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_bastion_shield"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_geomantic_hunters"),

@@ -2352,6 +2352,14 @@ class GameSetupDeploymentReservesMixin:
             ]
 
         self._queue_necrons_eternity_gate_requests(player)
+        lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        queue_lov_requests = (
+            getattr(lov_mgr, "queue_delve_assault_shift_reinforcements_requests", None)
+            if lov_mgr is not None
+            else None
+        )
+        if callable(queue_lov_requests) and bool(queue_lov_requests(game=self, player=player)):
+            return units_arrived
 
         player_name = getattr(player, "name", "Player")
         logger.info("INFO: %s has %d units that can arrive from reserves", player_name, len(units_that_can_arrive))

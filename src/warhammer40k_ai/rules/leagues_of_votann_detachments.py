@@ -191,6 +191,18 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _unit_matches_cthonian_keywords(self, unit) -> bool:
+        if unit is None:
+            return False
+        texts = [getattr(unit, "name", "")]
+        texts += list(getattr(unit, "keywords", []) or [])
+        texts += list(getattr(unit, "faction_keywords", []) or [])
+        for raw in texts:
+            norm = self._normalize_text(raw)
+            if "cthonian" in norm:
+                return True
+        return False
+
     def _unit_matches_cthonian_beserks_keywords(self, unit) -> bool:
         if unit is None:
             return False
@@ -218,6 +230,19 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _unit_is_cthonian(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if self._unit_matches_cthonian_keywords(root):
+            return True
+        for member in self._attached_unit_members(root):
+            if self._unit_matches_cthonian_keywords(member):
+                return True
+        return False
+
     @staticmethod
     def _weapon_is_ranged(weapon_profile) -> bool:
         if weapon_profile is None:
@@ -241,6 +266,9 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         unit = getattr(model, "parent_unit", None)
         return self._unit_is_votann(unit)
+
+    def _unit_is_artillery(self, unit) -> bool:
+        return bool(unit is not None and self._unit_has_role_keyword(unit, "ARTILLERY"))
 
     @staticmethod
     def _model_within_objective_marker(model, objective_point) -> bool:
@@ -458,6 +486,150 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             owner_id = str(getattr(current_player, "id", "") or "")
         return turn, owner_id
 
+    def _attached_member_with_special_rule(self, unit, flag_key: str):
+        root = self._attached_root(unit)
+        if root is None:
+            return None, None, {}
+        members = self._attached_unit_members(root)
+        try:
+            members = sorted(members, key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            members = list(members or [])
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key)):
+                return root, member, sr
+        return root, None, {}
+
+    def _iter_enhancement_sources(
+        self,
+        flag_key: str,
+        *,
+        require_bearer_alive: bool = False,
+    ) -> list[tuple[object, object, dict, object]]:
+        entries: list[tuple[object, object, dict, object]] = []
+        seen_members: set[str] = set()
+        for root in list(self._iter_unique_army_roots() or []):
+            source_root, member, sr = self._attached_member_with_special_rule(root, flag_key)
+            if source_root is None or member is None or not isinstance(sr, dict):
+                continue
+            member_id = self._entity_id(member)
+            if not member_id or member_id in seen_members:
+                continue
+            seen_members.add(member_id)
+            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+            if require_bearer_alive and not self._model_is_alive(bearer):
+                continue
+            entries.append((source_root, member, sr, bearer))
+        entries.sort(key=lambda entry: (self._entity_id(entry[1]), self._entity_id(entry[0])))
+        return entries
+
+    def _pending_choose_quarry_request(
+        self,
+        game,
+        *,
+        abilities: tuple[str, ...],
+        player_id: str = "",
+        source_unit_id: str = "",
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        ability_keys = {
+            str(value or "").strip().lower()
+            for value in list(abilities or ())
+            if str(value or "").strip()
+        }
+        normalized_player_id = str(player_id or "").strip()
+        normalized_source_id = str(source_unit_id or "").strip()
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "").strip() != "choose_quarry":
+                continue
+            request_player_id = str(getattr(request, "player_id", "") or "").strip()
+            if normalized_player_id and request_player_id and request_player_id != normalized_player_id:
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability = str(ctx.get("ability", "") or "").strip().lower()
+            if ability_keys and ability not in ability_keys:
+                continue
+            pending_source_id = str(ctx.get("source_unit_id", "") or "").strip()
+            if normalized_source_id and pending_source_id and pending_source_id != normalized_source_id:
+                continue
+            return True
+        return False
+
+    def _source_resolved_this_turn(self, source_unit, *, key_prefix: str, turn: int, owner_id: str) -> bool:
+        if source_unit is None:
+            return False
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        prefix = str(key_prefix or "").strip()
+        if not prefix:
+            return False
+        try:
+            resolved_turn = int(sr.get(f"{prefix}_resolved_turn", 0) or 0)
+        except (TypeError, ValueError):
+            resolved_turn = 0
+        resolved_owner = str(sr.get(f"{prefix}_resolved_turn_owner", "") or "")
+        if resolved_turn != int(turn or 0):
+            return False
+        if owner_id and resolved_owner and resolved_owner != owner_id:
+            return False
+        return True
+
+    def _mark_source_resolved_this_turn(self, source_unit, *, key_prefix: str, turn: int, owner_id: str) -> None:
+        if source_unit is None:
+            return
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        prefix = str(key_prefix or "").strip()
+        if not prefix:
+            return
+        sr[f"{prefix}_resolved_turn"] = int(turn or 0)
+        sr[f"{prefix}_resolved_turn_owner"] = str(owner_id or "")
+        source_unit.special_rules = sr
+
+    @staticmethod
+    def _unit_has_returnable_destroyed_models(unit) -> bool:
+        try:
+            destroyed = list(getattr(unit, "models_lost", []) or [])
+        except Exception:
+            destroyed = []
+        return bool(destroyed)
+
+    def _bearer_can_see_unit(self, bearer_model, target_unit, *, game=None) -> bool:
+        if bearer_model is None or target_unit is None:
+            return False
+        if not self._model_is_alive(bearer_model):
+            return False
+        local_game = game
+        if local_game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            local_game = getattr(player, "game", None) if player is not None else None
+        local_map = getattr(local_game, "map", None) if local_game is not None else None
+        can_see_unit = getattr(local_game, "_model_can_see_unit", None) if local_game is not None else None
+        if callable(can_see_unit):
+            try:
+                return bool(can_see_unit(bearer_model, target_unit, game_map=local_map))
+            except TypeError:
+                return bool(can_see_unit(bearer_model, target_unit))
+            except Exception:
+                return False
+        source_unit = getattr(bearer_model, "parent_unit", None)
+        los_fn = getattr(source_unit, "_has_line_of_sight_to_target", None) if source_unit is not None else None
+        if callable(los_fn) and local_map is not None:
+            try:
+                return bool(los_fn(bearer_model, target_unit, local_map))
+            except Exception:
+                return False
+        return True
+
     def _player_is_current_turn_owner(self, game, player) -> bool:
         if game is None or player is None:
             return False
@@ -666,6 +838,343 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 continue
             keywords.append("Battleline")
             root.keywords = keywords
+
+    def multiwave_system_jammer_target_eligible(self, source_unit, target_unit, *, game=None) -> bool:
+        if not self.is_delve_assault_shift():
+            return False
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            source_unit,
+            "enhancement_multiwave_system_jammer",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return False
+        if not self._unit_in_army(source_member):
+            return False
+        if not self._unit_is_on_battlefield(source_root):
+            return False
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if not self._model_is_alive(bearer):
+            return False
+        used_once = getattr(source_member, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once("multiwave_system_jammer")):
+            return False
+        turn, owner_id = self._current_turn_context(game)
+        if self._source_resolved_this_turn(
+            source_member,
+            key_prefix="enhancement_multiwave_system_jammer",
+            turn=turn,
+            owner_id=owner_id,
+        ):
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return False
+        if not self._unit_is_votann(target_root):
+            return False
+        if not self._unit_is_cthonian(target_root):
+            return False
+        is_in_reserves = getattr(target_root, "is_in_reserves", None)
+        return bool(callable(is_in_reserves) and is_in_reserves())
+
+    def delvwerke_navigator_target_eligible(self, source_unit, target_unit, *, game=None) -> bool:
+        if not self.is_delve_assault_shift():
+            return False
+        source_root, source_member, source_sr = self._attached_member_with_special_rule(
+            source_unit,
+            "enhancement_delvwerke_navigator",
+        )
+        if source_root is None or source_member is None or not isinstance(source_sr, dict):
+            return False
+        if not self._unit_in_army(source_member):
+            return False
+        if not self._unit_is_on_battlefield(source_root):
+            return False
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if not self._model_is_alive(bearer):
+            return False
+        turn, owner_id = self._current_turn_context(game)
+        if self._source_resolved_this_turn(
+            source_member,
+            key_prefix="enhancement_delvwerke_navigator",
+            turn=turn,
+            owner_id=owner_id,
+        ):
+            return False
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return False
+        if not self._unit_is_cthonian_beserks(target_root):
+            return False
+        if not self._unit_has_returnable_destroyed_models(target_root):
+            return False
+        return bool(self._bearer_can_see_unit(bearer, target_root, game=game))
+
+    def queue_delve_assault_shift_reinforcements_requests(self, *, game, player) -> bool:
+        if not self.is_delve_assault_shift() or self.army is None or game is None or player is None:
+            return False
+        if player is not getattr(self.army, "player", None):
+            return False
+        if not self._player_is_current_turn_owner(game, player):
+            return False
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return False
+        player_id = str(getattr(player, "id", "") or "")
+        if self._pending_choose_quarry_request(
+            game,
+            abilities=("multiwave_system_jammer", "delvwerke_navigator"),
+            player_id=player_id,
+        ):
+            return True
+
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return False
+
+        turn, owner_id = self._current_turn_context(game)
+        if player_id and not owner_id:
+            owner_id = player_id
+
+        army_roots = list(self._iter_unique_army_roots() or [])
+        army_roots.sort(key=lambda root: self._entity_id(root))
+
+        for _source_root, source_member, source_sr, _bearer in self._iter_enhancement_sources(
+            "enhancement_multiwave_system_jammer",
+            require_bearer_alive=True,
+        ):
+            source_unit_id = self._entity_id(source_member)
+            if not source_unit_id:
+                continue
+            used_once = getattr(source_member, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once("multiwave_system_jammer")):
+                continue
+            if self._source_resolved_this_turn(
+                source_member,
+                key_prefix="enhancement_multiwave_system_jammer",
+                turn=turn,
+                owner_id=owner_id,
+            ):
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                abilities=("multiwave_system_jammer",),
+                player_id=player_id,
+                source_unit_id=source_unit_id,
+            ):
+                return True
+            candidate_ids: list[str] = []
+            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+            for target_root in list(army_roots or []):
+                target_id = self._entity_id(target_root)
+                if not target_id:
+                    continue
+                if not self.multiwave_system_jammer_target_eligible(source_member, target_root, game=game):
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "action": "use",
+                            "source_unit_id": source_unit_id,
+                            "target_unit_id": target_id,
+                        },
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            ability_name = (
+                str(source_sr.get("enhancement_multiwave_system_jammer_source", "") or "Multiwave System Jammer").strip()
+                or "Multiwave System Jammer"
+            )
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one friendly CTHONIAN unit in Reserves (or None).",
+                    player_id=player_id,
+                    options=options,
+                    context={
+                        "ability": "multiwave_system_jammer",
+                        "ability_name": ability_name,
+                        "phase": "Reinforcements step (Movement phase)",
+                        "optional": True,
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": sorted(set(candidate_ids)),
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                    },
+                )
+            )
+            return True
+
+        pe = self._get_yield_points_manager()
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        available_yp = max(0, int(available_yp))
+        for _source_root, source_member, source_sr, _bearer in self._iter_enhancement_sources(
+            "enhancement_delvwerke_navigator",
+            require_bearer_alive=True,
+        ):
+            source_unit_id = self._entity_id(source_member)
+            if not source_unit_id:
+                continue
+            if self._source_resolved_this_turn(
+                source_member,
+                key_prefix="enhancement_delvwerke_navigator",
+                turn=turn,
+                owner_id=owner_id,
+            ):
+                continue
+            if self._pending_choose_quarry_request(
+                game,
+                abilities=("delvwerke_navigator",),
+                player_id=player_id,
+                source_unit_id=source_unit_id,
+            ):
+                return True
+            candidate_ids: list[str] = []
+            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+            for target_root in list(army_roots or []):
+                target_id = self._entity_id(target_root)
+                if not target_id:
+                    continue
+                if not self.delvwerke_navigator_target_eligible(source_member, target_root, game=game):
+                    continue
+                candidate_ids.append(target_id)
+                for spend_yp in range(0, available_yp + 1):
+                    models_returned = 1 + (int(spend_yp) // 2)
+                    options.append(
+                        DecisionOption.create(
+                            f"{str(getattr(target_root, 'name', 'Unit') or 'Unit')}: spend {int(spend_yp)} YP (return {int(models_returned)})",
+                            payload={
+                                "action": "use",
+                                "source_unit_id": source_unit_id,
+                                "target_unit_id": target_id,
+                                "spend_yp": int(spend_yp),
+                            },
+                        )
+                    )
+            if len(options) <= 1:
+                continue
+            ability_name = (
+                str(source_sr.get("enhancement_delvwerke_navigator_source", "") or "Dêlvwerke Navigator").strip()
+                or "Dêlvwerke Navigator"
+            )
+            game.request_decision(
+                DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select a friendly visible Cthonian Beserks unit and YP spend (or None).",
+                    player_id=player_id,
+                    options=options,
+                    context={
+                        "ability": "delvwerke_navigator",
+                        "ability_name": ability_name,
+                        "phase": "Reinforcements step (Movement phase)",
+                        "optional": True,
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "candidate_unit_ids": sorted(set(candidate_ids)),
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                    },
+                )
+            )
+            return True
+        return False
+
+    def quake_supervisor_lone_operative_applies(self, unit, *, game=None) -> bool:
+        if not self.is_delve_assault_shift():
+            return False
+        root, source_member, source_sr = self._attached_member_with_special_rule(
+            unit,
+            "enhancement_quake_supervisor",
+        )
+        if root is None or source_member is None or not isinstance(source_sr, dict):
+            return False
+        if source_member is not root:
+            return False
+        if not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return False
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if not self._model_is_alive(bearer):
+            return False
+        try:
+            range_in = float(source_sr.get("enhancement_quake_supervisor_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            range_in = 3.0
+        if range_in <= 0.0:
+            return False
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        for artillery_root in list(self._iter_unique_army_roots() or []):
+            if artillery_root is None or artillery_root is root:
+                continue
+            if not self._unit_in_army(artillery_root):
+                continue
+            if not self._unit_is_votann(artillery_root):
+                continue
+            if not self._unit_is_artillery(artillery_root):
+                continue
+            if not self._unit_is_on_battlefield(artillery_root):
+                continue
+            if model_within_range_of_unit(bearer, artillery_root, float(range_in), use_attached_aggregate=True):
+                return True
+        return False
+
+    def quake_supervisor_artillery_hit_bonus(self, attacker_model, target_unit, *, game=None, game_map=None) -> tuple[int, str]:
+        del game_map
+        if not self.is_delve_assault_shift():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        target_root = self._attached_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_votann(attacker_root):
+            return 0, ""
+        if not self._unit_is_artillery(attacker_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(attacker_root):
+            return 0, ""
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        for _source_root, _source_member, source_sr, bearer in self._iter_enhancement_sources(
+            "enhancement_quake_supervisor",
+            require_bearer_alive=True,
+        ):
+            if bearer is None:
+                continue
+            try:
+                range_in = float(source_sr.get("enhancement_quake_supervisor_range", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                range_in = 3.0
+            if range_in <= 0.0:
+                continue
+            if not model_within_range_of_unit(bearer, attacker_root, float(range_in), use_attached_aggregate=True):
+                continue
+            if not self._bearer_can_see_unit(bearer, target_root, game=game):
+                continue
+            try:
+                hit_bonus = int(source_sr.get("enhancement_quake_supervisor_hit_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                hit_bonus = 1
+            if hit_bonus <= 0:
+                continue
+            source_name = (
+                str(source_sr.get("enhancement_quake_supervisor_source", "") or "Quake Supervisor").strip()
+                or "Quake Supervisor"
+            )
+            return int(hit_bonus), source_name
+        return 0, ""
 
     def _get_yield_points_manager(self):
         try:

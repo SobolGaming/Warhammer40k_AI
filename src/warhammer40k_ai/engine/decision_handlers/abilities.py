@@ -10302,6 +10302,153 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(getattr(target_root, "is_in_reserves", lambda: False)()):
             return ("High King of Fenris target must currently be in Reserves.",)
         return ()
+    if ability == "multiwave_system_jammer":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Multiwave System Jammer army not found.",)
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_delve_assault_shift", lambda: False)()):
+            return ("Multiwave System Jammer requires Dêlve Assault Shift.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Multiwave System Jammer source unit was not found.",)
+        used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once("multiwave_system_jammer")):
+            return ("Multiwave System Jammer has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Multiwave System Jammer target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Multiwave System Jammer target unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Multiwave System Jammer target is not an eligible reserve unit.",)
+        eligible_fn = getattr(mgr, "multiwave_system_jammer_target_eligible", None)
+        if not callable(eligible_fn) or not bool(eligible_fn(source_unit, target_root, game=game)):
+            return ("Multiwave System Jammer target must be a friendly CTHONIAN unit in Reserves.",)
+        return ()
+    if ability == "delvwerke_navigator":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Dêlvwerke Navigator army not found.",)
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_delve_assault_shift", lambda: False)()):
+            return ("Dêlvwerke Navigator requires Dêlve Assault Shift.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Dêlvwerke Navigator source unit was not found.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Dêlvwerke Navigator target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Dêlvwerke Navigator target unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Dêlvwerke Navigator target is not an eligible unit.",)
+        eligible_fn = getattr(mgr, "delvwerke_navigator_target_eligible", None)
+        if not callable(eligible_fn) or not bool(eligible_fn(source_unit, target_root, game=game)):
+            return ("Dêlvwerke Navigator target must be a visible friendly Cthonian Beserks unit with destroyed models.",)
+        try:
+            spend_yp = int(payload.get("spend_yp", ctx.get("spend_yp", 0)) or 0)
+        except (TypeError, ValueError):
+            spend_yp = 0
+        if spend_yp < 0:
+            return ("Dêlvwerke Navigator spend must be non-negative.",)
+        pe = getattr(army, "prioritised_efficiency", None)
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0) if pe is not None else 0
+        except (TypeError, ValueError):
+            available_yp = 0
+        if spend_yp > int(available_yp):
+            return ("Dêlvwerke Navigator cannot spend more YP than are available.",)
+        return ()
+    if ability == "piledriver":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Piledriver army not found.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Piledriver source unit was not found.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_piledriver", False)):
+            return ("Piledriver source unit does not have the enhancement.",)
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != "FIGHT_PHASE":
+            return ("Piledriver can only be resolved in the Fight phase.",)
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"spend", "use"}:
+            return ("Piledriver requires a YP spend choice.",)
+        try:
+            spend_yp = int(payload.get("spend_yp", ctx.get("spend_yp", 0)) or 0)
+        except (TypeError, ValueError):
+            spend_yp = 0
+        try:
+            max_spend = int(source_sr.get("enhancement_piledriver_max_spend", 2) or 2)
+        except (TypeError, ValueError):
+            max_spend = 2
+        if spend_yp <= 0 or spend_yp > max(1, int(max_spend)):
+            return ("Piledriver spend must be between 1 and 2 YP.",)
+        pe = getattr(army, "prioritised_efficiency", None)
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0) if pe is not None else 0
+        except (TypeError, ValueError):
+            available_yp = 0
+        if spend_yp > int(available_yp):
+            return ("Piledriver cannot spend more YP than are available.",)
+        return ()
     if ability == "here_be_loot":
         if is_skip_choice(request, result):
             return ("Here Be Loot selection cannot be skipped.",)
@@ -23892,6 +24039,293 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return target_root
+    if str(ctx.get("ability", "") or "") == "multiwave_system_jammer":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if army is None:
+            return None
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        ability_name = str(ctx.get("ability_name", "") or "Multiwave System Jammer").strip() or "Multiwave System Jammer"
+
+        mark_resolved = getattr(mgr, "_mark_source_resolved_this_turn", None)
+        if callable(mark_resolved):
+            mark_resolved(
+                source_unit,
+                key_prefix="enhancement_multiwave_system_jammer",
+                turn=turn,
+                owner_id=owner_id,
+            )
+
+        outcome = {"action": "skip", "source": ability_name}
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        else:
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if target_unit is not None and hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is not None:
+                target_sr = getattr(target_root, "special_rules", None)
+                if not isinstance(target_sr, dict):
+                    target_sr = {}
+                round_bonus = int(
+                    getattr(source_unit, "special_rules", {}).get("enhancement_multiwave_system_jammer_round_bonus", 1) or 1
+                )
+                target_sr["enhancement_multiwave_system_jammer_active"] = True
+                target_sr["enhancement_multiwave_system_jammer_round_bonus"] = int(round_bonus)
+                target_sr["enhancement_multiwave_system_jammer_turn"] = int(turn or 0)
+                target_sr["enhancement_multiwave_system_jammer_expires_phase"] = "MOVEMENT_PHASE"
+                target_sr["enhancement_multiwave_system_jammer_source"] = ability_name
+                target_sr["enhancement_multiwave_system_jammer_source_unit_id"] = str(get_entity_id(source_unit) or "")
+                target_sr["enhancement_multiwave_system_jammer_turn_owner"] = owner_id
+                target_root.special_rules = target_sr
+                invalidate_cache = getattr(target_root, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+                mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used("multiwave_system_jammer", ability_name=ability_name)
+                target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {target_name} treats the current battle round as 1 higher for Reserves setup this phase.",
+                )
+                outcome = {
+                    "action": "use",
+                    "source": ability_name,
+                    "target_unit_id": str(get_entity_id(target_root) or ""),
+                    "target_unit_name": target_name,
+                    "round_bonus": int(round_bonus),
+                }
+
+        queue_more = getattr(mgr, "queue_delve_assault_shift_reinforcements_requests", None)
+        queued_more = bool(callable(queue_more) and queue_more(game=game, player=player))
+        if not queued_more:
+            queue_standard = getattr(game, "_queue_movement_phase_reinforcements_selection", None)
+            if callable(queue_standard):
+                queue_standard(player=player)
+        return outcome
+    if str(ctx.get("ability", "") or "") == "delvwerke_navigator":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if army is None:
+            return None
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        ability_name = str(ctx.get("ability_name", "") or "Delvwerke Navigator").strip() or "Delvwerke Navigator"
+
+        mark_resolved = getattr(mgr, "_mark_source_resolved_this_turn", None)
+        if callable(mark_resolved):
+            mark_resolved(
+                source_unit,
+                key_prefix="enhancement_delvwerke_navigator",
+                turn=turn,
+                owner_id=owner_id,
+            )
+
+        outcome = {"action": "skip", "source": ability_name, "returned": 0, "spent_yp": 0}
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        else:
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if target_unit is not None and hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is not None:
+                try:
+                    requested_spend = int(payload.get("spend_yp", ctx.get("spend_yp", 0)) or 0)
+                except Exception:
+                    requested_spend = 0
+                requested_spend = max(0, int(requested_spend))
+                pe = getattr(army, "prioritised_efficiency", None)
+                spend_yp = 0
+                if requested_spend > 0 and pe is not None:
+                    spend_fn = getattr(pe, "spend_yield_points", None)
+                    if callable(spend_fn) and bool(spend_fn(int(requested_spend), game=game, turn_owner=owner_id)):
+                        spend_yp = int(requested_spend)
+                        event_system = getattr(game, "event_system", None)
+                        if event_system is not None:
+                            event_system.publish(
+                                "prioritised_efficiency_updated",
+                                player=player,
+                                game=game,
+                                delta=-int(spend_yp),
+                                mode=getattr(pe, "mode", None),
+                                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                                reason=ability_name,
+                            )
+                models_requested = 1 + (int(spend_yp) // 2)
+                returned = int(
+                    getattr(target_root, "return_destroyed_bodyguard_models", lambda *_a, **_kw: 0)(
+                        int(models_requested),
+                        game_map=getattr(game, "map", None),
+                        placement_source="delvwerke_navigator",
+                    )
+                    or 0
+                )
+                target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {target_name} returned {int(returned)} model(s) after spending {int(spend_yp)} YP.",
+                )
+                outcome = {
+                    "action": "use",
+                    "source": ability_name,
+                    "target_unit_id": str(get_entity_id(target_root) or ""),
+                    "target_unit_name": target_name,
+                    "returned": int(returned),
+                    "spent_yp": int(spend_yp),
+                }
+
+        queue_more = getattr(mgr, "queue_delve_assault_shift_reinforcements_requests", None)
+        queued_more = bool(callable(queue_more) and queue_more(game=game, player=player))
+        if not queued_more:
+            queue_standard = getattr(game, "_queue_movement_phase_reinforcements_selection", None)
+            if callable(queue_standard):
+                queue_standard(player=player)
+        return outcome
+    if str(ctx.get("ability", "") or "") == "piledriver":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_piledriver", False)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        ability_name = str(ctx.get("ability_name", "") or "Piledriver").strip() or "Piledriver"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "spent_yp": 0, "source": ability_name}
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"spend", "use"}:
+            return None
+        try:
+            spend_yp = int(payload.get("spend_yp", payload.get("amount", 0)) or 0)
+        except Exception:
+            spend_yp = 0
+        try:
+            max_spend = int(sr.get("enhancement_piledriver_max_spend", 2) or 2)
+        except Exception:
+            max_spend = 2
+        spend_yp = max(0, min(int(spend_yp), int(max_spend)))
+        if spend_yp <= 0 or pe is None:
+            return None
+        spend_fn = getattr(pe, "spend_yield_points", None)
+        if not callable(spend_fn) or not bool(spend_fn(int(spend_yp), game=game, turn_owner=owner_id)):
+            return None
+        sr = dict(sr)
+        existing_bonus = 0
+        try:
+            existing_turn = int(sr.get("enhancement_bearer_melee_damage_bonus_temporary_turn", 0) or 0)
+        except Exception:
+            existing_turn = 0
+        existing_owner = str(sr.get("enhancement_bearer_melee_damage_bonus_temporary_owner", "") or "")
+        existing_phase = str(
+            sr.get("enhancement_bearer_melee_damage_bonus_temporary_expires_phase", "") or ""
+        ).strip().upper()
+        if existing_turn == int(turn or 0) and existing_phase == "FIGHT_PHASE":
+            if not owner_id or not existing_owner or existing_owner == owner_id:
+                try:
+                    existing_bonus = int(sr.get("enhancement_bearer_melee_damage_bonus_temporary", 0) or 0)
+                except Exception:
+                    existing_bonus = 0
+        total_bonus = int(existing_bonus) + int(spend_yp)
+        sr["enhancement_bearer_melee_damage_bonus_temporary"] = int(total_bonus)
+        sr["enhancement_bearer_melee_damage_bonus_temporary_turn"] = int(turn or 0)
+        sr["enhancement_bearer_melee_damage_bonus_temporary_owner"] = owner_id
+        sr["enhancement_bearer_melee_damage_bonus_temporary_expires_phase"] = "FIGHT_PHASE"
+        sr["enhancement_bearer_melee_damage_bonus_temporary_source"] = ability_name
+        source_unit.special_rules = sr
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=game,
+                delta=-int(spend_yp),
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason=ability_name,
+            )
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: spent {int(spend_yp)} YP (+{int(total_bonus)} Damage to the bearer's melee weapons until end of phase).",
+        )
+        return {"action": action, "spent_yp": int(spend_yp), "total_bonus": int(total_bonus), "source": ability_name}
     if str(ctx.get("ability", "") or "") == "computational_mastermind":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

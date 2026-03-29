@@ -11766,6 +11766,112 @@ class GameShootingFightHandlersMixin:
             return
         self._queue_oathbound_speculator_confirmation(root, player=owner, trigger="fight")
 
+    def _on_fight_unit_selected_piledriver(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        max_spend = max(0, min(2, int(available_yp or 0)))
+        if max_spend <= 0:
+            return
+        _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            root,
+            "enhancement_piledriver",
+        )
+        if source_member is None or not isinstance(source_sr, dict):
+            return
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+        source_unit_id = str(get_entity_id(source_member) or "")
+        model_id = str(get_entity_id(bearer) or "")
+        root_id = str(get_entity_id(root) or "")
+        if not source_unit_id or not model_id or not root_id:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        turn_owner_id = str(getattr(self.get_current_player(), "id", "") or "")
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "FIGHT_PHASE"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "piledriver":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != turn_owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                if str(ctx.get("phase_name", "") or "").strip().upper() != phase_name:
+                    continue
+                return
+
+        options = [DecisionOption.create("None", payload={"action": "skip", "spend_yp": 0})]
+        for spend in range(1, max_spend + 1):
+            options.append(
+                DecisionOption.create(
+                    f"Spend {int(spend)} YP",
+                    payload={"action": "spend", "spend_yp": int(spend)},
+                )
+            )
+        ability_name = (
+            str(source_sr.get("enhancement_piledriver_source", "") or "Piledriver").strip()
+            or "Piledriver"
+        )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: spend up to {int(max_spend)} YP for +Damage on the bearer's melee weapons until end of phase.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": "piledriver",
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "phase_name": phase_name,
+                "optional": True,
+                "unit_id": root_id,
+                "source_unit_id": source_unit_id,
+                "model_id": model_id,
+                "turn_owner": turn_owner_id,
+                "turn": int(turn or 0),
+            },
+        )
+        self.request_decision(request)
+
     def _on_shooting_targets_selected_iron_ambassador(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
