@@ -634,10 +634,12 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_optimal_application"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_persecution_prospect"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_quake_multigenerator"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_graviton_vault"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_resource_transmutation"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_persecution_prospect"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_unhinged_vengeance"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_unhinged_vengeance"),
+                ("fight_attacks_resolved", "_on_fight_attacks_resolved_graviton_vault"),
             ],
         )
     )

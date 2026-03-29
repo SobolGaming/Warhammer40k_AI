@@ -1898,6 +1898,10 @@ class Enhancement:
         except Exception:
             is_hearthband = False
         try:
+            is_hearthfyre_arsenal = bool(lov_mgr and lov_mgr.is_hearthfyre_arsenal())
+        except Exception:
+            is_hearthfyre_arsenal = False
+        try:
             is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
         except Exception:
             is_needgaard_oathband = False
@@ -8052,6 +8056,13 @@ class Enhancement:
             if isinstance(cache, dict):
                 cache.pop("deep_strike", None)
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is not None and root is not unit:
+                root_cache = getattr(root, "_ability_cache", None)
+                if isinstance(root_cache, dict):
+                    root_cache.pop("deep_strike", None)
+                    root_cache.pop("opponent_turn_strategic_reserves_ability", None)
 
         if name == "warden of honour" or enh_id == "000010396005":
             if not is_vindication_task_force:
@@ -10824,6 +10835,90 @@ class Enhancement:
             unit.special_rules["enhancement_high_kahl"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"fârstrydr node", "farstrydr node"} or enh_id == "000010451002":
+            if not is_hearthfyre_arsenal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Fârstrydr Node").strip()
+            if not source_name:
+                source_name = "Fârstrydr Node"
+            unit.special_rules["enhancement_farstrydr_node"] = True
+            unit.special_rules["enhancement_farstrydr_node_source"] = source_name
+            unit.special_rules["enhancement_farstrydr_node_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["bearer_unit_deep_strike"] = bool(params.get("grants_deep_strike", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_farstrydr_node_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "calculated tenacity" or enh_id == "000010451003":
+            if not is_hearthfyre_arsenal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Calculated Tenacity").strip()
+            if not source_name:
+                source_name = "Calculated Tenacity"
+            oc_bonus = _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_calculated_tenacity"] = True
+            unit.special_rules["enhancement_calculated_tenacity_objective_control_bonus"] = int(max(0, oc_bonus))
+            unit.special_rules["enhancement_calculated_tenacity_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_calculated_tenacity_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_calculated_tenacity_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_calculated_tenacity_bearer_model_id"] = bearer_id
+
+        if name == "mantle of elders" or enh_id == "000010451004":
+            if not is_hearthfyre_arsenal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Mantle of Elders").strip()
+            if not source_name:
+                source_name = "Mantle of Elders"
+            refund_threshold = _coerce_int(params.get("refund_roll_threshold", 2) or 2, default=2)
+            refund_yp = _coerce_int(params.get("refund_yp", 1) or 1, default=1)
+            unit.special_rules["enhancement_mantle_of_elders"] = True
+            unit.special_rules["enhancement_mantle_of_elders_refund_roll_threshold"] = int(
+                max(2, refund_threshold)
+            )
+            unit.special_rules["enhancement_mantle_of_elders_refund_yp"] = int(max(1, refund_yp))
+            unit.special_rules["enhancement_mantle_of_elders_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_mantle_of_elders_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mantle_of_elders_bearer_model_id"] = bearer_id
+
+        if name == "graviton vault" or enh_id == "000010451005":
+            if not is_hearthfyre_arsenal:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(desc, "name", "") or getattr(self, "name", "") or "Graviton Vault").strip()
+            if not source_name:
+                source_name = "Graviton Vault"
+            unit.special_rules["enhancement_graviton_vault"] = True
+            unit.special_rules["enhancement_graviton_vault_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_graviton_vault_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_graviton_vault_bearer_model_id"] = bearer_id
 
         if name == "oathbound speculator" or enh_id == "000010435002":
             if not is_needgaard_oathband:

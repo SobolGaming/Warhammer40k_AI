@@ -12010,6 +12010,24 @@ class GameShootingFightHandlersMixin:
             return bool(has_keyword("TITANIC"))
         return False
 
+    @staticmethod
+    def _unit_is_monster_or_vehicle(unit) -> bool:
+        if unit is None:
+            return False
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword):
+            try:
+                return bool(has_keyword("MONSTER") or has_keyword("VEHICLE"))
+            except Exception:
+                pass
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                return bool(has_any_keyword("MONSTER") or has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+        return False
+
     def _on_fight_unit_selected_furys_cage(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -12360,6 +12378,316 @@ class GameShootingFightHandlersMixin:
                 "turn_owner": owner_id,
                 "turn": int(turn or 0),
                 "source_key": "enhancement_quake_multigenerator",
+            },
+        )
+        self.request_decision(request)
+
+    def _on_unit_shooting_resolved_graviton_vault(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET
+
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_player = attacker_root.get_parent_army().player
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+        root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            attacker_root,
+            "enhancement_graviton_vault",
+        )
+        if source_member is None:
+            return
+
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+        bearer_id = str(get_entity_id(bearer) or "")
+        if not bearer_id:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+        attacker_unit_id = str(get_entity_id(root) or "")
+        if not attacker_unit_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "graviton_vault_shooting":
+                    continue
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        by_target = hit_models_by_target if isinstance(hit_models_by_target, dict) else {}
+
+        def _bearer_hit_target(target_obj) -> bool:
+            if not by_target:
+                return True
+            hit_models = by_target.get(target_obj)
+            if hit_models is None:
+                try:
+                    target_root_local = target_obj.get_attached_unit_root()
+                except Exception:
+                    target_root_local = target_obj
+                hit_models = by_target.get(target_root_local)
+            if not hit_models:
+                return False
+            for hit_model in list(hit_models or []):
+                if str(get_entity_id(hit_model) or "") == bearer_id:
+                    return True
+            return False
+
+        candidates: list[Any] = []
+        seen_targets: set[str] = set()
+        for target_unit, hits in (hits_by_target or {}).items():
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if target_root.get_parent_army() == attacker_root.get_parent_army():
+                continue
+            if not target_root.is_alive():
+                continue
+            if not self._unit_is_monster_or_vehicle(target_root):
+                continue
+            if not _bearer_hit_target(target_unit):
+                continue
+            candidates.append(target_root)
+
+        if not candidates:
+            return
+
+        ability_name = str(source_sr.get("enhancement_graviton_vault_source", "") or "Graviton Vault").strip()
+        if not ability_name:
+            ability_name = "Graviton Vault"
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(cand)},
+            )
+            for cand in list(candidates)
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+            f"{ability_name}: select a MONSTER or VEHICLE unit to suppress.",
+            player_id=getattr(attacker_player, "id", None),
+            options=options,
+            context={
+                "ability": "graviton_vault_shooting",
+                "ability_name": ability_name,
+                "attacker_unit_id": attacker_unit_id,
+                "model_id": bearer_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "source_key": "enhancement_graviton_vault",
+                "attack_types": ["melee", "ranged"],
+            },
+        )
+        self.request_decision(request)
+
+    def _on_fight_attacks_resolved_graviton_vault(
+        self,
+        unit=None,
+        attacker_unit=None,
+        target_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        attacker_unit = attacker_unit if attacker_unit is not None else unit
+        if attacker_unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None or not attacker_root.is_alive():
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            raise RuntimeError("Graviton Vault requires an attacker player.")
+
+        if not hits_by_target:
+            if target_unit is None:
+                return
+            hits_by_target = {target_unit: 1}
+
+        root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            attacker_root,
+            "enhancement_graviton_vault",
+        )
+        if source_member is None:
+            return
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+        bearer_id = str(get_entity_id(bearer) or "")
+        if not bearer_id:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        attacker_unit_id = str(get_entity_id(root) or "")
+        if not attacker_unit_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET
+
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "graviton_vault_fight":
+                    continue
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_unit_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(current_turn or 0):
+                    continue
+                return
+
+        by_target = hit_models_by_target if isinstance(hit_models_by_target, dict) else {}
+
+        def _bearer_hit_target(target_obj) -> bool:
+            if not by_target:
+                return True
+            hit_models = by_target.get(target_obj)
+            if hit_models is None:
+                try:
+                    target_root_local = target_obj.get_attached_unit_root()
+                except Exception:
+                    target_root_local = target_obj
+                hit_models = by_target.get(target_root_local)
+            if not hit_models:
+                return False
+            for hit_model in list(hit_models or []):
+                if str(get_entity_id(hit_model) or "") == bearer_id:
+                    return True
+            return False
+
+        players = list(getattr(self, "players", []) or [])
+        next_owner_id = ""
+        expires_turn = int(current_turn or 0)
+        if players:
+            try:
+                current_index = int(getattr(self, "current_player_index", 0) or 0)
+            except Exception:
+                current_index = 0
+            next_index = (current_index + 1) % len(players)
+            next_player = players[next_index]
+            next_owner_id = str(getattr(next_player, "id", "") or "")
+            starting_index = getattr(self, "battle_round_starting_player_index", None)
+            try:
+                wraps_battle_round = bool(next_index == int(starting_index)) if starting_index is not None else bool(
+                    next_index <= current_index
+                )
+            except Exception:
+                wraps_battle_round = bool(next_index <= current_index)
+            if wraps_battle_round and current_turn > 0:
+                expires_turn = int(current_turn + 1)
+
+        candidates = []
+        seen_targets: set[str] = set()
+        for candidate, hits in list((hits_by_target or {}).items()):
+            if candidate is None or int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = candidate.get_attached_unit_root()
+            except Exception:
+                target_root = candidate
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if target_root.get_parent_army() == attacker_root.get_parent_army():
+                continue
+            if not target_root.is_alive():
+                continue
+            if not self._unit_is_monster_or_vehicle(target_root):
+                continue
+            if not _bearer_hit_target(candidate):
+                continue
+            candidates.append(target_root)
+        if not candidates:
+            return
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        options = [
+            DecisionOption.create(
+                str(getattr(candidate, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(candidate)},
+            )
+            for candidate in list(candidates)
+        ]
+        if not options:
+            return
+        ability_name = str(source_sr.get("enhancement_graviton_vault_source", "") or "Graviton Vault").strip()
+        if not ability_name:
+            ability_name = "Graviton Vault"
+        from ..decision_kinds import DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
+            f"{ability_name}: select a MONSTER or VEHICLE unit to suppress.",
+            player_id=getattr(attacker_player, "id", None),
+            options=options,
+            context={
+                "ability": "graviton_vault_fight",
+                "attacker_unit_id": attacker_unit_id,
+                "ability_name": ability_name,
+                "model_id": bearer_id,
+                "attack_types": ["melee", "ranged"],
+                "expires_turn": int(expires_turn or 0),
+                "expires_turn_owner": next_owner_id,
+                "source_key": "enhancement_graviton_vault",
+                "turn": int(current_turn or 0),
             },
         )
         self.request_decision(request)

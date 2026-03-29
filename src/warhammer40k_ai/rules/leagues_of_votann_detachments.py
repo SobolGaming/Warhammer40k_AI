@@ -776,6 +776,42 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def optimal_application_refund_on_spend(self, unit, *, game=None) -> tuple[int, int, str]:
+        del game
+        if not self.is_hearthfyre_arsenal():
+            return 0, 0, ""
+        root, source_member, source_sr = self._attached_member_with_special_rule(
+            unit,
+            "enhancement_mantle_of_elders",
+        )
+        if root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, 0, ""
+        if not self._unit_in_army(root):
+            return 0, 0, ""
+        if not self._unit_is_votann(root):
+            return 0, 0, ""
+        if not self._unit_is_on_battlefield(root):
+            return 0, 0, ""
+        if bool(source_sr.get("enhancement_mantle_of_elders_requires_bearer_alive", True)):
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if not self._model_is_alive(bearer):
+                return 0, 0, ""
+        try:
+            threshold = int(source_sr.get("enhancement_mantle_of_elders_refund_roll_threshold", 2) or 2)
+        except (TypeError, ValueError):
+            threshold = 2
+        try:
+            refund_yp = int(source_sr.get("enhancement_mantle_of_elders_refund_yp", 1) or 1)
+        except (TypeError, ValueError):
+            refund_yp = 1
+        if refund_yp <= 0:
+            return 0, 0, ""
+        source = (
+            str(source_sr.get("enhancement_mantle_of_elders_source", "") or "Mantle of Elders").strip()
+            or "Mantle of Elders"
+        )
+        return max(2, int(threshold)), max(1, int(refund_yp)), source
+
     def persecution_prospect_shooting_unit_eligible(self, unit) -> bool:
         if not self.is_persecution_prospect():
             return False

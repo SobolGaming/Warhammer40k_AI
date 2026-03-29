@@ -8927,6 +8927,63 @@ _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_DESCRIPTORS.values()
 }
 
+_LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010451002": EnhancementToolDescriptor(
+        enhancement_id="000010451002",
+        name="Fârstrydr Node",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="grant_deep_strike_to_bearer_unit",
+        effect_params={
+            "grants_deep_strike": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010451003": EnhancementToolDescriptor(
+        enhancement_id="000010451003",
+        name="Calculated Tenacity",
+        timing="while_bearer_is_leading",
+        target="bearer_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="objective_control_bonus",
+        effect_params={
+            "objective_control_bonus": 1,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000010451004": EnhancementToolDescriptor(
+        enhancement_id="000010451004",
+        name="Mantle of Elders",
+        timing="on_optimal_application_spend",
+        target="bearer_unit",
+        duration="instant",
+        effect="optimal_application_yp_refund_on_successful_roll",
+        effect_params={
+            "refund_roll_threshold": 2,
+            "refund_yp": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010451005": EnhancementToolDescriptor(
+        enhancement_id="000010451005",
+        name="Graviton Vault",
+        timing="post_shoot_and_post_fight",
+        target="enemy_monster_or_vehicle_hit_by_bearer",
+        duration="until_start_of_next_turn",
+        effect="post_shoot_and_post_fight_suppression",
+        effect_params={
+            "suppression_requires_monster_or_vehicle": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -9428,6 +9485,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -9599,4 +9659,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_BRANDFAST_OATHBAND_BY_NAME.get(key)
         or _LEAGUES_OF_VOTANN_DELVE_ASSAULT_SHIFT_BY_NAME.get(key)
+        or _LEAGUES_OF_VOTANN_HEARTHFYRE_ARSENAL_BY_NAME.get(key)
     )

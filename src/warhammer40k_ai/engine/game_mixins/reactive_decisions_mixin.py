@@ -6661,16 +6661,38 @@ class GameReactiveDecisionsMixin:
             sr["optimal_application_source"] = str(ctx.get("ability_name", "") or "Optimal Application").strip() or "Optimal Application"
             root.special_rules = sr
 
+            refund_delta = 0
+            refund_reason = ""
+            refund_fn = getattr(detachment_mgr, "optimal_application_refund_on_spend", None) if detachment_mgr is not None else None
+            if callable(refund_fn):
+                threshold, refund_amount, refund_reason = refund_fn(root, game=self)
+                threshold = int(threshold or 0)
+                refund_amount = int(refund_amount or 0)
+                if threshold > 0 and refund_amount > 0:
+                    from ...utility.event_bus import append_action, append_dice
+
+                    roll = int(get_roll("D6") or 0)
+                    append_dice(player, f"{refund_reason} roll: {int(roll)}")
+                    if roll >= max(2, int(threshold)):
+                        refund_delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(refund_amount, game=self) or 0)
+                    if refund_delta > 0:
+                        append_action(player, f"{refund_reason}: rolled {int(roll)} and regained {int(refund_delta)}YP.")
+                    else:
+                        append_action(player, f"{refund_reason}: rolled {int(roll)} and regained 0YP.")
+
             event_system = getattr(self, "event_system", None)
             if event_system is not None:
+                reason = "Optimal Application"
+                if refund_reason:
+                    reason = f"Optimal Application / {refund_reason}"
                 event_system.publish(
                     "prioritised_efficiency_updated",
                     player=player,
                     game=self,
-                    delta=-1,
+                    delta=-1 + int(refund_delta or 0),
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
-                    reason="Optimal Application",
+                    reason=reason,
                 )
             return
 
