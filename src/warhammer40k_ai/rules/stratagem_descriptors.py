@@ -10047,6 +10047,69 @@ _DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DELVE_ASSAULT_SHIFT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HEARTHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009824007": StratagemToolDescriptor(
+        stratagem_id="000009824007",
+        name="Fury of the Hearth",
+        timing="shooting_phase_start",
+        target="einhyr_hearthguard_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_strength_bonus_with_optional_sustained_hits",
+        cp_cost=1,
+        effect_params={
+            "ranged_strength_bonus": 1,
+            "optional_yield_points_cost": 1,
+            "optional_sustained_hits_value": 1,
+        },
+    ),
+    "000009824006": StratagemToolDescriptor(
+        stratagem_id="000009824006",
+        name="Materialisation Matrices",
+        timing="movement_phase_start",
+        target="leagues_of_votann_reserve_unit_with_deep_strike",
+        duration="until_end_of_phase",
+        effect="deep_strike_min_distance_override",
+        cp_cost=1,
+        effect_params={"deep_strike_min_distance_in": 6.0},
+    ),
+    "000009824004": StratagemToolDescriptor(
+        stratagem_id="000009824004",
+        name="Superior Craftsmanship",
+        timing="fight_phase_start",
+        target="leagues_of_votann_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_damage_bonus_against_monsters_and_vehicles",
+        cp_cost=2,
+        effect_params={"melee_damage_bonus": 1},
+    ),
+    "000009824003": StratagemToolDescriptor(
+        stratagem_id="000009824003",
+        name="Sure of Purpose",
+        timing="fight_phase_start",
+        target="leagues_of_votann_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="extend_pile_in_and_consolidate_to_six",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance_in": 6.0,
+            "consolidate_distance_in": 6.0,
+        },
+    ),
+    "000009824005": StratagemToolDescriptor(
+        stratagem_id="000009824005",
+        name="Unyielding Aggression",
+        timing="movement_phase_after_fall_back",
+        target="leagues_of_votann_infantry_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+}
+
+_HEARTHBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HEARTHBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11425,6 +11488,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DELVE_ASSAULT_SHIFT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HEARTHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11593,6 +11659,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _BRANDFAST_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME.get(key)
+        or _HEARTHBAND_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)

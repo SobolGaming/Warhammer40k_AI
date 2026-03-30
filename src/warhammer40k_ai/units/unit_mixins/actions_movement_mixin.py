@@ -6095,6 +6095,52 @@ class ActionsMovementMixin:
         source = str(sr.get("delve_cyberstimm_infusion_source", "") or "CYBERSTIMM INFUSION").strip()
         return mode, (source or "CYBERSTIMM INFUSION")
 
+    def _hearthband_superior_craftsmanship_bonus(self, *, game=None) -> int:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("hearthband_superior_craftsmanship_active")):
+            return 0
+        bonus = int(sr.get("hearthband_superior_craftsmanship_damage_bonus", 0) or 0)
+        if bonus <= 0:
+            return 0
+        gm = game
+        if gm is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is None:
+            return int(bonus)
+        owner_id = str(sr.get("hearthband_superior_craftsmanship_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("hearthband_superior_craftsmanship_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        exp_phase = str(sr.get("hearthband_superior_craftsmanship_expires_phase", "") or "").strip().upper()
+        try:
+            current_phase = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            current_phase = ""
+        try:
+            current_turn = int(getattr(gm, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            current_owner = str(getattr(gm.get_current_player(), "id", "") or "")
+        except Exception:
+            current_owner = ""
+        if owner_id and current_owner and owner_id != current_owner:
+            return 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return 0
+        if exp_phase and current_phase and exp_phase != current_phase:
+            return 0
+        return int(bonus)
+
     def _brandfast_inexorable_efficiency_active_this_phase(self, *, game=None) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -9441,7 +9487,11 @@ class ActionsMovementMixin:
         except Exception:
             root = self
         cache_key = "melee_damage_bonus_vs_monster_vehicle"
-        if cache_key in getattr(root, "_ability_cache", {}):
+        try:
+            dynamic_bonus = int(self._hearthband_superior_craftsmanship_bonus() or 0)
+        except Exception:
+            dynamic_bonus = 0
+        if dynamic_bonus <= 0 and cache_key in getattr(root, "_ability_cache", {}):
             return int(root._ability_cache[cache_key] or 0)
 
         bonus = 0
@@ -9532,9 +9582,12 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
-        if not hasattr(root, "_ability_cache"):
-            root._ability_cache = {}
-        root._ability_cache[cache_key] = int(bonus or 0)
+        bonus += int(dynamic_bonus or 0)
+
+        if dynamic_bonus <= 0:
+            if not hasattr(root, "_ability_cache"):
+                root._ability_cache = {}
+            root._ability_cache[cache_key] = int(bonus or 0)
         return int(bonus or 0)
 
     def get_melee_damage_bonus_for_target(self, target_unit: Optional['Unit'] = None) -> int:
@@ -9630,6 +9683,12 @@ class ActionsMovementMixin:
                             bonus += _scan(name, name)
                 except Exception:
                     continue
+        except Exception:
+            pass
+
+        try:
+            if _target_has_keyword("MONSTER") or _target_has_keyword("VEHICLE"):
+                bonus += int(self._hearthband_superior_craftsmanship_bonus() or 0)
         except Exception:
             pass
 

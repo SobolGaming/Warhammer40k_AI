@@ -486,6 +486,26 @@ class VotannStratagemMixin:
             root, "HERNKYN YAEGIRS"
         )
 
+    def _votann_is_einhyr_hearthguard_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "EINHYR HEARTHGUARD") or self._votann_unit_has_keyword(
+            root, "EINHYR HEARTHGUARD"
+        )
+
+    def _votann_has_deep_strike(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        has_deep_strike = getattr(root, "has_deep_strike", None)
+        if callable(has_deep_strike):
+            try:
+                return bool(has_deep_strike())
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return self._votann_unit_has_keyword(root, "DEEP STRIKE")
+
     def _votann_targets_from_shooting_context(
         self,
         attacker_unit: Any,
@@ -649,6 +669,40 @@ class VotannStratagemMixin:
             if self._votann_engagement_enemy_candidates(unit):
                 continue
             candidates.append(unit)
+        return sorted(candidates, key=self._votann_sort_key)
+
+    def _hearthband_materialisation_matrices_candidates(self) -> List[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._votann_root(unit)
+            if root is None:
+                continue
+            uid = self._votann_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._votann_owned_by_player(root, self.player):
+                continue
+            if not self._is_votann_unit(root):
+                continue
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            try:
+                in_reserves = bool(is_in_reserves()) if callable(is_in_reserves) else False
+            except (AttributeError, TypeError, ValueError):
+                in_reserves = False
+            if not in_reserves:
+                continue
+            if str(getattr(root, "reserve_status", "") or "").strip().lower() != "reserves":
+                continue
+            if not self._votann_has_deep_strike(root):
+                continue
+            candidates.append(root)
         return sorted(candidates, key=self._votann_sort_key)
 
     def _queue_votann_brandfast_phase_start_reactions(self, *, player, phase) -> None:
@@ -1162,6 +1216,235 @@ class VotannStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _queue_votann_hearthband_phase_start_reactions(self, *, player, phase) -> None:
+        del player
+        game = getattr(self, "game", None)
+        if game is None or not self._is_hearthband_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        phase_label = self._votann_phase_label(phase)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_key == "MOVEMENT_PHASE" and active_player is self.player:
+            stratagem = self.get_by_name("MATERIALISATION MATRICES")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._hearthband_materialisation_matrices_candidates()
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+        if phase_key == "SHOOTING_PHASE" and active_player is self.player:
+            stratagem = self.get_by_name("FURY OF THE HEARTH")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = [
+                unit
+                for unit in self._votann_candidates(require_not_shot=True)
+                if self._votann_is_einhyr_hearthguard_unit(unit)
+            ]
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                return
+            payload = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+        if phase_key != "FIGHT_PHASE":
+            return
+        definitions = (
+            ("SUPERIOR CRAFTSMANSHIP", list(self._votann_candidates(require_not_fought=True))),
+            ("SURE OF PURPOSE", list(self._votann_candidates(require_not_fought=True))),
+        )
+        for strat_name, candidates in definitions:
+            stratagem = self.get_by_name(strat_name)
+            if stratagem is None:
+                continue
+            norm_name = self._votann_norm_name(stratagem.name)
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                continue
+            if norm_name in getattr(self, "_used_stratagems_this_phase", set()):
+                continue
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_hearthband_move_end_reactions(self, *, unit, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_hearthband_detachment():
+            return
+        if self._votann_phase_key(getattr(game, "phase", None)) != "MOVEMENT_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in ("fall back", "fallback"):
+            return
+        root = self._votann_root(unit)
+        if root is None or not self._votann_owned_by_player(root, self.player):
+            return
+        if not self._is_votann_unit(root) or not self._votann_is_infantry_unit(root):
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        if not self._votann_on_battlefield(root, require_targetable=True):
+            return
+        stratagem = self.get_by_name("UNYIELDING AGGRESSION")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if self._votann_reaction_exists("unit_move_ended", stratagem.name, unit=root):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": action,
+                "unit": root,
+                "target_unit": root,
+            }
+        )
+
+    def _cleanup_votann_hearthband_phase_end_effects(self, *, phase) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        game = getattr(self, "game", None)
+        current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "") if game is not None else ""
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._votann_root(unit)
+            if root is None:
+                continue
+            uid = self._votann_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "MOVEMENT_PHASE" and bool(sr.get("hearthband_materialisation_matrices_active")):
+                for key in (
+                    "hearthband_materialisation_matrices_active",
+                    "hearthband_materialisation_matrices_turn_owner",
+                    "hearthband_materialisation_matrices_turn",
+                    "hearthband_materialisation_matrices_expires_phase",
+                    "hearthband_materialisation_matrices_source",
+                    "hearthband_materialisation_matrices_deep_strike_min_distance",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("hearthband_fury_of_the_hearth_active")):
+                if bool(sr.get("hearthband_fury_of_the_hearth_added_sustained_ranged")):
+                    prev = int(sr.get("hearthband_fury_of_the_hearth_prev_sustained_ranged", 0) or 0)
+                    if prev > 0:
+                        sr["bearer_unit_sustained_hits_value_ranged"] = int(prev)
+                    else:
+                        sr.pop("bearer_unit_sustained_hits_value_ranged", None)
+                for key in (
+                    "hearthband_fury_of_the_hearth_active",
+                    "hearthband_fury_of_the_hearth_turn_owner",
+                    "hearthband_fury_of_the_hearth_turn",
+                    "hearthband_fury_of_the_hearth_expires_phase",
+                    "hearthband_fury_of_the_hearth_source",
+                    "hearthband_fury_of_the_hearth_yp_spent",
+                    "hearthband_fury_of_the_hearth_prev_sustained_ranged",
+                    "hearthband_fury_of_the_hearth_added_sustained_ranged",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("hearthband_superior_craftsmanship_active")):
+                for key in (
+                    "hearthband_superior_craftsmanship_active",
+                    "hearthband_superior_craftsmanship_owner",
+                    "hearthband_superior_craftsmanship_turn",
+                    "hearthband_superior_craftsmanship_expires_phase",
+                    "hearthband_superior_craftsmanship_source",
+                    "hearthband_superior_craftsmanship_damage_bonus",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("hearthband_sure_of_purpose_active")):
+                for key in (
+                    "hearthband_sure_of_purpose_active",
+                    "hearthband_sure_of_purpose_owner",
+                    "hearthband_sure_of_purpose_turn",
+                    "hearthband_sure_of_purpose_expires_phase",
+                    "hearthband_sure_of_purpose_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("hearthband_unyielding_aggression_active")):
+                owner_id = str(sr.get("hearthband_unyielding_aggression_turn_owner", "") or "")
+                effect_turn = int(sr.get("hearthband_unyielding_aggression_turn", 0) or 0)
+                same_owner = (not owner_id) or (owner_id == current_owner)
+                same_turn = (not effect_turn) or (not current_turn) or (effect_turn == current_turn)
+                if same_owner and same_turn:
+                    for key in (
+                        "hearthband_unyielding_aggression_active",
+                        "hearthband_unyielding_aggression_turn_owner",
+                        "hearthband_unyielding_aggression_turn",
+                        "hearthband_unyielding_aggression_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+            if changed:
+                root.special_rules = sr
+
     def _queue_votann_needgaard_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
         if game is None or not self._is_needgaard_oathband_detachment():
@@ -1614,6 +1897,22 @@ class VotannStratagemMixin:
             return False
         return bool(handler(stratagem, **kwargs))
 
+    def _use_votann_hearthband_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name = self._votann_norm_name(getattr(stratagem, "name", ""))
+        handlers = {
+            "FURY OF THE HEARTH": self._use_hearthband_fury_of_the_hearth,
+            "MATERIALISATION MATRICES": self._use_hearthband_materialisation_matrices,
+            "SUPERIOR CRAFTSMANSHIP": self._use_hearthband_superior_craftsmanship,
+            "SURE OF PURPOSE": self._use_hearthband_sure_of_purpose,
+            "UNYIELDING AGGRESSION": self._use_hearthband_unyielding_aggression,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return None
+        if not self._is_hearthband_detachment():
+            return False
+        return bool(handler(stratagem, **kwargs))
+
     def _use_votann_needgaard_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name = self._votann_norm_name(getattr(stratagem, "name", ""))
         handlers = {
@@ -1926,6 +2225,251 @@ class VotannStratagemMixin:
         )
         sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
         sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "UNSTOPPABLE FORCE")
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthband_fury_of_the_hearth(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FURY OF THE HEARTH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: FURY OF THE HEARTH: not your Shooting phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_not_shot=True))
+            if self._votann_is_einhyr_hearthguard_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FURY OF THE HEARTH: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: FURY OF THE HEARTH: target must be an Einhyr Hearthguard unit that has not been selected to shoot")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        if spend_yp is None:
+            spend_yp = int(self._votann_int_like(context.get("yield_points_to_spend"), default=0) or 0) >= 1
+        yp_spent = bool(self._votann_bool_like(spend_yp, default=False))
+        if yp_spent and not self._votann_spend_yield_points(1):
+            logger.error("ERROR: FURY OF THE HEARTH: unable to spend 1 Yield Point")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_spent:
+                self._votann_refund_yield_points(1)
+            return False
+
+        apply_bonus = getattr(target_root, "apply_selected_to_shoot_unit_ranged_weapon_bonuses", None)
+        if callable(apply_bonus):
+            apply_bonus(
+                key_prefix="hearthband_fury_of_the_hearth",
+                source=str(getattr(stratagem, "name", "") or "FURY OF THE HEARTH"),
+                strength_bonus=1,
+                expires_phase="SHOOTING_PHASE",
+                target_root=target_root,
+            )
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthband_fury_of_the_hearth_active"] = True
+        sr["hearthband_fury_of_the_hearth_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthband_fury_of_the_hearth_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthband_fury_of_the_hearth_expires_phase"] = "SHOOTING_PHASE"
+        sr["hearthband_fury_of_the_hearth_source"] = str(getattr(stratagem, "name", "") or "FURY OF THE HEARTH")
+        sr["hearthband_fury_of_the_hearth_yp_spent"] = bool(yp_spent)
+        prev_ranged_sustained = int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0)
+        if yp_spent:
+            new_ranged_sustained = max(int(prev_ranged_sustained), 1)
+            sr["hearthband_fury_of_the_hearth_prev_sustained_ranged"] = int(prev_ranged_sustained)
+            sr["hearthband_fury_of_the_hearth_added_sustained_ranged"] = bool(new_ranged_sustained != prev_ranged_sustained)
+            sr["bearer_unit_sustained_hits_value_ranged"] = int(new_ranged_sustained)
+        else:
+            sr["hearthband_fury_of_the_hearth_prev_sustained_ranged"] = int(prev_ranged_sustained)
+            sr["hearthband_fury_of_the_hearth_added_sustained_ranged"] = False
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthband_materialisation_matrices(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MATERIALISATION MATRICES: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: MATERIALISATION MATRICES: not your Movement phase")
+            return False
+        candidates = list(context.get("candidates") or self._hearthband_materialisation_matrices_candidates())
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: MATERIALISATION MATRICES: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: MATERIALISATION MATRICES: target must be a LEAGUES OF VOTANN unit in Reserves with Deep Strike")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthband_materialisation_matrices_active"] = True
+        sr["hearthband_materialisation_matrices_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthband_materialisation_matrices_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthband_materialisation_matrices_expires_phase"] = "MOVEMENT_PHASE"
+        sr["hearthband_materialisation_matrices_source"] = str(
+            getattr(stratagem, "name", "") or "MATERIALISATION MATRICES"
+        )
+        sr["hearthband_materialisation_matrices_deep_strike_min_distance"] = 6.0
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthband_superior_craftsmanship(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SUPERIOR CRAFTSMANSHIP: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates = list(context.get("candidates") or self._votann_candidates(require_not_fought=True))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: SUPERIOR CRAFTSMANSHIP: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: SUPERIOR CRAFTSMANSHIP: target must be a LEAGUES OF VOTANN unit that has not been selected to fight")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthband_superior_craftsmanship_active"] = True
+        sr["hearthband_superior_craftsmanship_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthband_superior_craftsmanship_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthband_superior_craftsmanship_expires_phase"] = "FIGHT_PHASE"
+        sr["hearthband_superior_craftsmanship_source"] = str(
+            getattr(stratagem, "name", "") or "SUPERIOR CRAFTSMANSHIP"
+        )
+        sr["hearthband_superior_craftsmanship_damage_bonus"] = 1
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthband_sure_of_purpose(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SURE OF PURPOSE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates = list(context.get("candidates") or self._votann_candidates(require_not_fought=True))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: SURE OF PURPOSE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: SURE OF PURPOSE: target must be a LEAGUES OF VOTANN unit that has not been selected to fight")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthband_sure_of_purpose_active"] = True
+        sr["hearthband_sure_of_purpose_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthband_sure_of_purpose_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthband_sure_of_purpose_expires_phase"] = "FIGHT_PHASE"
+        sr["hearthband_sure_of_purpose_source"] = str(getattr(stratagem, "name", "") or "SURE OF PURPOSE")
+        sr["stratagem_pile_in_distance_override"] = max(float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0), 6.0)
+        sr["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_pile_in_source"] = str(getattr(stratagem, "name", "") or "SURE OF PURPOSE")
+        sr["stratagem_consolidate_distance_override"] = max(
+            float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0),
+            6.0,
+        )
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "SURE OF PURPOSE")
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthband_unyielding_aggression(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNYIELDING AGGRESSION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: UNYIELDING AGGRESSION: not your Movement phase")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in ("fall back", "fallback"):
+            logger.error("ERROR: UNYIELDING AGGRESSION: invalid trigger")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_infantry_unit(unit)
+            and bool(getattr(getattr(unit, "round_state", None), "fell_back_this_round", False))
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: UNYIELDING AGGRESSION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: UNYIELDING AGGRESSION: target must be a LEAGUES OF VOTANN INFANTRY unit that Fell Back")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthband_unyielding_aggression_active"] = True
+        sr["hearthband_unyielding_aggression_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthband_unyielding_aggression_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthband_unyielding_aggression_source"] = str(
+            getattr(stratagem, "name", "") or "UNYIELDING AGGRESSION"
+        )
+        sr["feigned_retreat_active"] = True
+        sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["feigned_retreat_turn"] = int(getattr(game, "turn", 0) or 0)
         target_root.special_rules = sr
         self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
