@@ -6009,6 +6009,92 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _delve_augmented_assault_active_this_turn(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("delve_augmented_assault_active"):
+            return False
+        owner_id = str(sr.get("delve_augmented_assault_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("delve_augmented_assault_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _delve_cyberstimm_infusion_reroll_mode(self, attack_type: str, *, game=None) -> tuple[str, str]:
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("any", "melee"):
+            return "", ""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("delve_cyberstimm_infusion_active")):
+            return "", ""
+        mode = str(sr.get("delve_cyberstimm_infusion_reroll_mode", "") or "").strip().lower()
+        if mode not in {"ones", "full"}:
+            return "", ""
+        owner_id = str(sr.get("delve_cyberstimm_infusion_owner", "") or "").strip()
+        expires_phase = str(sr.get("delve_cyberstimm_infusion_expires_phase", "") or "").strip().upper()
+        army = None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        attacker_owner_id = str(getattr(getattr(army, "player", None), "id", "") or "").strip() if army is not None else ""
+        if owner_id and attacker_owner_id and owner_id != attacker_owner_id:
+            return "", ""
+        if game is None:
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is not None:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if expires_phase and current_phase and expires_phase != current_phase:
+                return "", ""
+            try:
+                effect_turn = int(sr.get("delve_cyberstimm_infusion_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return "", ""
+        source = str(sr.get("delve_cyberstimm_infusion_source", "") or "CYBERSTIMM INFUSION").strip()
+        return mode, (source or "CYBERSTIMM INFUSION")
+
     def _brandfast_inexorable_efficiency_active_this_phase(self, *, game=None) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -8196,6 +8282,16 @@ class ActionsMovementMixin:
             if atype in ("any", "ranged") and callable(active_fn) and active_fn():
                 reroll_wound_values.add(1)
                 reroll_wound_reasons.append("HUNTR'S MARK: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+        try:
+            delve_mode, delve_source = ActionsMovementMixin._delve_cyberstimm_infusion_reroll_mode(self, atype)
+            if delve_mode == "full":
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append(f"{delve_source}: re-roll Wound roll")
+            elif delve_mode == "ones":
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append(f"{delve_source}: re-roll Wound rolls of 1")
         except Exception:
             pass
 
@@ -19455,6 +19551,11 @@ class ActionsMovementMixin:
             return True
         if ActionsMovementMixin._tau_alien_expertise_charge_after_advance_active(self):
             return True
+        try:
+            if self._delve_augmented_assault_active_this_turn():
+                return True
+        except Exception:
+            pass
         try:
             if Unit._advance_and_charge_always_available(self):
                 return True

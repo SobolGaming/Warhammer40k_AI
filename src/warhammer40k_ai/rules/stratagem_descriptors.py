@@ -9971,6 +9971,82 @@ _BRANDFAST_OATHBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BRANDFAST_OATHBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DELVE_ASSAULT_SHIFT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010444004": StratagemToolDescriptor(
+        stratagem_id="000010444004",
+        name="Augmented Assault",
+        timing="movement_phase_start",
+        target="cthonian_beserks_not_yet_moved",
+        duration="until_end_of_turn",
+        effect="movement_bonus_and_charge_after_advance",
+        cp_cost=1,
+        effect_params={
+            "optional_yield_points_max": 2,
+            "movement_bonus_per_yield_point": 1,
+        },
+    ),
+    "000010444002": StratagemToolDescriptor(
+        stratagem_id="000010444002",
+        name="Cyberstimm Infusion",
+        timing="fight_phase_start",
+        target="cthonian_beserks_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_wound_reroll_ones_or_full_after_optional_yield_points",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_wound_values": [1],
+            "optional_yield_points_cost": 2,
+            "optional_reroll_wound_full": True,
+        },
+    ),
+    "000010444007": StratagemToolDescriptor(
+        stratagem_id="000010444007",
+        name="Hidden Accessways",
+        timing="end_of_opponent_fight_phase",
+        target="cthonian_beserks_or_hearthkyn_warriors_or_hernkyn_yaegirs_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_unit_names_any": ["Cthonian Beserks", "Hearthkyn Warriors", "Hernkyn Yaegirs"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000010444005": StratagemToolDescriptor(
+        stratagem_id="000010444005",
+        name="Tectonic Fracture",
+        timing="shooting_phase_after_cthonian_earthshakers_shoot",
+        target="cthonian_earthshakers_with_selected_hit_enemy",
+        duration="until_start_of_your_next_shooting_phase",
+        effect="apply_move_and_optional_charge_penalty_to_hit_enemy",
+        cp_cost=1,
+        effect_params={
+            "move_penalty": -2,
+            "optional_yield_points_cost": 2,
+            "optional_charge_penalty": -2,
+            "pinned_expires_phase": "SHOOTING_PHASE",
+        },
+    ),
+    "000010444003": StratagemToolDescriptor(
+        stratagem_id="000010444003",
+        name="Unstoppable Force",
+        timing="fight_phase_start",
+        target="leagues_of_votann_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="extend_pile_in_and_consolidate_to_six",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance_in": 6.0,
+            "consolidate_distance_in": 6.0,
+        },
+    ),
+}
+
+_DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DELVE_ASSAULT_SHIFT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11346,6 +11422,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BRANDFAST_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DELVE_ASSAULT_SHIFT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11513,6 +11592,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _WARPMELD_PACT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _BRANDFAST_OATHBAND_STRATAGEM_BY_NAME.get(key)
+        or _DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)

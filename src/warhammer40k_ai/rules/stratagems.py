@@ -783,7 +783,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VIOLENT CRESCENDO",
     "VIOLENT EXCESS",
     "ANCESTRAL SENTENCE",
+    "AUGMENTED ASSAULT",
     "BASTION RUNNING",
+    "CYBERSTIMM INFUSION",
+    "HIDDEN ACCESSWAYS",
     "HONOUR OF THE HOLD",
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
@@ -793,6 +796,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORDERED RETREAT",
     "REACTIVE REPRISAL",
     "SECURE POSITIONS",
+    "TECTONIC FRACTURE",
+    "UNSTOPPABLE FORCE",
     "VENGEANCE FLARE",
     "GRIM RETRIBUTION",
     "HAIL OF VENGEANCE",
@@ -2286,6 +2291,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_slaanesh_vengeful_surge)
         if names & {"ILLUMINATED PRIORITY", "OPPORTUNISTIC ESCALATION", "VENGEANCE FLARE"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_votann_brandfast)
+        if "TECTONIC FRACTURE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_votann_delve)
         if "REACTIVE REPRISAL" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if "REVENGE OF THE RUBRICAE" in names:
@@ -2646,8 +2653,9 @@ class StratagemManager(
             "FLICKERING REALITY",
             "CHANNELLED WRATH",
             "ENCROACHING DARKNESS",
-            "ARCHAGONISTS",
-            "OVERWHELMING EXCESS",
+    "ARCHAGONISTS",
+    "AUGMENTED ASSAULT",
+    "OVERWHELMING EXCESS",
             "PHANTASMAL LONGING",
             "SHADE PATH",
             "SIEGECRAFT",
@@ -2792,12 +2800,15 @@ class StratagemManager(
             "KHAINE'S VENGEANCE",
             "KHAINE’S VENGEANCE",
             "DARK APPARITIONS",
-            "ANCESTRAL SENTENCE",
-            "HONOUR OF THE HOLD",
+    "ANCESTRAL SENTENCE",
+    "CYBERSTIMM INFUSION",
+    "HIDDEN ACCESSWAYS",
+    "HONOUR OF THE HOLD",
             "HUNTR'S MARK",
             "HUNTR’S MARK",
-            "ORDERED RETREAT",
-            "RAPID REGENERATION",
+    "ORDERED RETREAT",
+    "TECTONIC FRACTURE",
+    "RAPID REGENERATION",
             "ENSNARING TRAP",
             "PRIME TARGET",
             "ORBITAL OVERSIGHT",
@@ -2806,8 +2817,9 @@ class StratagemManager(
             "THE SHORTENED BLADE",
             "WILL-SAPPING SALVO",
             "WILL‑SAPPING SALVO",
-            "VOID HARDENED",
-            "WRATHFUL INFERNO",
+    "VOID HARDENED",
+    "UNSTOPPABLE FORCE",
+    "WRATHFUL INFERNO",
             "BLAZING EARTH",
             "RIDE HARD, RIDE FAST",
             "SHOCK ASSAULT",
@@ -7801,7 +7813,10 @@ class StratagemManager(
             "THE REALM OF CHAOS": "Target: up to two LEGIONES DAEMONICA units (end of opponent turn)",
             "WARP SURGE": "Target: LEGIONES DAEMONICA unit (within Shadow of Chaos)",
             "ANCESTRAL SENTENCE": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot; optional 3 YP for Sustained Hits 2",
+            "AUGMENTED ASSAULT": "Target: CTHONIAN BESERKS unit that has not been selected to move; optional up to 2 YP for +X Move and charge after Advance",
             "BASTION RUNNING": "Target: Hekaton Land Fortress unit that has not been selected to move",
+            "CYBERSTIMM INFUSION": "Target: CTHONIAN BESERKS unit that has not been selected to fight; optional 2 YP for full Wound re-rolls",
+            "HIDDEN ACCESSWAYS": "Target: CTHONIAN BESERKS, HEARTHKYN WARRIORS, or HERNKYN YAEGIRS unit not within Engagement Range",
             "HONOUR OF THE HOLD": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; select one enemy in Engagement Range (optional 3 YP for AP +2)",
             "HUNTR'S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "ILLUMINATED PRIORITY": "Target: LEAGUES OF VOTANN VEHICLE unit that has shot; select one enemy unit hit by its attacks",
@@ -7811,6 +7826,8 @@ class StratagemManager(
             "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
             "REACTIVE REPRISAL": "Target: LEAGUES OF VOTANN unit targeted by enemy shooting; shoot the attacking enemy unit",
             "SECURE POSITIONS": "Target: LEAGUES OF VOTANN TRANSPORT with embarked LEAGUES OF VOTANN unit",
+            "TECTONIC FRACTURE": "Target: CTHONIAN EARTHSHAKERS unit that just shot; select one enemy unit it hit this phase",
+            "UNSTOPPABLE FORCE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
             "VENGEANCE FLARE": "Target: LEAGUES OF VOTANN INFANTRY hit by enemy shooting; select Kapricus/Sagitaur within 6\", or Hekaton within 6\" if 2 YP are spent",
             "VOID HARDENED": "Target: LEAGUES OF VOTANN unit selected as enemy shooting/fight target; worsen incoming AP by 1 for that attacker",
         }
@@ -8583,6 +8600,10 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_brandfast_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_delve_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9843,6 +9864,14 @@ class StratagemManager(
             raise
         try:
             self._cleanup_votann_brandfast_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_delve_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_votann_delve_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -12581,6 +12610,15 @@ class StratagemManager(
     def _on_unit_shooting_resolved_votann_brandfast(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_votann_brandfast_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
+    def _on_unit_shooting_resolved_votann_delve(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_votann_delve_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )
@@ -20140,6 +20178,9 @@ class StratagemManager(
         votann_brandfast_result = self._use_votann_brandfast_stratagem(s, **kwargs)
         if votann_brandfast_result is not None:
             return votann_brandfast_result
+        votann_delve_result = self._use_votann_delve_stratagem(s, **kwargs)
+        if votann_delve_result is not None:
+            return votann_delve_result
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result

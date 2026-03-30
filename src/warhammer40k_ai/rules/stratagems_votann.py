@@ -57,6 +57,22 @@ class VotannStratagemMixin:
             return False
         return bool(default)
 
+    @staticmethod
+    def _votann_int_like(value: Any, *, default: int = 0) -> int:
+        if value is None:
+            return int(default)
+        if isinstance(value, bool):
+            return int(default)
+        if isinstance(value, (int, float)):
+            return int(value)
+        text = str(value).strip()
+        if not text:
+            return int(default)
+        try:
+            return int(float(text))
+        except (TypeError, ValueError):
+            return int(default)
+
     def _votann_pending_context(self, stratagem_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
         wanted = self._votann_norm_name(stratagem_name)
@@ -131,6 +147,16 @@ class VotannStratagemMixin:
     def _is_brandfast_oathband_detachment(self) -> bool:
         mgr = self._votann_detachment_mgr()
         checker = getattr(mgr, "is_brandfast_oathband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_delve_assault_shift_detachment(self) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "is_delve_assault_shift", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_hearthband_detachment(self) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "is_hearthband", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _votann_yield_points_mgr(self):
@@ -428,6 +454,38 @@ class VotannStratagemMixin:
             return False
         return self._votann_name_matches(root, "KAPRICUS", "SAGITAUR")
 
+    def _votann_is_cthonian_beserks_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "CTHONIAN BESERKS") or self._votann_unit_has_keyword(
+            root, "CTHONIAN BESERKS"
+        )
+
+    def _votann_is_cthonian_earthshakers_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "CTHONIAN EARTHSHAKERS") or (
+            self._votann_unit_has_keyword(root, "CTHONIAN") and self._votann_unit_has_keyword(root, "EARTHSHAKERS")
+        )
+
+    def _votann_is_hearthkyn_warriors_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "HEARTHKYN WARRIORS") or self._votann_unit_has_keyword(
+            root, "HEARTHKYN WARRIORS"
+        )
+
+    def _votann_is_hernkyn_yaegirs_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "HERNKYN YAEGIRS") or self._votann_unit_has_keyword(
+            root, "HERNKYN YAEGIRS"
+        )
+
     def _votann_targets_from_shooting_context(
         self,
         attacker_unit: Any,
@@ -537,7 +595,7 @@ class VotannStratagemMixin:
             out.append(passenger_root)
         return sorted(out, key=self._votann_sort_key)
 
-    def _needgaard_engagement_enemy_candidates(self, unit: Any) -> List[Any]:
+    def _votann_engagement_enemy_candidates(self, unit: Any) -> List[Any]:
         game = getattr(self, "game", None)
         game_map = getattr(game, "map", None) if game is not None else None
         root = self._votann_root(unit)
@@ -562,8 +620,36 @@ class VotannStratagemMixin:
             out.append(enemy_root)
         return sorted(out, key=self._votann_sort_key)
 
+    def _needgaard_engagement_enemy_candidates(self, unit: Any) -> List[Any]:
+        return self._votann_engagement_enemy_candidates(unit)
+
     def _needgaard_targets_from_shooting_context(self, attacker_unit: Any, *, hits_by_target: Any = None) -> List[Any]:
         return self._votann_targets_from_shooting_context(attacker_unit, hits_by_target=hits_by_target, hits_only=False)
+
+    def _votann_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str) -> bool:
+        root = self._votann_root(unit)
+        game = getattr(self, "game", None)
+        if root is None or game is None:
+            return False
+        enter_reserves = getattr(root, "enter_strategic_reserves_midgame", None)
+        if not callable(enter_reserves):
+            return False
+        enter_reserves(game=game, game_map=getattr(game, "map", None), reason=str(reason or "").strip())
+        return True
+
+    def _delve_hidden_accessways_candidates(self) -> List[Any]:
+        candidates: List[Any] = []
+        for unit in self._votann_candidates(require_targetable=True):
+            if not (
+                self._votann_is_cthonian_beserks_unit(unit)
+                or self._votann_is_hearthkyn_warriors_unit(unit)
+                or self._votann_is_hernkyn_yaegirs_unit(unit)
+            ):
+                continue
+            if self._votann_engagement_enemy_candidates(unit):
+                continue
+            candidates.append(unit)
+        return sorted(candidates, key=self._votann_sort_key)
 
     def _queue_votann_brandfast_phase_start_reactions(self, *, player, phase) -> None:
         del player
@@ -871,6 +957,208 @@ class VotannStratagemMixin:
                     if key in sr:
                         sr.pop(key, None)
                         changed = True
+            if changed:
+                root.special_rules = sr
+
+    def _queue_votann_delve_phase_start_reactions(self, *, player, phase) -> None:
+        del player
+        game = getattr(self, "game", None)
+        if game is None or not self._is_delve_assault_shift_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        phase_label = self._votann_phase_label(phase)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_key == "MOVEMENT_PHASE" and active_player is self.player:
+            stratagem = self.get_by_name("AUGMENTED ASSAULT")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = [
+                unit
+                for unit in self._votann_candidates(require_targetable=True)
+                if self._votann_is_cthonian_beserks_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
+            ]
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+        if phase_key != "FIGHT_PHASE":
+            return
+        definitions = (
+            (
+                "CYBERSTIMM INFUSION",
+                [
+                    unit
+                    for unit in self._votann_candidates(require_not_fought=True)
+                    if self._votann_is_cthonian_beserks_unit(unit)
+                ],
+            ),
+            ("UNSTOPPABLE FORCE", list(self._votann_candidates(require_not_fought=True))),
+        )
+        for strat_name, candidates in definitions:
+            stratagem = self.get_by_name(strat_name)
+            if stratagem is None:
+                continue
+            norm_name = self._votann_norm_name(stratagem.name)
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                continue
+            if norm_name in getattr(self, "_used_stratagems_this_phase", set()):
+                continue
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_delve_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_delve_assault_shift_detachment():
+            return
+        if self._votann_phase_key(phase) != "FIGHT_PHASE":
+            return
+        if player is self.player or getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+        stratagem = self.get_by_name("HIDDEN ACCESSWAYS")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._delve_hidden_accessways_candidates()
+        if not candidates or self._votann_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_delve_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_delve_assault_shift_detachment():
+            return
+        if self._votann_phase_key(getattr(game, "phase", None)) != "SHOOTING_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+        attacker_root = self._votann_root(attacker_unit)
+        if attacker_root is None or not self._votann_owned_by_player(attacker_root, self.player):
+            return
+        if not self._votann_is_cthonian_earthshakers_unit(attacker_root):
+            return
+        if not self._votann_on_battlefield(attacker_root, require_targetable=True):
+            return
+        stratagem = self.get_by_name("TECTONIC FRACTURE")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        enemy_candidates = [
+            enemy
+            for enemy in self._votann_targets_from_shooting_context(
+                attacker_root,
+                hits_by_target=hits_by_target,
+                hits_only=True,
+            )
+            if enemy is not None and not self._votann_owned_by_player(enemy, self.player) and self._votann_is_alive(enemy)
+        ]
+        if not enemy_candidates or self._votann_reaction_exists("unit_shooting_resolved", stratagem.name, unit=attacker_root):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["enemy_target"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_votann_delve_phase_end_effects(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        phase_key = self._votann_phase_key(phase)
+        if game is None or phase_key != "FIGHT_PHASE":
+            return
+        for root in self._votann_iter_game_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if bool(sr.get("delve_augmented_assault_active")) and player is self.player:
+                source = str(
+                    sr.get("delve_augmented_assault_modifier_source", "") or "stratagem:delve_augmented_assault"
+                ).strip() or "stratagem:delve_augmented_assault"
+                remove_modifier = getattr(root, "remove_characteristic_modifiers_by_source", None)
+                if callable(remove_modifier):
+                    remove_modifier(source)
+                for key in (
+                    "delve_augmented_assault_active",
+                    "delve_augmented_assault_turn_owner",
+                    "delve_augmented_assault_turn",
+                    "delve_augmented_assault_source",
+                    "delve_augmented_assault_move_bonus",
+                    "delve_augmented_assault_modifier_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if bool(sr.get("delve_cyberstimm_infusion_active")):
+                expires_phase = str(sr.get("delve_cyberstimm_infusion_expires_phase", "") or "").strip().upper()
+                if not expires_phase or expires_phase == phase_key:
+                    for key in (
+                        "delve_cyberstimm_infusion_active",
+                        "delve_cyberstimm_infusion_owner",
+                        "delve_cyberstimm_infusion_turn",
+                        "delve_cyberstimm_infusion_source",
+                        "delve_cyberstimm_infusion_reroll_mode",
+                        "delve_cyberstimm_infusion_yp_spent",
+                        "delve_cyberstimm_infusion_expires_phase",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
             if changed:
                 root.special_rules = sr
 
@@ -1310,6 +1598,22 @@ class VotannStratagemMixin:
             return False
         return bool(handler(stratagem, **kwargs))
 
+    def _use_votann_delve_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name = self._votann_norm_name(getattr(stratagem, "name", ""))
+        handlers = {
+            "AUGMENTED ASSAULT": self._use_delve_augmented_assault,
+            "CYBERSTIMM INFUSION": self._use_delve_cyberstimm_infusion,
+            "HIDDEN ACCESSWAYS": self._use_delve_hidden_accessways,
+            "TECTONIC FRACTURE": self._use_delve_tectonic_fracture,
+            "UNSTOPPABLE FORCE": self._use_delve_unstoppable_force,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return None
+        if not self._is_delve_assault_shift_detachment():
+            return False
+        return bool(handler(stratagem, **kwargs))
+
     def _use_votann_needgaard_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name = self._votann_norm_name(getattr(stratagem, "name", ""))
         handlers = {
@@ -1326,6 +1630,305 @@ class VotannStratagemMixin:
         if not self._is_needgaard_oathband_detachment():
             return False
         return bool(handler(stratagem, **kwargs))
+
+    def _use_delve_augmented_assault(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: AUGMENTED ASSAULT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: AUGMENTED ASSAULT: not your Movement phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_cthonian_beserks_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: AUGMENTED ASSAULT: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: AUGMENTED ASSAULT: target must be a Cthonian Beserks unit that has not been selected to move")
+            return False
+
+        yp_requested = None
+        for key in (
+            "yield_points_to_spend",
+            "yield_points_spent",
+            "yield_points",
+            "yp_to_spend",
+            "yp_spend",
+            "yp",
+            "movement_bonus",
+        ):
+            if context.get(key) is not None:
+                yp_requested = self._votann_int_like(context.get(key), default=0)
+                break
+        if yp_requested is None:
+            spend_flag = context.get("spend_yield_points")
+            if spend_flag is None:
+                spend_flag = context.get("spend_yp")
+            if spend_flag is None:
+                spend_flag = context.get("use_yp")
+            yp_requested = 2 if self._votann_bool_like(spend_flag, default=False) else 0
+        if yp_requested < 0 or yp_requested > 2:
+            logger.error("ERROR: AUGMENTED ASSAULT: can spend at most 2 Yield Points")
+            return False
+        if yp_requested and not self._votann_spend_yield_points(int(yp_requested)):
+            logger.error("ERROR: AUGMENTED ASSAULT: unable to spend requested Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_requested:
+                self._votann_refund_yield_points(int(yp_requested))
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        modifier_source = "stratagem:delve_augmented_assault"
+        if int(yp_requested or 0):
+            remove_modifier = getattr(target_root, "remove_characteristic_modifiers_by_source", None)
+            if callable(remove_modifier):
+                remove_modifier(modifier_source)
+            add_modifier = getattr(target_root, "add_characteristic_modifier", None)
+            if callable(add_modifier):
+                from ..utility.modifiers import Modifier, ModifierOp
+
+                add_modifier(
+                    "movement",
+                    Modifier(ModifierOp.ADD, int(yp_requested), source=modifier_source),
+                )
+        sr["delve_augmented_assault_active"] = True
+        sr["delve_augmented_assault_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["delve_augmented_assault_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["delve_augmented_assault_source"] = str(getattr(stratagem, "name", "") or "AUGMENTED ASSAULT")
+        sr["delve_augmented_assault_move_bonus"] = int(yp_requested or 0)
+        sr["delve_augmented_assault_modifier_source"] = modifier_source
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_delve_cyberstimm_infusion(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: CYBERSTIMM INFUSION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_not_fought=True))
+            if self._votann_is_cthonian_beserks_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: CYBERSTIMM INFUSION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: CYBERSTIMM INFUSION: target must be a Cthonian Beserks unit that has not been selected to fight")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        if spend_yp is None:
+            spend_yp = int(self._votann_int_like(context.get("yield_points_to_spend"), default=0) or 0) >= 2
+        yp_spent = bool(self._votann_bool_like(spend_yp, default=False))
+        if yp_spent and not self._votann_spend_yield_points(2):
+            logger.error("ERROR: CYBERSTIMM INFUSION: unable to spend 2 Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["delve_cyberstimm_infusion_active"] = True
+        sr["delve_cyberstimm_infusion_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["delve_cyberstimm_infusion_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["delve_cyberstimm_infusion_source"] = str(getattr(stratagem, "name", "") or "CYBERSTIMM INFUSION")
+        sr["delve_cyberstimm_infusion_reroll_mode"] = "full" if yp_spent else "ones"
+        sr["delve_cyberstimm_infusion_yp_spent"] = bool(yp_spent)
+        sr["delve_cyberstimm_infusion_expires_phase"] = "FIGHT_PHASE"
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_delve_hidden_accessways(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: HIDDEN ACCESSWAYS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: HIDDEN ACCESSWAYS: not the end of your opponent's Fight phase")
+            return False
+        candidates = list(context.get("candidates") or self._delve_hidden_accessways_candidates())
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: HIDDEN ACCESSWAYS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: HIDDEN ACCESSWAYS: target must be an eligible Cthonian Beserks, Hearthkyn Warriors, or Hernkyn Yaegirs unit that is not within Engagement Range"
+            )
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._votann_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "") or "HIDDEN ACCESSWAYS"),
+        ):
+            logger.error("ERROR: HIDDEN ACCESSWAYS: failed to place unit into Strategic Reserves")
+            return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_delve_tectonic_fracture(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: TECTONIC FRACTURE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: TECTONIC FRACTURE: not your Shooting phase")
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None or not self._votann_is_cthonian_earthshakers_unit(target_root):
+            logger.error("ERROR: TECTONIC FRACTURE: target must be the Cthonian Earthshakers unit that just shot")
+            return False
+
+        enemy_candidates = [
+            self._votann_root(enemy)
+            for enemy in list(context.get("enemy_candidates") or [])
+            if self._votann_root(enemy) is not None
+        ]
+        enemy_candidates = [
+            enemy
+            for enemy in enemy_candidates
+            if enemy is not None and not self._votann_owned_by_player(enemy, self.player) and self._votann_is_alive(enemy)
+        ]
+        enemy_candidates = sorted(enemy_candidates, key=self._votann_sort_key)
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("enemy_target")
+            or context.get("attacking_unit")
+            or context.get("target_enemy_unit")
+        )
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: TECTONIC FRACTURE: missing selected enemy unit hit by the attacks")
+                return False
+        if enemy_candidates and enemy_root not in enemy_candidates:
+            logger.error("ERROR: TECTONIC FRACTURE: selected enemy must have been hit by the Cthonian Earthshakers unit")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        if spend_yp is None:
+            spend_yp = int(self._votann_int_like(context.get("yield_points_to_spend"), default=0) or 0) >= 2
+        yp_spent = bool(self._votann_bool_like(spend_yp, default=False))
+        if yp_spent and not self._votann_spend_yield_points(2):
+            logger.error("ERROR: TECTONIC FRACTURE: unable to spend 2 Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            return False
+
+        apply_pinned = getattr(enemy_root, "apply_pinned", None)
+        if callable(apply_pinned):
+            apply_pinned(
+                owner_id=str(getattr(self.player, "id", "") or ""),
+                turn=int(getattr(game, "turn", 0) or 0),
+                source=str(getattr(stratagem, "name", "") or "TECTONIC FRACTURE"),
+                move_penalty=-2,
+                charge_penalty=-2 if yp_spent else 0,
+                expires_phase="SHOOTING_PHASE",
+            )
+        else:
+            enemy_sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(enemy_sr, dict):
+                enemy_sr = {}
+            enemy_sr["pinned_active"] = True
+            enemy_sr["pinned_owner"] = str(getattr(self.player, "id", "") or "")
+            enemy_sr["pinned_turn"] = int(getattr(game, "turn", 0) or 0)
+            enemy_sr["pinned_source"] = str(getattr(stratagem, "name", "") or "TECTONIC FRACTURE")
+            enemy_sr["pinned_move_penalty"] = -2
+            enemy_sr["pinned_charge_penalty"] = -2 if yp_spent else 0
+            enemy_sr["pinned_expires_phase"] = "SHOOTING_PHASE"
+            enemy_root.special_rules = enemy_sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_delve_unstoppable_force(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: UNSTOPPABLE FORCE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates = list(context.get("candidates") or self._votann_candidates(require_not_fought=True))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: UNSTOPPABLE FORCE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: UNSTOPPABLE FORCE: target must be a LEAGUES OF VOTANN unit that has not been selected to fight")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["stratagem_pile_in_distance_override"] = max(float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0), 6.0)
+        sr["stratagem_pile_in_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_pile_in_source"] = str(getattr(stratagem, "name", "") or "UNSTOPPABLE FORCE")
+        sr["stratagem_consolidate_distance_override"] = max(
+            float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0),
+            6.0,
+        )
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "UNSTOPPABLE FORCE")
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
 
     def _use_brandfast_bastion_running(self, stratagem: Any, **kwargs) -> bool:
         context = self._votann_pending_context(stratagem.name, kwargs)
