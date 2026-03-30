@@ -6009,6 +6009,54 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _brandfast_inexorable_efficiency_active_this_phase(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("brandfast_inexorable_efficiency_active"):
+            return False
+        owner_id = str(sr.get("brandfast_inexorable_efficiency_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("brandfast_inexorable_efficiency_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        expires_phase = str(sr.get("brandfast_inexorable_efficiency_expires_phase", "") or "").strip().upper()
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        if expires_phase:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            if phase_name and phase_name != expires_phase:
+                return False
+        return True
+
     def _thousand_sons_rubricae_stratagem_active(
         self,
         *,
@@ -18243,6 +18291,11 @@ class ActionsMovementMixin:
         Returns:
             bool: True if the unit has an ability that allows shooting after falling back
         """
+        try:
+            if self._brandfast_inexorable_efficiency_active_this_phase():
+                return True
+        except Exception:
+            pass
         try:
             if self._needgaard_ordered_retreat_active_this_turn():
                 return True

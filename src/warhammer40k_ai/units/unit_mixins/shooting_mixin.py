@@ -4190,6 +4190,10 @@ class ShootingMixin:
                     overrides["allow_after_advance"] = bool(
                         sr.get("stratagem_disembark_override_allow_after_advance", False)
                     )
+                if "stratagem_disembark_override_allow_after_fall_back" in sr:
+                    overrides["allow_after_fall_back"] = bool(
+                        sr.get("stratagem_disembark_override_allow_after_fall_back", False)
+                    )
                 if "stratagem_disembark_override_force_cannot_charge" in sr:
                     overrides["force_cannot_charge_this_turn"] = bool(
                         sr.get("stratagem_disembark_override_force_cannot_charge", False)
@@ -4519,6 +4523,7 @@ class ShootingMixin:
         overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
         if overrides.get("allow_after_advance") is True:
             allow_after_advance = True
+        allow_after_fall_back = bool(overrides.get("allow_after_fall_back", False))
         if overrides.get("allow_charge_after_normal_move") is True:
             allow_charge_after_normal_move = True
         force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
@@ -4536,8 +4541,9 @@ class ShootingMixin:
                     logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
-                return False
+                if not allow_after_fall_back:
+                    logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                    return False
 
 
         # Determine transport base reference (alive transport uses its current model base)
@@ -4756,7 +4762,12 @@ class ShootingMixin:
                 isinstance(transport_sr, dict) and transport_sr.get("drop_pod_assault_set_up", False)
             )
 
-            if advanced and allow_after_advance:
+            if fell_back and allow_after_fall_back:
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.disembarked_cannot_charge = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+            elif advanced and allow_after_advance:
                 # Assault Vehicle: counts as Normal move, cannot charge this turn.
                 self.round_state.disembarked_from_moved_transport = True
                 self.round_state.disembarked_cannot_charge = True
@@ -4971,6 +4982,7 @@ class ShootingMixin:
         overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
         if overrides.get("allow_after_advance") is True:
             allow_after_advance = True
+        allow_after_fall_back = bool(overrides.get("allow_after_fall_back", False))
         if overrides.get("allow_charge_after_normal_move") is True:
             allow_charge_after_normal_move = True
         force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
@@ -4981,8 +4993,9 @@ class ShootingMixin:
                     logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
-                return False
+                if not allow_after_fall_back:
+                    logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                    return False
 
         if self in game_map.units:
             game_map.units.remove(self)
@@ -5038,7 +5051,12 @@ class ShootingMixin:
                 isinstance(transport_sr, dict) and transport_sr.get("drop_pod_assault_set_up", False)
             )
 
-            if advanced and allow_after_advance:
+            if fell_back and allow_after_fall_back:
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.disembarked_cannot_charge = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+            elif advanced and allow_after_advance:
                 self.round_state.disembarked_from_moved_transport = True
                 self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True

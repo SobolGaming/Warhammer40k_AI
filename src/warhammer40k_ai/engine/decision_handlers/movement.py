@@ -3484,35 +3484,35 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
     require_not_in_engagement = True
     if "disembark_require_not_in_engagement" in ctx:
         require_not_in_engagement = bool(ctx.get("disembark_require_not_in_engagement", True))
+    allow_after_advance = bool(ctx.get("disembark_allow_after_advance", False))
+    allow_after_fall_back = bool(ctx.get("disembark_allow_after_fall_back", False))
+    allow_charge_after_normal_move = bool(ctx.get("disembark_allow_charge_after_normal_move", False))
+    force_cannot_charge_this_turn = bool(ctx.get("disembark_force_cannot_charge_this_turn", False))
     model_positions = result.payload.get("model_positions")
-    if model_positions is not None:
-        apply_model_positions(game, list(model_positions or []))
-        game_map = getattr(game, "map", None)
-        if game_map is None:
-            raise RuntimeError("Disembark requires an active game map.")
-        finalized = bool(
-            unit.finalize_manual_disembark(
-                game_map=game_map,
-                transport_unit=transport,
-                destroyed_transport=False,
-                emergency=False,
-                current_turn=getattr(game, "turn", 1),
-            )
-        )
-        if finalized:
-            _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
-        return finalized
     override_keys = (
         "stratagem_disembark_override_active",
         "stratagem_disembark_override_transport_id",
         "stratagem_disembark_override_max_distance",
         "stratagem_disembark_override_require_not_in_engagement",
+        "stratagem_disembark_override_allow_after_advance",
+        "stratagem_disembark_override_allow_after_fall_back",
+        "stratagem_disembark_override_allow_charge_after_normal_move",
+        "stratagem_disembark_override_force_cannot_charge",
         "stratagem_disembark_override_min_enemy_horizontal_distance",
         "stratagem_disembark_override_source",
     )
     had_override = False
     prev_values: dict[str, object] = {}
-    if disembark_range > 0 or disembark_min_enemy_horizontal_distance > 0:
+    needs_override = bool(
+        disembark_range > 0
+        or disembark_min_enemy_horizontal_distance > 0
+        or "disembark_require_not_in_engagement" in ctx
+        or allow_after_advance
+        or allow_after_fall_back
+        or allow_charge_after_normal_move
+        or force_cannot_charge_this_turn
+    )
+    if needs_override:
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -3532,10 +3532,31 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
             )
         else:
             sr.pop("stratagem_disembark_override_min_enemy_horizontal_distance", None)
+        sr["stratagem_disembark_override_allow_after_advance"] = bool(allow_after_advance)
+        sr["stratagem_disembark_override_allow_after_fall_back"] = bool(allow_after_fall_back)
+        sr["stratagem_disembark_override_allow_charge_after_normal_move"] = bool(allow_charge_after_normal_move)
+        sr["stratagem_disembark_override_force_cannot_charge"] = bool(force_cannot_charge_this_turn)
         sr["stratagem_disembark_override_source"] = disembark_source
         unit.special_rules = sr
         had_override = True
     try:
+        if model_positions is not None:
+            apply_model_positions(game, list(model_positions or []))
+            game_map = getattr(game, "map", None)
+            if game_map is None:
+                raise RuntimeError("Disembark requires an active game map.")
+            finalized = bool(
+                unit.finalize_manual_disembark(
+                    game_map=game_map,
+                    transport_unit=transport,
+                    destroyed_transport=False,
+                    emergency=False,
+                    current_turn=getattr(game, "turn", 1),
+                )
+            )
+            if finalized:
+                _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
+            return finalized
         unit.disembark(
             game_map=getattr(game, "map", None),
             transport_unit=transport,

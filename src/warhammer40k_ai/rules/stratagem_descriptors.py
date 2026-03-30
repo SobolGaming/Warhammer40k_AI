@@ -9891,6 +9891,86 @@ _RUBRICAE_PHALANX_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BRANDFAST_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010448003": StratagemToolDescriptor(
+        stratagem_id="000010448003",
+        name="Bastion Running",
+        timing="movement_phase_start",
+        target="hekaton_land_fortress_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="normal_and_advance_move_through_terrain",
+        cp_cost=1,
+    ),
+    "000010448004": StratagemToolDescriptor(
+        stratagem_id="000010448004",
+        name="Illuminated Priority",
+        timing="shooting_phase_after_votann_vehicle_shoots",
+        target="votann_vehicle_that_shot_with_hit_enemy_selection",
+        duration="until_end_of_phase",
+        effect="mark_hit_enemy_for_votann_infantry_reroll_hit_ones",
+        cp_cost=1,
+        effect_params={
+            "keyword_phrase": "LEAGUES OF VOTANN INFANTRY",
+            "reroll_hit_values": [1],
+        },
+    ),
+    "000010448005": StratagemToolDescriptor(
+        stratagem_id="000010448005",
+        name="Inexorable Efficiency",
+        timing="shooting_phase_start",
+        target="leagues_of_votann_unit",
+        duration="until_end_of_phase",
+        effect="eligible_to_shoot_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010448006": StratagemToolDescriptor(
+        stratagem_id="000010448006",
+        name="Opportunistic Escalation",
+        timing="opponent_shooting_phase_after_enemy_shoots_with_hostile_acquisition",
+        target="non_hekaton_votann_vehicle_hit_by_enemy_shooter",
+        duration="immediate",
+        effect="reactive_normal_move_d6",
+        cp_cost=1,
+        effect_params={"movement_type": "normal_move", "distance_roll": "D6"},
+    ),
+    "000010448002": StratagemToolDescriptor(
+        stratagem_id="000010448002",
+        name="Secure Positions",
+        timing="phase_end_any_of_your_phases",
+        target="votann_transport_with_embarked_votann_unit",
+        duration="immediate",
+        effect="reactive_disembark_within_six_no_charge",
+        cp_cost=1,
+        effect_params={
+            "max_units": 1,
+            "disembark_distance": 6.0,
+            "force_cannot_charge_this_turn": True,
+            "allow_after_advance": True,
+            "allow_after_fall_back": True,
+        },
+    ),
+    "000010448007": StratagemToolDescriptor(
+        stratagem_id="000010448007",
+        name="Vengeance Flare",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="votann_infantry_hit_by_enemy_shooter",
+        duration="immediate",
+        effect="select_nearby_support_unit_for_reactive_shooting",
+        cp_cost=2,
+        effect_params={
+            "support_range": 6.0,
+            "base_support_units": ["Kapricus", "Sagitaur"],
+            "optional_yield_points_cost": 2,
+            "optional_support_unit": "Hekaton Land Fortress",
+            "target_restriction": "attacking_enemy_unit_only",
+        },
+    ),
+}
+
+_BRANDFAST_OATHBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BRANDFAST_OATHBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11263,6 +11343,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BRANDFAST_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11429,6 +11512,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HEXWARP_THRALLBAND_STRATAGEM_BY_NAME.get(key)
         or _WARPMELD_PACT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
+        or _BRANDFAST_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
