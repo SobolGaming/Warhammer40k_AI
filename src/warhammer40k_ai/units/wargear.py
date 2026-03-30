@@ -4852,6 +4852,11 @@ class WargearProfile:
                 ap_val = int(base_ap_val)
         except Exception:
             pass
+        try:
+            if self._hearthfyre_unwavering_accuracy_ignore_ap_modifiers(attacker, target_root) and int(ap_val) > int(base_ap_val):
+                ap_val = int(base_ap_val)
+        except Exception:
+            pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
     def _resolve_phase_key(self, attacker_unit: Optional['Unit'] = None, target_unit: Optional['Unit'] = None) -> str:
@@ -9965,6 +9970,69 @@ class WargearProfile:
         rule = self._aeldari_spirit_seers_eye_rule(attacker, target_unit=target_unit)
         return bool(rule and rule.get("allow_damage"))
 
+    def _hearthfyre_unwavering_accuracy_rule(
+        self,
+        attacker: 'Model',
+        *,
+        target_unit: Optional['Unit'] = None,
+    ) -> Optional[dict]:
+        parent = getattr(self, "parent_wargear", None)
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if not callable(is_ranged) or not bool(is_ranged()):
+            return None
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("hearthfyre_unwavering_accuracy_active", False)):
+            return None
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is not None:
+            expires_phase = str(sr.get("hearthfyre_unwavering_accuracy_expires_phase", "") or "").strip().upper()
+            if expires_phase:
+                phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target_unit)
+                if phase_key and phase_key != expires_phase:
+                    return None
+            try:
+                marked_turn = int(sr.get("hearthfyre_unwavering_accuracy_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return None
+            owner_id = str(sr.get("hearthfyre_unwavering_accuracy_turn_owner", "") or "")
+            if owner_id:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = ""
+                if current_player is not None:
+                    current_owner = str(get_entity_id(current_player) or getattr(current_player, "id", "") or "")
+                if current_owner and current_owner != owner_id:
+                    return None
+        source = str(sr.get("hearthfyre_unwavering_accuracy_source", "") or "UNWAVERING ACCURACY").strip()
+        return {
+            "name": source or "UNWAVERING ACCURACY",
+            "attack_type": "ranged",
+            "skill_kinds": {"ballistic"},
+            "allow_hit": True,
+            "allow_wound": True,
+            "allow_ap": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def _hearthfyre_unwavering_accuracy_ignore_ap_modifiers(
+        self,
+        attacker: 'Model',
+        target_unit: Optional['Unit'],
+    ) -> bool:
+        rule = self._hearthfyre_unwavering_accuracy_rule(attacker, target_unit=target_unit)
+        return bool(rule and rule.get("allow_ap"))
+
     def _ignore_hit_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
         rule = None
         try:
@@ -10130,6 +10198,9 @@ class WargearProfile:
                 "skill_kinds": {"ballistic", "weapon"},
                 "allow_hit": True,
             }
+        hearthfyre_rule = self._hearthfyre_unwavering_accuracy_rule(attacker, target_unit=target_unit)
+        if hearthfyre_rule:
+            return hearthfyre_rule
         try:
             army = root.get_parent_army() if root is not None else None
         except Exception:
@@ -10404,6 +10475,9 @@ class WargearProfile:
                 "attack_type": "any",
                 "allow_wound": True,
             }
+        hearthfyre_rule = self._hearthfyre_unwavering_accuracy_rule(attacker)
+        if hearthfyre_rule:
+            return hearthfyre_rule
 
         try:
             army = root.get_parent_army() if root is not None else None
@@ -12679,6 +12753,17 @@ class WargearProfile:
                     penalty, reason = get_owner_penalty(game=game)
                     if penalty > 0:
                         _add_hit_mod(-int(penalty), reason or f"-{int(penalty)} to hit")
+                if sr.get("hearthfyre_preventative_purge_active"):
+                    try:
+                        penalty = int(sr.get("hearthfyre_preventative_purge_hit_penalty", 1) or 1)
+                    except Exception:
+                        penalty = 1
+                    if penalty > 0:
+                        source_name = (
+                            str(sr.get("hearthfyre_preventative_purge_source", "") or "PREVENTATIVE PURGE").strip()
+                            or "PREVENTATIVE PURGE"
+                        )
+                        _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
                 if sr.get("atavistic_instigation_duck_active"):
                     try:
                         penalty = int(sr.get("atavistic_instigation_duck_hit_roll_penalty", 1) or 1)

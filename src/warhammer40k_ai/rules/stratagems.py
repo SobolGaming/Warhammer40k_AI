@@ -785,7 +785,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANCESTRAL SENTENCE",
     "AUGMENTED ASSAULT",
     "BASTION RUNNING",
+    "COGITATED NEED",
     "CYBERSTIMM INFUSION",
+    "DELAYED-FIRE ROUNDS",
+    "FIRST CONCERN",
     "FURY OF THE HEARTH",
     "HIDDEN ACCESSWAYS",
     "HONOUR OF THE HOLD",
@@ -796,14 +799,17 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HUNTR’S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
+    "PREVENTATIVE PURGE",
     "REACTIVE REPRISAL",
     "SECURE POSITIONS",
     "SUPERIOR CRAFTSMANSHIP",
     "SURE OF PURPOSE",
     "TECTONIC FRACTURE",
+    "UNWAVERING ACCURACY",
     "UNSTOPPABLE FORCE",
     "UNYIELDING AGGRESSION",
     "VENGEANCE FLARE",
+    "WALL OF STEEL",
     "GRIM RETRIBUTION",
     "HAIL OF VENGEANCE",
     "INTRACTABLE",
@@ -1076,6 +1082,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "VECTORED ENGINES",
     "ANCESTRAL SENTENCE",
     "BASTION RUNNING",
+    "COGITATED NEED",
+    "DELAYED-FIRE ROUNDS",
+    "FIRST CONCERN",
     "HONOUR OF THE HOLD",
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
@@ -1083,10 +1092,13 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HUNTR’S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
+    "PREVENTATIVE PURGE",
     "REACTIVE REPRISAL",
     "SECURE POSITIONS",
+    "UNWAVERING ACCURACY",
     "VENGEANCE FLARE",
     "VOID HARDENED",
+    "WALL OF STEEL",
 }
 
 
@@ -2131,7 +2143,10 @@ class StratagemManager(
             "MUTATE LANDSCAPE",
             "BLOOD-FUELLED CRUELTY",
             "GUERRILLA WARRIORS",
+            "DELAYED-FIRE ROUNDS",
+            "PREVENTATIVE PURGE",
             "UNYIELDING AGGRESSION",
+            "WALL OF STEEL",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2299,6 +2314,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_votann_brandfast)
         if "TECTONIC FRACTURE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_votann_delve)
+        if names & {"DELAYED-FIRE ROUNDS", "FIRST CONCERN", "PREVENTATIVE PURGE"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_votann_hearthfyre)
         if "REACTIVE REPRISAL" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if "REVENGE OF THE RUBRICAE" in names:
@@ -2566,6 +2583,7 @@ class StratagemManager(
             "OUTFLANKING STRIKE",
             "RAPID EMBARKATION",
             "RETURN TO THE SHADOWS",
+            "COGITATED NEED",
             "SECURE POSITIONS",
             "WALL OF MIRRORS",
             "INVISIBLE HUNTER",
@@ -2815,9 +2833,11 @@ class StratagemManager(
             "HUNTR’S MARK",
             "MATERIALISATION MATRICES",
             "ORDERED RETREAT",
+            "PREVENTATIVE PURGE",
             "SUPERIOR CRAFTSMANSHIP",
             "SURE OF PURPOSE",
             "TECTONIC FRACTURE",
+            "UNWAVERING ACCURACY",
             "RAPID REGENERATION",
             "ENSNARING TRAP",
             "PRIME TARGET",
@@ -7826,7 +7846,10 @@ class StratagemManager(
             "ANCESTRAL SENTENCE": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot; optional 3 YP for Sustained Hits 2",
             "AUGMENTED ASSAULT": "Target: CTHONIAN BESERKS unit that has not been selected to move; optional up to 2 YP for +X Move and charge after Advance",
             "BASTION RUNNING": "Target: Hekaton Land Fortress unit that has not been selected to move",
+            "COGITATED NEED": "Target: Ironkin Steeljacks unit; make a Normal move ending as close as possible to the closest objective marker",
             "CYBERSTIMM INFUSION": "Target: CTHONIAN BESERKS unit that has not been selected to fight; optional 2 YP for full Wound re-rolls",
+            "DELAYED-FIRE ROUNDS": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot; select one hit non-MONSTER/non-VEHICLE enemy",
+            "FIRST CONCERN": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot after remaining stationary",
             "FURY OF THE HEARTH": "Target: Einhyr Hearthguard unit that has not been selected to shoot; optional 1 YP for Sustained Hits 1",
             "HIDDEN ACCESSWAYS": "Target: CTHONIAN BESERKS, HEARTHKYN WARRIORS, or HERNKYN YAEGIRS unit not within Engagement Range",
             "HONOUR OF THE HOLD": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; select one enemy in Engagement Range (optional 3 YP for AP +2)",
@@ -7837,15 +7860,18 @@ class StratagemManager(
             "HUNTR’S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "OPPORTUNISTIC ESCALATION": "Target: non-Hekaton LEAGUES OF VOTANN VEHICLE hit by enemy shooting while Hostile Acquisition is active",
             "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
+            "PREVENTATIVE PURGE": "Target: Brôkhyr Thunderkyn or Ironkin Steeljacks unit; shoot a falling-back enemy with -1 to hit",
             "REACTIVE REPRISAL": "Target: LEAGUES OF VOTANN unit targeted by enemy shooting; shoot the attacking enemy unit",
             "SECURE POSITIONS": "Target: LEAGUES OF VOTANN TRANSPORT with embarked LEAGUES OF VOTANN unit",
             "SUPERIOR CRAFTSMANSHIP": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; +1 Damage versus MONSTER/VEHICLE targets",
             "SURE OF PURPOSE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
             "TECTONIC FRACTURE": "Target: CTHONIAN EARTHSHAKERS unit that just shot; select one enemy unit it hit this phase",
+            "UNWAVERING ACCURACY": "Target: Brôkhyr Thunderkyn unit that has not been selected to shoot; ignore negative BS/Hit/Wound/AP modifiers for ranged attacks",
             "UNSTOPPABLE FORCE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
             "UNYIELDING AGGRESSION": "Target: LEAGUES OF VOTANN INFANTRY unit that Fell Back this turn",
             "VENGEANCE FLARE": "Target: LEAGUES OF VOTANN INFANTRY hit by enemy shooting; select Kapricus/Sagitaur within 6\", or Hekaton within 6\" if 2 YP are spent",
             "VOID HARDENED": "Target: LEAGUES OF VOTANN unit selected as enemy shooting/fight target; worsen incoming AP by 1 for that attacker",
+            "WALL OF STEEL": "Target: Ironkin Steeljacks unit that just completed a charge; select one engaged non-MONSTER/non-VEHICLE enemy (optional 2 YP for +2 dice)",
         }
         return hints.get(name_u, "")
 
@@ -8624,6 +8650,10 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_hearthband_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_hearthfyre_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9896,6 +9926,14 @@ class StratagemManager(
             raise
         try:
             self._cleanup_votann_hearthband_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_hearthfyre_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_votann_hearthfyre_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -11737,6 +11775,8 @@ class StratagemManager(
         self._queue_legion_of_excess_move_end_reactions(unit=unit, action=action)
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_hearthband_move_end_reactions(unit=unit, action=action)
+        self._queue_votann_hearthfyre_move_end_reactions(unit=unit, action=action)
+        self._process_votann_hearthfyre_move_end_effects(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
@@ -12644,6 +12684,15 @@ class StratagemManager(
     def _on_unit_shooting_resolved_votann_delve(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_votann_delve_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
+    def _on_unit_shooting_resolved_votann_hearthfyre(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_votann_hearthfyre_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )
@@ -20209,6 +20258,9 @@ class StratagemManager(
         votann_hearthband_result = self._use_votann_hearthband_stratagem(s, **kwargs)
         if votann_hearthband_result is not None:
             return votann_hearthband_result
+        votann_hearthfyre_result = self._use_votann_hearthfyre_stratagem(s, **kwargs)
+        if votann_hearthfyre_result is not None:
+            return votann_hearthfyre_result
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result

@@ -10110,6 +10110,95 @@ _HEARTHBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HEARTHBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HEARTHFYRE_ARSENAL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010452007": StratagemToolDescriptor(
+        stratagem_id="000010452007",
+        name="Cogitated Need",
+        timing="end_of_opponent_movement_phase",
+        target="ironkin_steeljacks_unit",
+        duration="immediate",
+        effect="reactive_move_toward_closest_objective_marker",
+        cp_cost=1,
+        effect_params={"movement_type": "normal_move"},
+    ),
+    "000010452004": StratagemToolDescriptor(
+        stratagem_id="000010452004",
+        name="Delayed-Fire Rounds",
+        timing="shooting_phase_after_hearthfyre_unit_shoots",
+        target="hearthfyre_shooting_unit_with_selected_hit_enemy",
+        duration="until_start_of_your_next_shooting_phase",
+        effect="apply_move_triggered_mortal_wounds_until_owner_next_shooting_phase",
+        cp_cost=1,
+        effect_params={
+            "enemy_exclude_keywords_any": ["MONSTER", "VEHICLE"],
+            "trigger_move_types": ["move", "advance", "fall_back"],
+            "mortal_wound_roll": "D6",
+            "mortal_wound_on": 1,
+            "mortal_wound_cap": 6,
+        },
+    ),
+    "000010452003": StratagemToolDescriptor(
+        stratagem_id="000010452003",
+        name="First Concern",
+        timing="shooting_phase_after_hearthfyre_unit_shoots",
+        target="hearthfyre_shooting_unit_that_remained_stationary",
+        duration="immediate",
+        effect="post_shoot_normal_move_if_remained_stationary",
+        cp_cost=1,
+        effect_params={"movement_type": "normal_move"},
+    ),
+    "000010452006": StratagemToolDescriptor(
+        stratagem_id="000010452006",
+        name="Preventative Purge",
+        timing="opponent_movement_phase_after_enemy_fall_back_move",
+        target="brokhyr_thunderkyn_or_ironkin_steeljacks_unit",
+        duration="immediate",
+        effect="reactive_shooting_at_falling_back_enemy_with_hit_penalty",
+        cp_cost=1,
+        effect_params={
+            "target_restriction": "falling_back_enemy_unit_only",
+            "hit_roll_modifier": -1,
+        },
+    ),
+    "000010452002": StratagemToolDescriptor(
+        stratagem_id="000010452002",
+        name="Unwavering Accuracy",
+        timing="shooting_phase_start",
+        target="brokhyr_thunderkyn_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ignore_ballistic_hit_wound_and_ap_modifiers_for_ranged_attacks",
+        cp_cost=2,
+        effect_params={
+            "attack_type": "ranged",
+            "ignore_negative_skill_modifiers": True,
+            "ignore_negative_hit_modifiers": True,
+            "ignore_negative_wound_modifiers": True,
+            "ignore_ap_worsening": True,
+        },
+    ),
+    "000010452005": StratagemToolDescriptor(
+        stratagem_id="000010452005",
+        name="Wall of Steel",
+        timing="charge_phase_after_ironkin_steeljacks_charge_move_end",
+        target="ironkin_steeljacks_unit_with_selected_enemy_in_engagement_range",
+        duration="immediate",
+        effect="charge_end_mortal_wounds_with_optional_extra_dice",
+        cp_cost=1,
+        effect_params={
+            "enemy_exclude_keywords_any": ["MONSTER", "VEHICLE"],
+            "rolls_per_model": 1,
+            "mortal_wound_on_or_above": 4,
+            "mortal_wound_cap": 6,
+            "optional_yield_points_cost": 2,
+            "optional_extra_dice": 2,
+        },
+    ),
+}
+
+_HEARTHFYRE_ARSENAL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HEARTHFYRE_ARSENAL_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11491,6 +11580,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HEARTHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HEARTHFYRE_ARSENAL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11660,6 +11752,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BRANDFAST_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME.get(key)
         or _HEARTHBAND_STRATAGEM_BY_NAME.get(key)
+        or _HEARTHFYRE_ARSENAL_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)

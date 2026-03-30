@@ -159,6 +159,11 @@ class VotannStratagemMixin:
         checker = getattr(mgr, "is_hearthband", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_hearthfyre_arsenal_detachment(self) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "is_hearthfyre_arsenal", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _votann_yield_points_mgr(self):
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -494,6 +499,78 @@ class VotannStratagemMixin:
             root, "EINHYR HEARTHGUARD"
         )
 
+    def _votann_is_brokhyr_thunderkyn_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return (
+            self._votann_name_matches(root, "BROKHYR THUNDERKYN", "BRÔKHYR THUNDERKYN")
+            or (
+                self._votann_name_matches(root, "THUNDERKYN")
+                and self._votann_name_matches(root, "BROKHYR", "BRÔKHYR")
+            )
+            or (
+                self._votann_unit_has_keyword(root, "THUNDERKYN")
+                and (
+                    self._votann_unit_has_keyword(root, "BROKHYR")
+                    or self._votann_unit_has_keyword(root, "BRÔKHYR")
+                )
+            )
+        )
+
+    def _votann_is_ironkin_steeljacks_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "IRONKIN STEELJACKS") or (
+            self._votann_name_matches(root, "IRONKIN") and self._votann_name_matches(root, "STEELJACKS")
+        )
+
+    def _votann_is_arkanyst_evaluator_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "ARKANYST EVALUATOR") or self._votann_unit_has_keyword(
+            root, "ARKANYST EVALUATOR"
+        )
+
+    def _votann_is_hearthfyre_shooting_unit(self, unit: Any) -> bool:
+        return bool(
+            self._votann_is_brokhyr_thunderkyn_unit(unit)
+            or self._votann_is_ironkin_steeljacks_unit(unit)
+            or self._votann_is_arkanyst_evaluator_unit(unit)
+        )
+
+    @staticmethod
+    def _votann_alive_models(unit: Any) -> List[Any]:
+        if unit is None:
+            return []
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        raw_models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+        out: List[Any] = []
+        for model in list(raw_models or []):
+            if model is None:
+                continue
+            alive_value = getattr(model, "is_alive", True)
+            alive = bool(alive_value() if callable(alive_value) else alive_value)
+            if alive:
+                out.append(model)
+        return out
+
+    def _votann_unit_alive_model_count(self, unit: Any) -> int:
+        return len(self._votann_alive_models(unit))
+
+    def _votann_unit_move_distance(self, unit: Any) -> int:
+        root = self._votann_root(unit)
+        for model in self._votann_alive_models(root):
+            try:
+                move_value = int(getattr(model, "movement", getattr(model, "_movement", 0)) or 0)
+            except (AttributeError, TypeError, ValueError):
+                move_value = int(getattr(model, "_movement", 0) or 0)
+            if move_value > 0:
+                return int(move_value)
+        return 0
+
     def _votann_has_deep_strike(self, unit: Any) -> bool:
         root = self._votann_root(unit)
         if root is None:
@@ -645,6 +722,57 @@ class VotannStratagemMixin:
 
     def _needgaard_targets_from_shooting_context(self, attacker_unit: Any, *, hits_by_target: Any = None) -> List[Any]:
         return self._votann_targets_from_shooting_context(attacker_unit, hits_by_target=hits_by_target, hits_only=False)
+
+    def _votann_closest_objective(self, unit: Any) -> Any:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        root = self._votann_root(unit)
+        if root is None or game_map is None:
+            return None
+        closest = None
+        closest_distance = None
+        closest_key = ""
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None) or objective
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            try:
+                ox = float(getattr(location, "x", 0.0))
+                oy = float(getattr(location, "y", 0.0))
+                oz = float(getattr(location, "z", 0.0))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            current_distance = None
+            for model in self._votann_alive_models(root):
+                base = getattr(model, "model_base", None)
+                if base is None:
+                    continue
+                try:
+                    dx = float(getattr(base, "x", 0.0)) - ox
+                    dy = float(getattr(base, "y", 0.0)) - oy
+                    dz = float(getattr(base, "z", 0.0)) - oz
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                distance = float((dx * dx + dy * dy + dz * dz) ** 0.5)
+                if current_distance is None or distance < current_distance:
+                    current_distance = distance
+            if current_distance is None:
+                continue
+            objective_key = str(get_entity_id(objective) or get_entity_id(location) or "")
+            if (
+                closest_distance is None
+                or current_distance < closest_distance
+                or (
+                    closest_distance is not None
+                    and abs(float(current_distance) - float(closest_distance)) <= 1e-6
+                    and objective_key
+                    and (not closest_key or objective_key < closest_key)
+                )
+            ):
+                closest = objective
+                closest_distance = float(current_distance)
+                closest_key = objective_key
+        return closest
 
     def _votann_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str) -> bool:
         root = self._votann_root(unit)
@@ -1445,6 +1573,362 @@ class VotannStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _queue_votann_hearthfyre_phase_start_reactions(self, *, player, phase) -> None:
+        del player
+        game = getattr(self, "game", None)
+        if game is None or not self._is_hearthfyre_arsenal_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_key != "SHOOTING_PHASE" or active_player is not self.player:
+            return
+
+        owner_id = str(getattr(self.player, "id", "") or "")
+        for root in self._votann_iter_game_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if str(sr.get("hearthfyre_delayed_fire_rounds_owner", "") or "") != owner_id:
+                continue
+            if not bool(sr.get("hearthfyre_delayed_fire_rounds_active", False)):
+                continue
+            changed = False
+            for key in (
+                "hearthfyre_delayed_fire_rounds_active",
+                "hearthfyre_delayed_fire_rounds_owner",
+                "hearthfyre_delayed_fire_rounds_turn",
+                "hearthfyre_delayed_fire_rounds_source",
+                "hearthfyre_delayed_fire_rounds_source_unit_id",
+            ):
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+
+        stratagem = self.get_by_name("UNWAVERING ACCURACY")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_not_shot=True)
+            if self._votann_is_brokhyr_thunderkyn_unit(unit)
+        ]
+        if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_start",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_hearthfyre_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_hearthfyre_arsenal_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if player is self.player or active_player is self.player:
+            return
+        stratagem = self.get_by_name("COGITATED NEED")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_targetable=True)
+            if self._votann_is_ironkin_steeljacks_unit(unit)
+        ]
+        if not candidates or self._votann_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_hearthfyre_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_hearthfyre_arsenal_detachment():
+            return
+        attacker_root = self._votann_root(attacker_unit)
+        if attacker_root is None or not self._votann_owned_by_player(attacker_root, self.player):
+            return
+
+        attacker_sr = getattr(attacker_root, "special_rules", None)
+        if isinstance(attacker_sr, dict) and bool(attacker_sr.get("hearthfyre_preventative_purge_active", False)):
+            changed = False
+            for key in (
+                "hearthfyre_preventative_purge_active",
+                "hearthfyre_preventative_purge_turn_owner",
+                "hearthfyre_preventative_purge_turn",
+                "hearthfyre_preventative_purge_source",
+                "hearthfyre_preventative_purge_hit_penalty",
+            ):
+                if key in attacker_sr:
+                    attacker_sr.pop(key, None)
+                    changed = True
+            if changed:
+                attacker_root.special_rules = attacker_sr
+
+        if self._votann_phase_key(getattr(game, "phase", None)) != "SHOOTING_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+
+        if not self._votann_is_hearthfyre_shooting_unit(attacker_root):
+            return
+        if not self._votann_on_battlefield(attacker_root, require_targetable=True):
+            return
+
+        if bool(getattr(getattr(attacker_root, "round_state", None), "remained_stationary_this_round", False)):
+            stratagem = self.get_by_name("FIRST CONCERN")
+            if (
+                stratagem is not None
+                and self.player.command_points >= int(getattr(stratagem, "cp_cost", 0) or 0)
+                and self._votann_norm_name(stratagem.name) not in getattr(self, "_used_stratagems_this_phase", set())
+                and not self._votann_reaction_exists("unit_shooting_resolved", stratagem.name, unit=attacker_root)
+            ):
+                self._queue_reaction(
+                    {
+                        "event": "unit_shooting_resolved",
+                        "phase_name": "Shooting phase",
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "unit": attacker_root,
+                        "target_unit": attacker_root,
+                    },
+                    use_timer=False,
+                )
+
+        hit_targets = [
+            target
+            for target in self._votann_targets_from_shooting_context(
+                attacker_root,
+                hits_by_target=hits_by_target,
+                hits_only=True,
+            )
+            if (
+                target is not None
+                and not self._votann_owned_by_player(target, self.player)
+                and self._votann_is_alive(target)
+                and not self._votann_unit_has_keyword(target, "MONSTER")
+                and not self._votann_unit_has_keyword(target, "VEHICLE")
+            )
+        ]
+        stratagem = self.get_by_name("DELAYED-FIRE ROUNDS")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or not hit_targets
+            or self._votann_reaction_exists("unit_shooting_resolved", stratagem.name, unit=attacker_root)
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "enemy_candidates": hit_targets,
+        }
+        if len(hit_targets) == 1:
+            payload["enemy_unit"] = hit_targets[0]
+            payload["enemy_target"] = hit_targets[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_hearthfyre_move_end_reactions(self, *, unit, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_hearthfyre_arsenal_detachment():
+            return
+        phase_key = self._votann_phase_key(getattr(game, "phase", None))
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        root = self._votann_root(unit)
+        if root is None:
+            return
+
+        if phase_key == "MOVEMENT_PHASE" and active_player is not self.player:
+            if action_key not in ("fall back", "fallback"):
+                return
+            if self._votann_owned_by_player(root, self.player) or not self._votann_is_alive(root):
+                return
+            stratagem = self.get_by_name("PREVENTATIVE PURGE")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = [
+                candidate
+                for candidate in self._votann_candidates(require_targetable=True)
+                if self._votann_is_brokhyr_thunderkyn_unit(candidate)
+                or self._votann_is_ironkin_steeljacks_unit(candidate)
+            ]
+            if not candidates or self._votann_reaction_exists("unit_move_ended", stratagem.name, enemy_unit=root):
+                return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": action,
+                "enemy_unit": root,
+                "attacking_unit": root,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "CHARGE_PHASE" or active_player is not self.player:
+            return
+        if action_key != "charge":
+            return
+        if not self._votann_owned_by_player(root, self.player):
+            return
+        if not self._votann_is_ironkin_steeljacks_unit(root):
+            return
+        if not self._votann_on_battlefield(root, require_targetable=True):
+            return
+        enemy_candidates = [
+            enemy
+            for enemy in self._votann_engagement_enemy_candidates(root)
+            if not self._votann_unit_has_keyword(enemy, "MONSTER") and not self._votann_unit_has_keyword(enemy, "VEHICLE")
+        ]
+        stratagem = self.get_by_name("WALL OF STEEL")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or not enemy_candidates
+            or self._votann_reaction_exists("unit_move_ended", stratagem.name, unit=root)
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "action": action,
+            "unit": root,
+            "target_unit": root,
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["enemy_target"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _process_votann_hearthfyre_move_end_effects(self, *, unit, action: str) -> None:
+        root = self._votann_root(unit)
+        if root is None or not self._votann_is_alive(root):
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal move", "advance", "fall back", "fallback"}:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("hearthfyre_delayed_fire_rounds_active", False)):
+            return
+        if str(sr.get("hearthfyre_delayed_fire_rounds_owner", "") or "") != str(getattr(self.player, "id", "") or ""):
+            return
+
+        roll_count = self._votann_unit_alive_model_count(root)
+        if roll_count <= 0:
+            return
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(int(roll_count))]
+        mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) == 1))
+        if mortal_wounds <= 0:
+            return
+
+        source_root = None
+        source_unit_id = str(sr.get("hearthfyre_delayed_fire_rounds_source_unit_id", "") or "")
+        registry = getattr(getattr(self, "game", None), "entity_registry", None)
+        if registry is not None and source_unit_id:
+            try:
+                source_root = self._votann_root(registry.get(source_unit_id, kind="unit"))
+            except (AttributeError, TypeError, ValueError):
+                source_root = None
+        if source_root is None:
+            source_root = root
+        apply_mortals = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+        if callable(apply_mortals):
+            apply_mortals(root, int(mortal_wounds), game_map=getattr(getattr(self, "game", None), "map", None))
+        logger.info(
+            "INFO: DELAYED-FIRE ROUNDS: %s moved via %s; rolls=%s -> %d mortal wounds.",
+            getattr(root, "name", "Unit"),
+            action_key,
+            rolls,
+            int(mortal_wounds),
+        )
+
+    def _cleanup_votann_hearthfyre_phase_end_effects(self, *, phase) -> None:
+        phase_key = self._votann_phase_key(phase)
+        if phase_key not in {"MOVEMENT_PHASE", "SHOOTING_PHASE"}:
+            return
+        for root in self._votann_iter_game_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "MOVEMENT_PHASE" and bool(sr.get("hearthfyre_preventative_purge_active", False)):
+                for key in (
+                    "hearthfyre_preventative_purge_active",
+                    "hearthfyre_preventative_purge_turn_owner",
+                    "hearthfyre_preventative_purge_turn",
+                    "hearthfyre_preventative_purge_source",
+                    "hearthfyre_preventative_purge_hit_penalty",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("hearthfyre_unwavering_accuracy_active", False)):
+                for key in (
+                    "hearthfyre_unwavering_accuracy_active",
+                    "hearthfyre_unwavering_accuracy_turn_owner",
+                    "hearthfyre_unwavering_accuracy_turn",
+                    "hearthfyre_unwavering_accuracy_expires_phase",
+                    "hearthfyre_unwavering_accuracy_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if changed:
+                root.special_rules = sr
+
     def _queue_votann_needgaard_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
         if game is None or not self._is_needgaard_oathband_detachment():
@@ -1910,6 +2394,23 @@ class VotannStratagemMixin:
         if handler is None:
             return None
         if not self._is_hearthband_detachment():
+            return False
+        return bool(handler(stratagem, **kwargs))
+
+    def _use_votann_hearthfyre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name = self._votann_norm_name(getattr(stratagem, "name", ""))
+        handlers = {
+            "COGITATED NEED": self._use_hearthfyre_cogitated_need,
+            "DELAYED-FIRE ROUNDS": self._use_hearthfyre_delayed_fire_rounds,
+            "FIRST CONCERN": self._use_hearthfyre_first_concern,
+            "PREVENTATIVE PURGE": self._use_hearthfyre_preventative_purge,
+            "UNWAVERING ACCURACY": self._use_hearthfyre_unwavering_accuracy,
+            "WALL OF STEEL": self._use_hearthfyre_wall_of_steel,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return None
+        if not self._is_hearthfyre_arsenal_detachment():
             return False
         return bool(handler(stratagem, **kwargs))
 
@@ -2471,6 +2972,389 @@ class VotannStratagemMixin:
         sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or "")
         sr["feigned_retreat_turn"] = int(getattr(game, "turn", 0) or 0)
         target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_cogitated_need(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: COGITATED NEED: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: COGITATED NEED: not opponent's Movement phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_ironkin_steeljacks_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: COGITATED NEED: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: COGITATED NEED: target must be an Ironkin Steeljacks unit")
+            return False
+        objective = self._votann_closest_objective(target_root)
+        objective_location = getattr(objective, "location", None) or objective
+        objective_id = str(get_entity_id(objective) or get_entity_id(objective_location) or "")
+        if objective_location is None or not objective_id:
+            logger.error("ERROR: COGITATED NEED: closest objective marker could not be resolved")
+            return False
+        move_distance = self._votann_unit_move_distance(target_root)
+        if move_distance <= 0:
+            logger.error("ERROR: COGITATED NEED: target unit has no legal move distance")
+            return False
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: COGITATED NEED: reactive move queue unavailable")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=int(move_distance),
+            kind="hearthfyre_cogitated_need",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "COGITATED NEED"),
+            extra_context={
+                "hearthfyre_cogitated_need_objective_id": objective_id,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: COGITATED NEED: failed to queue reactive move")
+            return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_delayed_fire_rounds(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: not your Shooting phase")
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: missing source unit")
+            return False
+        if not self._votann_owned_by_player(target_root, self.player) or not self._votann_is_hearthfyre_shooting_unit(target_root):
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: target must be a qualifying Hearthfyre Arsenal unit")
+            return False
+        if not bool(getattr(getattr(target_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: target unit has not shot")
+            return False
+        enemy_candidates = [
+            self._votann_root(enemy)
+            for enemy in list(context.get("enemy_candidates") or [])
+            if self._votann_root(enemy) is not None
+        ]
+        enemy_candidates = [
+            enemy
+            for enemy in enemy_candidates
+            if enemy is not None
+            and not self._votann_owned_by_player(enemy, self.player)
+            and self._votann_is_alive(enemy)
+            and not self._votann_unit_has_keyword(enemy, "MONSTER")
+            and not self._votann_unit_has_keyword(enemy, "VEHICLE")
+        ]
+        enemy_candidates = sorted(enemy_candidates, key=self._votann_sort_key)
+        enemy_unit = context.get("enemy_unit") or context.get("enemy_target")
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: DELAYED-FIRE ROUNDS: missing enemy unit hit by the attacks")
+                return False
+        if enemy_candidates and enemy_root not in enemy_candidates:
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: selected enemy was not hit by the attacks")
+            return False
+        if self._votann_owned_by_player(enemy_root, self.player) or not self._votann_is_alive(enemy_root):
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: selected enemy unit is invalid")
+            return False
+        if self._votann_unit_has_keyword(enemy_root, "MONSTER") or self._votann_unit_has_keyword(enemy_root, "VEHICLE"):
+            logger.error("ERROR: DELAYED-FIRE ROUNDS: MONSTER and VEHICLE units are invalid targets")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthfyre_delayed_fire_rounds_active"] = True
+        sr["hearthfyre_delayed_fire_rounds_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthfyre_delayed_fire_rounds_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthfyre_delayed_fire_rounds_source"] = str(getattr(stratagem, "name", "") or "DELAYED-FIRE ROUNDS")
+        sr["hearthfyre_delayed_fire_rounds_source_unit_id"] = str(get_entity_id(target_root) or "")
+        enemy_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_first_concern(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FIRST CONCERN: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: FIRST CONCERN: not your Shooting phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_hearthfyre_shooting_unit(unit)
+            and bool(getattr(getattr(unit, "round_state", None), "shot_this_round", False))
+            and bool(getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False))
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FIRST CONCERN: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: FIRST CONCERN: target must be a qualifying Hearthfyre Arsenal unit that remained stationary and has shot"
+            )
+            return False
+        move_distance = self._votann_unit_move_distance(target_root)
+        if move_distance <= 0:
+            logger.error("ERROR: FIRST CONCERN: target unit has no legal move distance")
+            return False
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: FIRST CONCERN: reactive move queue unavailable")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=int(move_distance),
+            kind="hearthfyre_first_concern",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "FIRST CONCERN"),
+        )
+        if request is None:
+            logger.error("ERROR: FIRST CONCERN: failed to queue reactive move")
+            return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_preventative_purge(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: PREVENTATIVE PURGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: PREVENTATIVE PURGE: not opponent's Movement phase")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in ("fall back", "fallback"):
+            logger.error("ERROR: PREVENTATIVE PURGE: invalid trigger")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_brokhyr_thunderkyn_unit(unit) or self._votann_is_ironkin_steeljacks_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PREVENTATIVE PURGE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: PREVENTATIVE PURGE: target must be a Brôkhyr Thunderkyn or Ironkin Steeljacks unit")
+            return False
+        enemy_unit = context.get("enemy_unit") or context.get("attacking_unit")
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None or self._votann_owned_by_player(enemy_root, self.player) or not self._votann_is_alive(enemy_root):
+            logger.error("ERROR: PREVENTATIVE PURGE: missing enemy unit that Fell Back")
+            return False
+        queue_shoot = getattr(game, "_queue_setup_reactive_shooting_decision", None)
+        if not callable(queue_shoot):
+            logger.error("ERROR: PREVENTATIVE PURGE: reactive shooting helper is unavailable")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+        request = queue_shoot(
+            player=self.player,
+            unit=target_root,
+            target_unit=enemy_root,
+            source=str(getattr(stratagem, "name", "") or "PREVENTATIVE PURGE"),
+        )
+        if request is None:
+            logger.error("ERROR: PREVENTATIVE PURGE: failed to queue reactive shooting decision")
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthfyre_preventative_purge_active"] = True
+        sr["hearthfyre_preventative_purge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthfyre_preventative_purge_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthfyre_preventative_purge_source"] = str(getattr(stratagem, "name", "") or "PREVENTATIVE PURGE")
+        sr["hearthfyre_preventative_purge_hit_penalty"] = 1
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_unwavering_accuracy(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: UNWAVERING ACCURACY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: UNWAVERING ACCURACY: not your Shooting phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_not_shot=True))
+            if self._votann_is_brokhyr_thunderkyn_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: UNWAVERING ACCURACY: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: UNWAVERING ACCURACY: target must be a Brôkhyr Thunderkyn unit that has not shot")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hearthfyre_unwavering_accuracy_active"] = True
+        sr["hearthfyre_unwavering_accuracy_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["hearthfyre_unwavering_accuracy_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["hearthfyre_unwavering_accuracy_expires_phase"] = "SHOOTING_PHASE"
+        sr["hearthfyre_unwavering_accuracy_source"] = str(getattr(stratagem, "name", "") or "UNWAVERING ACCURACY")
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_hearthfyre_wall_of_steel(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: WALL OF STEEL: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: WALL OF STEEL: not your Charge phase")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"} and not bool(
+            getattr(getattr(context.get("unit") or context.get("target_unit"), "round_state", None), "charged_this_round", False)
+        ):
+            logger.error("ERROR: WALL OF STEEL: invalid trigger")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_ironkin_steeljacks_unit(unit)
+            and bool(getattr(getattr(unit, "round_state", None), "charged_this_round", False))
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: WALL OF STEEL: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: WALL OF STEEL: target must be an Ironkin Steeljacks unit that completed a charge move")
+            return False
+
+        enemy_candidates = [
+            self._votann_root(enemy)
+            for enemy in list(context.get("enemy_candidates") or self._votann_engagement_enemy_candidates(target_root))
+            if self._votann_root(enemy) is not None
+        ]
+        enemy_candidates = [
+            enemy
+            for enemy in enemy_candidates
+            if enemy is not None
+            and not self._votann_owned_by_player(enemy, self.player)
+            and self._votann_is_alive(enemy)
+            and not self._votann_unit_has_keyword(enemy, "MONSTER")
+            and not self._votann_unit_has_keyword(enemy, "VEHICLE")
+        ]
+        enemy_candidates = sorted(enemy_candidates, key=self._votann_sort_key)
+        enemy_unit = context.get("enemy_unit") or context.get("enemy_target")
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: WALL OF STEEL: missing enemy unit within Engagement Range")
+                return False
+        if enemy_candidates and enemy_root not in enemy_candidates:
+            logger.error("ERROR: WALL OF STEEL: selected enemy is not a valid Engagement Range target")
+            return False
+        if self._votann_owned_by_player(enemy_root, self.player) or not self._votann_is_alive(enemy_root):
+            logger.error("ERROR: WALL OF STEEL: selected enemy unit is invalid")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        yp_spent = self._votann_bool_like(spend_yp, default=False)
+        if yp_spent and not self._votann_spend_yield_points(2):
+            logger.error("ERROR: WALL OF STEEL: unable to spend 2 Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            return False
+        roll_count = self._votann_unit_alive_model_count(target_root) + (2 if yp_spent else 0)
+        if roll_count <= 0:
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            logger.error("ERROR: WALL OF STEEL: target unit has no dice to roll")
+            return False
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(int(roll_count))]
+        mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll or 0) >= 4))
+        if mortal_wounds > 0:
+            apply_mortals = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+        logger.info(
+            "INFO: WALL OF STEEL: %s slammed %s; rolls=%s -> %d mortal wounds.",
+            getattr(target_root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+            rolls,
+            int(mortal_wounds),
+        )
         self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

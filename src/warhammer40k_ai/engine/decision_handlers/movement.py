@@ -283,6 +283,106 @@ def _validate_predatory_pursuit_positions(
     return ()
 
 
+def _validate_hearthfyre_cogitated_need_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    reactive_move_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_kind != "hearthfyre_cogitated_need" and reactive_move_type != "hearthfyre_cogitated_need":
+        return ()
+    if unit is None:
+        return ("Move unit: Cogitated Need requires a valid unit.",)
+    objective_id = str(context.get("hearthfyre_cogitated_need_objective_id", "") or "").strip()
+    if not objective_id:
+        return ("Move unit: Cogitated Need objective marker is missing.",)
+    objective = get_objective(game, objective_id)
+    objective_location = getattr(objective, "location", None) or objective
+    if objective_location is None:
+        return ("Move unit: Cogitated Need objective marker could not be resolved.",)
+    try:
+        objective_position = (
+            float(getattr(objective_location, "x", 0.0)),
+            float(getattr(objective_location, "y", 0.0)),
+            float(getattr(objective_location, "z", 0.0)),
+        )
+    except (AttributeError, TypeError, ValueError):
+        return ("Move unit: Cogitated Need objective marker is missing coordinates.",)
+    try:
+        max_distance = float(context.get("max_distance", 0) or 0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    tolerance = 1e-3
+
+    positions_by_id: dict[str, tuple[float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "").strip()
+        position = entry.get("position") or []
+        if not model_id or not isinstance(position, (list, tuple)) or len(position) < 2:
+            continue
+        try:
+            positions_by_id[model_id] = (
+                float(position[0]),
+                float(position[1]),
+                float(position[2]) if len(position) > 2 else 0.0,
+            )
+        except (TypeError, ValueError):
+            continue
+
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    current_distance: float | None = None
+    final_distance: float | None = None
+    ox, oy, oz = objective_position
+    for model in list(models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        current_base = getattr(model, "model_base", None)
+        if current_base is None:
+            continue
+        try:
+            current_range = math.sqrt(
+                (float(getattr(current_base, "x", 0.0)) - ox) ** 2
+                + (float(getattr(current_base, "y", 0.0)) - oy) ** 2
+                + (float(getattr(current_base, "z", 0.0)) - oz) ** 2
+            )
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if current_distance is None or current_range < current_distance:
+            current_distance = current_range
+
+        model_id = str(get_entity_id(model) or "").strip()
+        end_position = positions_by_id.get(model_id)
+        if end_position is None:
+            continue
+        final_range = math.sqrt(
+            (float(end_position[0]) - ox) ** 2
+            + (float(end_position[1]) - oy) ** 2
+            + (float(end_position[2]) - oz) ** 2
+        )
+        if final_distance is None or final_range < final_distance:
+            final_distance = final_range
+
+    if current_distance is None or final_distance is None:
+        return ()
+
+    min_possible = max(0.0, float(current_distance) - float(max_distance))
+    if final_distance > (min_possible + tolerance):
+        return (
+            f'Move unit: Cogitated Need must end as close as possible to the closest objective marker: '
+            f'{final_distance:.2f}" > {min_possible:.2f}".',
+        )
+    return ()
+
+
 def _validate_cursed_circlet_positions(
     game: object,
     unit: object,
@@ -1232,6 +1332,14 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if predatory_pursuit_errors:
         return predatory_pursuit_errors
+    hearthfyre_errors = _validate_hearthfyre_cogitated_need_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if hearthfyre_errors:
+        return hearthfyre_errors
     cursed_circlet_errors = _validate_cursed_circlet_positions(
         game,
         unit,
