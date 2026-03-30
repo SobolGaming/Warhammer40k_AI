@@ -178,9 +178,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PROFANE ZEAL",
     "REAVERS' HASTE",
     "DEADLY DECEIVERS",
+    "DARK HARVEST",
     "DOUBLE-CROSS",
+    "EAGER FOR THE KILL",
     "ENEMIES WITHOUT NUMBER",
+    "FIGHTING SHADOWS",
+    "INSTINCTIVE SPITE",
     "MAKING A POINT",
+    "RAID AND FADE",
     "TAILORED TOXINS",
     "TAKEN ALIVE",
     "SCRAMBLED COORDINATES",
@@ -2373,6 +2378,7 @@ class StratagemManager(
             "HIDDEN HUNTERS",
             "EMP GRENADES",
             "DEADLY DECEIVERS",
+            "FIGHTING SHADOWS",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2437,6 +2443,7 @@ class StratagemManager(
             "UNDYING HATRED",
             "EMP GRENADES",
             "DOUBLE-CROSS",
+            "FIGHTING SHADOWS",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -2647,8 +2654,12 @@ class StratagemManager(
             "PUNISH THE CRAVEN",
             "TOO ARROGANT TO DIE",
             "DEADLY DECEIVERS",
+            "DARK HARVEST",
+            "EAGER FOR THE KILL",
             "DOUBLE-CROSS",
+            "INSTINCTIVE SPITE",
             "MAKING A POINT",
+            "RAID AND FADE",
             "TAILORED TOXINS",
             "TAKEN ALIVE",
             "ALWAYS LOOKIN' FER A FIGHT",
@@ -8470,6 +8481,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_realspace_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_drukhari_skysplinter_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9688,11 +9703,19 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_realspace_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._resolve_drukhari_covenite_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
             self._cleanup_drukhari_kabalite_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_drukhari_realspace_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -12871,6 +12894,14 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_realspace_fighting_shadows_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
+        try:
             self._queue_tau_kroot_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -14060,6 +14091,14 @@ class StratagemManager(
             self._queue_drukhari_covenite_connoisseurs_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_realspace_fighting_shadows_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Fight phase",
             )
         except Exception:
             raise

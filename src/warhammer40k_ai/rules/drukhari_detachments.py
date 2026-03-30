@@ -107,6 +107,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     _KABALITE_TAKEN_ALIVE_PREFIX = "drukhari_kabalite_taken_alive"
     _KABALITE_DEADLY_DECEIVERS_PREFIX = "drukhari_kabalite_deadly_deceivers"
     _KABALITE_DOUBLE_CROSS_PREFIX = "drukhari_kabalite_double_cross"
+    _REALSPACE_INSTINCTIVE_SPITE_PREFIX = "drukhari_realspace_instinctive_spite"
+    _REALSPACE_DARK_HARVEST_PREFIX = "drukhari_realspace_dark_harvest"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -1965,6 +1967,42 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         source_name = str(special_rules.get(f"{prefix}_source", "") or "").strip()
         return root, special_rules, source_name
 
+    def _realspace_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_realspace_raiders():
+            return None, None, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, ""
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict) or not bool(special_rules.get(f"{prefix}_active", False)):
+            return None, None, ""
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            resolved_game = getattr(player, "game", None) if player is not None else None
+        if resolved_game is not None:
+            expected_phase = str(special_rules.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            current_phase = str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            if expected_phase and current_phase and expected_phase != current_phase:
+                return None, None, ""
+            owner_id = str(special_rules.get(f"{prefix}_turn_owner", "") or "").strip()
+            current_player = getattr(resolved_game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if owner_id and current_owner and owner_id != current_owner:
+                return None, None, ""
+            try:
+                marked_turn = int(special_rules.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return None, None, ""
+        source_name = str(special_rules.get(f"{prefix}_source", "") or "").strip()
+        return root, special_rules, source_name
+
     def kabalite_deadly_deceivers_range_limit(self, unit, *, game=None) -> tuple[float, str]:
         root, special_rules, source_name = self._kabalite_effect_state(
             unit,
@@ -2086,6 +2124,118 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if bonus <= 0:
             return 0, ""
         return int(bonus), source_name or "Taken Alive"
+
+    def realspace_instinctive_spite_hit_bonus(
+        self,
+        model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if model is None or target_unit is None:
+            return 0, ""
+        root, special_rules, source_name = self._realspace_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._REALSPACE_INSTINCTIVE_SPITE_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return 0, ""
+        effect_phase = str(
+            special_rules.get(f"{self._REALSPACE_INSTINCTIVE_SPITE_PREFIX}_expires_phase", "") or ""
+        ).strip().upper()
+        if weapon_profile is not None:
+            is_ranged = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_ranged", lambda: False)())
+            is_melee = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", lambda: False)())
+            if effect_phase == "SHOOTING_PHASE" and not is_ranged:
+                return 0, ""
+            if effect_phase == "FIGHT_PHASE" and not is_melee:
+                return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        below_half = getattr(target_root, "is_below_half_strength", None)
+        if not callable(below_half) or not bool(below_half()):
+            return 0, ""
+        try:
+            bonus = int(special_rules.get(f"{self._REALSPACE_INSTINCTIVE_SPITE_PREFIX}_hit_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), source_name or "Instinctive Spite"
+
+    def realspace_instinctive_spite_wound_bonus(
+        self,
+        model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if model is None or target_unit is None:
+            return 0, ""
+        root, special_rules, source_name = self._realspace_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._REALSPACE_INSTINCTIVE_SPITE_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return 0, ""
+        effect_phase = str(
+            special_rules.get(f"{self._REALSPACE_INSTINCTIVE_SPITE_PREFIX}_expires_phase", "") or ""
+        ).strip().upper()
+        if weapon_profile is not None:
+            is_ranged = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_ranged", lambda: False)())
+            is_melee = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", lambda: False)())
+            if effect_phase == "SHOOTING_PHASE" and not is_ranged:
+                return 0, ""
+            if effect_phase == "FIGHT_PHASE" and not is_melee:
+                return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        below_half = getattr(target_root, "is_below_half_strength", None)
+        if not callable(below_half) or not bool(below_half()):
+            return 0, ""
+        try:
+            bonus = int(special_rules.get(f"{self._REALSPACE_INSTINCTIVE_SPITE_PREFIX}_wound_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), source_name or "Instinctive Spite"
+
+    def realspace_dark_harvest_weapon_keyword_bonuses(
+        self,
+        model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> list[dict]:
+        if model is None:
+            return []
+        if weapon_profile is not None and not bool(
+            getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", lambda: False)()
+        ):
+            return []
+        root, special_rules, source_name = self._realspace_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._REALSPACE_DARK_HARVEST_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return []
+        del target_unit
+        return [
+            {
+                "attack_type": "melee",
+                "keyword": "LETHAL HITS",
+                "source": source_name or "Dark Harvest",
+            }
+        ]
 
     def kabalite_double_cross_support_unit(self, unit, *, attacker_unit=None, attacker_model=None, game=None):
         root, special_rules, source_name = self._kabalite_effect_state(

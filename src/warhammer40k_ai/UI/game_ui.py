@@ -18671,6 +18671,89 @@ class GameView:
                 )
             return
 
+        if name_u == "FIGHTING SHADOWS" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_drukhari_realspace_fighting_shadows_candidates"):
+                    target_units = context.get("target_units") or []
+                    try:
+                        candidates = list(
+                            manager._drukhari_realspace_fighting_shadows_candidates(target_units=list(target_units or [])) or []
+                        )
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle="Targeted Drukhari unit (excluding Haemonculus Covens).",
+                    enemy_unit=context.get("attacking_unit") or context.get("enemy_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u in (
+            "INSTINCTIVE SPITE",
+            "DARK HARVEST",
+            "EAGER FOR THE KILL",
+            "RAID AND FADE",
+        ) and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "INSTINCTIVE SPITE": "_drukhari_realspace_instinctive_spite_candidates",
+                        "DARK HARVEST": "_drukhari_realspace_dark_harvest_candidates",
+                        "EAGER FOR THE KILL": "_drukhari_realspace_eager_for_the_kill_candidates",
+                        "RAID AND FADE": "_drukhari_realspace_raid_and_fade_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "INSTINCTIVE SPITE": "Select up to two Battleline units, or one other Drukhari unit.",
+                    "DARK HARVEST": "Select up to two Wracks units, or one other Drukhari unit.",
+                    "EAGER FOR THE KILL": "Select up to two Wyches units, or one other Drukhari unit.",
+                    "RAID AND FADE": "Select up to two Kabalite Warriors units, or one other Drukhari unit.",
+                }.get(name_u, f"Select units for {name}.")
+                instruction = {
+                    "INSTINCTIVE SPITE": "Choose eligible Drukhari unit(s) for this phase bonus, or skip.",
+                    "DARK HARVEST": "Choose eligible Drukhari unit(s) to gain [LETHAL HITS] in melee, or skip.",
+                    "EAGER FOR THE KILL": "Choose eligible Drukhari unit(s) to Advance a fixed 6\", or skip.",
+                    "RAID AND FADE": "Choose eligible Drukhari unit(s) to make a 6\" post-shoot Normal move, or skip.",
+                }.get(name_u, "Choose eligible unit(s), or skip.")
+                max_units = int(context.get("max_units", 2) or 2)
+                on_chosen = lambda units: self._finalize_multi_unit_stratagem(player, name, context, units)
+                if name_u == "INSTINCTIVE SPITE":
+                    on_chosen = lambda units: self._finalize_drukhari_realspace_instinctive_spite(
+                        player,
+                        name,
+                        context,
+                        units,
+                    )
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    candidates,
+                    on_chosen,
+                    max_units=max_units,
+                    title=name,
+                    subtitle=subtitle,
+                    instruction=instruction,
+                )
+            return
+
         if name_u == "DOUBLE-CROSS":
             if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 return
@@ -20310,6 +20393,89 @@ class GameView:
             logger.info(f"Used stratagem: {name}")
         else:
             logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_multi_unit_stratagem(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        units,
+        *,
+        spend_pain_token: Optional[bool] = None,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        selected_units = [unit for unit in list(units or []) if unit is not None]
+        if not selected_units:
+            logger.info(f"{name}: no units selected")
+            return
+        ctx = dict(context)
+        ctx["units"] = list(selected_units)
+        ctx["target_units"] = list(selected_units)
+        ctx["selected_units"] = list(selected_units)
+        if len(selected_units) == 1:
+            ctx["unit"] = selected_units[0]
+            ctx["target_unit"] = selected_units[0]
+        if spend_pain_token is not None:
+            ctx["spend_pain_token"] = bool(spend_pain_token)
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_drukhari_realspace_instinctive_spite(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        units,
+    ) -> None:
+        selected_units = [unit for unit in list(units or []) if unit is not None]
+        if not selected_units:
+            logger.info("Instinctive Spite: no units selected")
+            return
+        pain_mgr = self._get_power_from_pain_manager(player)
+        tokens = int(getattr(pain_mgr, "tokens", 0) or 0) if pain_mgr is not None else 0
+        if tokens <= 0 or not callable(getattr(self, "_request_yes_no", None)):
+            self._finalize_multi_unit_stratagem(
+                player,
+                name,
+                context,
+                selected_units,
+                spend_pain_token=False,
+            )
+            return
+
+        title = "Instinctive Spite"
+        msg = (
+            f"Spend 1 Pain token to also gain +1 to wound against Below Half-strength targets?\n\n"
+            f"Tokens available: {tokens}"
+        )
+
+        def _done(chosen: bool):
+            self._finalize_multi_unit_stratagem(
+                player,
+                name,
+                context,
+                selected_units,
+                spend_pain_token=bool(chosen),
+            )
+
+        self._request_yes_no(
+            title,
+            msg,
+            "Spend",
+            "Skip",
+            _done,
+            player=player,
+            context={
+                "ability": "drukhari_realspace_instinctive_spite_pain_token",
+                "ability_name": "Instinctive Spite",
+                "optional": True,
+            },
+        )
 
     def _finalize_unit_and_enemy_stratagem(
         self,

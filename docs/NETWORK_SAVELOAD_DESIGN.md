@@ -247,7 +247,7 @@ Command phase:
 - lissen_ere_dialog: CHOOSE_QUARRY {action="none" | target_unit_id+taktik} (context `ability="taktikal_brigade_lissen_ere"`, `ability_name="Lissen 'Ere"`, `army_id`, `issuer_model_id`, `issuer_model_name`, `issuer_unit_id`, `battle_round`, `trigger`, `candidate_unit_ids[]`, `candidate_taktiks[]`, `optional=true`)
 - vessels_of_wrath_models_dialog: SELECT_VESSEL_OF_WRATH_MODELS {model_ids | skip} (context `army_id`, `battle_round`, `max_models`)
 - wrath_of_khorne_blessing_dialog: CHOOSE_VESSEL_OF_WRATH_BLESSING {blessing_key} (context `army_id`, `battle_round`)
-- realm_of_chaos_units_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `allowed_unit_ids`, `outside_shadow_unit_ids`, `max_units`) (used for The Realm of Chaos, Delirium Unmade, and Glimmershift Portal)
+- realm_of_chaos_units_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `allowed_unit_ids`, `outside_shadow_unit_ids`, `max_units`) (used for The Realm of Chaos, Delirium Unmade, Glimmershift Portal, and Drukhari Realspace Raiders multi-unit stratagem selections such as Instinctive Spite, Dark Harvest, Eager for the Kill, and Raid and Fade)
 - informant_network_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="informant_network_selection"`, `ability_name="Informant Network"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `optional=true`)
 - oath_of_moment_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="oath_of_moment"`, `army_id`)
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
@@ -544,6 +544,7 @@ Optional ability confirmations (yes/no):
 - flickering_reality_reroll_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickering_reality_reroll"`, `unit_id`, `base_roll`, `ability_name`, `phase_name`)
 - pyrogenesis_flux_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="pyrogenesis_flux"`, `unit_id`, `base_strength_bonus`, `base_ap_bonus`, `flux_strength_bonus`, `flux_ap_bonus`, `ability_name`, `phase_name`)
 - power_from_pain_stratagem_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="power_from_pain_stratagem"`)
+- instinctive_spite_pain_token_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="drukhari_realspace_instinctive_spite_pain_token"`, `ability_name="Instinctive Spite"`, `optional=true`)
 
 Dice Rolls:
 - dice_roll_dialog: REQUEST_DICE_ROLL {roll_id, action_id="roll"}

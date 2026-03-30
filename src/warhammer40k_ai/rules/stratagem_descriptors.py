@@ -4973,6 +4973,90 @@ _KABALITE_CARTEL_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _KABALITE_CARTEL_STRATAGEM_DESCRIPTORS.values()
 }
 
+_REALSPACE_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010575003": StratagemToolDescriptor(
+        stratagem_id="000010575003",
+        name="Fighting Shadows",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="friendly_non_haemonculus_covens_drukhari_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="hit_roll_penalty",
+        cp_cost=1,
+        effect_params={
+            "hit_penalty": -1,
+            "required_keywords_all": ["DRUKHARI"],
+            "excluded_keywords_any": ["HAEMONCULUS COVENS"],
+        },
+    ),
+    "000010575004": StratagemToolDescriptor(
+        stratagem_id="000010575004",
+        name="Instinctive Spite",
+        timing="your_shooting_phase_start_or_fight_phase_start",
+        target="up_to_two_drukhari_battleline_units_or_one_other_drukhari_unit",
+        duration="until_end_of_phase",
+        effect="hit_bonus_vs_targets_below_half_strength_with_optional_wound_bonus",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "dual_unit_required_keywords_any": ["BATTLELINE"],
+            "hit_bonus": 1,
+            "hit_target_condition": "below_half_strength",
+            "optional_pain_token_cost": 1,
+            "wound_bonus": 1,
+            "wound_target_condition": "below_half_strength",
+        },
+    ),
+    "000010575005": StratagemToolDescriptor(
+        stratagem_id="000010575005",
+        name="Dark Harvest",
+        timing="fight_phase_start",
+        target="up_to_two_wracks_units_or_one_other_drukhari_unit",
+        duration="until_end_of_phase",
+        effect="grant_keywords_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "dual_unit_required_keywords_any": ["WRACKS"],
+            "attack_type": "melee",
+            "grant_keywords": ["LETHAL HITS"],
+        },
+    ),
+    "000010575006": StratagemToolDescriptor(
+        stratagem_id="000010575006",
+        name="Eager for the Kill",
+        timing="your_movement_phase_start",
+        target="up_to_two_wyches_units_or_one_other_drukhari_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_fixed_distance",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "dual_unit_required_keywords_any": ["WYCHES"],
+            "fixed_advance_distance": 6,
+        },
+    ),
+    "000010575007": StratagemToolDescriptor(
+        stratagem_id="000010575007",
+        name="Raid and Fade",
+        timing="your_shooting_phase_end",
+        target="up_to_two_kabalite_warriors_units_or_one_other_drukhari_unit_excluding_scourges_and_aircraft",
+        duration="immediate",
+        effect="post_shoot_reactive_normal_move_no_charge",
+        cp_cost=2,
+        effect_params={
+            "max_units": 2,
+            "dual_unit_required_keywords_any": ["KABALITE WARRIORS"],
+            "excluded_keywords_any": ["SCOURGES", "AIRCRAFT"],
+            "move_distance": 6,
+            "allow_skip": True,
+        },
+    ),
+}
+
+_REALSPACE_RAIDERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _REALSPACE_RAIDERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010577006": StratagemToolDescriptor(
         stratagem_id="000010577006",
@@ -10952,6 +11036,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COVENITE_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _REALSPACE_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _KABALITE_CARTEL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11230,6 +11317,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _REAPERS_WAGER_STRATAGEM_BY_NAME.get(key)
         or _COVENITE_COTERIE_STRATAGEM_BY_NAME.get(key)
+        or _REALSPACE_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _KABALITE_CARTEL_STRATAGEM_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)

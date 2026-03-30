@@ -5633,6 +5633,28 @@ class PositioningMixin:
                             "source": str(entry.get("source", "") or "Murderous Agenda"),
                         }
                     ]
+            realspace_dark_harvest_fn = (
+                getattr(drukhari_mgr, "realspace_dark_harvest_weapon_keyword_bonuses", None)
+                if drukhari_mgr is not None
+                else None
+            )
+            if callable(realspace_dark_harvest_fn):
+                game = getattr(getattr(source_army, "player", None), "game", None) if source_army is not None else None
+                for entry in list(
+                    realspace_dark_harvest_fn(model, target, weapon_profile=weapon_profile, game=game) or []
+                ):
+                    if not isinstance(entry, dict):
+                        continue
+                    keyword = str(entry.get("keyword", "") or "").strip().upper()
+                    if not keyword:
+                        continue
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": str(entry.get("attack_type", "any") or "any").strip().lower(),
+                            "keyword": keyword,
+                            "source": str(entry.get("source", "") or "Dark Harvest"),
+                        }
+                    ]
             mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
             sustained_fn = getattr(mgr, "marked_prey_sustained_hits_value", None) if mgr is not None else None
             if callable(sustained_fn):
