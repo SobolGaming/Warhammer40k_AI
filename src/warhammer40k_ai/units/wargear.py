@@ -299,6 +299,50 @@ class WargearProfile:
         sr = getattr(unit, "special_rules", None) if unit is not None else None
         return sr if isinstance(sr, dict) else {}
 
+    def _mercenary_attack_rule(
+        self,
+        attacker: 'Model',
+        *,
+        rule_prefix: str,
+        attack_is_ranged: bool,
+        attack_is_melee: bool,
+    ) -> dict | None:
+        sr = self._unit_special_rules(attacker)
+        if not bool(sr.get(f"{rule_prefix}_active", False)):
+            return None
+        attack_type = str(sr.get(f"{rule_prefix}_attack_type", "") or "").strip().lower()
+        if attack_type == "ranged" and not attack_is_ranged:
+            return None
+        if attack_type == "melee" and not attack_is_melee:
+            return None
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is not None:
+            required_phase = str(sr.get(f"{rule_prefix}_expires_phase", "") or "").strip().upper()
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if required_phase and current_phase and current_phase != required_phase:
+                return None
+            turn_owner_id = str(sr.get(f"{rule_prefix}_turn_owner", "") or "").strip()
+            owner_id = str(sr.get(f"{rule_prefix}_owner", "") or "").strip()
+            if turn_owner_id or owner_id:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "").strip()
+                required_owner = turn_owner_id or owner_id
+                if current_owner and current_owner != required_owner:
+                    return None
+            try:
+                effect_turn = int(sr.get(f"{rule_prefix}_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            if effect_turn:
+                try:
+                    if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                        return None
+                except Exception:
+                    return None
+        return sr
+
     def _get_charge_melee_strength_damage_bonus(
         self,
         attacker: 'Model',
@@ -11724,6 +11768,18 @@ class WargearProfile:
         except Exception:
             pass
 
+        try:
+            mercenary_sr = self._mercenary_attack_rule(
+                attacker,
+                rule_prefix="mercenary_auxiliary_contract",
+                attack_is_ranged=attack_is_ranged,
+                attack_is_melee=attack_is_melee,
+            )
+            if mercenary_sr is not None:
+                attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
+
         # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
         try:
             if attack_is_melee:
@@ -15094,6 +15150,58 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Mercenary Oathband: PRIVATEER ARSENAL ranged hit re-rolls.
+        try:
+            if rerolls_allowed and attack_is_ranged and "reroll" not in hit_result:
+                sr = self._mercenary_attack_rule(
+                    attacker,
+                    rule_prefix="mercenary_privateer_arsenal",
+                    attack_is_ranged=attack_is_ranged,
+                    attack_is_melee=attack_is_melee,
+                )
+                if sr is not None:
+                    mode = str(sr.get("mercenary_privateer_arsenal_hit_reroll_mode", "") or "").strip().lower()
+                    if mode == "ones" and dice_roll == 1:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("PRIVATEER ARSENAL: re-roll Hit roll of 1")
+                        hit_result["reroll_of_one"] = 1
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+                    elif mode == "full":
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("PRIVATEER ARSENAL: re-roll Hit roll")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Mercenary Oathband: OPTIMAL EXPENDITURE melee hit re-rolls of 1.
+        try:
+            if rerolls_allowed and attack_is_melee and dice_roll == 1 and "reroll" not in hit_result:
+                sr = self._mercenary_attack_rule(
+                    attacker,
+                    rule_prefix="mercenary_optimal_expenditure",
+                    attack_is_ranged=attack_is_ranged,
+                    attack_is_melee=attack_is_melee,
+                )
+                if sr is not None:
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("OPTIMAL EXPENDITURE: re-roll Hit roll of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
         # Cabal of Sorcerers: Destiny's Ruin rerolls (TS/Scintillating Legions only).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -17581,6 +17689,14 @@ class WargearProfile:
             'special_effects': []
         }
         rerolls_allowed = bool(allow_rerolls)
+        try:
+            attack_is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            attack_is_melee = False
+        try:
+            attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            attack_is_ranged = False
         
         if attack_instance.get('lethal_hit', False):
             wound_result['wound'] = True
@@ -21669,6 +21785,54 @@ class WargearProfile:
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+        except Exception:
+            pass
+
+        # Mercenary Oathband: PRIVATEER ARSENAL ranged wound re-rolls of 1.
+        try:
+            if rerolls_allowed and attack_is_ranged and dice_roll == 1 and "reroll" not in wound_result:
+                sr = self._mercenary_attack_rule(
+                    attacker,
+                    rule_prefix="mercenary_privateer_arsenal",
+                    attack_is_ranged=attack_is_ranged,
+                    attack_is_melee=attack_is_melee,
+                )
+                if sr is not None:
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("PRIVATEER ARSENAL: re-roll Wound roll of 1")
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Mercenary Oathband: OPTIMAL EXPENDITURE melee wound re-rolls.
+        try:
+            if rerolls_allowed and attack_is_melee and "reroll" not in wound_result:
+                sr = self._mercenary_attack_rule(
+                    attacker,
+                    rule_prefix="mercenary_optimal_expenditure",
+                    attack_is_ranged=attack_is_ranged,
+                    attack_is_melee=attack_is_melee,
+                )
+                if sr is not None:
+                    mode = str(sr.get("mercenary_optimal_expenditure_wound_reroll_mode", "") or "").strip().lower()
+                    if mode == "ones" and dice_roll == 1:
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("OPTIMAL EXPENDITURE: re-roll Wound roll of 1")
+                        wound_result["reroll_of_one"] = 1
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+                    elif mode == "full":
+                        do_reroll = not bool(wound_result.get("wound", False))
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append("OPTIMAL EXPENDITURE: re-roll Wound roll")
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
         except Exception:
             pass
 

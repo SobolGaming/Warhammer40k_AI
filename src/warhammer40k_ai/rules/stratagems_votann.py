@@ -164,6 +164,11 @@ class VotannStratagemMixin:
         checker = getattr(mgr, "is_hearthfyre_arsenal", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_mercenary_oathband_detachment(self) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "is_mercenary_oathband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _votann_yield_points_mgr(self):
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -325,6 +330,22 @@ class VotannStratagemMixin:
             out.append(root)
         return sorted(out, key=self._votann_sort_key)
 
+    def _votann_resolve_unit_list(self, selected: Any) -> List[Any]:
+        raw_items = list(selected) if isinstance(selected, (list, tuple, set)) else ([selected] if selected is not None else [])
+        out: List[Any] = []
+        seen: set[str] = set()
+        for item in list(raw_items or []):
+            root = self._votann_root(item)
+            if root is None:
+                continue
+            uid = self._votann_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._votann_sort_key)
+
     @staticmethod
     def _votann_phase_key(phase: Any) -> str:
         return str(getattr(phase, "name", phase) or "").strip().upper().replace(" ", "_")
@@ -444,6 +465,18 @@ class VotannStratagemMixin:
 
     def _votann_is_infantry_unit(self, unit: Any) -> bool:
         return self._votann_unit_has_keyword(unit, "INFANTRY")
+
+    def _votann_is_mounted_unit(self, unit: Any) -> bool:
+        return self._votann_unit_has_keyword(unit, "MOUNTED")
+
+    def _votann_is_character_unit(self, unit: Any) -> bool:
+        return self._votann_unit_has_keyword(unit, "CHARACTER")
+
+    def _votann_is_hernkyn_unit(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        return self._votann_name_matches(root, "HERNKYN") or self._votann_unit_has_keyword(root, "HERNKYN")
 
     def _votann_is_hekaton_land_fortress_unit(self, unit: Any) -> bool:
         root = self._votann_root(unit)
@@ -720,6 +753,17 @@ class VotannStratagemMixin:
     def _needgaard_engagement_enemy_candidates(self, unit: Any) -> List[Any]:
         return self._votann_engagement_enemy_candidates(unit)
 
+    def _votann_was_eligible_to_fight_this_phase(self, unit: Any) -> bool:
+        root = self._votann_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        return bool(
+            getattr(round_state, "eligible_to_fight_this_phase", False)
+            or getattr(round_state, "charged_this_round", False)
+            or self._votann_engagement_enemy_candidates(root)
+        )
+
     def _needgaard_targets_from_shooting_context(self, attacker_unit: Any, *, hits_by_target: Any = None) -> List[Any]:
         return self._votann_targets_from_shooting_context(attacker_unit, hits_by_target=hits_by_target, hits_only=False)
 
@@ -785,6 +829,41 @@ class VotannStratagemMixin:
         enter_reserves(game=game, game_map=getattr(game, "map", None), reason=str(reason or "").strip())
         return True
 
+    def _votann_transport_candidates_within_range(self, unit: Any, *, range_in: float) -> List[Any]:
+        root = self._votann_root(unit)
+        if root is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            unit_wholly_within_range_of_unit = None
+        out: List[Any] = []
+        for candidate in self._votann_candidates(require_targetable=True):
+            if candidate is root or not self._votann_is_transport_unit(candidate):
+                continue
+            can_transport = getattr(candidate, "can_transport", None)
+            if not callable(can_transport):
+                continue
+            try:
+                if not bool(can_transport(root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if callable(unit_wholly_within_range_of_unit):
+                try:
+                    if not bool(unit_wholly_within_range_of_unit(candidate, root, float(range_in), use_attached_aggregate=True)):
+                        continue
+                except TypeError:
+                    try:
+                        if not bool(unit_wholly_within_range_of_unit(candidate, root, float(range_in))):
+                            continue
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            out.append(candidate)
+        return sorted(out, key=self._votann_sort_key)
+
     def _delve_hidden_accessways_candidates(self) -> List[Any]:
         candidates: List[Any] = []
         for unit in self._votann_candidates(require_targetable=True):
@@ -793,6 +872,31 @@ class VotannStratagemMixin:
                 or self._votann_is_hearthkyn_warriors_unit(unit)
                 or self._votann_is_hernkyn_yaegirs_unit(unit)
             ):
+                continue
+            if self._votann_engagement_enemy_candidates(unit):
+                continue
+            candidates.append(unit)
+        return sorted(candidates, key=self._votann_sort_key)
+
+    def _mercenary_new_horizons_candidates(self) -> tuple[List[Any], Dict[Any, List[Any]]]:
+        candidates: List[Any] = []
+        transport_candidates_by_unit: Dict[Any, List[Any]] = {}
+        for unit in self._votann_candidates(require_targetable=True):
+            if not self._votann_is_infantry_unit(unit):
+                continue
+            if self._votann_engagement_enemy_candidates(unit):
+                continue
+            transports = self._votann_transport_candidates_within_range(unit, range_in=6.0)
+            if not transports:
+                continue
+            candidates.append(unit)
+            transport_candidates_by_unit[unit] = list(transports)
+        return sorted(candidates, key=self._votann_sort_key), transport_candidates_by_unit
+
+    def _mercenary_mobile_exploitation_candidates(self) -> List[Any]:
+        candidates: List[Any] = []
+        for unit in self._votann_candidates(require_targetable=True):
+            if not self._votann_is_hernkyn_unit(unit):
                 continue
             if self._votann_engagement_enemy_candidates(unit):
                 continue
@@ -1929,6 +2033,270 @@ class VotannStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _queue_votann_mercenary_phase_start_reactions(self, *, player, phase) -> None:
+        del player
+        game = getattr(self, "game", None)
+        if game is None or not self._is_mercenary_oathband_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        phase_label = self._votann_phase_label(phase)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        definitions: List[tuple[str, List[Any]]] = []
+        if phase_key == "SHOOTING_PHASE" and active_player is self.player:
+            definitions.extend(
+                (
+                    (
+                        "AUXILIARY CONTRACT",
+                        [
+                            unit
+                            for unit in self._votann_candidates(require_not_shot=True)
+                            if self._votann_is_infantry_unit(unit) or self._votann_is_mounted_unit(unit)
+                        ],
+                    ),
+                    (
+                        "PRIVATEER ARSENAL",
+                        [
+                            unit
+                            for unit in self._votann_candidates(require_not_shot=True)
+                            if self._votann_is_infantry_unit(unit)
+                        ],
+                    ),
+                )
+            )
+        if phase_key == "FIGHT_PHASE":
+            fight_eligible = [
+                unit
+                for unit in self._votann_candidates(require_not_fought=True)
+                if self._votann_was_eligible_to_fight_this_phase(unit)
+            ]
+            definitions.extend(
+                (
+                    (
+                        "AUXILIARY CONTRACT",
+                        [
+                            unit
+                            for unit in fight_eligible
+                            if self._votann_is_infantry_unit(unit) or self._votann_is_mounted_unit(unit)
+                        ],
+                    ),
+                    (
+                        "OPTIMAL EXPENDITURE",
+                        [unit for unit in fight_eligible if self._votann_is_infantry_unit(unit)],
+                    ),
+                )
+            )
+        for strat_name, candidates in definitions:
+            stratagem = self.get_by_name(strat_name)
+            if stratagem is None:
+                continue
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                continue
+            if self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                continue
+            if not candidates or self._votann_reaction_exists("phase_start", stratagem.name):
+                continue
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_mercenary_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_mercenary_oathband_detachment():
+            return
+        if self._votann_phase_key(phase) != "FIGHT_PHASE":
+            return
+        if player is self.player or getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+
+        new_horizons = self.get_by_name("NEW HORIZONS")
+        if (
+            new_horizons is not None
+            and self.player.command_points >= int(getattr(new_horizons, "cp_cost", 0) or 0)
+            and self._votann_norm_name(new_horizons.name) not in getattr(self, "_used_stratagems_this_phase", set())
+            and not self._votann_reaction_exists("phase_end", new_horizons.name)
+        ):
+            candidates, transport_candidates_by_unit = self._mercenary_new_horizons_candidates()
+            if candidates:
+                payload: Dict[str, Any] = {
+                    "event": "phase_end",
+                    "phase": "Fight phase",
+                    "phase_name": "Fight phase",
+                    "stratagem": new_horizons.name,
+                    "cp_cost": new_horizons.cp_cost,
+                    "candidates": list(candidates),
+                    "transport_candidates_by_unit": dict(transport_candidates_by_unit),
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                    transports = list(transport_candidates_by_unit.get(candidates[0]) or [])
+                    if len(transports) == 1:
+                        payload["transport_unit"] = transports[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        stratagem = self.get_by_name("MOBILE EXPLOITATION")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or self._votann_reaction_exists("phase_end", stratagem.name)
+        ):
+            return
+        candidates = self._mercenary_mobile_exploitation_candidates()
+        if not candidates:
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_mercenary_move_end_reactions(self, *, unit, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_mercenary_oathband_detachment():
+            return
+        if self._votann_phase_key(getattr(game, "phase", None)) != "MOVEMENT_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"fall back", "fallback"}:
+            return
+        root = self._votann_root(unit)
+        if root is None or not self._votann_owned_by_player(root, self.player):
+            return
+        if not self._is_votann_unit(root) or not self._votann_on_battlefield(root, require_targetable=True):
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return
+        stratagem = self.get_by_name("GRAND ARTIFICE")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or self._votann_reaction_exists("unit_move_ended", stratagem.name, unit=root)
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": action,
+                "unit": root,
+                "target_unit": root,
+            },
+            use_timer=False,
+        )
+
+    def _cleanup_votann_mercenary_phase_end_effects(self, *, phase) -> None:
+        phase_key = self._votann_phase_key(phase)
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        current_turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        current_owner = str(getattr(getattr(getattr(self, "game", None), "get_current_player", lambda: None)(), "id", "") or "")
+        for root in self._votann_iter_game_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("mercenary_auxiliary_contract_active", False)):
+                exp = str(sr.get("mercenary_auxiliary_contract_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "SHOOTING_PHASE":
+                    for key in (
+                        "mercenary_auxiliary_contract_active",
+                        "mercenary_auxiliary_contract_expires_phase",
+                        "mercenary_auxiliary_contract_owner",
+                        "mercenary_auxiliary_contract_turn_owner",
+                        "mercenary_auxiliary_contract_turn",
+                        "mercenary_auxiliary_contract_source",
+                        "mercenary_auxiliary_contract_attack_type",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("mercenary_auxiliary_contract_active", False)):
+                exp = str(sr.get("mercenary_auxiliary_contract_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    for key in (
+                        "mercenary_auxiliary_contract_active",
+                        "mercenary_auxiliary_contract_expires_phase",
+                        "mercenary_auxiliary_contract_owner",
+                        "mercenary_auxiliary_contract_turn_owner",
+                        "mercenary_auxiliary_contract_turn",
+                        "mercenary_auxiliary_contract_source",
+                        "mercenary_auxiliary_contract_attack_type",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("mercenary_privateer_arsenal_active", False)):
+                for key in (
+                    "mercenary_privateer_arsenal_active",
+                    "mercenary_privateer_arsenal_expires_phase",
+                    "mercenary_privateer_arsenal_owner",
+                    "mercenary_privateer_arsenal_turn_owner",
+                    "mercenary_privateer_arsenal_turn",
+                    "mercenary_privateer_arsenal_source",
+                    "mercenary_privateer_arsenal_attack_type",
+                    "mercenary_privateer_arsenal_hit_reroll_mode",
+                    "mercenary_privateer_arsenal_wound_reroll_mode",
+                    "mercenary_privateer_arsenal_yp_spent",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("mercenary_optimal_expenditure_active", False)):
+                for key in (
+                    "mercenary_optimal_expenditure_active",
+                    "mercenary_optimal_expenditure_expires_phase",
+                    "mercenary_optimal_expenditure_owner",
+                    "mercenary_optimal_expenditure_turn_owner",
+                    "mercenary_optimal_expenditure_turn",
+                    "mercenary_optimal_expenditure_source",
+                    "mercenary_optimal_expenditure_attack_type",
+                    "mercenary_optimal_expenditure_hit_reroll_mode",
+                    "mercenary_optimal_expenditure_wound_reroll_mode",
+                    "mercenary_optimal_expenditure_yp_spent",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("mercenary_grand_artifice_active", False)):
+                owner_id = str(sr.get("mercenary_grand_artifice_turn_owner", "") or "")
+                effect_turn = int(sr.get("mercenary_grand_artifice_turn", 0) or 0)
+                same_owner = (not owner_id) or (owner_id == current_owner)
+                same_turn = (not effect_turn) or (not current_turn) or (effect_turn == current_turn)
+                if same_owner and same_turn:
+                    for key in (
+                        "mercenary_grand_artifice_active",
+                        "mercenary_grand_artifice_turn_owner",
+                        "mercenary_grand_artifice_turn",
+                        "mercenary_grand_artifice_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+            if changed:
+                root.special_rules = sr
+
     def _queue_votann_needgaard_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
         if game is None or not self._is_needgaard_oathband_detachment():
@@ -2411,6 +2779,23 @@ class VotannStratagemMixin:
         if handler is None:
             return None
         if not self._is_hearthfyre_arsenal_detachment():
+            return False
+        return bool(handler(stratagem, **kwargs))
+
+    def _use_votann_mercenary_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name = self._votann_norm_name(getattr(stratagem, "name", ""))
+        handlers = {
+            "AUXILIARY CONTRACT": self._use_mercenary_auxiliary_contract,
+            "GRAND ARTIFICE": self._use_mercenary_grand_artifice,
+            "MOBILE EXPLOITATION": self._use_mercenary_mobile_exploitation,
+            "NEW HORIZONS": self._use_mercenary_new_horizons,
+            "OPTIMAL EXPENDITURE": self._use_mercenary_optimal_expenditure,
+            "PRIVATEER ARSENAL": self._use_mercenary_privateer_arsenal,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return None
+        if not self._is_mercenary_oathband_detachment():
             return False
         return bool(handler(stratagem, **kwargs))
 
@@ -3732,6 +4117,368 @@ class VotannStratagemMixin:
                 self._votann_refund_yield_points(2)
             logger.error("ERROR: VENGEANCE FLARE: failed to queue reactive shooting decision")
             return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_auxiliary_contract(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: AUXILIARY CONTRACT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        if phase_name == "shooting phase" and getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: AUXILIARY CONTRACT: not your Shooting phase")
+            return False
+        if phase_name == "shooting phase":
+            candidates = [
+                unit
+                for unit in self._votann_candidates(require_not_shot=True)
+                if self._votann_is_infantry_unit(unit) or self._votann_is_mounted_unit(unit)
+            ]
+            attack_type = "ranged"
+        else:
+            candidates = [
+                unit
+                for unit in self._votann_candidates(require_not_fought=True)
+                if (self._votann_is_infantry_unit(unit) or self._votann_is_mounted_unit(unit))
+                and self._votann_was_eligible_to_fight_this_phase(unit)
+            ]
+            attack_type = "melee"
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: AUXILIARY CONTRACT: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: AUXILIARY CONTRACT: target must be an eligible LEAGUES OF VOTANN INFANTRY or MOUNTED unit")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mercenary_auxiliary_contract_active"] = True
+        sr["mercenary_auxiliary_contract_expires_phase"] = "SHOOTING_PHASE" if attack_type == "ranged" else "FIGHT_PHASE"
+        sr["mercenary_auxiliary_contract_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercenary_auxiliary_contract_turn_owner"] = str(
+            getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["mercenary_auxiliary_contract_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["mercenary_auxiliary_contract_source"] = str(getattr(stratagem, "name", "") or "AUXILIARY CONTRACT")
+        sr["mercenary_auxiliary_contract_attack_type"] = attack_type
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_grand_artifice(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: GRAND ARTIFICE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: GRAND ARTIFICE: not your Movement phase")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in ("fall back", "fallback"):
+            logger.error("ERROR: GRAND ARTIFICE: invalid trigger")
+            return False
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_targetable=True)
+            if bool(getattr(getattr(unit, "round_state", None), "fell_back_this_round", False))
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: GRAND ARTIFICE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: GRAND ARTIFICE: target must be a LEAGUES OF VOTANN unit that Fell Back")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mercenary_grand_artifice_active"] = True
+        sr["mercenary_grand_artifice_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercenary_grand_artifice_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["mercenary_grand_artifice_source"] = str(getattr(stratagem, "name", "") or "GRAND ARTIFICE")
+        sr["feigned_retreat_active"] = True
+        sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["feigned_retreat_turn"] = int(getattr(game, "turn", 0) or 0)
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_mobile_exploitation(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MOBILE EXPLOITATION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: MOBILE EXPLOITATION: not end of opponent's Fight phase")
+            return False
+        candidates = self._mercenary_mobile_exploitation_candidates()
+        selected_units = self._votann_resolve_unit_list(
+            context.get("units")
+            or context.get("target_units")
+            or context.get("selected_units")
+            or context.get("candidates")
+        )
+        primary = self._votann_root(context.get("unit") or context.get("target_unit"))
+        if primary is not None and primary not in selected_units:
+            selected_units = self._votann_resolve_unit_list(list(selected_units) + [primary])
+        if not selected_units and len(candidates) == 1:
+            selected_units = [candidates[0]]
+
+        yp_requested = None
+        for key in (
+            "yield_points_to_spend",
+            "yield_points_spent",
+            "yield_points",
+            "yp_to_spend",
+            "yp_spend",
+            "yp",
+        ):
+            if context.get(key) is not None:
+                yp_requested = self._votann_int_like(context.get(key), default=0)
+                break
+        if yp_requested is None:
+            spend_flag = context.get("spend_yield_points")
+            if spend_flag is None:
+                spend_flag = context.get("spend_yp")
+            if spend_flag is None:
+                spend_flag = context.get("use_yp")
+            yp_requested = 2 if self._votann_bool_like(spend_flag, default=False) else 0
+        if yp_requested not in {0, 2}:
+            logger.error("ERROR: MOBILE EXPLOITATION: optional Yield Point spend must be 0 or 2")
+            return False
+        max_targets = 2 if yp_requested == 2 else 1
+        if not selected_units:
+            logger.error("ERROR: MOBILE EXPLOITATION: missing target unit")
+            return False
+        if len(selected_units) > max_targets:
+            logger.error("ERROR: MOBILE EXPLOITATION: too many target units selected")
+            return False
+        if any(root not in candidates for root in selected_units):
+            logger.error("ERROR: MOBILE EXPLOITATION: all targets must be eligible HERNKYN units not in Engagement Range")
+            return False
+        if yp_requested and not self._votann_spend_yield_points(2):
+            logger.error("ERROR: MOBILE EXPLOITATION: unable to spend 2 Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=selected_units[0]):
+            if yp_requested:
+                self._votann_refund_yield_points(2)
+            return False
+        if any(getattr(self._votann_root(root), "enter_strategic_reserves_midgame", None) is None for root in selected_units):
+            logger.error("ERROR: MOBILE EXPLOITATION: selected unit cannot enter Strategic Reserves")
+            return False
+        for root in selected_units:
+            if not self._votann_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "MOBILE EXPLOITATION")):
+                logger.error("ERROR: MOBILE EXPLOITATION: failed to place selected unit into Strategic Reserves")
+                return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_new_horizons(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: NEW HORIZONS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: NEW HORIZONS: not end of opponent's Fight phase")
+            return False
+        candidates, transport_candidates_by_unit = self._mercenary_new_horizons_candidates()
+        passenger = (
+            context.get("passenger_unit")
+            or context.get("embarked_unit")
+            or context.get("unit")
+            or context.get("target_unit")
+        )
+        passenger_root = self._votann_root(passenger) if passenger is not None else None
+        if passenger_root is None:
+            if len(candidates) == 1:
+                passenger_root = candidates[0]
+            else:
+                logger.error("ERROR: NEW HORIZONS: missing target Infantry unit")
+                return False
+        if passenger_root not in candidates:
+            logger.error("ERROR: NEW HORIZONS: target must be an eligible LEAGUES OF VOTANN INFANTRY unit not in Engagement Range")
+            return False
+        transport = context.get("transport_unit") or context.get("transport") or context.get("target_transport")
+        transport_root = self._votann_root(transport) if transport is not None else None
+        transport_candidates = list(transport_candidates_by_unit.get(passenger_root) or [])
+        if transport_root is None:
+            if len(transport_candidates) == 1:
+                transport_root = transport_candidates[0]
+            else:
+                logger.error("ERROR: NEW HORIZONS: missing selected Transport")
+                return False
+        if transport_root not in transport_candidates:
+            logger.error("ERROR: NEW HORIZONS: selected Transport is not a valid embark destination")
+            return False
+        queue_fn = getattr(game, "_queue_end_of_fight_embark_decision", None)
+        if not callable(queue_fn):
+            logger.error("ERROR: NEW HORIZONS: end-of-fight embark decision queue unavailable")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=passenger_root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            transport=transport_root,
+            candidates=[passenger_root],
+            spec={
+                "source": str(getattr(stratagem, "name", "") or "NEW HORIZONS"),
+                "range": 6,
+                "allow_existing_passengers": True,
+            },
+        )
+        if request is None:
+            logger.error("ERROR: NEW HORIZONS: no embark decision was queued")
+            return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_optimal_expenditure(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: OPTIMAL EXPENDITURE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_not_fought=True)
+            if self._votann_is_infantry_unit(unit) and self._votann_was_eligible_to_fight_this_phase(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: OPTIMAL EXPENDITURE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: OPTIMAL EXPENDITURE: target must be an eligible LEAGUES OF VOTANN INFANTRY unit")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        if spend_yp is None:
+            spend_yp = str(context.get("wound_reroll_mode", "") or "").strip().lower() == "full"
+        yp_spent = False
+        if self._votann_bool_like(spend_yp, default=False):
+            if not self._votann_spend_yield_points(3):
+                logger.error("ERROR: OPTIMAL EXPENDITURE: unable to spend 3 Yield Points")
+                return False
+            yp_spent = True
+
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_spent:
+                self._votann_refund_yield_points(3)
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mercenary_optimal_expenditure_active"] = True
+        sr["mercenary_optimal_expenditure_expires_phase"] = "FIGHT_PHASE"
+        sr["mercenary_optimal_expenditure_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercenary_optimal_expenditure_turn_owner"] = str(
+            getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["mercenary_optimal_expenditure_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["mercenary_optimal_expenditure_source"] = str(getattr(stratagem, "name", "") or "OPTIMAL EXPENDITURE")
+        sr["mercenary_optimal_expenditure_attack_type"] = "melee"
+        sr["mercenary_optimal_expenditure_hit_reroll_mode"] = "ones"
+        sr["mercenary_optimal_expenditure_wound_reroll_mode"] = "full" if yp_spent else "ones"
+        sr["mercenary_optimal_expenditure_yp_spent"] = bool(yp_spent)
+        target_root.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_mercenary_privateer_arsenal(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PRIVATEER ARSENAL: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: PRIVATEER ARSENAL: not your Shooting phase")
+            return False
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_not_shot=True)
+            if self._votann_is_infantry_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PRIVATEER ARSENAL: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: PRIVATEER ARSENAL: target must be a LEAGUES OF VOTANN INFANTRY unit that has not been selected to shoot")
+            return False
+
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        if spend_yp is None:
+            spend_yp = str(context.get("hit_reroll_mode", "") or "").strip().lower() == "full"
+        yp_spent = False
+        if self._votann_bool_like(spend_yp, default=False):
+            if not self._votann_spend_yield_points(3):
+                logger.error("ERROR: PRIVATEER ARSENAL: unable to spend 3 Yield Points")
+                return False
+            yp_spent = True
+
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_spent:
+                self._votann_refund_yield_points(3)
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mercenary_privateer_arsenal_active"] = True
+        sr["mercenary_privateer_arsenal_expires_phase"] = "SHOOTING_PHASE"
+        sr["mercenary_privateer_arsenal_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercenary_privateer_arsenal_turn_owner"] = str(
+            getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or ""
+        )
+        sr["mercenary_privateer_arsenal_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["mercenary_privateer_arsenal_source"] = str(getattr(stratagem, "name", "") or "PRIVATEER ARSENAL")
+        sr["mercenary_privateer_arsenal_attack_type"] = "ranged"
+        sr["mercenary_privateer_arsenal_hit_reroll_mode"] = "full" if yp_spent else "ones"
+        sr["mercenary_privateer_arsenal_wound_reroll_mode"] = "ones"
+        sr["mercenary_privateer_arsenal_yp_spent"] = bool(yp_spent)
+        target_root.special_rules = sr
         self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

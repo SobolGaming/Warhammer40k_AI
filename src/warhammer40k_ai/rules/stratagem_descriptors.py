@@ -10199,6 +10199,93 @@ _HEARTHFYRE_ARSENAL_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HEARTHFYRE_ARSENAL_STRATAGEM_DESCRIPTORS.values()
 }
 
+_MERCENARY_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010709002": StratagemToolDescriptor(
+        stratagem_id="000010709002",
+        name="Auxiliary Contract",
+        timing="shooting_or_fight_phase_start",
+        target="leagues_of_votann_infantry_or_mounted_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_unit_weapons",
+        cp_cost=1,
+        effect_params={"attack_types": ["ranged", "melee"]},
+    ),
+    "000010709004": StratagemToolDescriptor(
+        stratagem_id="000010709004",
+        name="Grand Artifice",
+        timing="movement_phase_after_fall_back",
+        target="leagues_of_votann_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010709007": StratagemToolDescriptor(
+        stratagem_id="000010709007",
+        name="Mobile Exploitation",
+        timing="end_of_opponent_fight_phase",
+        target="one_or_two_hernkyn_units_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "required_keywords_any": ["HERNKYN"],
+            "requires_not_engaged": True,
+            "optional_yield_points_cost": 2,
+            "optional_max_units": 2,
+        },
+    ),
+    "000010709006": StratagemToolDescriptor(
+        stratagem_id="000010709006",
+        name="New Horizons",
+        timing="end_of_opponent_fight_phase",
+        target="votann_infantry_unit_not_in_engagement_range_with_friendly_transport_within_six",
+        duration="immediate",
+        effect="end_of_fight_embark",
+        cp_cost=1,
+        effect_params={
+            "range": 6.0,
+            "allow_existing_passengers": True,
+        },
+    ),
+    "000010709003": StratagemToolDescriptor(
+        stratagem_id="000010709003",
+        name="Optimal Expenditure",
+        timing="fight_phase_start",
+        target="leagues_of_votann_infantry_unit_eligible_to_fight_this_phase",
+        duration="until_end_of_phase",
+        effect="melee_hit_and_wound_rerolls_with_optional_full_wound_reroll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_hit_values": [1],
+            "reroll_wound_values": [1],
+            "optional_yield_points_cost": 3,
+            "optional_reroll_wound_full": True,
+            "requires_eligible_to_fight_this_phase": True,
+        },
+    ),
+    "000010709005": StratagemToolDescriptor(
+        stratagem_id="000010709005",
+        name="Privateer Arsenal",
+        timing="shooting_phase_start",
+        target="leagues_of_votann_infantry_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_and_wound_rerolls_with_optional_full_hit_reroll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "reroll_hit_values": [1],
+            "reroll_wound_values": [1],
+            "optional_yield_points_cost": 3,
+            "optional_reroll_hit_full": True,
+        },
+    ),
+}
+
+_MERCENARY_OATHBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MERCENARY_OATHBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11583,6 +11670,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HEARTHFYRE_ARSENAL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _MERCENARY_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11753,6 +11843,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DELVE_ASSAULT_SHIFT_STRATAGEM_BY_NAME.get(key)
         or _HEARTHBAND_STRATAGEM_BY_NAME.get(key)
         or _HEARTHFYRE_ARSENAL_STRATAGEM_BY_NAME.get(key)
+        or _MERCENARY_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)

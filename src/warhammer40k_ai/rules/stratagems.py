@@ -790,12 +790,21 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DELAYED-FIRE ROUNDS",
     "FIRST CONCERN",
     "FURY OF THE HEARTH",
+    "GRAND ARTIFICE",
     "HIDDEN ACCESSWAYS",
     "HONOUR OF THE HOLD",
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
     "INEXORABLE EFFICIENCY",
+    "GRAND ARTIFICE",
+    "MOBILE EXPLOITATION",
+    "NEW HORIZONS",
     "MATERIALISATION MATRICES",
+    "MOBILE EXPLOITATION",
+    "NEW HORIZONS",
+    "OPTIMAL EXPENDITURE",
+    "PRIVATEER ARSENAL",
+    "AUXILIARY CONTRACT",
     "HUNTR’S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
@@ -7851,12 +7860,18 @@ class StratagemManager(
             "DELAYED-FIRE ROUNDS": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot; select one hit non-MONSTER/non-VEHICLE enemy",
             "FIRST CONCERN": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot after remaining stationary",
             "FURY OF THE HEARTH": "Target: Einhyr Hearthguard unit that has not been selected to shoot; optional 1 YP for Sustained Hits 1",
+            "GRAND ARTIFICE": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
             "HIDDEN ACCESSWAYS": "Target: CTHONIAN BESERKS, HEARTHKYN WARRIORS, or HERNKYN YAEGIRS unit not within Engagement Range",
             "HONOUR OF THE HOLD": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; select one enemy in Engagement Range (optional 3 YP for AP +2)",
             "HUNTR'S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "ILLUMINATED PRIORITY": "Target: LEAGUES OF VOTANN VEHICLE unit that has shot; select one enemy unit hit by its attacks",
             "INEXORABLE EFFICIENCY": "Target: LEAGUES OF VOTANN unit",
             "MATERIALISATION MATRICES": "Target: LEAGUES OF VOTANN unit in Reserves with Deep Strike",
+            "MOBILE EXPLOITATION": "Target: one HERNKYN unit not within Engagement Range, or up to two such units if 2 YP are spent; selected units enter Strategic Reserves",
+            "NEW HORIZONS": "Target: LEAGUES OF VOTANN INFANTRY unit not within Engagement Range and a friendly Transport within 6\" it can embark",
+            "OPTIMAL EXPENDITURE": "Target: LEAGUES OF VOTANN INFANTRY unit eligible to fight; optional 3 YP upgrades wound re-rolls from 1s to full",
+            "PRIVATEER ARSENAL": "Target: LEAGUES OF VOTANN INFANTRY unit that has not been selected to shoot; optional 3 YP upgrades hit re-rolls from 1s to full",
+            "AUXILIARY CONTRACT": "Target: LEAGUES OF VOTANN INFANTRY or MOUNTED unit that has not been selected to shoot or fight this phase",
             "HUNTR’S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "OPPORTUNISTIC ESCALATION": "Target: non-Hekaton LEAGUES OF VOTANN VEHICLE hit by enemy shooting while Hostile Acquisition is active",
             "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
@@ -8654,6 +8669,10 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_hearthfyre_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_mercenary_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9934,6 +9953,14 @@ class StratagemManager(
             raise
         try:
             self._cleanup_votann_hearthfyre_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_mercenary_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_votann_mercenary_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -11777,6 +11804,7 @@ class StratagemManager(
         self._queue_votann_hearthband_move_end_reactions(unit=unit, action=action)
         self._queue_votann_hearthfyre_move_end_reactions(unit=unit, action=action)
         self._process_votann_hearthfyre_move_end_effects(unit=unit, action=action)
+        self._queue_votann_mercenary_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
@@ -20261,6 +20289,9 @@ class StratagemManager(
         votann_hearthfyre_result = self._use_votann_hearthfyre_stratagem(s, **kwargs)
         if votann_hearthfyre_result is not None:
             return votann_hearthfyre_result
+        votann_mercenary_result = self._use_votann_mercenary_stratagem(s, **kwargs)
+        if votann_mercenary_result is not None:
+            return votann_mercenary_result
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result

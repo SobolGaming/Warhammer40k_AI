@@ -2387,6 +2387,74 @@ class GameView:
 
         self._request_skyborne_sanctuary_targets = _request_skyborne_sanctuary_targets
 
+        def _request_new_horizons_targets(player, game, candidates, transport_candidates_by_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None, None)
+                return
+
+            def _pick_transport(unit):
+                if unit is None:
+                    on_chosen(None, None)
+                    return
+                transports = []
+                try:
+                    if isinstance(transport_candidates_by_unit, dict):
+                        transports = list(transport_candidates_by_unit.get(unit) or [])
+                except Exception:
+                    transports = []
+                if not transports:
+                    try:
+                        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+                    except Exception:
+                        unit_wholly_within_range_of_unit = None
+                    for t in player.get_army().units or []:
+                        try:
+                            if t is None or not t.is_alive() or not getattr(t, "deployed", False):
+                                continue
+                            if not getattr(t, "is_transport", False):
+                                continue
+                            if not t.can_transport(unit):
+                                continue
+                            if callable(unit_wholly_within_range_of_unit):
+                                if not unit_wholly_within_range_of_unit(t, unit, 6.0, use_attached_aggregate=True):
+                                    continue
+                            transports.append(t)
+                        except Exception:
+                            continue
+                if not transports:
+                    on_chosen(unit, None)
+                    return
+                _resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=transports,
+                    on_chosen=lambda t: on_chosen(unit, t),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select New Horizons transport.",
+                    title="Select New Horizons Transport",
+                    subtitle=f"Embark {getattr(unit, 'name', 'unit')} within 6\"",
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=_pick_transport,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select New Horizons unit.",
+                title="Select New Horizons Unit",
+                subtitle="LEAGUES OF VOTANN INFANTRY not within Engagement Range",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+
+        self._request_new_horizons_targets = _request_new_horizons_targets
+
         def _request_goretrack_rhino_unit(
             player,
             game,
@@ -20101,6 +20169,19 @@ class GameView:
                     candidates,
                     enemy,
                     lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "NEW HORIZONS" and ("target_unit" not in context or "transport_unit" not in context):
+            if callable(getattr(self, "_request_new_horizons_targets", None)):
+                candidates = context.get("candidates") or []
+                transports_by_unit = context.get("transport_candidates_by_unit") or {}
+                self._request_new_horizons_targets(
+                    player,
+                    self.game,
+                    candidates,
+                    transports_by_unit,
+                    lambda unit, transport: self._finalize_skyborne_sanctuary(player, name, context, unit, transport),
                 )
             return
 
