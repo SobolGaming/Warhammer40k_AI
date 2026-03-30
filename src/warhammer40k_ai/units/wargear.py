@@ -299,24 +299,36 @@ class WargearProfile:
         sr = getattr(unit, "special_rules", None) if unit is not None else None
         return sr if isinstance(sr, dict) else {}
 
-    def _mercenary_attack_rule(
+    @staticmethod
+    def _unit_root(unit: Optional['Unit']) -> Optional['Unit']:
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                return get_root()
+            except Exception:
+                return unit
+        return unit
+
+    def _unit_attack_rule(
         self,
-        attacker: 'Model',
+        unit: Optional['Unit'],
         *,
         rule_prefix: str,
         attack_is_ranged: bool,
         attack_is_melee: bool,
     ) -> dict | None:
-        sr = self._unit_special_rules(attacker)
-        if not bool(sr.get(f"{rule_prefix}_active", False)):
+        sr = getattr(unit, "special_rules", None) if unit is not None else None
+        if not isinstance(sr, dict) or not bool(sr.get(f"{rule_prefix}_active", False)):
             return None
         attack_type = str(sr.get(f"{rule_prefix}_attack_type", "") or "").strip().lower()
         if attack_type == "ranged" and not attack_is_ranged:
             return None
         if attack_type == "melee" and not attack_is_melee:
             return None
-        unit = getattr(attacker, "parent_unit", None)
-        army = unit.get_parent_army() if unit is not None else None
+        get_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_army() if callable(get_army) else None
         game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         if game is not None:
             required_phase = str(sr.get(f"{rule_prefix}_expires_phase", "") or "").strip().upper()
@@ -342,6 +354,66 @@ class WargearProfile:
                 except Exception:
                     return None
         return sr
+
+    def _votann_manager_from_unit(self, unit: Optional['Unit']):
+        get_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_army() if callable(get_army) else None
+        return getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+
+    def _votann_persecution_target_assailed(
+        self,
+        attacker_unit: Optional['Unit'],
+        target_unit: Optional['Unit'],
+    ) -> bool:
+        mgr = self._votann_manager_from_unit(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if mgr is None or target_root is None:
+            return False
+        army = attacker_unit.get_parent_army() if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army") else None
+        owner_id = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+        checker = getattr(mgr, "_persecution_assailed_for_owner", None)
+        if callable(checker):
+            try:
+                return bool(checker(target_root, owner_id))
+            except Exception:
+                return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("persecution_prospect_assailed_active", False)):
+            return False
+        return not owner_id or str(sr.get("persecution_prospect_assailed_owner", "") or "") == owner_id
+
+    def _votann_unit_is_hernkyn(self, unit: Optional['Unit']) -> bool:
+        mgr = self._votann_manager_from_unit(unit)
+        root = self._unit_root(unit)
+        if mgr is not None:
+            checker = getattr(mgr, "_unit_is_hernkyn", None)
+            if callable(checker):
+                try:
+                    return bool(checker(root))
+                except Exception:
+                    return False
+        keywords = []
+        if root is not None:
+            keywords.extend(list(getattr(root, "keywords", []) or []))
+            keywords.extend(list(getattr(root, "faction_keywords", []) or []))
+            keywords.append(str(getattr(root, "name", "") or ""))
+        return any("HERNKYN" in str(value or "").upper() for value in keywords)
+
+    def _mercenary_attack_rule(
+        self,
+        attacker: 'Model',
+        *,
+        rule_prefix: str,
+        attack_is_ranged: bool,
+        attack_is_melee: bool,
+    ) -> dict | None:
+        unit = getattr(attacker, "parent_unit", None)
+        return self._unit_attack_rule(
+            unit,
+            rule_prefix=rule_prefix,
+            attack_is_ranged=attack_is_ranged,
+            attack_is_melee=attack_is_melee,
+        )
 
     def _get_charge_melee_strength_damage_bonus(
         self,
@@ -14368,6 +14440,22 @@ class WargearProfile:
                 reroll_full_reasons.append(f"{source}: re-roll Hit roll")
         except Exception:
             pass
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            sr = self._mercenary_attack_rule(
+                attacker,
+                rule_prefix="persecution_ranger_tactics",
+                attack_is_ranged=attack_is_ranged,
+                attack_is_melee=attack_is_melee,
+            )
+            if sr is not None and (
+                self._votann_unit_is_hernkyn(attacker_unit)
+                or self._votann_persecution_target_assailed(attacker_unit, target)
+            ):
+                source_name = str(sr.get("persecution_ranger_tactics_source", "") or "Ranger Tactics").strip()
+                reroll_full_reasons.append(f"{source_name or 'Ranger Tactics'}: re-roll Hit roll")
+        except Exception:
+            pass
         # T'au Empire: Precise Targeting (guided attacks vs Spotted unit).
         try:
             if isinstance(ftgg_guided_bonus, dict):
@@ -20827,6 +20915,22 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            sr = self._mercenary_attack_rule(
+                attacker,
+                rule_prefix="persecution_exposed_flaws",
+                attack_is_ranged=attack_is_ranged,
+                attack_is_melee=attack_is_melee,
+            )
+            if sr is not None and (
+                bool(sr.get("persecution_exposed_flaws_yp_spent"))
+                or self._votann_persecution_target_assailed(attacker_unit, target)
+            ):
+                source_name = str(sr.get("persecution_exposed_flaws_source", "") or "Exposed Flaws").strip()
+                reroll_full_reasons.append(f"{source_name or 'Exposed Flaws'}: re-roll Wound roll")
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "necrons_detachments", None) if army is not None else None
@@ -24083,6 +24187,26 @@ class WargearProfile:
             if has_cover:
                 attack_instance.setdefault("benefit_of_cover", True)
                 source_name = str(source or "Phantasmal Smoke").strip() or "Phantasmal Smoke"
+                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                if not existing_source:
+                    attack_instance["benefit_of_cover_source"] = source_name
+                elif source_name.lower() not in {
+                    part.strip().lower() for part in existing_source.split(",") if part.strip()
+                }:
+                    attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
+        # Leagues of Votann: Persecution Prospect (Dispersed Formation) grants Benefit of Cover against ranged attacks.
+        t_unit = getattr(target_model, "parent_unit", None)
+        if t_unit is not None and is_ranged_attack:
+            sr = self._unit_attack_rule(
+                t_unit,
+                rule_prefix="persecution_dispersed_formation",
+                attack_is_ranged=True,
+                attack_is_melee=False,
+            )
+            if sr is not None:
+                attack_instance.setdefault("benefit_of_cover", True)
+                source_name = str(sr.get("persecution_dispersed_formation_source", "") or "Dispersed Formation").strip()
+                source_name = source_name or "Dispersed Formation"
                 existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
                 if not existing_source:
                     attack_instance["benefit_of_cover_source"] = source_name

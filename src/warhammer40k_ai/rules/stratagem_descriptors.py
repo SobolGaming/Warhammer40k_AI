@@ -10286,6 +10286,92 @@ _MERCENARY_OATHBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MERCENARY_OATHBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_PERSECUTION_PROSPECT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010440002": StratagemToolDescriptor(
+        stratagem_id="000010440002",
+        name="Adaptable Avarice",
+        timing="phase_start_any_with_fortify_takeover",
+        target="leagues_of_votann_character_unit",
+        duration="until_start_of_your_next_turn",
+        effect="optional_yp_spend_and_temp_prioritised_efficiency_mode_swap",
+        cp_cost=1,
+        effect_params={
+            "required_prioritised_efficiency_mode": "FORTIFY_TAKEOVER",
+            "optional_yield_points_cost": "any",
+            "mode_swap_threshold_remaining_yp": 6,
+            "temp_mode": "HOSTILE_ACQUISITION",
+        },
+    ),
+    "000010440003": StratagemToolDescriptor(
+        stratagem_id="000010440003",
+        name="Frontier Momentum",
+        timing="movement_phase_start",
+        target="hernkyn_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="advance_distance_fixed_bonus",
+        cp_cost=1,
+        effect_params={"advance_bonus": 6, "replace_advance_roll": True},
+    ),
+    "000010440004": StratagemToolDescriptor(
+        stratagem_id="000010440004",
+        name="Exposed Flaws",
+        timing="shooting_phase_start",
+        target="hernkyn_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_full_wound_rerolls_vs_assailed_or_with_optional_yp",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "optional_yield_points_cost": 2,
+            "full_reroll_against_assailed": True,
+        },
+    ),
+    "000010440005": StratagemToolDescriptor(
+        stratagem_id="000010440005",
+        name="Ranger Tactics",
+        timing="shooting_phase_start",
+        target="leagues_of_votann_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_full_hit_rerolls_vs_assailed_or_if_hernkyn",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "full_reroll_against_assailed": True,
+            "full_reroll_if_attacker_has_keywords_any": ["HERNKYN"],
+        },
+    ),
+    "000010440006": StratagemToolDescriptor(
+        stratagem_id="000010440006",
+        name="Claimstaker Reflex",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="votann_non_artillery_non_vehicle_unit_within_nine_of_enemy_mover",
+        duration="immediate",
+        effect="reactive_move_with_optional_fixed_distance",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "movement_type": "reactive_move",
+            "base_distance_roll": "D6",
+            "optional_yield_points_cost": 2,
+            "optional_fixed_distance": 6,
+        },
+    ),
+    "000010440007": StratagemToolDescriptor(
+        stratagem_id="000010440007",
+        name="Dispersed Formation",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="votann_infantry_or_mounted_unit_selected_by_enemy_shooter",
+        duration="until_end_of_phase",
+        effect="stealth_and_benefit_of_cover_vs_ranged",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged"},
+    ),
+}
+
+_PERSECUTION_PROSPECT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PERSECUTION_PROSPECT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -11673,6 +11759,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _MERCENARY_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _PERSECUTION_PROSPECT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11844,6 +11933,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HEARTHBAND_STRATAGEM_BY_NAME.get(key)
         or _HEARTHFYRE_ARSENAL_STRATAGEM_BY_NAME.get(key)
         or _MERCENARY_OATHBAND_STRATAGEM_BY_NAME.get(key)
+        or _PERSECUTION_PROSPECT_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)

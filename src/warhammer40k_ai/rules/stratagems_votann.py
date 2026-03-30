@@ -5,6 +5,7 @@ import logging
 
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
+from .prioritised_efficiency import FORTIFY_TAKEOVER, HOSTILE_ACQUISITION
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,11 @@ class VotannStratagemMixin:
         checker = getattr(mgr, "is_mercenary_oathband", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_persecution_prospect_detachment(self) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "is_persecution_prospect", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _votann_yield_points_mgr(self):
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -200,13 +206,30 @@ class VotannStratagemMixin:
         spend_fn = getattr(mgr, "spend_yield_points", None) if mgr is not None else None
         if not callable(spend_fn):
             return False
-        return bool(spend_fn(int(amount), game=getattr(self, "game", None)))
+        return bool(spend_fn(int(amount), game=getattr(self, "game", None), turn_owner=self.player))
 
     def _votann_refund_yield_points(self, amount: int) -> None:
         mgr = self._votann_yield_points_mgr()
         add_fn = getattr(mgr, "add_yield_points", None) if mgr is not None else None
         if callable(add_fn):
             add_fn(int(amount), game=getattr(self, "game", None))
+
+    def _votann_publish_prioritised_efficiency_update(self, *, delta: int = 0, reason: str = "") -> None:
+        game = getattr(self, "game", None)
+        event_system = getattr(game, "event_system", None) if game is not None else None
+        mgr = self._votann_yield_points_mgr()
+        if event_system is None or mgr is None:
+            return
+        payload: Dict[str, Any] = {
+            "player": self.player,
+            "game": game,
+            "delta": int(delta or 0),
+            "mode": getattr(mgr, "mode", None),
+            "yield_points": int(getattr(mgr, "yield_points", 0) or 0),
+        }
+        if str(reason or "").strip():
+            payload["reason"] = str(reason or "").strip()
+        event_system.publish("prioritised_efficiency_updated", **payload)
 
     @staticmethod
     def _votann_is_alive(unit: Any) -> bool:
@@ -346,6 +369,27 @@ class VotannStratagemMixin:
             out.append(root)
         return sorted(out, key=self._votann_sort_key)
 
+    def _votann_attached_members(self, unit: Any) -> List[Any]:
+        root = self._votann_root(unit)
+        if root is None:
+            return []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        raw_members = list(get_members() or []) if callable(get_members) else [root]
+        if not raw_members:
+            raw_members = [root]
+        out: List[Any] = []
+        seen: set[str] = set()
+        for member in list(raw_members or []):
+            if member is None:
+                continue
+            uid = self._votann_sort_key(member)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(member)
+        return sorted(out, key=self._votann_sort_key)
+
     @staticmethod
     def _votann_phase_key(phase: Any) -> str:
         return str(getattr(phase, "name", phase) or "").strip().upper().replace(" ", "_")
@@ -462,6 +506,9 @@ class VotannStratagemMixin:
 
     def _votann_is_transport_unit(self, unit: Any) -> bool:
         return self._votann_unit_has_keyword(unit, "TRANSPORT")
+
+    def _votann_is_artillery_unit(self, unit: Any) -> bool:
+        return self._votann_unit_has_keyword(unit, "ARTILLERY")
 
     def _votann_is_infantry_unit(self, unit: Any) -> bool:
         return self._votann_unit_has_keyword(unit, "INFANTRY")
@@ -752,6 +799,23 @@ class VotannStratagemMixin:
 
     def _needgaard_engagement_enemy_candidates(self, unit: Any) -> List[Any]:
         return self._votann_engagement_enemy_candidates(unit)
+
+    def _votann_persecution_assailed(self, target_unit: Any) -> bool:
+        mgr = self._votann_detachment_mgr()
+        checker = getattr(mgr, "_persecution_assailed_for_owner", None) if mgr is not None else None
+        target_root = self._votann_root(target_unit)
+        if target_root is None:
+            return False
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if callable(checker):
+            try:
+                return bool(checker(target_root, owner_id))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("persecution_prospect_assailed_active", False)):
+            return False
+        return str(sr.get("persecution_prospect_assailed_owner", "") or "") == owner_id
 
     def _votann_was_eligible_to_fight_this_phase(self, unit: Any) -> bool:
         root = self._votann_root(unit)
@@ -4841,5 +4905,675 @@ class VotannStratagemMixin:
         if request is None:
             logger.error("ERROR: REACTIVE REPRISAL: failed to queue reactive shooting decision")
             return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _restore_persecution_adaptable_avarice_override(self) -> None:
+        mgr = self._votann_yield_points_mgr()
+        if mgr is None or not bool(getattr(mgr, "persecution_adaptable_avarice_active", False)):
+            return
+        restore_owner_id = str(getattr(mgr, "persecution_adaptable_avarice_restore_owner_id", "") or "")
+        if restore_owner_id and restore_owner_id != str(getattr(self.player, "id", "") or ""):
+            return
+        restore_mode_key = str(getattr(mgr, "persecution_adaptable_avarice_restore_mode_key", "") or "").strip().upper()
+        desired_mode = HOSTILE_ACQUISITION if restore_mode_key == HOSTILE_ACQUISITION.key else FORTIFY_TAKEOVER
+        changed = str(getattr(getattr(mgr, "mode", None), "key", "") or "") != desired_mode.key
+        mgr.mode = desired_mode
+        battle_round_fn = getattr(mgr, "_battle_round", None)
+        if callable(battle_round_fn):
+            mgr.last_mode_turn = int(battle_round_fn(getattr(self, "game", None)) or 0)
+        for key in (
+            "persecution_adaptable_avarice_active",
+            "persecution_adaptable_avarice_restore_mode_key",
+            "persecution_adaptable_avarice_restore_owner_id",
+            "persecution_adaptable_avarice_turn",
+            "persecution_adaptable_avarice_source",
+        ):
+            if hasattr(mgr, key):
+                delattr(mgr, key)
+        if changed:
+            self._votann_publish_prioritised_efficiency_update(reason="ADAPTABLE AVARICE")
+
+    def _queue_votann_persecution_phase_start_reactions(self, *, player, phase) -> None:
+        del player
+        game = getattr(self, "game", None)
+        if game is None or not self._is_persecution_prospect_detachment():
+            return
+        phase_key = self._votann_phase_key(phase)
+        phase_label = self._votann_phase_label(phase)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+
+        if phase_key == "COMMAND_PHASE" and active_player is self.player:
+            self._restore_persecution_adaptable_avarice_override()
+
+        definitions: List[tuple[str, List[Any]]] = []
+        if phase_key == "MOVEMENT_PHASE" and active_player is self.player:
+            definitions.append(
+                (
+                    "FRONTIER MOMENTUM",
+                    [
+                        unit
+                        for unit in self._votann_candidates(require_targetable=True)
+                        if self._votann_is_hernkyn_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
+                    ],
+                )
+            )
+        if phase_key == "SHOOTING_PHASE" and active_player is self.player:
+            definitions.extend(
+                (
+                    (
+                        "RANGER TACTICS",
+                        list(self._votann_candidates(require_not_shot=True)),
+                    ),
+                    (
+                        "EXPOSED FLAWS",
+                        [
+                            unit
+                            for unit in self._votann_candidates(require_not_shot=True)
+                            if self._votann_is_hernkyn_unit(unit)
+                        ],
+                    ),
+                )
+            )
+
+        adaptable = self.get_by_name("ADAPTABLE AVARICE")
+        if (
+            adaptable is not None
+            and self._needgaard_fortify_takeover_active()
+            and self.player.command_points >= int(getattr(adaptable, "cp_cost", 0) or 0)
+            and self._votann_norm_name(adaptable.name) not in getattr(self, "_used_stratagems_this_phase", set())
+            and not self._votann_reaction_exists("phase_start", adaptable.name)
+        ):
+            candidates = [
+                unit
+                for unit in self._votann_candidates(require_targetable=True)
+                if self._votann_is_character_unit(unit)
+            ]
+            if candidates:
+                payload: Dict[str, Any] = {
+                    "event": "phase_start",
+                    "phase": phase_label,
+                    "phase_name": phase_label,
+                    "stratagem": adaptable.name,
+                    "cp_cost": adaptable.cp_cost,
+                    "candidates": list(candidates),
+                }
+                if len(candidates) == 1:
+                    payload["unit"] = candidates[0]
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload, use_timer=False)
+
+        for strat_name, candidates in definitions:
+            stratagem = self.get_by_name(strat_name)
+            if (
+                stratagem is None
+                or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+                or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+                or not candidates
+                or self._votann_reaction_exists("phase_start", stratagem.name)
+            ):
+                continue
+            payload = {
+                "event": "phase_start",
+                "phase": phase_label,
+                "phase_name": phase_label,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": list(candidates),
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_persecution_move_end_reactions(self, *, unit, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_persecution_prospect_detachment():
+            return
+        if self._votann_phase_key(getattr(game, "phase", None)) != "MOVEMENT_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal move", "advance", "fall back", "fallback"}:
+            return
+        enemy_root = self._votann_root(unit)
+        if enemy_root is None or self._votann_owned_by_player(enemy_root, self.player) or not self._votann_is_alive(enemy_root):
+            return
+        stratagem = self.get_by_name("CLAIMSTAKER REFLEX")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or self._votann_reaction_exists("unit_move_ended", stratagem.name, enemy_unit=enemy_root)
+        ):
+            return
+        candidates = [
+            candidate
+            for candidate in self._votann_units_within_range(
+                enemy_root,
+                self._votann_candidates(require_targetable=True),
+                range_in=9.0,
+            )
+            if not self._votann_is_vehicle_unit(candidate) and not self._votann_is_artillery_unit(candidate)
+        ]
+        if not candidates:
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "action": action,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_votann_persecution_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_persecution_prospect_detachment():
+            return
+        if self._votann_phase_key(getattr(game, "phase", None)) != "SHOOTING_PHASE":
+            return
+        if getattr(game, "get_current_player", lambda: None)() is self.player:
+            return
+        enemy_root = self._votann_root(attacking_unit)
+        if enemy_root is None or self._votann_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("DISPERSED FORMATION")
+        if (
+            stratagem is None
+            or self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0)
+            or self._votann_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set())
+            or self._votann_reaction_exists("shooting_targets_selected", stratagem.name, enemy_unit=enemy_root)
+        ):
+            return
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._votann_root(target)
+            if root is None:
+                continue
+            uid = self._votann_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._votann_owned_by_player(root, self.player):
+                continue
+            if not self._is_votann_unit(root):
+                continue
+            if not self._votann_on_battlefield(root, require_targetable=True):
+                continue
+            if not (self._votann_is_infantry_unit(root) or self._votann_is_mounted_unit(root)):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_votann_persecution_phase_end_effects(self, *, phase) -> None:
+        if self._votann_phase_key(phase) != "SHOOTING_PHASE":
+            return
+        seen: set[str] = set()
+        for root in self._votann_iter_game_roots():
+            for member in self._votann_attached_members(root):
+                uid = self._votann_sort_key(member)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                changed = False
+                for key in (
+                    "persecution_ranger_tactics_active",
+                    "persecution_ranger_tactics_expires_phase",
+                    "persecution_ranger_tactics_owner",
+                    "persecution_ranger_tactics_turn_owner",
+                    "persecution_ranger_tactics_turn",
+                    "persecution_ranger_tactics_source",
+                    "persecution_ranger_tactics_attack_type",
+                    "persecution_exposed_flaws_active",
+                    "persecution_exposed_flaws_expires_phase",
+                    "persecution_exposed_flaws_owner",
+                    "persecution_exposed_flaws_turn_owner",
+                    "persecution_exposed_flaws_turn",
+                    "persecution_exposed_flaws_source",
+                    "persecution_exposed_flaws_attack_type",
+                    "persecution_exposed_flaws_yp_spent",
+                    "persecution_dispersed_formation_active",
+                    "persecution_dispersed_formation_expires_phase",
+                    "persecution_dispersed_formation_owner",
+                    "persecution_dispersed_formation_turn_owner",
+                    "persecution_dispersed_formation_turn",
+                    "persecution_dispersed_formation_source",
+                    "opponent_shooting_phase_stealth_active",
+                    "opponent_shooting_phase_stealth_owner",
+                    "opponent_shooting_phase_stealth_turn",
+                    "opponent_shooting_phase_stealth_source",
+                    "opponent_shooting_phase_stealth_expires_phase",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                if changed:
+                    member.special_rules = sr
+
+    def _use_votann_persecution_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name = self._votann_norm_name(getattr(stratagem, "name", ""))
+        handlers = {
+            "ADAPTABLE AVARICE": self._use_persecution_adaptable_avarice,
+            "CLAIMSTAKER REFLEX": self._use_persecution_claimstaker_reflex,
+            "DISPERSED FORMATION": self._use_persecution_dispersed_formation,
+            "EXPOSED FLAWS": self._use_persecution_exposed_flaws,
+            "FRONTIER MOMENTUM": self._use_persecution_frontier_momentum,
+            "RANGER TACTICS": self._use_persecution_ranger_tactics,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return None
+        if not self._is_persecution_prospect_detachment():
+            return False
+        return handler(stratagem, **kwargs)
+
+    def _use_persecution_adaptable_avarice(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        if not self._needgaard_fortify_takeover_active():
+            logger.error("ERROR: ADAPTABLE AVARICE: Fortify Takeover is not active")
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        candidates = [
+            unit
+            for unit in self._votann_candidates(require_targetable=True)
+            if self._votann_is_character_unit(unit)
+        ]
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: ADAPTABLE AVARICE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: ADAPTABLE AVARICE: target must be a LEAGUES OF VOTANN CHARACTER unit")
+            return False
+
+        yp_requested = 0
+        for key in ("yield_points_to_spend", "yp_to_spend", "spend_yield_points", "spend_yp", "yp", "amount"):
+            raw_value = context.get(key)
+            if raw_value is None or isinstance(raw_value, bool):
+                continue
+            yp_requested = max(0, self._votann_int_like(raw_value, default=0))
+            break
+        if yp_requested > 0 and not self._votann_spend_yield_points(int(yp_requested)):
+            logger.error("ERROR: ADAPTABLE AVARICE: unable to spend requested Yield Points")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_requested > 0:
+                self._votann_refund_yield_points(int(yp_requested))
+            return False
+
+        mgr = self._votann_yield_points_mgr()
+        mode_changed = False
+        if mgr is not None and int(getattr(mgr, "yield_points", 0) or 0) <= 6:
+            current_mode_key = str(getattr(getattr(mgr, "mode", None), "key", "") or "").strip().upper()
+            if current_mode_key != HOSTILE_ACQUISITION.key:
+                setattr(mgr, "persecution_adaptable_avarice_active", True)
+                setattr(mgr, "persecution_adaptable_avarice_restore_mode_key", current_mode_key or FORTIFY_TAKEOVER.key)
+                setattr(mgr, "persecution_adaptable_avarice_restore_owner_id", str(getattr(self.player, "id", "") or ""))
+                setattr(mgr, "persecution_adaptable_avarice_turn", int(getattr(game, "turn", 0) or 0))
+                setattr(
+                    mgr,
+                    "persecution_adaptable_avarice_source",
+                    str(getattr(stratagem, "name", "") or "ADAPTABLE AVARICE"),
+                )
+                mgr.mode = HOSTILE_ACQUISITION
+                battle_round_fn = getattr(mgr, "_battle_round", None)
+                if callable(battle_round_fn):
+                    mgr.last_mode_turn = int(battle_round_fn(game) or 0)
+                mode_changed = True
+
+        if yp_requested or mode_changed:
+            self._votann_publish_prioritised_efficiency_update(
+                delta=-int(yp_requested or 0),
+                reason=str(getattr(stratagem, "name", "") or "ADAPTABLE AVARICE"),
+            )
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_persecution_claimstaker_reflex(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CLAIMSTAKER REFLEX: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is self.player:
+            logger.error("ERROR: CLAIMSTAKER REFLEX: not opponent's Movement phase")
+            return False
+        enemy_unit = context.get("enemy_unit") or context.get("attacking_unit")
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None or self._votann_owned_by_player(enemy_root, self.player) or not self._votann_is_alive(enemy_root):
+            logger.error("ERROR: CLAIMSTAKER REFLEX: missing enemy mover")
+            return False
+        candidates = [
+            candidate
+            for candidate in list(context.get("candidates") or [])
+            if not self._votann_is_vehicle_unit(candidate) and not self._votann_is_artillery_unit(candidate)
+        ]
+        if not candidates:
+            candidates = [
+                candidate
+                for candidate in self._votann_units_within_range(
+                    enemy_root,
+                    self._votann_candidates(require_targetable=True),
+                    range_in=9.0,
+                )
+                if not self._votann_is_vehicle_unit(candidate) and not self._votann_is_artillery_unit(candidate)
+            ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: CLAIMSTAKER REFLEX: missing target unit")
+                return False
+        if candidates and target_root not in candidates:
+            logger.error("ERROR: CLAIMSTAKER REFLEX: target must be within 9\" of the enemy mover and cannot be ARTILLERY or VEHICLE")
+            return False
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        spend_yp = self._votann_bool_like(spend_yp, default=False)
+        yp_spent = False
+        if spend_yp:
+            if not self._votann_spend_yield_points(2):
+                logger.error("ERROR: CLAIMSTAKER REFLEX: unable to spend 2 Yield Points")
+                return False
+            yp_spent = True
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            return False
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: CLAIMSTAKER REFLEX: reactive move queue unavailable")
+            return False
+        move_distance = 6 if yp_spent else max(0, int(dice_module.get_roll("D6") or 0))
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=int(move_distance),
+            kind="persecution_claimstaker_reflex",
+            movement_type="reactive",
+            reactive_movement_type="move",
+            source=str(getattr(stratagem, "name", "") or "CLAIMSTAKER REFLEX"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+        )
+        if request is None:
+            logger.error("ERROR: CLAIMSTAKER REFLEX: failed to queue reactive move")
+            return False
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_persecution_dispersed_formation(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DISPERSED FORMATION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if game is None or active_player is self.player:
+            logger.error("ERROR: DISPERSED FORMATION: not opponent's Shooting phase")
+            return False
+        enemy_unit = context.get("enemy_unit") or context.get("attacking_unit")
+        enemy_root = self._votann_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None or self._votann_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: DISPERSED FORMATION: missing enemy attacker")
+            return False
+        candidates = [
+            candidate
+            for candidate in list(context.get("candidates") or [])
+            if self._votann_is_infantry_unit(candidate) or self._votann_is_mounted_unit(candidate)
+        ]
+        if not candidates:
+            seen: set[str] = set()
+            for target in list(context.get("target_units") or []):
+                root = self._votann_root(target)
+                if root is None:
+                    continue
+                uid = self._votann_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if not self._votann_owned_by_player(root, self.player):
+                    continue
+                if not self._is_votann_unit(root) or not self._votann_on_battlefield(root, require_targetable=True):
+                    continue
+                if not (self._votann_is_infantry_unit(root) or self._votann_is_mounted_unit(root)):
+                    continue
+                candidates.append(root)
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: DISPERSED FORMATION: missing target unit")
+                return False
+        if candidates and target_root not in candidates:
+            logger.error("ERROR: DISPERSED FORMATION: target must be one of the INFANTRY or MOUNTED units selected by the attacker")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        active_owner_id = str(getattr(active_player, "id", "") or "")
+        source_name = str(getattr(stratagem, "name", "") or "DISPERSED FORMATION")
+        for member in self._votann_attached_members(target_root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["opponent_shooting_phase_stealth_active"] = True
+            sr["opponent_shooting_phase_stealth_owner"] = active_owner_id
+            sr["opponent_shooting_phase_stealth_turn"] = current_turn
+            sr["opponent_shooting_phase_stealth_source"] = source_name
+            sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+            sr["persecution_dispersed_formation_active"] = True
+            sr["persecution_dispersed_formation_expires_phase"] = "SHOOTING_PHASE"
+            sr["persecution_dispersed_formation_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["persecution_dispersed_formation_turn_owner"] = active_owner_id
+            sr["persecution_dispersed_formation_turn"] = current_turn
+            sr["persecution_dispersed_formation_source"] = source_name
+            member.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_persecution_exposed_flaws(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EXPOSED FLAWS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: EXPOSED FLAWS: not your Shooting phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_not_shot=True))
+            if self._votann_is_hernkyn_unit(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: EXPOSED FLAWS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: EXPOSED FLAWS: target must be a HERNKYN unit that has not been selected to shoot")
+            return False
+        spend_yp = context.get("spend_yield_points")
+        if spend_yp is None:
+            spend_yp = context.get("spend_yp")
+        if spend_yp is None:
+            spend_yp = context.get("use_yp")
+        spend_yp = self._votann_bool_like(spend_yp, default=False)
+        yp_spent = False
+        if spend_yp:
+            if not self._votann_spend_yield_points(2):
+                logger.error("ERROR: EXPOSED FLAWS: unable to spend 2 Yield Points")
+                return False
+            yp_spent = True
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            if yp_spent:
+                self._votann_refund_yield_points(2)
+            return False
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(self.player, "id", "") or "")
+        source_name = str(getattr(stratagem, "name", "") or "EXPOSED FLAWS")
+        for member in self._votann_attached_members(target_root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["persecution_exposed_flaws_active"] = True
+            sr["persecution_exposed_flaws_expires_phase"] = "SHOOTING_PHASE"
+            sr["persecution_exposed_flaws_owner"] = owner_id
+            sr["persecution_exposed_flaws_turn_owner"] = owner_id
+            sr["persecution_exposed_flaws_turn"] = current_turn
+            sr["persecution_exposed_flaws_source"] = source_name
+            sr["persecution_exposed_flaws_attack_type"] = "ranged"
+            sr["persecution_exposed_flaws_yp_spent"] = bool(yp_spent)
+            member.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_persecution_frontier_momentum(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FRONTIER MOMENTUM: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: FRONTIER MOMENTUM: not your Movement phase")
+            return False
+        candidates = [
+            unit
+            for unit in list(context.get("candidates") or self._votann_candidates(require_targetable=True))
+            if self._votann_is_hernkyn_unit(unit) and not self._votann_selected_to_move_this_phase(unit)
+        ]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FRONTIER MOMENTUM: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: FRONTIER MOMENTUM: target must be a HERNKYN unit that has not been selected to move")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or "FRONTIER MOMENTUM")
+        for member in self._votann_attached_members(target_root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            effects = [
+                entry
+                for entry in list(sr.get("advance_no_roll_effects", []) or [])
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("tag", "") or "") == "stratagem:persecution_frontier_momentum"
+                )
+            ]
+            effects.append(
+                {
+                    "distance": 6,
+                    "source": source_name,
+                    "tag": "stratagem:persecution_frontier_momentum",
+                    "expires_phase": "MOVEMENT_PHASE",
+                }
+            )
+            sr["advance_no_roll_effects"] = effects
+            member.special_rules = sr
+        self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_persecution_ranger_tactics(self, stratagem: Any, **kwargs) -> bool:
+        context = self._votann_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: RANGER TACTICS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None or getattr(game, "get_current_player", lambda: None)() is not self.player:
+            logger.error("ERROR: RANGER TACTICS: not your Shooting phase")
+            return False
+        candidates = list(context.get("candidates") or self._votann_candidates(require_not_shot=True))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._votann_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RANGER TACTICS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RANGER TACTICS: target must be a LEAGUES OF VOTANN unit that has not been selected to shoot")
+            return False
+        if not self._votann_spend_cp(stratagem, target_unit=target_root):
+            return False
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(self.player, "id", "") or "")
+        source_name = str(getattr(stratagem, "name", "") or "RANGER TACTICS")
+        for member in self._votann_attached_members(target_root):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["persecution_ranger_tactics_active"] = True
+            sr["persecution_ranger_tactics_expires_phase"] = "SHOOTING_PHASE"
+            sr["persecution_ranger_tactics_owner"] = owner_id
+            sr["persecution_ranger_tactics_turn_owner"] = owner_id
+            sr["persecution_ranger_tactics_turn"] = current_turn
+            sr["persecution_ranger_tactics_source"] = source_name
+            sr["persecution_ranger_tactics_attack_type"] = "ranged"
+            member.special_rules = sr
         self._votann_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True

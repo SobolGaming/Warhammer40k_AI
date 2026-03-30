@@ -20012,6 +20012,12 @@ def _stratagem_support(
     name_u = _canon_stratagem_name(name)
     det_u = _norm(detachment_name).upper()
     notes_by_id = {
+        "000010440002": "Start of any phase while Fortify Takeover is active: selected LEAGUES OF VOTANN CHARACTER unit can spend any amount of YP; if you have 6 or fewer YP remaining, Prioritised Efficiency switches to Hostile Acquisition until the start of your next turn, then restores automatically.",
+        "000010440003": "Your Movement phase: selected HERNKYN unit that has not been selected to move treats its Advance distance this phase as a fixed +6\" instead of rolling.",
+        "000010440004": "Your Shooting phase: selected HERNKYN unit that has not been selected to shoot gains full wound re-rolls against assailed units until end of phase, and can instead gain full wound re-rolls against any target by spending 2 YP.",
+        "000010440005": "Your Shooting phase: selected LEAGUES OF VOTANN unit that has not been selected to shoot gains full hit re-rolls against assailed targets until end of phase, and HERNKYN units gain those full hit re-rolls against any target.",
+        "000010440006": "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: selected nearby LEAGUES OF VOTANN non-ARTILLERY, non-VEHICLE unit within 9\" makes a reactive move up to D6\", or up to 6\" if you spend 2 YP.",
+        "000010440007": "Opponent Shooting phase reaction after an enemy unit selects targets: selected LEAGUES OF VOTANN INFANTRY or MOUNTED target gains Stealth and Benefit of Cover against ranged attacks until end of phase.",
         "000010655002": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected EMPEROR'S CHILDREN unit imposes -1 to wound against attacks from that attacker while its Strength is greater than the target's Toughness until end of phase.",
         "000008961003": "Shooting/Fight phase defensive reaction after enemy targets are selected: selected HERETIC ASTARTES unit excluding DAMNED worsens AP by 1 for attacks from that attacker until it finishes its attacks.",
         "000010210003": "Your Command phase: selected THOUSAND SONS PSYKER unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at the end of a phase, and while you retain control it deals D3 mortal wounds on a 4+ to enemy units ending a Normal, Advance, Fall Back, or Charge move within its range.",

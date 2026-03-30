@@ -805,11 +805,17 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OPTIMAL EXPENDITURE",
     "PRIVATEER ARSENAL",
     "AUXILIARY CONTRACT",
+    "ADAPTABLE AVARICE",
+    "CLAIMSTAKER REFLEX",
+    "DISPERSED FORMATION",
+    "EXPOSED FLAWS",
+    "FRONTIER MOMENTUM",
     "HUNTR’S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
     "PREVENTATIVE PURGE",
     "REACTIVE REPRISAL",
+    "RANGER TACTICS",
     "SECURE POSITIONS",
     "SUPERIOR CRAFTSMANSHIP",
     "SURE OF PURPOSE",
@@ -1090,10 +1096,15 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "VENGEFUL SORROW",
     "VECTORED ENGINES",
     "ANCESTRAL SENTENCE",
+    "ADAPTABLE AVARICE",
     "BASTION RUNNING",
+    "CLAIMSTAKER REFLEX",
     "COGITATED NEED",
     "DELAYED-FIRE ROUNDS",
+    "DISPERSED FORMATION",
+    "EXPOSED FLAWS",
     "FIRST CONCERN",
+    "FRONTIER MOMENTUM",
     "HONOUR OF THE HOLD",
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
@@ -1103,6 +1114,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ORDERED RETREAT",
     "PREVENTATIVE PURGE",
     "REACTIVE REPRISAL",
+    "RANGER TACTICS",
     "SECURE POSITIONS",
     "UNWAVERING ACCURACY",
     "VENGEANCE FLARE",
@@ -7872,11 +7884,17 @@ class StratagemManager(
             "OPTIMAL EXPENDITURE": "Target: LEAGUES OF VOTANN INFANTRY unit eligible to fight; optional 3 YP upgrades wound re-rolls from 1s to full",
             "PRIVATEER ARSENAL": "Target: LEAGUES OF VOTANN INFANTRY unit that has not been selected to shoot; optional 3 YP upgrades hit re-rolls from 1s to full",
             "AUXILIARY CONTRACT": "Target: LEAGUES OF VOTANN INFANTRY or MOUNTED unit that has not been selected to shoot or fight this phase",
+            "ADAPTABLE AVARICE": "Target: LEAGUES OF VOTANN CHARACTER unit while Fortify Takeover is active; optional YP spend can flip Prioritised Efficiency to Hostile Acquisition until your next turn if you have 6 or fewer YP",
+            "CLAIMSTAKER REFLEX": "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: target your non-ARTILLERY, non-VEHICLE LEAGUES OF VOTANN unit within 9\"; it makes a reactive move up to D6\", or 6\" if you spend 2 YP",
+            "DISPERSED FORMATION": "Opponent Shooting phase reaction after targets are selected: target your LEAGUES OF VOTANN INFANTRY or MOUNTED unit selected by that attacker; it gains Stealth and Benefit of Cover against ranged attacks this phase",
+            "EXPOSED FLAWS": "Target: HERNKYN unit that has not been selected to shoot; optional 2 YP grants full wound re-rolls this phase, otherwise full wound re-rolls apply only against assailed targets",
+            "FRONTIER MOMENTUM": "Target: HERNKYN unit that has not been selected to move; if it Advances this phase, add 6\" instead of rolling",
             "HUNTR’S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "OPPORTUNISTIC ESCALATION": "Target: non-Hekaton LEAGUES OF VOTANN VEHICLE hit by enemy shooting while Hostile Acquisition is active",
             "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
             "PREVENTATIVE PURGE": "Target: Brôkhyr Thunderkyn or Ironkin Steeljacks unit; shoot a falling-back enemy with -1 to hit",
             "REACTIVE REPRISAL": "Target: LEAGUES OF VOTANN unit targeted by enemy shooting; shoot the attacking enemy unit",
+            "RANGER TACTICS": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot; it gains full hit re-rolls this phase while attacking assailed targets, and HERNKYN units gain them against all targets",
             "SECURE POSITIONS": "Target: LEAGUES OF VOTANN TRANSPORT with embarked LEAGUES OF VOTANN unit",
             "SUPERIOR CRAFTSMANSHIP": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; +1 Damage versus MONSTER/VEHICLE targets",
             "SURE OF PURPOSE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
@@ -8677,6 +8695,10 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_needgaard_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_persecution_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9965,6 +9987,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_votann_needgaard_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_votann_persecution_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -11806,6 +11832,7 @@ class StratagemManager(
         self._process_votann_hearthfyre_move_end_effects(unit=unit, action=action)
         self._queue_votann_mercenary_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
+        self._queue_votann_persecution_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_blade_move_end_reactions(unit=unit, action=action)
         self._queue_space_marines_gladius_move_end_reactions(unit=unit, action=action)
@@ -13355,6 +13382,13 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_needgaard_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_votann_persecution_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -20295,6 +20329,9 @@ class StratagemManager(
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result
+        votann_persecution_result = self._use_votann_persecution_stratagem(s, **kwargs)
+        if votann_persecution_result is not None:
+            return votann_persecution_result
         tau_result = self._use_tau_empire_stratagem(s, **kwargs)
         if tau_result is not None:
             return tau_result
