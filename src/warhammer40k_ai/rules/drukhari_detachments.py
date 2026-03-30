@@ -6,6 +6,7 @@ from typing import Optional
 from .detachment_manager import DetachmentManagerBase
 from ..utility.aura_utils import (
     distance_between_models_bases_3d,
+    model_within_engagement_range_of_unit,
     model_within_range_of_unit,
     unit_wholly_within_range_of_unit,
     unit_within_range_of_unit,
@@ -101,6 +102,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     _SKYSPLINTER_SPITEFUL_TARGET_IDS_KEY = "enhancement_spiteful_raider_objective_target_ids"
     _SKYSPLINTER_SPITEFUL_TURN_KEY = "enhancement_spiteful_raider_tracking_turn"
     _SKYSPLINTER_SPITEFUL_OWNER_KEY = "enhancement_spiteful_raider_tracking_owner"
+    _KABALITE_MAKING_A_POINT_PREFIX = "drukhari_kabalite_making_a_point"
+    _KABALITE_TAILORED_TOXINS_PREFIX = "drukhari_kabalite_tailored_toxins"
+    _KABALITE_TAKEN_ALIVE_PREFIX = "drukhari_kabalite_taken_alive"
+    _KABALITE_DEADLY_DECEIVERS_PREFIX = "drukhari_kabalite_deadly_deceivers"
+    _KABALITE_DOUBLE_CROSS_PREFIX = "drukhari_kabalite_double_cross"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -111,6 +117,9 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         self.murderous_agenda_contract_target_unit_id: str = ""
         self.murderous_agenda_contract_completed: bool = False
         self.murderous_agenda_reward_paid: bool = False
+        self.murderous_agenda_completion_turn: int = 0
+        self.murderous_agenda_completion_phase: str = ""
+        self.kabalite_taken_alive_failed_test_count: int = 0
         self._informant_network_selection_resolved: bool = False
         self.informant_network_selected_unit_ids: set[str] = set()
         self.alliance_of_agony_applied: bool = False
@@ -1263,7 +1272,55 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 reason="Battle-shock failed",
             )
         self._resolve_crucible_pending(unit, passed=bool(passed), game=game)
+        self._resolve_kabalite_taken_alive_battle_shock_cap(unit, passed=bool(passed), game=game)
         return int(gained)
+
+    def _resolve_kabalite_taken_alive_battle_shock_cap(self, unit, *, passed: bool, game=None) -> None:
+        if not self.is_kabalite_cartel():
+            return
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict) or not bool(special_rules.get("drukhari_kabalite_taken_alive_battle_shock")):
+            return
+
+        owner_id = str(special_rules.pop("drukhari_kabalite_taken_alive_battle_shock_turn_owner", "") or "").strip()
+        special_rules.pop("drukhari_kabalite_taken_alive_battle_shock_source", None)
+        special_rules.pop("drukhari_kabalite_taken_alive_battle_shock", None)
+        try:
+            marked_turn = int(special_rules.pop("drukhari_kabalite_taken_alive_battle_shock_turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        root.special_rules = special_rules
+
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if owner_id and current_owner and owner_id != current_owner:
+                return
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return
+        if bool(passed):
+            return
+
+        self.kabalite_taken_alive_failed_test_count = int(self.kabalite_taken_alive_failed_test_count or 0) + 1
+        if int(self.kabalite_taken_alive_failed_test_count or 0) <= 3:
+            return
+        power_from_pain = getattr(self.army, "power_from_pain", None) if self.army is not None else None
+        if power_from_pain is None:
+            return
+        try:
+            current_tokens = int(getattr(power_from_pain, "tokens", 0) or 0)
+        except (TypeError, ValueError):
+            current_tokens = 0
+        if current_tokens <= 0:
+            return
+        power_from_pain.tokens = int(current_tokens - 1)
 
     def on_friendly_unit_destroyed(self, unit, *, last_model=None, game=None) -> int:
         del game
@@ -1814,6 +1871,294 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             owner = str(getattr(getattr(self.army, "player", None), "id", "") or "")
         return owner, int(turn)
 
+    def _warlord_root(self):
+        if self.army is None:
+            return None
+        warlord = getattr(self.army, "warlord", None)
+        if warlord is None:
+            for unit in list(getattr(self.army, "units", []) or []):
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        return self._unit_root(warlord)
+
+    def _unit_contains_keyword_or_name(self, unit, *, keyword: str = "", unit_name: str = "") -> bool:
+        for member in self._iter_attached_members(unit):
+            if keyword and self._unit_has_keyword(member, keyword):
+                return True
+            if unit_name and self._unit_name_matches(member, unit_name):
+                return True
+        return False
+
+    def _unit_is_kabalite_warriors_or_hand_of_the_archon(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(
+            self._unit_has_keyword(root, "KABALITE WARRIORS")
+            or self._unit_has_keyword(root, "HAND OF THE ARCHON")
+            or self._unit_name_matches(root, "Kabalite Warriors")
+            or self._unit_name_matches(root, "Hand of the Archon")
+        )
+
+    def _unit_is_kabal_or_blades_for_hire(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(
+            self._unit_has_keyword(root, "KABAL")
+            or self._unit_has_keyword(root, "BLADES FOR HIRE")
+            or self._unit_is_kabalite_warriors_or_hand_of_the_archon(root)
+        )
+
+    def _unit_is_drukhari_non_vehicle(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(self._unit_has_keyword(root, "DRUKHARI") and not self._unit_has_keyword(root, "VEHICLE"))
+
+    def kabalite_archon_warlord(self, *, game=None):
+        if not self.is_kabalite_cartel():
+            return None
+        warlord = self._warlord_root()
+        if warlord is None or not self._unit_in_army(warlord):
+            return None
+        if game is not None and not self._unit_on_battlefield(warlord):
+            return None
+        if not self._unit_contains_keyword_or_name(warlord, keyword="ARCHON", unit_name="Archon"):
+            return None
+        return warlord
+
+    def _kabalite_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_kabalite_cartel():
+            return None, None, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, ""
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict) or not bool(special_rules.get(f"{prefix}_active", False)):
+            return None, None, ""
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            resolved_game = getattr(player, "game", None) if player is not None else None
+        if resolved_game is not None:
+            expected_phase = str(special_rules.get(f"{prefix}_expires_phase", "") or "").strip().upper()
+            current_phase = str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper()
+            if expected_phase and current_phase and expected_phase != current_phase:
+                return None, None, ""
+            owner_id = str(special_rules.get(f"{prefix}_turn_owner", "") or "").strip()
+            current_player = getattr(resolved_game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if owner_id and current_owner and owner_id != current_owner:
+                return None, None, ""
+            try:
+                marked_turn = int(special_rules.get(f"{prefix}_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return None, None, ""
+        source_name = str(special_rules.get(f"{prefix}_source", "") or "").strip()
+        return root, special_rules, source_name
+
+    def kabalite_deadly_deceivers_range_limit(self, unit, *, game=None) -> tuple[float, str]:
+        root, special_rules, source_name = self._kabalite_effect_state(
+            unit,
+            prefix=self._KABALITE_DEADLY_DECEIVERS_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return 0.0, ""
+        try:
+            distance_limit = float(
+                special_rules.get(f"{self._KABALITE_DEADLY_DECEIVERS_PREFIX}_targeting_range", 18.0) or 18.0
+            )
+        except (TypeError, ValueError):
+            distance_limit = 18.0
+        if distance_limit <= 0.0:
+            return 0.0, ""
+        return float(distance_limit), source_name or "Deadly Deceivers"
+
+    def kabalite_making_a_point_skill_bonus(self, model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        if weapon_profile is not None and not bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_ranged", lambda: False)()):
+            return 0, ""
+        root, special_rules, source_name = self._kabalite_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._KABALITE_MAKING_A_POINT_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None or not self._unit_is_kabalite_warriors_or_hand_of_the_archon(root):
+            return 0, ""
+        try:
+            bonus = int(special_rules.get(f"{self._KABALITE_MAKING_A_POINT_PREFIX}_skill_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), source_name or "Making a Point"
+
+    def kabalite_making_a_point_ap_bonus(self, model, target_unit, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        del target_unit
+        if model is None:
+            return 0, ""
+        if weapon_profile is not None and not bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_ranged", lambda: False)()):
+            return 0, ""
+        root, special_rules, source_name = self._kabalite_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._KABALITE_MAKING_A_POINT_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None or not self._unit_is_kabalite_warriors_or_hand_of_the_archon(root):
+            return 0, ""
+        try:
+            bonus = int(special_rules.get(f"{self._KABALITE_MAKING_A_POINT_PREFIX}_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), source_name or "Making a Point"
+
+    def kabalite_tailored_toxins_crit_hit_threshold(
+        self,
+        model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if model is None or target_unit is None:
+            return 0, ""
+        root, special_rules, source_name = self._kabalite_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._KABALITE_TAILORED_TOXINS_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return 0, ""
+        effect_phase = str(
+            special_rules.get(f"{self._KABALITE_TAILORED_TOXINS_PREFIX}_expires_phase", "") or ""
+        ).strip().upper()
+        if weapon_profile is not None:
+            is_ranged = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_ranged", lambda: False)())
+            is_melee = bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", lambda: False)())
+            if effect_phase == "SHOOTING_PHASE" and not is_ranged:
+                return 0, ""
+            if effect_phase == "FIGHT_PHASE" and not is_melee:
+                return 0, ""
+        expected_target_id = str(
+            special_rules.get(f"{self._KABALITE_TAILORED_TOXINS_PREFIX}_contract_target_unit_id", "") or ""
+        ).strip()
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if expected_target_id and expected_target_id != self._unit_root_id(target_root):
+            return 0, ""
+        try:
+            threshold = int(special_rules.get(f"{self._KABALITE_TAILORED_TOXINS_PREFIX}_crit_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        if threshold <= 0:
+            return 0, ""
+        return int(threshold), source_name or "Tailored Toxins"
+
+    def kabalite_taken_alive_hit_bonus(self, model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        if weapon_profile is not None and not bool(getattr(getattr(weapon_profile, "parent_wargear", None), "is_melee", lambda: False)()):
+            return 0, ""
+        root, special_rules, source_name = self._kabalite_effect_state(
+            getattr(model, "parent_unit", None),
+            prefix=self._KABALITE_TAKEN_ALIVE_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return 0, ""
+        try:
+            bonus = int(special_rules.get(f"{self._KABALITE_TAKEN_ALIVE_PREFIX}_hit_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), source_name or "Taken Alive"
+
+    def kabalite_double_cross_support_unit(self, unit, *, attacker_unit=None, attacker_model=None, game=None):
+        root, special_rules, source_name = self._kabalite_effect_state(
+            unit,
+            prefix=self._KABALITE_DOUBLE_CROSS_PREFIX,
+            game=game,
+        )
+        if root is None or special_rules is None:
+            return None, ""
+        attacker_root = self._unit_root(attacker_unit)
+        expected_attacker_id = str(
+            special_rules.get(f"{self._KABALITE_DOUBLE_CROSS_PREFIX}_attacker_unit_id", "") or ""
+        ).strip()
+        if expected_attacker_id and (attacker_root is None or self._unit_root_id(attacker_root) != expected_attacker_id):
+            return None, ""
+        support_unit_id = str(
+            special_rules.get(f"{self._KABALITE_DOUBLE_CROSS_PREFIX}_support_unit_id", "") or ""
+        ).strip()
+        support_root = self._resolve_unit_by_id(support_unit_id, game=game)
+        support_root = self._unit_root(support_root)
+        if support_root is None or not self._unit_in_army(support_root):
+            return None, ""
+        if not self._unit_on_battlefield(support_root) or not self._unit_is_drukhari_non_vehicle(support_root):
+            return None, ""
+        if attacker_model is not None and not bool(model_within_engagement_range_of_unit(attacker_model, support_root)):
+            return None, ""
+        return support_root, source_name or "Double-Cross"
+
+    def mark_taken_alive_battle_shock(self, unit, *, game=None, source: str = "Taken Alive") -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        owner_id, turn = self._resolve_owner_and_turn(game=game, current_turn=int(getattr(game, "turn", 0) or 0))
+        special_rules["drukhari_kabalite_taken_alive_battle_shock"] = True
+        if owner_id:
+            special_rules["drukhari_kabalite_taken_alive_battle_shock_turn_owner"] = owner_id
+        if turn:
+            special_rules["drukhari_kabalite_taken_alive_battle_shock_turn"] = int(turn)
+        special_rules["drukhari_kabalite_taken_alive_battle_shock_source"] = str(source or "Taken Alive").strip() or "Taken Alive"
+        root.special_rules = special_rules
+        return True
+
+    def murderous_agenda_reselect_window_active(self, *, game=None, player=None) -> bool:
+        if not self.is_kabalite_cartel():
+            return False
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False
+        if not bool(self.murderous_agenda_contract_completed):
+            return False
+        resolved_game = game
+        if resolved_game is None and self.army is not None:
+            owner = getattr(self.army, "player", None)
+            resolved_game = getattr(owner, "game", None) if owner is not None else None
+        if resolved_game is None:
+            return False
+        if str(getattr(getattr(resolved_game, "phase", None), "name", "") or "").strip().upper() != "COMMAND_PHASE":
+            return False
+        current_player = getattr(resolved_game, "get_current_player", lambda: None)()
+        if current_player is not getattr(self.army, "player", None):
+            return False
+        try:
+            current_turn = int(getattr(resolved_game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        return bool(
+            str(self.murderous_agenda_completion_phase or "").strip().upper() == "COMMAND_PHASE"
+            and int(self.murderous_agenda_completion_turn or 0) == int(current_turn)
+            and self.kabalite_archon_warlord(game=resolved_game) is not None
+        )
+
     def apply_rain_of_cruelty_on_disembark(self, unit, *, game=None, current_turn: int = 0) -> bool:
         if not self.is_skysplinter_assault():
             return False
@@ -1912,7 +2257,16 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         candidates.sort(key=lambda unit: (self._norm(getattr(unit, "name", "")), self._unit_root_id(unit)))
         return candidates
 
-    def build_murderous_agenda_request(self, *, game=None, player=None):
+    def build_murderous_agenda_request(
+        self,
+        *,
+        game=None,
+        player=None,
+        allow_reselect: bool = False,
+        ability: str = "murderous_agenda",
+        ability_name: str | None = None,
+        source_unit_id: str = "",
+    ):
         if not self.is_kabalite_cartel():
             return None
         if game is None or player is None or self.army is None:
@@ -1921,10 +2275,10 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             return None
         if not bool(getattr(game, "is_authoritative", True)):
             return None
-        if self._murderous_agenda_has_selection():
+        if self._murderous_agenda_has_selection() and not bool(allow_reselect):
             return None
         battle_round = int(getattr(game, "turn", 0) or 0)
-        if battle_round != 1:
+        if not bool(allow_reselect) and battle_round != 1:
             return None
 
         from ..engine.decision_kinds import DECISION_CHOOSE_MURDEROUS_AGENDA
@@ -1958,24 +2312,37 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not options:
             return None
         army_id = str(get_entity_id(self.army) or "")
+        resolved_ability_name = str(ability_name or self.MURDEROUS_AGENDA_SOURCE).strip() or self.MURDEROUS_AGENDA_SOURCE
+        context = {
+            "ability": str(ability or "murderous_agenda").strip() or "murderous_agenda",
+            "ability_name": resolved_ability_name,
+            "army_id": army_id,
+            "battle_round": battle_round,
+            "candidate_bindings": list(candidate_bindings),
+            "allow_reselect": bool(allow_reselect),
+        }
+        if source_unit_id:
+            context["source_unit_id"] = str(source_unit_id)
         return DecisionRequest.create(
             DECISION_CHOOSE_MURDEROUS_AGENDA,
-            "Murderous Agenda: select a Contract and target unit.",
+            f"{resolved_ability_name}: select a Contract and target unit.",
             player_id=getattr(player, "id", None),
             options=options,
-            context={
-                "ability": "murderous_agenda",
-                "ability_name": self.MURDEROUS_AGENDA_SOURCE,
-                "army_id": army_id,
-                "battle_round": battle_round,
-                "candidate_bindings": list(candidate_bindings),
-            },
+            context=context,
         )
 
-    def murderous_agenda_selection_is_valid(self, contract_key: str, target_unit_id: str, *, game=None, player=None) -> tuple[bool, str]:
+    def murderous_agenda_selection_is_valid(
+        self,
+        contract_key: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+        allow_reselect: bool = False,
+    ) -> tuple[bool, str]:
         if not self.is_kabalite_cartel():
             return False, "Murderous Agenda requires the Kabalite Cartel detachment."
-        if self._murderous_agenda_has_selection():
+        if self._murderous_agenda_has_selection() and not bool(allow_reselect):
             return False, "Murderous Agenda has already been selected."
         key = str(contract_key or "").strip().upper()
         if key not in self._murderous_agenda_contract_keys():
@@ -1989,14 +2356,30 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             return False, "Murderous Agenda selection target is not eligible for the chosen contract."
         return True, ""
 
-    def select_murderous_agenda(self, contract_key: str, target_unit_id: str, *, game=None, player=None) -> bool:
-        valid, _reason = self.murderous_agenda_selection_is_valid(contract_key, target_unit_id, game=game, player=player)
+    def select_murderous_agenda(
+        self,
+        contract_key: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+        allow_reselect: bool = False,
+    ) -> bool:
+        valid, _reason = self.murderous_agenda_selection_is_valid(
+            contract_key,
+            target_unit_id,
+            game=game,
+            player=player,
+            allow_reselect=bool(allow_reselect),
+        )
         if not valid:
             return False
         self.murderous_agenda_contract_key = str(contract_key or "").strip().upper()
         self.murderous_agenda_contract_target_unit_id = str(target_unit_id or "").strip()
         self.murderous_agenda_contract_completed = False
         self.murderous_agenda_reward_paid = False
+        self.murderous_agenda_completion_turn = 0
+        self.murderous_agenda_completion_phase = ""
         return True
 
     def _resolve_unit_by_id(self, unit_id: str, *, game=None):
@@ -2038,6 +2421,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not completed:
             return False
         self.murderous_agenda_contract_completed = True
+        self.murderous_agenda_completion_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        self.murderous_agenda_completion_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
         if not self.murderous_agenda_reward_paid:
             pfp = getattr(self.army, "power_from_pain", None) if self.army is not None else None
             gain_tokens = getattr(pfp, "gain_tokens", None) if pfp is not None else None

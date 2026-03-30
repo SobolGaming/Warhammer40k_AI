@@ -177,6 +177,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RELENTLESS PURSUIT",
     "PROFANE ZEAL",
     "REAVERS' HASTE",
+    "DEADLY DECEIVERS",
+    "DOUBLE-CROSS",
+    "ENEMIES WITHOUT NUMBER",
+    "MAKING A POINT",
+    "TAILORED TOXINS",
+    "TAKEN ALIVE",
     "SCRAMBLED COORDINATES",
     "RUINOUS RAID",
     "SADISTIC DISPLAY",
@@ -2366,6 +2372,7 @@ class StratagemManager(
             "VENGEFUL DESTRUCTION",
             "HIDDEN HUNTERS",
             "EMP GRENADES",
+            "DEADLY DECEIVERS",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -2429,6 +2436,7 @@ class StratagemManager(
             "VENGEFUL DESTRUCTION",
             "UNDYING HATRED",
             "EMP GRENADES",
+            "DOUBLE-CROSS",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -2469,6 +2477,7 @@ class StratagemManager(
             "PROTOCOL OF THE UNDYING LEGIONS",
             "HYPERPHASIC RECALL",
             "A TRAP WELL LAID",
+            "TAKEN ALIVE",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
@@ -2637,6 +2646,11 @@ class StratagemManager(
             "OVERSHADOWED BY NONE",
             "PUNISH THE CRAVEN",
             "TOO ARROGANT TO DIE",
+            "DEADLY DECEIVERS",
+            "DOUBLE-CROSS",
+            "MAKING A POINT",
+            "TAILORED TOXINS",
+            "TAKEN ALIVE",
             "ALWAYS LOOKIN' FER A FIGHT",
             "ALWAYS LOOKIN’ FER A FIGHT",
             "CUT'EM DOWN",
@@ -8452,6 +8466,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_kabalite_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_drukhari_skysplinter_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9671,6 +9689,10 @@ class StratagemManager(
             raise
         try:
             self._resolve_drukhari_covenite_phase_end_effects(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_drukhari_kabalite_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -12842,6 +12864,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_kabalite_deadly_deceivers_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_tau_kroot_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -14084,6 +14113,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_kabalite_double_cross_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_chaos_cult_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -15249,6 +15285,10 @@ class StratagemManager(
                 target_unit=target_unit,
                 hits_by_target=_kwargs.get("hits_by_target"),
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._resolve_drukhari_kabalite_taken_alive_fight_attacks_resolved(
+                unit=unit,
+                target_unit=target_unit,
             )
             s = self.get_by_name("A WORTHY SKULL")
             if not s:

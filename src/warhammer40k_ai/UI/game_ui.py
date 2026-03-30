@@ -3910,6 +3910,7 @@ class GameView:
                 DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
                 DECISION_CHOOSE_PLAGUE,
                 DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+                DECISION_CHOOSE_MURDEROUS_AGENDA,
                 DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
                 DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
@@ -4672,6 +4673,51 @@ class GameView:
                 title=title,
                 header=header,
                 subtitle="",
+                on_confirm=_on_confirm,
+                decision_request=request,
+                show_cancel=False,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_MURDEROUS_AGENDA:
+            from ..utility.decision_utils import resolve_decision_command
+
+            dlg = getattr(self, "murderous_agenda_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    self.murderous_agenda_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.murderous_agenda_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_name = str(ctx.get("ability_name", "") or "Murderous Agenda").strip() or "Murderous Agenda"
+            allow_reselect = bool(ctx.get("allow_reselect", False))
+            header = "Choose a Contract target."
+            subtitle = (
+                "Select a new Contract and target unit."
+                if allow_reselect
+                else "Select a Contract and target unit."
+            )
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title=ability_name,
+                header=header,
+                subtitle=subtitle,
                 on_confirm=_on_confirm,
                 decision_request=request,
                 show_cancel=False,
@@ -18574,6 +18620,113 @@ class GameView:
                 prompt=f"Select protected unit for {name}.",
                 title=name,
                 subtitle="DEATH GUARD unit targeted by the attacking enemy unit.",
+                enemy_unit=attacking_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u in (
+            "DEADLY DECEIVERS",
+            "ENEMIES WITHOUT NUMBER",
+            "MAKING A POINT",
+            "TAILORED TOXINS",
+            "TAKEN ALIVE",
+        ) and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "ENEMIES WITHOUT NUMBER": "_drukhari_kabalite_enemies_without_number_candidates",
+                        "MAKING A POINT": "_drukhari_kabalite_making_a_point_candidates",
+                        "TAILORED TOXINS": "_drukhari_kabalite_tailored_toxins_candidates",
+                        "TAKEN ALIVE": "_drukhari_kabalite_taken_alive_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "DEADLY DECEIVERS": "Kabal or Blades for Hire unit selected as a ranged target.",
+                    "ENEMIES WITHOUT NUMBER": "Your Archon WARLORD that just completed a Contract.",
+                    "MAKING A POINT": "Kabalite Warriors or Hand of the Archon unit that has not shot.",
+                    "TAILORED TOXINS": "Kabal or Blades for Hire unit that has not shot or fought.",
+                    "TAKEN ALIVE": "Drukhari unit that has not fought this phase.",
+                }.get(name_u, "Select an eligible Drukhari unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "DOUBLE-CROSS":
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_primary = context.get("unit") or context.get("target_unit")
+            attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+            candidates = context.get("candidates") or []
+            support_by_unit = dict(context.get("support_candidates_by_unit") or {})
+
+            def _after_primary(primary_unit):
+                if primary_unit is None:
+                    logger.info("Double-Cross: no protected unit selected")
+                    return
+                unit_key = str(getattr(primary_unit, "id", "") or get_entity_id(primary_unit) or "")
+                support_candidates = list(support_by_unit.get(unit_key, []) or [])
+                if not support_candidates and callable(getattr(manager, "_drukhari_kabalite_double_cross_candidate_map", None)):
+                    try:
+                        refreshed = manager._drukhari_kabalite_double_cross_candidate_map(protected_units=[primary_unit]) or {}
+                        support_candidates = list(refreshed.get(unit_key, []) or [])
+                    except Exception:
+                        support_candidates = []
+                if not support_candidates:
+                    logger.info("Double-Cross: no support unit available")
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=support_candidates,
+                    on_chosen=lambda support: self._finalize_admech_rad_zone_stratagem(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        support,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select support unit for {name}.",
+                    title=name,
+                    subtitle="Friendly Drukhari non-Vehicle unit; only attacks from models within Engagement Range will redirect.",
+                    enemy_unit=attacking_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_primary is not None:
+                _after_primary(preset_primary)
+                return
+
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_primary,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select protected unit for {name}.",
+                title=name,
+                subtitle="Kabal or Blades for Hire unit selected as a target by the attacking enemy unit.",
                 enemy_unit=attacking_unit,
                 dialog=self.overwatch_shooter_dialog,
                 allow_skip=True,

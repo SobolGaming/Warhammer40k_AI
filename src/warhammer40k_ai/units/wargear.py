@@ -3415,6 +3415,18 @@ class WargearProfile:
         except (AttributeError, TypeError, ValueError):
             pass
         try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "kabalite_making_a_point_ap_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                ap_bonus, _ap_source = bonus_fn(attacker, target, weapon_profile=self, game=game)
+                if int(ap_bonus or 0):
+                    ap_val -= int(ap_bonus)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 attacker_unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(attacker_unit, "special_rules", None) if attacker_unit is not None else None
@@ -8042,11 +8054,25 @@ class WargearProfile:
                     )
             except Exception:
                 redirected = None
+            if redirected is None:
+                try:
+                    redirect_fn = getattr(target_root, "_apply_drukhari_kabalite_double_cross_redirect", None)
+                    if callable(redirect_fn):
+                        redirected = redirect_fn(
+                            attacker_model=attacker,
+                            attacker_unit=getattr(attacker, "parent_unit", None),
+                            weapon_profile=self,
+                            attack_instance=wound_instance,
+                            game_map=game_map,
+                        )
+                except Exception:
+                    redirected = None
             if redirected is not None:
                 support_unit = redirected.get("support_unit")
                 support_name = getattr(support_unit, "name", "Poxwalkers")
                 destroyed_models = int(redirected.get("destroyed_models", 0) or 0)
                 damage_value = int(redirected.get("damage", 0) or 0)
+                redirect_source = str(redirected.get("source", "") or "Redirect").strip() or "Redirect"
                 self._record_damage_result(
                     attack_result,
                     {
@@ -8060,7 +8086,7 @@ class WargearProfile:
                         "damage_dice_rolls": [],
                         "damage_expression": str(damage_value),
                         "special_effects": [
-                            f"Shambling Wall: redirected into {support_name} ({int(destroyed_models)} model(s) destroyed)"
+                            f"{redirect_source}: redirected into {support_name} ({int(destroyed_models)} model(s) destroyed)"
                         ],
                     },
                 )
@@ -10750,6 +10776,19 @@ class WargearProfile:
                         _add_skill_mod(1, "Combat Drugs: Splintermind +1 BS")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "kabalite_making_a_point_skill_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                skill_bonus, skill_source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(skill_bonus or 0):
+                    source_name = str(skill_source or "Making a Point").strip() or "Making a Point"
+                    _add_skill_mod(int(skill_bonus), f"{source_name}: +{int(skill_bonus)} BS")
+        except Exception:
+            pass
         unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
         army = get_parent_army() if callable(get_parent_army) else None
@@ -13136,6 +13175,19 @@ class WargearProfile:
                 if int(bonus or 0):
                     source_name = str(source or "Quake Supervisor").strip() or "Quake Supervisor"
                     _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "kabalite_taken_alive_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                hit_bonus, hit_source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(hit_bonus or 0):
+                    source_name = str(hit_source or "Taken Alive").strip() or "Taken Alive"
+                    _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source_name}")
         except Exception:
             pass
 
@@ -16530,6 +16582,25 @@ class WargearProfile:
                 if int(threshold or 0):
                     crit_threshold = min(int(crit_threshold), int(threshold))
                     source_name = str(source or "Unforgiven Fury").strip() or "Unforgiven Fury"
+                    crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            threshold_fn = getattr(drukhari_mgr, "kabalite_tailored_toxins_crit_hit_threshold", None) if drukhari_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                threshold, source = threshold_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if int(threshold or 0):
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    source_name = str(source or "Tailored Toxins").strip() or "Tailored Toxins"
                     crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
         except Exception:
             pass

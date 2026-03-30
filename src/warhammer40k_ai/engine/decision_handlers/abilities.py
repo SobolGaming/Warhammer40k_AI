@@ -2678,7 +2678,14 @@ def _validate_choose_murderous_agenda(game: object, request: DecisionRequest, re
     validate_fn = getattr(mgr, "murderous_agenda_selection_is_valid", None)
     if callable(validate_fn):
         player = getattr(army, "player", None)
-        valid, reason = validate_fn(contract_key, target_unit_id, game=game, player=player)
+        ctx = dict(getattr(request, "context", {}) or {})
+        valid, reason = validate_fn(
+            contract_key,
+            target_unit_id,
+            game=game,
+            player=player,
+            allow_reselect=bool(ctx.get("allow_reselect", False)),
+        )
         if not valid:
             return (str(reason or "Murderous Agenda selection is invalid."),)
     return ()
@@ -2695,13 +2702,22 @@ def _apply_choose_murderous_agenda(game: object, request: DecisionRequest, resul
     if mgr is None:
         raise RuntimeError("Murderous Agenda manager not found.")
 
+    ctx = dict(getattr(request, "context", {}) or {})
     contract_key = payload.get("contract_key") or payload.get("choice_key") or payload.get("key")
     target_unit_id = payload.get("target_unit_id")
     select_fn = getattr(mgr, "select_murderous_agenda", None)
     player = getattr(army, "player", None)
     if not callable(select_fn):
         raise RuntimeError("Murderous Agenda selector not found.")
-    applied = bool(select_fn(contract_key, target_unit_id, game=game, player=player))
+    applied = bool(
+        select_fn(
+            contract_key,
+            target_unit_id,
+            game=game,
+            player=player,
+            allow_reselect=bool(ctx.get("allow_reselect", False)),
+        )
+    )
 
     try:
         if applied:
@@ -2710,10 +2726,11 @@ def _apply_choose_murderous_agenda(game: object, request: DecisionRequest, resul
             target_label = _option_label(request, result) or str(target_unit_id)
             if target_label:
                 target_label = str(target_label).split(":", 1)[-1].strip() if ":" in str(target_label) else str(target_label)
+            ability_name = str(ctx.get("ability_name", "") or "Murderous Agenda").strip() or "Murderous Agenda"
             _log_action_for_players(
                 game,
                 player,
-                f"Murderous Agenda: {contract_name} -> {target_label or target_unit_id}",
+                f"{ability_name}: {contract_name} -> {target_label or target_unit_id}",
             )
     except Exception:
         pass

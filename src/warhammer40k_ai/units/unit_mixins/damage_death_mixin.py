@@ -2903,6 +2903,61 @@ class DamageDeathMixin:
             "source": "Shambling Wall",
         }
 
+    def _apply_drukhari_kabalite_double_cross_redirect(
+        self,
+        *,
+        attacker_model: Optional['Model'] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        attack_instance: Optional[dict] = None,
+        game_map: Optional['Map'] = None,
+    ) -> Optional[dict]:
+        if attacker_model is None or weapon_profile is None:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        support_fn = getattr(mgr, "kabalite_double_cross_support_unit", None) if mgr is not None else None
+        if not callable(support_fn):
+            return None
+        support_root, _source_name = support_fn(
+            root,
+            attacker_unit=attacker_unit,
+            attacker_model=attacker_model,
+            game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+        )
+        if support_root is None:
+            return None
+        damage_fn = getattr(weapon_profile, "_current_attack_damage_characteristic", None)
+        if not callable(damage_fn):
+            return None
+        damage_value = int(damage_fn(attacker_model, attack_instance or {}) or 0)
+        if damage_value <= 0:
+            return None
+        destroyed_models = int(
+            self._apply_mortal_wounds_to_unit(
+                support_root,
+                int(damage_value),
+                game_map=game_map,
+                attacker_unit=attacker_unit,
+                attacker_model=attacker_model,
+                damage_source="double_cross",
+            )
+            or 0
+        )
+        return {
+            "support_unit": support_root,
+            "damage": int(damage_value),
+            "destroyed_models": int(destroyed_models),
+            "source": "Double-Cross",
+        }
+
     def _apply_mortal_wounds_to_unit(
         self,
         target_unit: 'Unit',

@@ -20,6 +20,24 @@ class DrukhariStratagemMixin:
         return unit
 
     @staticmethod
+    def _drukhari_clear_unit_ability_cache(unit: Any) -> None:
+        if unit is None:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            maybe_root = get_root()
+            if maybe_root is not None:
+                root = maybe_root
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+
+    @staticmethod
     def _drukhari_sort_key(entity: Any) -> str:
         return str(get_entity_id(entity) or "")
 
@@ -641,6 +659,434 @@ class DrukhariStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._drukhari_sort_key)
+
+    def _drukhari_friendly_battlefield_units(self) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            uid = self._drukhari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._drukhari_sort_key)
+
+    def _is_drukhari_kabal_or_blades_for_hire_unit(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None or not self._is_drukhari_unit(root):
+            return False
+        return bool(
+            self._drukhari_has_keyword(root, "KABAL")
+            or self._drukhari_has_keyword(root, "BLADES FOR HIRE")
+        )
+
+    def _is_drukhari_non_vehicle_unit(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None or not self._is_drukhari_unit(root):
+            return False
+        return not bool(self._drukhari_has_keyword(root, "VEHICLE"))
+
+    def _drukhari_kabalite_phase_candidates(
+        self,
+        *,
+        unit_filter,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> list[Any]:
+        if not self._is_drukhari_kabalite_cartel():
+            return []
+        out: list[Any] = []
+        for root in self._drukhari_friendly_battlefield_units():
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if callable(unit_filter) and not bool(unit_filter(root)):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and (
+                bool(getattr(round_state, "fought_this_phase", False))
+                or bool(getattr(round_state, "fought_this_round", False))
+            ):
+                continue
+            out.append(root)
+        return sorted(out, key=self._drukhari_sort_key)
+
+    def _drukhari_kabalite_archon_warlord(self) -> Any:
+        mgr = self._drukhari_detachment_mgr()
+        getter = getattr(mgr, "kabalite_archon_warlord", None) if mgr is not None else None
+        if not callable(getter):
+            return None
+        try:
+            return self._drukhari_root(getter(game=getattr(self, "game", None)))
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def _drukhari_kabalite_contract_target_root(self) -> Any:
+        mgr = self._drukhari_detachment_mgr()
+        if mgr is None:
+            return None
+        if not bool(getattr(mgr, "_murderous_agenda_has_selection", lambda: False)()):
+            return None
+        if bool(getattr(mgr, "murderous_agenda_contract_completed", False)):
+            return None
+        target_id = str(getattr(mgr, "murderous_agenda_contract_target_unit_id", "") or "").strip()
+        if not target_id:
+            return None
+        resolver = getattr(mgr, "_resolve_unit_by_id", None)
+        if not callable(resolver):
+            return None
+        try:
+            resolved = resolver(target_id, game=getattr(self, "game", None))
+        except (AttributeError, TypeError, ValueError):
+            return None
+        root = self._drukhari_root(resolved)
+        if root is None or not self._drukhari_on_battlefield(root):
+            return None
+        return root
+
+    def _drukhari_kabalite_making_a_point_candidates(self) -> list[Any]:
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name != "shooting phase" or active_player is not self.player:
+            return []
+        return self._drukhari_kabalite_phase_candidates(
+            unit_filter=self._is_drukhari_kabalite_warriors_or_hand_of_the_archon_unit,
+            require_not_shot=True,
+        )
+
+    def _drukhari_kabalite_tailored_toxins_candidates(self) -> list[Any]:
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if self._drukhari_kabalite_contract_target_root() is None:
+            return []
+        if phase_name == "shooting phase":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                return []
+            return self._drukhari_kabalite_phase_candidates(
+                unit_filter=self._is_drukhari_kabal_or_blades_for_hire_unit,
+                require_not_shot=True,
+            )
+        if phase_name == "fight phase":
+            return self._drukhari_kabalite_phase_candidates(
+                unit_filter=self._is_drukhari_kabal_or_blades_for_hire_unit,
+                require_not_fought=True,
+            )
+        return []
+
+    def _drukhari_kabalite_taken_alive_candidates(self) -> list[Any]:
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return []
+        return self._drukhari_kabalite_phase_candidates(
+            unit_filter=self._is_drukhari_unit,
+            require_not_fought=True,
+        )
+
+    def _drukhari_kabalite_enemies_without_number_candidates(self) -> list[Any]:
+        if not self._is_drukhari_kabalite_cartel():
+            return []
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "murderous_agenda_reselect_window_active", None) if mgr is not None else None
+        if not callable(checker):
+            return []
+        if not bool(checker(game=getattr(self, "game", None), player=self.player)):
+            return []
+        warlord = self._drukhari_kabalite_archon_warlord()
+        if warlord is None or bool(self._unit_cannot_be_target_of_stratagem(warlord)):
+            return []
+        return [warlord]
+
+    def _drukhari_kabalite_deadly_deceivers_candidates(self, *, target_units: list[Any]) -> list[Any]:
+        out: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._drukhari_root(target)
+            if root is None:
+                continue
+            uid = self._drukhari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_kabal_or_blades_for_hire_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._drukhari_sort_key)
+
+    def _drukhari_kabalite_double_cross_candidate_map(
+        self,
+        *,
+        protected_units: list[Any],
+    ) -> dict[str, list[Any]]:
+        support_pool = self._drukhari_kabalite_phase_candidates(
+            unit_filter=self._is_drukhari_non_vehicle_unit,
+        )
+        out: dict[str, list[Any]] = {}
+        for protected in list(protected_units or []):
+            protected_root = self._drukhari_root(protected)
+            if protected_root is None:
+                continue
+            uid = self._drukhari_sort_key(protected_root)
+            if not uid:
+                continue
+            out[uid] = list(support_pool)
+        return out
+
+    def _queue_drukhari_kabalite_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_drukhari_kabalite_cartel():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player or player is not self.player:
+            return
+        candidates = self._drukhari_kabalite_enemies_without_number_candidates()
+        if not candidates:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ENEMIES WITHOUT NUMBER")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "command phase":
+                continue
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "unit": candidates[0],
+            "target_unit": candidates[0],
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_kabalite_deadly_deceivers_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_drukhari_kabalite_cartel():
+            return
+        attacker_root = self._drukhari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        candidates = self._drukhari_kabalite_deadly_deceivers_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DEADLY DECEIVERS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        attacker_id = self._drukhari_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            reaction_attacker = self._drukhari_root(reaction.get("attacking_unit") or reaction.get("enemy_unit"))
+            if attacker_id and self._drukhari_sort_key(reaction_attacker) == attacker_id:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "phase": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_kabalite_double_cross_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_drukhari_kabalite_cartel():
+            return
+        attacker_root = self._drukhari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        candidates = self._drukhari_kabalite_deadly_deceivers_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        support_by_unit = self._drukhari_kabalite_double_cross_candidate_map(protected_units=candidates)
+        if not any(list(value or []) for value in support_by_unit.values()):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DOUBLE-CROSS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        attacker_id = self._drukhari_sort_key(attacker_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            reaction_attacker = self._drukhari_root(reaction.get("attacking_unit") or reaction.get("enemy_unit"))
+            if attacker_id and self._drukhari_sort_key(reaction_attacker) == attacker_id:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "phase": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "candidates": candidates,
+            "support_candidates_by_unit": support_by_unit,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _resolve_drukhari_kabalite_taken_alive_fight_attacks_resolved(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+    ) -> None:
+        if not self._is_drukhari_kabalite_cartel():
+            return
+        mgr = self._drukhari_detachment_mgr()
+        if mgr is None:
+            return
+        root = self._drukhari_root(unit)
+        if root is None or not self._drukhari_owned_by_player(root, self.player):
+            return
+        effect_state = getattr(mgr, "_kabalite_effect_state", None)
+        if not callable(effect_state):
+            return
+        prefix = getattr(mgr, "_KABALITE_TAKEN_ALIVE_PREFIX", "")
+        effect_root, special_rules, source_name = effect_state(root, prefix=prefix, game=getattr(self, "game", None))
+        if effect_root is None or not isinstance(special_rules, dict):
+            return
+        if bool(special_rules.get(f"{prefix}_battle_shock_triggered", False)):
+            return
+        contract_target_id = str(
+            special_rules.get(f"{prefix}_contract_target_unit_id", "")
+            or getattr(mgr, "murderous_agenda_contract_target_unit_id", "")
+            or ""
+        ).strip()
+        if not contract_target_id:
+            return
+        resolved_target = self._drukhari_root(target_unit)
+        if resolved_target is not None and self._drukhari_sort_key(resolved_target) != contract_target_id:
+            return
+        resolve_target = getattr(mgr, "_resolve_unit_by_id", None)
+        if callable(resolve_target):
+            try:
+                resolved_target = resolve_target(contract_target_id, game=getattr(self, "game", None))
+            except (AttributeError, TypeError, ValueError):
+                resolved_target = target_unit
+        target_destroyed = getattr(mgr, "_murderous_agenda_target_destroyed", None)
+        if callable(target_destroyed):
+            if not bool(target_destroyed(resolved_target)):
+                return
+        elif resolved_target is not None and self._drukhari_is_alive(self._drukhari_root(resolved_target)):
+            return
+        special_rules[f"{prefix}_battle_shock_triggered"] = True
+        effect_root.special_rules = special_rules
+        self._drukhari_clear_unit_ability_cache(effect_root)
+
+        game = getattr(self, "game", None)
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        source_label = str(source_name or "Taken Alive").strip() or "Taken Alive"
+        get_enemy_units = getattr(game, "get_enemy_units", None) if game is not None else None
+        enemy_pool = list(get_enemy_units(self.player) or []) if callable(get_enemy_units) else []
+        tested = 0
+        seen: set[str] = set()
+        for enemy in list(enemy_pool or []):
+            enemy_root = self._drukhari_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._drukhari_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            if not self._drukhari_on_battlefield(enemy_root):
+                continue
+            mark_fn = getattr(mgr, "mark_taken_alive_battle_shock", None)
+            if callable(mark_fn):
+                mark_fn(enemy_root, game=game, source=source_label)
+            force_test = getattr(enemy_root, "force_battle_shock_test", None)
+            if callable(force_test):
+                try:
+                    force_test(
+                        current_turn=max(1, int(current_turn)),
+                        modifier=0,
+                        source=source_label,
+                    )
+                    tested += 1
+                    continue
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                try:
+                    take_test(max(1, int(current_turn)))
+                    tested += 1
+                except (AttributeError, TypeError, ValueError):
+                    continue
+        logger.info(
+            "INFO: TAKEN ALIVE: %s forced %d Battle-shock test(s).",
+            getattr(root, "name", "Unit"),
+            int(tested),
+        )
 
     def _queue_drukhari_skysplinter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_drukhari_skysplinter_assault():
@@ -1893,6 +2339,58 @@ class DrukhariStratagemMixin:
             )
         self._drukhari_postmortality_pending_returns()[:] = remaining_returns
 
+    def _cleanup_drukhari_kabalite_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_drukhari_kabalite_cartel():
+            return
+        phase_key = self._drukhari_phase_key_from_name(getattr(phase, "name", "") or "")
+        prefixes: tuple[str, ...] = ()
+        if phase_key == "SHOOTING_PHASE":
+            prefixes = (
+                "drukhari_kabalite_making_a_point",
+                "drukhari_kabalite_tailored_toxins",
+                "drukhari_kabalite_deadly_deceivers",
+            )
+        elif phase_key == "FIGHT_PHASE":
+            prefixes = (
+                "drukhari_kabalite_tailored_toxins",
+                "drukhari_kabalite_taken_alive",
+                "drukhari_kabalite_double_cross",
+            )
+        else:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            root_id = self._drukhari_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in list(sr.keys()):
+                if any(str(key).startswith(f"{prefix}_") for prefix in prefixes):
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+                self._drukhari_clear_unit_ability_cache(root)
+        if phase_key == "FIGHT_PHASE":
+            mgr = self._drukhari_detachment_mgr()
+            if mgr is not None:
+                try:
+                    mgr.kabalite_taken_alive_failed_test_count = 0
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
     def _cleanup_drukhari_covenite_phase_end_effects(self, *, phase: Any) -> None:
         phase_key = self._drukhari_phase_key_from_name(getattr(phase, "name", "") or "")
         if phase_key != "FIGHT_PHASE":
@@ -1924,6 +2422,18 @@ class DrukhariStratagemMixin:
 
     def _use_drukhari_skysplinter_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DEADLY DECEIVERS":
+            return self._use_drukhari_kabalite_deadly_deceivers(stratagem, **kwargs)
+        if name_u == "DOUBLE-CROSS":
+            return self._use_drukhari_kabalite_double_cross(stratagem, **kwargs)
+        if name_u == "ENEMIES WITHOUT NUMBER":
+            return self._use_drukhari_kabalite_enemies_without_number(stratagem, **kwargs)
+        if name_u == "MAKING A POINT":
+            return self._use_drukhari_kabalite_making_a_point(stratagem, **kwargs)
+        if name_u == "TAILORED TOXINS":
+            return self._use_drukhari_kabalite_tailored_toxins(stratagem, **kwargs)
+        if name_u == "TAKEN ALIVE":
+            return self._use_drukhari_kabalite_taken_alive(stratagem, **kwargs)
         if name_u == "CONNOISSEURS OF PAIN":
             return self._use_drukhari_covenite_connoisseurs_of_pain(stratagem, **kwargs)
         if name_u == "DISTILLERS OF FEAR":
@@ -1949,6 +2459,502 @@ class DrukhariStratagemMixin:
         if name_u == "WRAITHLIKE RETREAT":
             return self._use_drukhari_skysplinter_wraithlike_retreat(stratagem, **kwargs)
         return None
+
+    def _use_drukhari_kabalite_making_a_point(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._drukhari_kabalite_making_a_point_candidates() or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MAKING A POINT: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: MAKING A POINT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: MAKING A POINT: not your Shooting phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MAKING A POINT: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: MAKING A POINT: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: MAKING A POINT: target cannot be selected")
+            return False
+        if not self._is_drukhari_kabalite_warriors_or_hand_of_the_archon_unit(root):
+            logger.error("ERROR: MAKING A POINT: target must be Kabalite Warriors or Hand of the Archon")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: MAKING A POINT: target has already shot this phase")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        resolve_owner = getattr(mgr, "_resolve_owner_and_turn", None) if mgr is not None else None
+        if callable(resolve_owner):
+            owner_id, turn = resolve_owner(game=getattr(self, "game", None))
+        else:
+            owner_id = str(getattr(self.player, "id", "") or "")
+            turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_kabalite_making_a_point_active"] = True
+        sr["drukhari_kabalite_making_a_point_source"] = str(getattr(stratagem, "name", "MAKING A POINT") or "MAKING A POINT")
+        sr["drukhari_kabalite_making_a_point_expires_phase"] = "SHOOTING_PHASE"
+        sr["drukhari_kabalite_making_a_point_turn_owner"] = owner_id
+        sr["drukhari_kabalite_making_a_point_turn"] = int(turn)
+        sr["drukhari_kabalite_making_a_point_skill_bonus"] = 1
+        sr["drukhari_kabalite_making_a_point_ap_bonus"] = 1
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: MAKING A POINT: %s improves ranged BS and AP by 1 until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_kabalite_tailored_toxins(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._drukhari_kabalite_tailored_toxins_candidates() or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TAILORED TOXINS: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: TAILORED TOXINS: wrong phase")
+            return False
+        if phase_name == "shooting phase":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: TAILORED TOXINS: Shooting use requires your turn")
+                return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TAILORED TOXINS: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: TAILORED TOXINS: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: TAILORED TOXINS: target cannot be selected")
+            return False
+        if not self._is_drukhari_kabal_or_blades_for_hire_unit(root):
+            logger.error("ERROR: TAILORED TOXINS: target must be a Kabal or Blades for Hire unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: TAILORED TOXINS: target has already shot this phase")
+            return False
+        if phase_name == "fight phase" and (
+            bool(getattr(round_state, "fought_this_phase", False))
+            or bool(getattr(round_state, "fought_this_round", False))
+        ):
+            logger.error("ERROR: TAILORED TOXINS: target has already fought this phase")
+            return False
+        contract_target = self._drukhari_kabalite_contract_target_root()
+        if contract_target is None:
+            logger.error("ERROR: TAILORED TOXINS: no active Contract target")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        resolve_owner = getattr(mgr, "_resolve_owner_and_turn", None) if mgr is not None else None
+        if callable(resolve_owner):
+            owner_id, turn = resolve_owner(game=getattr(self, "game", None))
+        else:
+            owner_id = str(getattr(self.player, "id", "") or "")
+            turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        phase_key = self._drukhari_phase_key_from_name(phase_name)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_kabalite_tailored_toxins_active"] = True
+        sr["drukhari_kabalite_tailored_toxins_source"] = str(getattr(stratagem, "name", "TAILORED TOXINS") or "TAILORED TOXINS")
+        sr["drukhari_kabalite_tailored_toxins_expires_phase"] = phase_key
+        sr["drukhari_kabalite_tailored_toxins_turn_owner"] = owner_id
+        sr["drukhari_kabalite_tailored_toxins_turn"] = int(turn)
+        sr["drukhari_kabalite_tailored_toxins_contract_target_unit_id"] = self._drukhari_sort_key(contract_target)
+        sr["drukhari_kabalite_tailored_toxins_crit_hit_threshold"] = 5
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: TAILORED TOXINS: %s scores critical hits on 5+ against the Contract unit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_kabalite_taken_alive(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._drukhari_kabalite_taken_alive_candidates() or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TAKEN ALIVE: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: TAKEN ALIVE: wrong phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TAKEN ALIVE: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: TAKEN ALIVE: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: TAKEN ALIVE: target cannot be selected")
+            return False
+        if not self._is_drukhari_unit(root):
+            logger.error("ERROR: TAKEN ALIVE: target must be a Drukhari unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)) or bool(
+            getattr(getattr(root, "round_state", None), "fought_this_round", False)
+        ):
+            logger.error("ERROR: TAKEN ALIVE: target has already fought this phase")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        resolve_owner = getattr(mgr, "_resolve_owner_and_turn", None) if mgr is not None else None
+        if callable(resolve_owner):
+            owner_id, turn = resolve_owner(game=getattr(self, "game", None))
+        else:
+            owner_id = str(getattr(self.player, "id", "") or "")
+            turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        contract_target = self._drukhari_kabalite_contract_target_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_kabalite_taken_alive_active"] = True
+        sr["drukhari_kabalite_taken_alive_source"] = str(getattr(stratagem, "name", "TAKEN ALIVE") or "TAKEN ALIVE")
+        sr["drukhari_kabalite_taken_alive_expires_phase"] = "FIGHT_PHASE"
+        sr["drukhari_kabalite_taken_alive_turn_owner"] = owner_id
+        sr["drukhari_kabalite_taken_alive_turn"] = int(turn)
+        sr["drukhari_kabalite_taken_alive_hit_bonus"] = 1
+        sr["drukhari_kabalite_taken_alive_battle_shock_triggered"] = False
+        sr["drukhari_kabalite_taken_alive_contract_target_unit_id"] = (
+            self._drukhari_sort_key(contract_target) if contract_target is not None else ""
+        )
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if mgr is not None:
+            try:
+                mgr.kabalite_taken_alive_failed_test_count = 0
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: TAKEN ALIVE: %s gains +1 to Hit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_kabalite_deadly_deceivers(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DEADLY DECEIVERS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DEADLY DECEIVERS: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        attacker_root = self._drukhari_root(attacker_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DEADLY DECEIVERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DEADLY DECEIVERS: only in your opponent's Shooting phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DEADLY DECEIVERS: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: DEADLY DECEIVERS: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DEADLY DECEIVERS: target cannot be selected")
+            return False
+        if not self._is_drukhari_kabal_or_blades_for_hire_unit(root):
+            logger.error("ERROR: DEADLY DECEIVERS: target must be a Kabal or Blades for Hire unit")
+            return False
+        if self._drukhari_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: DEADLY DECEIVERS: attacking unit must be enemy")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        resolve_owner = getattr(mgr, "_resolve_owner_and_turn", None) if mgr is not None else None
+        if callable(resolve_owner):
+            owner_id, turn = resolve_owner(game=getattr(self, "game", None))
+        else:
+            owner_id = ""
+            turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_kabalite_deadly_deceivers_active"] = True
+        sr["drukhari_kabalite_deadly_deceivers_source"] = str(
+            getattr(stratagem, "name", "DEADLY DECEIVERS") or "DEADLY DECEIVERS"
+        )
+        sr["drukhari_kabalite_deadly_deceivers_expires_phase"] = "SHOOTING_PHASE"
+        sr["drukhari_kabalite_deadly_deceivers_turn_owner"] = owner_id
+        sr["drukhari_kabalite_deadly_deceivers_turn"] = int(turn)
+        sr["drukhari_kabalite_deadly_deceivers_targeting_range"] = 18.0
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: DEADLY DECEIVERS: %s can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_kabalite_double_cross(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        support_unit = kwargs.get("support_unit") or kwargs.get("secondary_unit")
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        support_by_unit = dict(kwargs.get("support_candidates_by_unit") or {})
+        if unit is None or support_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DOUBLE-CROSS":
+                    continue
+                unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not support_by_unit:
+                    support_by_unit = dict(reaction.get("support_candidates_by_unit") or {})
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._drukhari_root(unit)
+        attacker_root = self._drukhari_root(attacker_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: DOUBLE-CROSS: missing protected unit or attacker context")
+            return False
+        if support_unit is None:
+            support_candidates = list(support_by_unit.get(self._drukhari_sort_key(root), []) or [])
+            if len(support_candidates) == 1:
+                support_unit = support_candidates[0]
+        support_root = self._drukhari_root(support_unit)
+        if support_root is None:
+            logger.error("ERROR: DOUBLE-CROSS: no support unit selected")
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DOUBLE-CROSS: wrong phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DOUBLE-CROSS: protected unit is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: DOUBLE-CROSS: protected unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DOUBLE-CROSS: protected unit cannot be selected")
+            return False
+        if not self._is_drukhari_kabal_or_blades_for_hire_unit(root):
+            logger.error("ERROR: DOUBLE-CROSS: protected unit must be a Kabal or Blades for Hire unit")
+            return False
+        if self._drukhari_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: DOUBLE-CROSS: attacking unit must be enemy")
+            return False
+        if not self._drukhari_owned_by_player(support_root, self.player):
+            logger.error("ERROR: DOUBLE-CROSS: support unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(support_root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(support_root)):
+            logger.error("ERROR: DOUBLE-CROSS: support unit cannot be selected")
+            return False
+        if not self._is_drukhari_non_vehicle_unit(support_root):
+            logger.error("ERROR: DOUBLE-CROSS: support unit must be a non-Vehicle Drukhari unit")
+            return False
+        support_candidates = list(support_by_unit.get(self._drukhari_sort_key(root), []) or [])
+        if support_candidates and not self._drukhari_unit_in_candidates(support_root, support_candidates):
+            logger.error("ERROR: DOUBLE-CROSS: support unit is not currently eligible")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        resolve_owner = getattr(mgr, "_resolve_owner_and_turn", None) if mgr is not None else None
+        if callable(resolve_owner):
+            owner_id, turn = resolve_owner(game=getattr(self, "game", None))
+        else:
+            owner_id = ""
+            turn = int(getattr(getattr(self, "game", None), "turn", 0) or 0)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_kabalite_double_cross_active"] = True
+        sr["drukhari_kabalite_double_cross_source"] = str(getattr(stratagem, "name", "DOUBLE-CROSS") or "DOUBLE-CROSS")
+        sr["drukhari_kabalite_double_cross_expires_phase"] = "FIGHT_PHASE"
+        sr["drukhari_kabalite_double_cross_turn_owner"] = owner_id
+        sr["drukhari_kabalite_double_cross_turn"] = int(turn)
+        sr["drukhari_kabalite_double_cross_support_unit_id"] = self._drukhari_sort_key(support_root)
+        sr["drukhari_kabalite_double_cross_attacker_unit_id"] = self._drukhari_sort_key(attacker_root)
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        self._drukhari_clear_unit_ability_cache(support_root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: DOUBLE-CROSS: %s redirects qualifying attacks into %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(support_root, "name", "Support Unit"),
+        )
+        return True
+
+    def _use_drukhari_kabalite_enemies_without_number(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_kabalite_cartel():
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        if mgr is None:
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or self._drukhari_kabalite_enemies_without_number_candidates() or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ENEMIES WITHOUT NUMBER":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: no Archon WARLORD provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: not your Command phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: target cannot be selected")
+            return False
+        if self._drukhari_root(root) is not self._drukhari_root(self._drukhari_kabalite_archon_warlord()):
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: target must be your Archon WARLORD")
+            return False
+        checker = getattr(mgr, "murderous_agenda_reselect_window_active", None)
+        if not callable(checker) or not bool(checker(game=getattr(self, "game", None), player=self.player)):
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: no Contract was just completed this Command phase")
+            return False
+        build_request = getattr(mgr, "build_murderous_agenda_request", None)
+        if not callable(build_request):
+            return False
+        request = build_request(
+            game=getattr(self, "game", None),
+            player=self.player,
+            allow_reselect=True,
+            ability="murderous_agenda",
+            ability_name=str(getattr(stratagem, "name", "ENEMIES WITHOUT NUMBER") or "ENEMIES WITHOUT NUMBER"),
+            source_unit_id=self._drukhari_sort_key(root),
+        )
+        if request is None:
+            logger.error("ERROR: ENEMIES WITHOUT NUMBER: no valid Contract re-selection request could be created")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        request_decision = getattr(getattr(self, "game", None), "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+        else:
+            queue = getattr(getattr(self, "game", None), "decision_queue", None)
+            if queue is None or not hasattr(queue, "add"):
+                logger.error("ERROR: ENEMIES WITHOUT NUMBER: decision queue unavailable")
+                return False
+            queue.add(request)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: ENEMIES WITHOUT NUMBER: %s may select a new Murderous Agenda Contract.",
+            getattr(root, "name", "Archon"),
+        )
+        return True
 
     def _use_drukhari_covenite_connoisseurs_of_pain(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_drukhari_covenite_coterie():

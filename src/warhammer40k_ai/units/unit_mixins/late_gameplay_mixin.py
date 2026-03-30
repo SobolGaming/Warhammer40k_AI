@@ -4677,6 +4677,13 @@ class LateGameplayMixin:
             dist, source = localised_limit_fn(root, game_map=game_map)
             if float(dist or 0.0) > 0.0:
                 _consider(float(dist), source or "Integrated Command Structure")
+        drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        deadly_limit_fn = getattr(drukhari_mgr, "kabalite_deadly_deceivers_range_limit", None) if drukhari_mgr is not None else None
+        if callable(deadly_limit_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            dist, source = deadly_limit_fn(root, game=game)
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Deadly Deceivers")
 
         try:
             sr = getattr(root, "special_rules", None)

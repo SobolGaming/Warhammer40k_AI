@@ -4887,6 +4887,92 @@ _COVENITE_COTERIE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COVENITE_COTERIE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_KABALITE_CARTEL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010589007": StratagemToolDescriptor(
+        stratagem_id="000010589007",
+        name="Deadly Deceivers",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="friendly_kabal_or_blades_for_hire_unit_targeted_by_enemy_shooting",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        effect_params={
+            "max_targeting_distance": 18,
+            "attack_type": "ranged",
+        },
+    ),
+    "000010589002": StratagemToolDescriptor(
+        stratagem_id="000010589002",
+        name="Double-Cross",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="friendly_kabal_or_blades_for_hire_unit_targeted_in_fight_and_one_friendly_drukhari_non_vehicle_support_unit",
+        duration="until_end_of_phase",
+        effect="redirect_pre_save_damage_to_support_unit_as_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "support_unit_keywords_all": ["DRUKHARI"],
+            "support_unit_keywords_none": ["VEHICLE"],
+            "requires_support_unit_within_engagement_range_of_attacking_model": True,
+        },
+    ),
+    "000010589005": StratagemToolDescriptor(
+        stratagem_id="000010589005",
+        name="Enemies Without Number",
+        timing="your_command_phase_after_contract_completed",
+        target="archon_warlord_that_completed_contract",
+        duration="until_next_contract_completed",
+        effect="reselect_murderous_agenda_contract",
+        cp_cost=1,
+        effect_params={
+            "allow_reselect_completed_contract": True,
+        },
+    ),
+    "000010589006": StratagemToolDescriptor(
+        stratagem_id="000010589006",
+        name="Making a Point",
+        timing="your_shooting_phase",
+        target="kabalite_warriors_or_hand_of_the_archon_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="ranged_ballistic_skill_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "ballistic_skill_bonus": 1,
+            "ap_bonus": 1,
+        },
+    ),
+    "000010589004": StratagemToolDescriptor(
+        stratagem_id="000010589004",
+        name="Tailored Toxins",
+        timing="shooting_or_fight_phase_before_friendly_unit_selected",
+        target="friendly_kabal_or_blades_for_hire_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="contract_target_crit_hits_on_five_plus",
+        cp_cost=1,
+        effect_params={
+            "crit_hit_threshold": 5,
+            "requires_active_contract_target": True,
+        },
+    ),
+    "000010589003": StratagemToolDescriptor(
+        stratagem_id="000010589003",
+        name="Taken Alive",
+        timing="fight_phase_before_friendly_unit_selected_to_fight",
+        target="friendly_drukhari_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_hit_bonus_and_enemy_battleshock_if_contract_destroyed",
+        cp_cost=1,
+        effect_params={
+            "hit_bonus": 1,
+            "battle_shock_on_contract_destroyed": True,
+            "max_pain_tokens_from_failed_tests": 3,
+        },
+    ),
+}
+
+_KABALITE_CARTEL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _KABALITE_CARTEL_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010577006": StratagemToolDescriptor(
         stratagem_id="000010577006",
@@ -10866,6 +10952,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COVENITE_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _KABALITE_CARTEL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11141,6 +11230,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _REAPERS_WAGER_STRATAGEM_BY_NAME.get(key)
         or _COVENITE_COTERIE_STRATAGEM_BY_NAME.get(key)
+        or _KABALITE_CARTEL_STRATAGEM_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
