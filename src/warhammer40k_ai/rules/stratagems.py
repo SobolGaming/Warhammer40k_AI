@@ -432,8 +432,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
+    "SHORTEN THE ODDS",
     "SCINTILLATING TEMPO",
     "SPEAR THRUST AND SABRE SWING",
+    "MALICIOUS FRENZY",
+    "FATEFUL ROLE",
     "PINNING FIRE",
     "THUNDEROUS PURSUIT",
     "TO THEIR FINAL BREATH",
@@ -455,6 +458,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TACTICAL FOIL",
     "TACTICAL MASTERY",
     "TALON STRIKE",
+    "DANCE MACABRE",
     "THUNDERSTOMP",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
@@ -2056,6 +2060,8 @@ class StratagemManager(
             "LETHAL RUSE",
             "MOCKING FLIGHT",
             "SWOOPING MOCKERY",
+            "DANCE MACABRE",
+            "SHORTEN THE ODDS",
             "ISHA'S FURY",
             "ISHA\u2019S FURY",
             "WEAVING STRIDE",
@@ -2444,6 +2450,7 @@ class StratagemManager(
             "EMP GRENADES",
             "DOUBLE-CROSS",
             "FIGHTING SHADOWS",
+            "FATEFUL ROLE",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -11615,6 +11622,7 @@ class StratagemManager(
         self._track_a_challenge_met_move(unit, action)
         self._maybe_queue_overwatch(unit, action, when='end')
         self._queue_tau_kroot_move_end_reactions(unit=unit, action=action)
+        self._queue_drukhari_reapers_wager_move_end_reactions(unit=unit, action=action)
         self._queue_drukhari_skysplinter_move_end_reactions(unit=unit, action=action)
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
@@ -14089,6 +14097,13 @@ class StratagemManager(
             raise
         try:
             self._queue_drukhari_covenite_connoisseurs_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_reapers_wager_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

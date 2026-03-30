@@ -5052,6 +5052,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
             return ("Never Outgunned choice must be LETHAL_HITS or SUSTAINED_HITS_1.",)
         return ()
+    if ability == "drukhari_reapers_wager_malicious_frenzy_choice":
+        if is_skip_choice(request, result):
+            return ("Malicious Frenzy selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Malicious Frenzy army not found.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_reapers_wager", lambda: False)()):
+            return ("Malicious Frenzy requires Reaper's Wager.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "").strip()
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_player_id and current_player_id != turn_owner_id:
+                return ("Malicious Frenzy selection is no longer valid.")
+        expected_phase = str(ctx.get("phase_name", "") or "").strip().replace("_", " ").upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().replace("_", " ").upper()
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return ("Malicious Frenzy can only be selected in the phase it was used.")
+        try:
+            request_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            request_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if request_turn and current_turn and request_turn != current_turn:
+            return ("Malicious Frenzy selection is no longer valid.")
+        unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if unit is None:
+            return ("Malicious Frenzy target unit was not found.")
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return ("Malicious Frenzy target unit was not found.")
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return ("Malicious Frenzy target unit is no longer alive.")
+        if not bool(getattr(root, "deployed", True)):
+            return ("Malicious Frenzy target unit is no longer on the battlefield.")
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return ("Malicious Frenzy target unit is no longer on the battlefield.")
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return ("Malicious Frenzy target unit is no longer on the battlefield.")
+        if expected_phase == "SHOOTING PHASE" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            return ("Malicious Frenzy target has already been selected to shoot this phase.")
+        if expected_phase == "FIGHT PHASE" and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            return ("Malicious Frenzy target has already been selected to fight this phase.")
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return ("Malicious Frenzy selection requires choice_key.",)
+        available = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if available and choice_key not in available:
+            return ("Malicious Frenzy choice is not in this request's candidate list.",)
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return ("Malicious Frenzy choice must be LETHAL_HITS or SUSTAINED_HITS_1.",)
+        return ()
     if ability == "renegade_warband_vendetta_target":
         if is_skip_choice(request, result):
             return ("Vendetta target selection cannot be skipped.",)
@@ -14093,6 +14155,58 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if not choice_key:
             return None
         ability_name = str(ctx.get("ability_name", "") or "Never Outgunned").strip() or "Never Outgunned"
+        phase_name = str(ctx.get("phase_name", "") or getattr(getattr(game, "phase", None), "name", "") or "").strip()
+        outcome = apply_fn(
+            root,
+            choice_key=choice_key,
+            phase_name=phase_name,
+            source=ability_name,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        unit_name = str(getattr(root, "name", "Unit") or "Unit")
+        keyword = str(outcome.get("keyword", choice_key) or choice_key).strip() or choice_key
+        attack_type = str(outcome.get("attack_type", "") or "selected").strip() or "selected"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} gained [{keyword}] on {attack_type} weapons until end of phase.",
+        )
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+            "choice_key": choice_key,
+            "choice_name": str(outcome.get("choice_name", keyword) or keyword),
+            "keyword": keyword,
+            "attack_type": attack_type,
+        }
+    if ability == "drukhari_reapers_wager_malicious_frenzy_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        if player is None:
+            return None
+        stratagems = getattr(player, "stratagems", None)
+        apply_fn = getattr(stratagems, "apply_drukhari_reapers_wager_malicious_frenzy", None)
+        if not callable(apply_fn):
+            return None
+        unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if unit is None:
+            return None
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return None
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "MALICIOUS FRENZY").strip() or "MALICIOUS FRENZY"
         phase_name = str(ctx.get("phase_name", "") or getattr(getattr(game, "phase", None), "name", "") or "").strip()
         outcome = apply_fn(
             root,

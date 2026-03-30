@@ -4782,6 +4782,43 @@ _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME = {
 }
 
 _REAPERS_WAGER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009782002": StratagemToolDescriptor(
+        stratagem_id="000009782002",
+        name="MALICIOUS FRENZY",
+        timing="shooting_or_fight_phase_before_friendly_unit_selected",
+        target="drukhari_or_harlequins_unit_not_selected_this_phase",
+        duration="until_end_of_phase",
+        effect="choose_temporary_weapon_keyword_bonus",
+        cp_cost=1,
+        effect_params={
+            "choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            "attack_type_by_phase": {"shooting": "ranged", "fight": "melee"},
+        },
+    ),
+    "000009782003": StratagemToolDescriptor(
+        stratagem_id="000009782003",
+        name="FATEFUL ROLE",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="drukhari_or_harlequins_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={
+            "threshold": 4,
+            "roll_modifier_if_losing_wager": 1,
+            "trigger": "after_attacker_finishes_attacks",
+        },
+    ),
+    "000009782005": StratagemToolDescriptor(
+        stratagem_id="000009782005",
+        name="SHORTEN THE ODDS",
+        timing="movement_phase_after_friendly_unit_advances",
+        target="drukhari_or_harlequins_unit_that_advanced",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance",
+        cp_cost=1,
+        effect_params={"shoot_after_advance": True, "charge_after_advance": True},
+    ),
     "000009782006": StratagemToolDescriptor(
         stratagem_id="000009782006",
         name="SCINTILLATING TEMPO",
@@ -4793,6 +4830,22 @@ _REAPERS_WAGER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect_params={
             "prevents_stratagem": "FIRE OVERWATCH",
             "triggers": ["normal_move", "advance", "fall_back", "set_up", "declare_charge"],
+        },
+    ),
+    "000009782007": StratagemToolDescriptor(
+        stratagem_id="000009782007",
+        name="DANCE MACABRE",
+        timing="opponent_movement_phase_after_enemy_unit_ends_move",
+        target="drukhari_or_harlequins_infantry_unit_within_9_of_enemy",
+        duration="immediate",
+        effect="reactive_move",
+        cp_cost=2,
+        effect_params={
+            "movement_type": "normal",
+            "range_inches": "D6",
+            "range_if_losing_wager": 6,
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+            "range_limit_to_enemy": 9,
         },
     ),
 }

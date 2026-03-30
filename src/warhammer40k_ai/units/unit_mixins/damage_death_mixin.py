@@ -1771,6 +1771,7 @@ class DamageDeathMixin:
                         return
                     roll = int(get_roll("D6"))
                     total = int(roll)
+                    roll_modifier = int(rule.get("roll_modifier", 0) or 0)
                     fortify_bonus = int(rule.get("fortify_takeover_bonus", 0) or 0)
                     if fortify_bonus > 0:
                         try:
@@ -1781,9 +1782,11 @@ class DamageDeathMixin:
                         if mgr is not None and callable(getattr(mgr, "is_fortify_takeover", None)):
                             try:
                                 if mgr.is_fortify_takeover():
-                                    total += int(fortify_bonus)
+                                    roll_modifier += int(fortify_bonus)
                             except Exception:
                                 pass
+                    if roll_modifier:
+                        total += int(roll_modifier)
                     try:
                         from ...utility.event_bus import append_dice
                         pn = self.get_parent_army().player

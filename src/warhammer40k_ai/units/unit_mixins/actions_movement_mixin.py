@@ -18120,6 +18120,12 @@ class ActionsMovementMixin:
                 root = self
             sr = getattr(root, "special_rules", None)
             found = bool(isinstance(sr, dict) and sr.get("space_marines_lost_brethren_wrathful_rampage_shoot_after_advance"))
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="drukhari_reapers_wager_shorten_the_odds_active",
+            owner_key="drukhari_reapers_wager_shorten_the_odds_turn_owner",
+            turn_key="drukhari_reapers_wager_shorten_the_odds_turn",
+        ):
+            found = True
         else:
             found = self._has_simple_eligibility_rule([
                 "eligible to shoot in a turn in which it advanced",
@@ -18197,6 +18203,12 @@ class ActionsMovementMixin:
             active_key="space_marines_lost_brethren_wrathful_rampage_active",
             owner_key="space_marines_lost_brethren_wrathful_rampage_turn_owner",
             turn_key="space_marines_lost_brethren_wrathful_rampage_turn",
+        ):
+            found = True
+        elif self._thousand_sons_rubricae_stratagem_active(
+            active_key="drukhari_reapers_wager_shorten_the_odds_active",
+            owner_key="drukhari_reapers_wager_shorten_the_odds_turn_owner",
+            turn_key="drukhari_reapers_wager_shorten_the_odds_turn",
         ):
             found = True
         else:

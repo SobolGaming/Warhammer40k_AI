@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from ..engine.decisions import DecisionOption, DecisionRequest
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
@@ -115,6 +117,15 @@ class DrukhariStratagemMixin:
         if root is None or not self._is_drukhari_unit(root):
             return False
         return self._drukhari_has_keyword(root, "INFANTRY")
+
+    def _is_harlequins_infantry(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None or not self._is_harlequins_unit(root):
+            return False
+        return self._drukhari_has_keyword(root, "INFANTRY")
+
+    def _is_drukhari_or_harlequins_infantry(self, unit: Any) -> bool:
+        return self._is_drukhari_infantry(unit) or self._is_harlequins_infantry(unit)
 
     def _is_drukhari_transport(self, unit: Any) -> bool:
         root = self._drukhari_root(unit)
@@ -238,8 +249,139 @@ class DrukhariStratagemMixin:
             or getattr(round_state, "fell_back_this_round", False)
         )
 
+    def _drukhari_reapers_wager_callous_competition_side(self, unit: Any) -> str:
+        root = self._drukhari_root(unit)
+        if root is None or not self._is_drukhari_reapers_wager():
+            return ""
+        mgr = self._drukhari_detachment_mgr()
+        resolver = getattr(mgr, "_unit_side_for_callous_competition", None) if mgr is not None else None
+        if callable(resolver):
+            side = str(resolver(root) or "").strip().upper()
+            if side:
+                return side
+        if self._is_harlequins_unit(root):
+            return "HARLEQUINS"
+        if self._is_drukhari_unit(root):
+            return "DRUKHARI"
+        return ""
+
+    def _drukhari_reapers_wager_unit_is_losing(self, unit: Any) -> bool:
+        side = self._drukhari_reapers_wager_callous_competition_side(unit)
+        if not side:
+            return False
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "callous_competition_side_is_losing", None) if mgr is not None else None
+        return bool(checker(side)) if callable(checker) else False
+
     def _drukhari_normalized_phase_name(self, phase_name: str) -> str:
         return str(phase_name or "").strip().replace("_", " ").lower()
+
+    @staticmethod
+    def _drukhari_reapers_wager_malicious_frenzy_choice_key(choice_payload: Any) -> str:
+        text = str(choice_payload or "").strip().upper().replace(" ", "_")
+        if text == "LETHAL_HITS":
+            return "LETHAL_HITS"
+        if text in {"SUSTAINED_HITS", "SUSTAINED_HITS_1"}:
+            return "SUSTAINED_HITS_1"
+        return ""
+
+    @classmethod
+    def _drukhari_reapers_wager_malicious_frenzy_choice_label(cls, choice_key: str) -> str:
+        choice = cls._drukhari_reapers_wager_malicious_frenzy_choice_key(choice_key)
+        if choice == "LETHAL_HITS":
+            return "Lethal Hits"
+        if choice == "SUSTAINED_HITS_1":
+            return "Sustained Hits 1"
+        return ""
+
+    def _drukhari_unit_has_weapon_of_attack_type(self, unit: Any, *, attack_type: str) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+        predicate_name = "is_ranged" if str(attack_type or "").strip().lower() == "ranged" else "is_melee"
+        for model in list(models or []):
+            if model is None:
+                continue
+            is_alive_attr = getattr(model, "is_alive", True)
+            if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                predicate = getattr(wargear, predicate_name, None)
+                if callable(predicate) and bool(predicate()):
+                    return True
+        return False
+
+    def apply_drukhari_reapers_wager_malicious_frenzy(
+        self,
+        unit: Any,
+        *,
+        choice_key: str,
+        phase_name: str,
+        source: str = "MALICIOUS FRENZY",
+    ) -> dict:
+        root = self._drukhari_root(unit)
+        choice = self._drukhari_reapers_wager_malicious_frenzy_choice_key(choice_key)
+        phase_key = self._drukhari_normalized_phase_name(phase_name)
+        if root is None:
+            return {"ok": False, "reason": "Unit not found."}
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return {"ok": False, "reason": "Choice is invalid."}
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return {"ok": False, "reason": "Phase is invalid."}
+
+        keyword = "LETHAL HITS" if choice == "LETHAL_HITS" else "SUSTAINED HITS 1"
+        attack_type = "ranged" if phase_key == "shooting phase" else "melee"
+        expires_phase = "SHOOTING_PHASE" if attack_type == "ranged" else "FIGHT_PHASE"
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+
+        applied = False
+        for model in list(models or []):
+            if model is None:
+                continue
+            is_alive_attr = getattr(model, "is_alive", True)
+            if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                attack_check = getattr(wargear, "is_ranged" if attack_type == "ranged" else "is_melee", None)
+                if not callable(attack_check) or not bool(attack_check()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=f"drukhari_reapers_wager_malicious_frenzy:{choice}:{attack_type}:{model_id}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        keywords=[keyword],
+                        source=str(source or "MALICIOUS FRENZY").strip() or "MALICIOUS FRENZY",
+                        expires_phase=expires_phase,
+                        attack_type=attack_type,
+                    )
+                    applied = True
+        if not applied:
+            return {"ok": False, "reason": "Unit has no eligible weapons for the selected phase."}
+
+        self._drukhari_clear_unit_ability_cache(root)
+        return {
+            "ok": True,
+            "choice_key": choice,
+            "choice_name": self._drukhari_reapers_wager_malicious_frenzy_choice_label(choice) or choice,
+            "keyword": keyword,
+            "attack_type": attack_type,
+        }
 
     def _drukhari_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -1912,6 +2054,198 @@ class DrukhariStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_drukhari_reapers_wager_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_drukhari_reapers_wager():
+            return
+        phase_name = self._drukhari_normalized_phase_name(getattr(self, "_current_phase_name", "") or "")
+        if phase_name != "movement phase":
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        trigger_root = self._drukhari_root(unit)
+        if trigger_root is None or not self._drukhari_on_battlefield(trigger_root):
+            return
+
+        if self._drukhari_owned_by_player(trigger_root, self.player):
+            if active_player is not self.player or action_key != "advance":
+                return
+            if bool(self._unit_cannot_be_target_of_stratagem(trigger_root)):
+                return
+            if not self._is_drukhari_or_harlequins_unit(trigger_root):
+                return
+            stratagem = getattr(self, "get_by_name", lambda _name: None)("SHORTEN THE ODDS")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                return
+            sr = getattr(trigger_root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("drukhari_reapers_wager_shorten_the_odds_active", False)):
+                owner = str(sr.get("drukhari_reapers_wager_shorten_the_odds_turn_owner", "") or "")
+                turn_mark = int(sr.get("drukhari_reapers_wager_shorten_the_odds_turn", 0) or 0)
+                current_owner = str(getattr(self.player, "id", "") or "")
+                current_turn = int(getattr(game, "turn", 0) or 0)
+                if (not owner or owner == current_owner) and (not turn_mark or turn_mark == current_turn):
+                    return
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("event", "") or "") != "unit_move_ended":
+                    continue
+                if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                    continue
+                if self._drukhari_root(reaction.get("unit")) is trigger_root:
+                    return
+            payload = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "phase": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": trigger_root,
+                "target_unit": trigger_root,
+                "action": action_key,
+                "candidates": [trigger_root],
+            }
+            queue_reaction = getattr(self, "_queue_reaction", None)
+            if callable(queue_reaction):
+                queue_reaction(payload, use_timer=False)
+            return
+
+        if active_player is self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DANCE MACABRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._drukhari_root(reaction.get("enemy_unit")) is trigger_root:
+                return
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for candidate in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(candidate)
+            if root is None:
+                continue
+            unit_id = self._drukhari_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_or_harlequins_infantry(root):
+                continue
+            distance = self._drukhari_distance_between_units(root, trigger_root)
+            if distance is None or float(distance) > 9.0 + 1e-6:
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._drukhari_sort_key)
+        if not candidates:
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "phase": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": trigger_root,
+            "moving_unit": trigger_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_drukhari_reapers_wager_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if attacking_unit is None or not self._is_drukhari_reapers_wager():
+            return
+        attacker_root = self._drukhari_root(attacking_unit)
+        if attacker_root is None or self._drukhari_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("FATEFUL ROLE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._drukhari_root(target)
+            if root is None:
+                continue
+            target_id = self._drukhari_sort_key(root)
+            if target_id and target_id in seen:
+                continue
+            if target_id:
+                seen.add(target_id)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_or_harlequins_unit(root):
+                continue
+            candidates.append(root)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._drukhari_root(reaction.get("enemy_unit")) is attacker_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "phase": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": sorted(candidates, key=self._drukhari_sort_key),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _cleanup_drukhari_skysplinter_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if phase_name != "SHOOTING_PHASE":
@@ -2864,8 +3198,16 @@ class DrukhariStratagemMixin:
             return self._use_drukhari_covenite_postmortality(stratagem, **kwargs)
         if name_u == "SYMPHONY OF SUFFERING":
             return self._use_drukhari_covenite_symphony_of_suffering(stratagem, **kwargs)
+        if name_u == "MALICIOUS FRENZY":
+            return self._use_drukhari_reapers_wager_malicious_frenzy(stratagem, **kwargs)
+        if name_u == "FATEFUL ROLE":
+            return self._use_drukhari_reapers_wager_fateful_role(stratagem, **kwargs)
         if name_u == "SCINTILLATING TEMPO":
             return self._use_drukhari_reapers_wager_scintillating_tempo(stratagem, **kwargs)
+        if name_u == "SHORTEN THE ODDS":
+            return self._use_drukhari_reapers_wager_shorten_the_odds(stratagem, **kwargs)
+        if name_u == "DANCE MACABRE":
+            return self._use_drukhari_reapers_wager_dance_macabre(stratagem, **kwargs)
         if name_u == "SWOOPING MOCKERY":
             return self._use_drukhari_skysplinter_swooping_mockery(stratagem, **kwargs)
         if name_u == "VICIOUS BLADES":
@@ -4295,6 +4637,381 @@ class DrukhariStratagemMixin:
         logger.info(
             "INFO: SCINTILLATING TEMPO: %s cannot be targeted by Fire Overwatch until end of turn.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_reapers_wager_malicious_frenzy(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_reapers_wager():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MALICIOUS FRENZY: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = self._drukhari_normalized_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: MALICIOUS FRENZY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: MALICIOUS FRENZY: not your Shooting phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MALICIOUS FRENZY: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: MALICIOUS FRENZY: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: MALICIOUS FRENZY: target cannot be selected")
+            return False
+        if not self._is_drukhari_or_harlequins_unit(root):
+            logger.error("ERROR: MALICIOUS FRENZY: target must be a Drukhari or Harlequins unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: MALICIOUS FRENZY: target has already been selected to shoot this phase")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: MALICIOUS FRENZY: target has already been selected to fight this phase")
+            return False
+
+        choice_key = self._drukhari_reapers_wager_malicious_frenzy_choice_key(
+            kwargs.get("choice_key") or kwargs.get("key") or kwargs.get("choice") or kwargs.get("selection")
+        )
+        if choice_key:
+            attack_type = "ranged" if phase_name == "shooting phase" else "melee"
+            if not self._drukhari_unit_has_weapon_of_attack_type(root, attack_type=attack_type):
+                logger.error("ERROR: MALICIOUS FRENZY: target has no eligible %s weapons", attack_type)
+                return False
+            if not self._drukhari_spend_cp(stratagem, target_unit=root):
+                return False
+            outcome = self.apply_drukhari_reapers_wager_malicious_frenzy(
+                root,
+                choice_key=choice_key,
+                phase_name=phase_name,
+                source=stratagem.name or "MALICIOUS FRENZY",
+            )
+            if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+                logger.error("ERROR: MALICIOUS FRENZY: invalid choice")
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(stratagem.name)
+            self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+            logger.info(
+                "INFO: MALICIOUS FRENZY: %s gains [%s] on %s weapons this phase.",
+                getattr(root, "name", "Unit"),
+                str(outcome.get("keyword", choice_key) or choice_key),
+                str(outcome.get("attack_type", "") or "selected"),
+            )
+            return True
+
+        queue = getattr(self.game, "decision_queue", None)
+        unit_id = str(get_entity_id(root) or "")
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "drukhari_reapers_wager_malicious_frenzy_choice":
+                    continue
+                if str(ctx.get("unit_id", "") or "") == unit_id:
+                    return True
+
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+
+        choice_keys = ["LETHAL_HITS", "SUSTAINED_HITS_1"]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Malicious Frenzy: select a weapon keyword.",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    self._drukhari_reapers_wager_malicious_frenzy_choice_label(choice) or choice,
+                    payload={
+                        "choice_key": choice,
+                        "unit_id": unit_id,
+                    },
+                )
+                for choice in choice_keys
+            ],
+            context={
+                "ability": "drukhari_reapers_wager_malicious_frenzy_choice",
+                "ability_name": str(stratagem.name or "MALICIOUS FRENZY"),
+                "unit_id": unit_id,
+                "army_id": get_entity_id(getattr(self.player, "army", None)),
+                "phase_name": "Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "turn_owner_id": str(getattr(active_player, "id", "") or getattr(self.player, "id", "") or ""),
+                "allowed_choice_keys": list(choice_keys),
+                "optional": False,
+            },
+        )
+        self.game.request_decision(request)
+        logger.info(
+            "INFO: MALICIOUS FRENZY: %s must select Lethal Hits or Sustained Hits 1.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_reapers_wager_fateful_role(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_reapers_wager():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "FATEFUL ROLE":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FATEFUL ROLE: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        attacker_root = self._drukhari_root(attacker_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = self._drukhari_normalized_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: FATEFUL ROLE: wrong phase")
+            return False
+        if self._drukhari_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: FATEFUL ROLE: attacking unit must be enemy")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FATEFUL ROLE: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: FATEFUL ROLE: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: FATEFUL ROLE: target cannot be selected")
+            return False
+        if not self._is_drukhari_or_harlequins_unit(root):
+            logger.error("ERROR: FATEFUL ROLE: target must be a Drukhari or Harlequins unit")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_reapers_wager_fateful_role_active"] = True
+        sr["drukhari_reapers_wager_fateful_role_threshold"] = 4
+        sr["drukhari_reapers_wager_fateful_role_roll_modifier"] = 1 if self._drukhari_reapers_wager_unit_is_losing(root) else 0
+        sr["drukhari_reapers_wager_fateful_role_expires_phase"] = "FIGHT_PHASE"
+        sr["drukhari_reapers_wager_fateful_role_source"] = str(getattr(stratagem, "name", "FATEFUL ROLE") or "FATEFUL ROLE")
+        if self.game is not None:
+            sr["drukhari_reapers_wager_fateful_role_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        sr["drukhari_reapers_wager_fateful_role_turn_owner"] = str(
+            getattr(current_player, "id", "") or getattr(self.player, "id", "") or ""
+        )
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: FATEFUL ROLE: %s fights on death on 4+%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " (+1 while losing the wager)" if int(sr.get("drukhari_reapers_wager_fateful_role_roll_modifier", 0) or 0) else "",
+        )
+        return True
+
+    def _use_drukhari_reapers_wager_shorten_the_odds(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_reapers_wager():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action_key = str(kwargs.get("action") or "").strip().lower()
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SHORTEN THE ODDS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not action_key:
+                    action_key = str(reaction.get("action", "") or "").strip().lower()
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SHORTEN THE ODDS: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = self._drukhari_normalized_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: SHORTEN THE ODDS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SHORTEN THE ODDS: not your Movement phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SHORTEN THE ODDS: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: SHORTEN THE ODDS: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SHORTEN THE ODDS: target cannot be selected")
+            return False
+        if not self._is_drukhari_or_harlequins_unit(root):
+            logger.error("ERROR: SHORTEN THE ODDS: target must be a Drukhari or Harlequins unit")
+            return False
+        if action_key and action_key != "advance":
+            logger.error("ERROR: SHORTEN THE ODDS: trigger unit must have Advanced")
+            return False
+        if not action_key and not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            logger.error("ERROR: SHORTEN THE ODDS: target must have Advanced this phase")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["drukhari_reapers_wager_shorten_the_odds_active"] = True
+        sr["drukhari_reapers_wager_shorten_the_odds_source"] = str(getattr(stratagem, "name", "SHORTEN THE ODDS") or "SHORTEN THE ODDS")
+        if self.game is not None:
+            sr["drukhari_reapers_wager_shorten_the_odds_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        sr["drukhari_reapers_wager_shorten_the_odds_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        root.special_rules = sr
+        self._drukhari_clear_unit_ability_cache(root)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SHORTEN THE ODDS: %s can shoot and charge after Advancing this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_reapers_wager_dance_macabre(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_reapers_wager():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action_key = str(kwargs.get("action") or "").strip().lower()
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DANCE MACABRE":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("moving_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not action_key:
+                    action_key = str(reaction.get("action", "") or "").strip().lower()
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DANCE MACABRE: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        enemy_root = self._drukhari_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        phase_name = self._drukhari_normalized_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: DANCE MACABRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DANCE MACABRE: only in your opponent's Movement phase")
+            return False
+        if action_key and action_key not in {"move", "advance", "fall_back"}:
+            logger.error("ERROR: DANCE MACABRE: trigger must be a Normal, Advance, or Fall Back move")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DANCE MACABRE: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: DANCE MACABRE: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DANCE MACABRE: target cannot be selected")
+            return False
+        if not self._is_drukhari_or_harlequins_infantry(root):
+            logger.error("ERROR: DANCE MACABRE: target must be Drukhari Infantry or Harlequins Infantry")
+            return False
+        if self._drukhari_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: DANCE MACABRE: trigger unit must be enemy")
+            return False
+        if not self._drukhari_on_battlefield(enemy_root):
+            return False
+        distance = self._drukhari_distance_between_units(root, enemy_root)
+        if distance is None or float(distance) > 9.0 + 1e-6:
+            logger.error("ERROR: DANCE MACABRE: target must be within 9\" of the enemy unit")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: DANCE MACABRE: reactive move decision queue unavailable")
+            return False
+        max_distance = 6 if self._drukhari_reapers_wager_unit_is_losing(root) else int(dice_module.get_roll("D6") or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: DANCE MACABRE: invalid move distance")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="drukhari_reapers_wager_dance_macabre",
+            movement_type="move",
+            reactive_movement_type="dance_macabre",
+            source=str(getattr(stratagem, "name", "DANCE MACABRE") or "DANCE MACABRE"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=int(max_distance),
+        )
+        if request is None:
+            logger.error("ERROR: DANCE MACABRE: failed to queue reactive move")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: DANCE MACABRE: %s can make a Normal move of up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
         )
         return True
 
