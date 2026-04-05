@@ -1,36 +1,66 @@
 ## Army Mustering Scaffolding
 
 This document describes the current Army Mustering scaffolding in the engine and UI.
-It is intentionally minimal and will be updated as full UI army mustering is implemented,
-especially alongside the work in `docs/NETWORK_SAVELOAD_DESIGN.md`.
+It is still incomplete from a full in-engine roster-authoring perspective, but PR-002
+introduced a real build-side army model so list construction meaning no longer lives only
+inside the runtime `Army` object.
 
 ### Scope and intent
 
 Army mustering exists today primarily to:
 - load armies from list files during setup, or
-- accept a minimal in-engine request for faction/detachment/points only.
+- accept a serializable in-engine build request that can already represent the main
+  11th-edition list-building seams.
 
-Full unit selection, wargear, enhancements, and roster validation are not implemented.
+Runtime unit materialization from those requests is still pending. Parsed list files remain
+the only path that builds full runtime units today.
 
 ### Current scaffolding components
 
 #### Data model
 
-- `UnitSelection` (`src/warhammer40k_ai/roster/army_muster.py`)
-  - Placeholder record for future unit picks.
-  - Fields include name, count, wargear, enhancements, and `is_warlord`.
-  - Not used in the engine yet.
+- `ArmyBlueprint` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Build-time representation of army construction.
+  - Holds battle size, points limit, detachment selections, unit entries,
+    enhancement assignments, attachment bindings, and Force Disposition data.
+- `DetachmentSelection` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Represents one selected detachment and its detachment-point cost.
+- `RosterEntry` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Build-side unit entry used before runtime `Unit` objects are materialized.
+- `EnhancementAssignment` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Explicit enhancement-to-unit assignment record.
+- `AttachmentBinding` (`src/warhammer40k_ai/roster/army_attachments.py`)
+  - Explicit build-side leader/support attachment selection.
+- `ValidatedMuster` (`src/warhammer40k_ai/roster/army_build.py`)
+  - Validated build payload consumed by runtime mustering.
 - `ArmyMusterRequest` (`src/warhammer40k_ai/roster/army_muster.py`)
-  - Minimal request for in-engine mustering.
-  - Fields: `faction`, `detachment_type`, `points_limit`, and `units`.
-  - `units` must be empty today or `NotImplementedError` is raised.
+  - Serializable request wrapper for in-engine mustering.
+  - Can now represent:
+    - `battle_size`
+    - `points_limit`
+    - multiple `detachments`
+    - `detachment_points_budget`
+    - explicit `units`
+    - `enhancement_assignments`
+    - `attachment_bindings`
+    - `force_disposition` / `allowed_force_dispositions`
+  - Keeps a temporary `detachment_type` adapter for the legacy single-detachment shape.
+- `UnitSelection` (`src/warhammer40k_ai/roster/army_muster.py`)
+  - Legacy request shape retained only as a migration adapter into `RosterEntry`.
 
 #### Muster execution
 
 - `ArmyMusterer.muster_army()` (`src/warhammer40k_ai/roster/army_muster.py`)
-  - Validates the request, resolves faction ID, and constructs a basic `Army`.
-  - Calls `Army.configure_rule_managers()` and ignores errors (placeholder behavior).
-  - Rejects non-empty `units` with `NotImplementedError`.
+  - Normalizes and validates requests through `ValidatedMuster`.
+  - Builds a runtime `Army` façade and attaches:
+    - `army.army_blueprint`
+    - `army.validated_muster`
+    - build-side detachments / unit entries / enhancement assignments / attachment bindings
+    - detachment-point budget/spend metadata
+    - Force Disposition metadata
+  - Keeps the explicit runtime boundary that unit entries are representable but not yet
+    materialized from in-engine requests; if `unit_entries` are present,
+    `NotImplementedError` is raised.
 
 - `Game.execute_muster_armies_phase()` (`src/warhammer40k_ai/engine/game.py`)
   - Runs during setup phase `MUSTER_ARMIES`.
@@ -45,18 +75,26 @@ Full unit selection, wargear, enhancements, and roster validation are not implem
       publishes `daemonic_allegiance_prompt`.
     - Otherwise resolves allegiances automatically.
 
-#### Roster validation (list parsing only)
+#### Build validation
 
-- Army list parsing in the network server (`army_submit`) runs `Army.validate()` on the parsed list.
-- Current validation includes:
-  - Epic Hero duplicates (no Epic Hero may appear more than once).
-  - Warlord-ineligible datasheet rules (for example `this model cannot be your warlord`
-    and `this model cannot be selected as your warlord`).
-  - Datasheet "one-of" restrictions (`cannot include more than one of this model/unit in your army`).
-  - Named unit caps from ability text in the form
-    `your army cannot include more than X <named unit> unit(s)` where `X` is numeric or worded.
-  - Ynnari Epic Hero restrictions: if The Visarch, Yvraine, or The Yncarne are included,
-    the army cannot include non-Ynnari Epic Hero units.
+- `src/warhammer40k_ai/roster/army_validation.py`
+  - normalizes raw muster requests into `ArmyBlueprint`
+  - applies the temporary single-detachment adapter
+  - validates faction support
+  - validates detachment-point budget spend
+  - validates references from unit entries, enhancement assignments, and attachment bindings
+  - validates chosen Force Disposition against any allowed set
+
+#### Runtime/list validation
+
+- Army list parsing in the network server (`army_submit`) still runs `Army.validate()` on the parsed list.
+- The existing runtime/list validation in `Army` still includes:
+  - Epic Hero duplicates
+  - warlord eligibility restrictions
+  - datasheet "one-of" restrictions
+  - named unit caps inferred from ability text
+  - Ynnari Epic Hero restrictions
+  - the rest of the established roster validation currently housed in `army.py`
 
 #### UI touchpoints
 
@@ -68,23 +106,36 @@ Full unit selection, wargear, enhancements, and roster validation are not implem
 - Info pane label: `src/warhammer40k_ai/UI/panels/info_pane.py`
   - Shows "Loading army lists and preparing forces" during `MUSTER_ARMIES`.
 
+#### Parse extraction
+
+- Army-list parsing now lives in `src/warhammer40k_ai/roster/army_parse.py`.
+- `src/warhammer40k_ai/roster/army.py` keeps wrapper entrypoints:
+  - `parse_army_list()`
+  - `parse_army_list_text()`
+  - `add_unit_to_army()`
+- Parsed list files now also attach a build-side `ArmyBlueprint` / `ValidatedMuster`
+  summary to the runtime `Army` so parsed rosters participate in the same new build model.
+
 #### Save/load scaffolding
 
-- `army_muster_requests` is included in game snapshots:
-  - Serialized in `_serialize_game_state()` and restored in `_apply_game_state()`
-    in `src/warhammer40k_ai/engine/snapshot.py`.
-- This is a minimal placeholder for future network-safe mustering inputs.
+- `army_muster_requests` is still included in game snapshots in
+  `src/warhammer40k_ai/engine/snapshot.py`.
+- `ArmyMusterRequest` now has explicit `to_dict()` / `from_dict()` support so
+  multi-detachment request payloads, enhancement assignments, and attachment bindings have
+  a stable serializable form.
+- This remains the placeholder path for future network-safe mustering inputs.
   See `docs/NETWORK_SAVELOAD_DESIGN.md` for serialization requirements.
 
 ### Current limitations
 
-- Unit selection and validation are not implemented for in-engine mustering.
-- Wargear, enhancements, and warlord selection are not applied for in-engine mustering
-  (army list parsing applies them and validates enhancement eligibility).
-- Detachment rules and mustering restrictions are not enforced by the scaffolding.
-- `Army.configure_rule_managers()` errors are suppressed in the mustering path.
+- In-engine unit materialization from `RosterEntry` is not implemented yet.
+- Attachment bindings are representable and validated structurally, but they do not yet drive
+  runtime unit joining; that remains later port work.
+- Multi-detachment is represented at build time, but runtime detachment instances and rule
+  provider integration remain PR-003 work.
+- The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine
-  (except for Daemonic Allegiance prompts when applicable).
+  other than existing Daemonic Allegiance prompts when applicable.
 
 ### Expected evolution (linked to network/save/load work)
 
@@ -93,5 +144,7 @@ When full UI mustering is implemented, this scaffolding is expected to grow into
   `docs/NETWORK_SAVELOAD_DESIGN.md`,
 - explicit decision requests for faction, detachment, unit picks, wargear,
   enhancements, and warlord selection,
+- runtime unit materialization from `ValidatedMuster`,
 - validation of points limits, mustering restrictions, and spawn-only units,
-- stable IDs for unit selections so networked clients can replay the same choices.
+- stable IDs for unit selections so networked clients can replay the same choices,
+- detachment-instance runtime integration consuming the build-side model directly.

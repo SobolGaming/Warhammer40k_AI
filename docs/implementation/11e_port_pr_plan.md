@@ -182,7 +182,7 @@ shows what is done versus what remains.
 | PR | Status | Notes |
 |---|---|---|
 | PR-001 | Completed | Pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`). |
-| PR-002 | Pending | Not started. |
+| PR-002 | Completed | Pushed to `dev` on April 5, 2026. |
 | PR-003 | Pending | Not started. |
 | PR-004 | Pending | Not started. |
 | PR-005 | Pending | Not started. |
@@ -251,6 +251,8 @@ Keep this PR mostly structural. If it grows too large, split the test reorg into
 ---
 
 ## PR-002 — Extract army-build domain from `army.py` / `army_muster.py`
+
+**Status:** Completed and pushed to `dev` on April 5, 2026.
 
 ### Goal
 Introduce a dedicated army construction layer that models 11th-edition list building separately from runtime army state.

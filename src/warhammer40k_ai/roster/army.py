@@ -9,7 +9,6 @@ from warhammer40k_ai.utility.ability_support import (
     pact_restrictions_for_faction,
 )
 from warhammer40k_ai.utility.entity_ids import get_entity_id
-import codecs
 import re
 import unicodedata
 import uuid
@@ -289,6 +288,17 @@ class Army:
         self.player = None  # Reference to the owning player
         self.tally_of_pestilence = 0
         self._has_tally_of_pestilence: Optional[bool] = None
+        self.army_blueprint = None
+        self.validated_muster = None
+        self.build_detachments = []
+        self.build_unit_entries = []
+        self.build_enhancement_assignments = []
+        self.build_attachment_bindings = []
+        self.detachment_points_budget = None
+        self.detachment_points_spent = 0
+        self.force_disposition = None
+        self.allowed_force_dispositions = []
+        self.build_metadata = {}
 
 
         self._rule_managers_configured = False
@@ -3979,310 +3989,38 @@ class Army:
 
         return True
 
-# Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
-    with codecs.open(file_path, 'r', encoding='utf-8-sig') as f:
-        lines = f.readlines()
-        
-        # Remove BOM if present
-        if lines and lines[0].startswith('\ufeff'):
-            lines[0] = lines[0][1:]
+    from .army_parse import parse_army_list as _parse_army_list
 
-    import re
-
-    def _find_points_limit(raw_lines: list[str]) -> int:
-        for ln in raw_lines:
-            m = re.search(r"\(([\d,]+)\s*points?\)", ln, flags=re.IGNORECASE)
-            if m:
-                return int(m.group(1).replace(",", ""))
-        raise ValueError(f"Could not find points limit in army list header: {file_path!r}")
-
-    section_headers = {
-        "CHARACTER",
-        "CHARACTERS",
-        "BATTLELINE",
-        "DEDICATED TRANSPORTS",
-        "OTHER DATASHEETS",
-    }
-
-    def _is_app_export(raw_lines: list[str]) -> bool:
-        # Be tolerant to minor formatting differences.
-        return any("exported with app version" in (ln or "").lower() for ln in raw_lines)
-
-    def _first_section_index(stripped_lines: list[str]) -> int:
-        for i, ln in enumerate(stripped_lines):
-            if (ln or "").strip().upper() in section_headers:
-                return i
-        # Fallback to 0; the unit-parse loop will skip empty lines and unknown headers,
-        # but without a recognized section header the file likely isn't in a supported format.
-        return 0
-
-    stripped = [ln.strip() for ln in lines]
-    is_app_format = _is_app_export(lines)
-    points_limit = _find_points_limit(lines)
-    if not stripped:
-        raise ValueError(f"Army list is empty: {file_path!r}")
-
-    # Extract faction + detachment more robustly than fixed line numbers because app exports vary.
-    if is_app_format:
-        # In app exports, the faction is typically the first non-empty line after the title line,
-        # and the detachment is the next non-empty line that is NOT the game size line (e.g., Strike Force...).
-        faction_keyword = ""
-        detachment_type = ""
-        for ln in stripped[1:]:
-            if not ln:
-                continue
-            if ln.lower().startswith("exported with"):
-                break
-            # Skip the game size line if it appears early.
-            if "strike force" in ln.lower():
-                continue
-            if not faction_keyword:
-                faction_keyword = ln
-                continue
-            if not detachment_type:
-                detachment_type = ln
-                break
-        if not faction_keyword:
-            raise ValueError(f"Could not determine faction from app-export header: {file_path!r}")
-        if not detachment_type:
-            # Some files omit detachment; keep a safe placeholder.
-            detachment_type = "Unknown Detachment"
-    else:
-        # Legacy/simple text format: "Army Name - Faction" then "Strike Force (...)" then detachment line.
-        faction_header = (stripped[0] or "").strip()
-        if not faction_header:
-            raise ValueError(f"Army list header is missing faction info: {file_path!r}")
-        faction_keyword = (re.split(r"\s*[-\u2013]\s*", faction_header) or [faction_header])[-1].strip() or faction_header
-        detachment_type = (stripped[2] or "").strip() if len(stripped) > 2 else "Unknown Detachment"
-
-    # Start parsing units at the first section header we recognize (more robust than fixed offsets).
-    start_index = _first_section_index(stripped)
-
-    logger.info(f"Parsing army: {faction_keyword} - {detachment_type} ({points_limit} points)")
-
-    # Create the Army object
-    army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
-    
-    # Map faction names to faction IDs for datasheet lookup
-    faction_id = get_faction_id_from_name(faction_keyword)
-    _assert_supported_faction(faction_keyword, faction_id)
-    if faction_id:
-        logger.info(f"Using faction ID: {faction_id} for datasheet lookups")
-        army.faction_id = faction_id
-    else:
-        logger.warning(f"Warning: Could not determine faction ID for '{faction_keyword}', using generic lookup")
-    army.configure_rule_managers()
-
-    current_unit = None
-    current_model_count = 0
-    current_model_name = None
-    current_wargear = {}
-    current_enhancement = None
-    is_warlord = False
-    bullet_prefixes = ("\u2022", "\u25e6", "-", "*")
-
-    def _is_bullet_line(text: str) -> bool:
-        return text.startswith(bullet_prefixes)
-
-    def _strip_bullet(text: str) -> str:
-        for prefix in bullet_prefixes:
-            if text.startswith(prefix):
-                return text[len(prefix):].strip()
-        return text
-
-    for line in lines[start_index:]:
-        line = line.strip()
-        if not line:
-            continue
-
-        if line.upper() in section_headers:
-            continue
-
-        if line.startswith('Exported with'):
-            break
-
-        if not _is_bullet_line(line):
-            if current_unit:
-                add_unit_to_army(army, current_unit, current_model_count, current_wargear, current_enhancement, waha_helper, is_warlord)
-                current_unit = None
-                current_model_name = None
-                current_model_count = 0
-                current_wargear = {}
-                current_enhancement = None
-                is_warlord = False
-
-            unit_info = line.split(' (')
-            unit_name = unit_info[0].strip()
-            
-            # Use faction-specific datasheet lookup if faction_id is available
-            if faction_id:
-                datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id=faction_id)
-                if not datasheet:
-                    logger.warning(f"Warning: Faction-specific datasheet not found for {unit_name} (faction: {faction_id})")
-            else:
-                datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
-            
-            if datasheet:
-                current_unit = Unit(datasheet)
-            else:
-                logger.warning(f"Warning: Datasheet not found for {unit_name}")
-
-        elif _is_bullet_line(line):
-            data = _strip_bullet(line)
-            if data.lower() == 'warlord':
-                is_warlord = True
-            elif data.lower().startswith('enhancement'):
-                enhancement_name = data.split(':', 1)[1].strip()
-                current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
-                if not current_enhancement:
-                    logger.warning(f"Warning: Enhancement not found for {enhancement_name}")
-            elif data.lower().startswith('daemonic allegiance:'):
-                allegiance = data.split(':', 1)[1].strip()
-                current_unit.daemonic_allegiance = allegiance
-            else:
-                # This could be either a model count or wargear
-                if 'x ' in data:
-                    quantity, item_name = data.split('x ', 1)
-                    quantity = int(quantity)
-                else:
-                    quantity = 1
-                    item_name = data
-
-                # Check if it's a model count or wargear
-                if current_unit and any(item_name.strip() in model_name.rstrip('s') for model_name in current_unit.unit_composition.keys()):
-                    current_model_count += quantity
-                    current_model_name = item_name.strip()
-                    current_wargear[current_model_name] = set()
-                else:
-                    if current_model_name:
-                        current_wargear.setdefault(current_model_name, set()).add((item_name.strip(), quantity))
-                    else:
-                        current_wargear.setdefault(current_unit.name, set()).add((item_name.strip(), quantity))
-
-    # Don't forget to add the last unit if there is one
-    if current_unit:
-        add_unit_to_army(army, current_unit, current_model_count, current_wargear, current_enhancement, waha_helper, is_warlord)
-
-    logger.info(f"Finished parsing. Total units: {len(army.units)}")
-    return army
+    return _parse_army_list(file_path, waha_helper)
 
 
 def parse_army_list_text(list_text: str, waha_helper: WahaHelper, *, list_name: str = "army_list") -> Army:
-    if list_text is None:
-        raise ValueError("Army list text is required.")
-    import tempfile
-    import os
-    safe_name = "".join(ch for ch in (list_name or "army_list") if ch.isalnum() or ch in ("_", "-"))
-    if not safe_name:
-        safe_name = "army_list"
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=f"_{safe_name}.txt",
-            delete=False,
-        ) as handle:
-            temp_path = handle.name
-            handle.write(list_text)
-        return parse_army_list(temp_path, waha_helper)
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.unlink(temp_path)
+    from .army_parse import parse_army_list_text as _parse_army_list_text
 
-def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dict[str, Set[Tuple[str, int]]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
-    def _normalize_gear_name(text: str) -> str:
-        return (
-            str(text or "")
-            .replace("\u2019", "'")
-            .replace("\u2018", "'")
-            .replace("\u00e2\u0080\u0099", "'")
-            .lower()
-        )
+    return _parse_army_list_text(list_text, waha_helper, list_name=list_name)
 
-    # Configure the unit with the correct number of models
-    unit.configure_models(model_count, [])
 
-    # Add wargear to the unit
-    for model_name, wargear_list in wargear_dict.items():
-        for wargear_name, quantity in wargear_list:
-            gear_name = _normalize_gear_name(wargear_name)
-            matching_gear = next((gear for gear in unit.possible_wargear if _normalize_gear_name(gear.name) == gear_name), None)
-            if matching_gear:
-                # Add the wargear multiple times based on quantity
-                # Distribute wargear among models instead of adding multiple to each
-                target_models = []
-                if model_name and model_name != unit.name:
-                    target_models = [model for model in unit.models if model.name.lower() == model_name.lower()]
-                else:
-                    target_models = unit.models
+def add_unit_to_army(
+    army: Army,
+    unit: Unit,
+    model_count: int,
+    wargear_dict: Dict[str, Set[Tuple[str, int]]],
+    enhancement: Enhancement,
+    waha_helper: WahaHelper,
+    is_warlord: bool,
+):
+    from .army_parse import add_unit_to_army as _add_unit_to_army
 
-                if target_models:
-                    if quantity == len(target_models):
-                        # 1 item per model
-                        for model in target_models:
-                            model.wargear.append(matching_gear)
-                    elif quantity < len(target_models):
-                        # Fewer items than models - give to first N models
-                        for i in range(quantity):
-                            target_models[i].wargear.append(matching_gear)
-                    else:
-                        # More items than models - distribute evenly
-                        items_per_model = quantity // len(target_models)
-                        remainder = quantity % len(target_models)
-                        for i, model in enumerate(target_models):
-                            for _ in range(items_per_model):
-                                model.wargear.append(matching_gear)
-                            if i < remainder:
-                                model.wargear.append(matching_gear)
-                else:
-                    raise ValueError(
-                        f"Invalid wargear assignment for '{unit.name}': no models named '{model_name}' "
-                        f"to receive '{gear_name}'."
-                    )
-            else:
-                matching_gear = None
-                for gear in unit.wargear_options:
-                    for choice in (gear.wargear_to or []):
-                        for _qty, nm in (choice or []):
-                            if nm and _normalize_gear_name(nm) == gear_name:
-                                matching_gear = gear
-                                break
-                        if matching_gear:
-                            break
-                    if matching_gear:
-                        break
-                if matching_gear:
-                    # Army lists must be deterministic: if an option can't be resolved uniquely, that's an error.
-                    unit.apply_wargear_options_strict(gear_name)
-                else:
-                    matching_ability = next((ability for ability in unit.possible_abilities if _normalize_gear_name(ability.name) == gear_name and ability.type == 'Wargear'), None)
-                    if matching_ability:
-                        unit.add_ability(matching_ability, model_name)
-                    else:
-                        logger.warning(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
-                        for gear in unit.possible_wargear:
-                            logger.info(f"  - {gear.name}")
-                        for ability in unit.possible_abilities:
-                            logger.info(f"  - {ability.name} (Ability Wargear)")
-
-    # Apply Daemonic Allegiance selection (keyword + wargear) if present.
-    unit.apply_daemonic_allegiance_selection()
-
-    # Validate final wargear loadout for models in this unit (critical for army-list parsing correctness)
-    unit.validate_wargear_selection()
-
-    # Add enhancement to the unit if it exists
-    if enhancement:
-        army.add_enhancement(enhancement, unit)
-
-    # Add the unit to the army
-    army.add_unit(unit)
-
-    # Set warlord if applicable
-    if is_warlord:
-        army.select_warlord(unit)
+    return _add_unit_to_army(
+        army,
+        unit,
+        model_count,
+        wargear_dict,
+        enhancement,
+        waha_helper,
+        is_warlord,
+    )
 
 
 # Example usage:
