@@ -26,6 +26,7 @@ from warhammer40k_ai.utility.aura_effects import (
 )
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.rules import acts_of_faith as acts_of_faith_rules
 
 
 RELICS_OF_THE_MATRIARCHS_TEXT = (
@@ -389,3 +390,60 @@ def test_relics_of_the_matriarchs_ebon_plus_icon_allows_two_acts_of_faith_and_gr
     assert bool(acts_mgr.can_use_act_of_faith(target, game=game))
     assert bool(acts_mgr._consume_miracle_die(target, 5, roll_type="wound", game=game))
     assert not bool(acts_mgr.can_use_act_of_faith(target, game=game))
+
+
+def test_relics_of_the_matriarchs_ebon_chalice_still_substitutes_only_one_die_in_a_single_roll():
+    game, sororitas, enemy, p1, _p2 = _build_game()
+    source = _make_unit(
+        "Triumph of Saint Katherine",
+        abilities=_triumph_abilities(),
+        keywords=["ADEPTA SORORITAS"],
+        faction_keywords=["ADEPTA SORORITAS"],
+    )
+    target = _make_unit(
+        "Battle Sisters",
+        abilities=[_ability("Acts of Faith", ACTS_OF_FAITH_TEXT)],
+        keywords=["ADEPTA SORORITAS"],
+        faction_keywords=["ADEPTA SORORITAS"],
+    )
+    foe = _make_unit("Enemy Unit", keywords=["ADEPTUS ASTARTES"], faction_keywords=["ADEPTUS ASTARTES"])
+    sororitas.add_unit(source)
+    sororitas.add_unit(target)
+    enemy.add_unit(foe)
+    _deploy(source, 0.0, 0.0)
+    _deploy(target, 5.0, 0.0)
+    _deploy(foe, 12.0, 0.0)
+    game.map.units = [source, target, foe]
+    game.rebuild_entity_registry()
+
+    sororitas.on_battle_round_start(1)
+    request = _find_relics_request(game, source_unit=source)
+    assert request is not None
+    option_id = _option_id_for_choice_keys(request, [KEY_SIMULACRUM_OF_THE_EBON_CHALICE])
+    assert option_id
+    applied = resolve_decision_command(game, request, option_id, player_id=p1.id)
+    assert bool(getattr(applied, "ok", False))
+
+    acts_mgr = getattr(sororitas, "acts_of_faith", None)
+    assert acts_mgr is not None
+    acts_mgr.miracle_dice = [6, 5]
+    game.map.miracle_dice_provider = lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None)
+
+    old_get_dice_roll = acts_of_faith_rules.get_dice_roll
+    acts_of_faith_rules.get_dice_roll = lambda _faces=6: 1
+    try:
+        total, dice, used = acts_mgr.resolve_roll(
+            target,
+            roll_type="charge",
+            dice_count=2,
+            die_faces=6,
+            game=game,
+        )
+    finally:
+        acts_of_faith_rules.get_dice_roll = old_get_dice_roll
+
+    assert bool(used)
+    assert total == 7
+    assert dice == [6, 1]
+    assert list(acts_mgr.miracle_dice) == [5]
+    assert bool(acts_mgr.can_use_act_of_faith(target, game=game))

@@ -262,6 +262,67 @@ def test_verse_of_holy_piety_applies_additional_vow_for_bearer_unit_once_per_bat
     assert verse_req_round_2 is None
 
 
+def test_verse_of_holy_piety_persists_for_remaining_bodyguard_after_bearer_is_destroyed():
+    bodyguard = _create_unit(
+        "Battle Sisters Squad",
+        datasheet_id="battle-sisters-ds",
+        keywords=["ADEPTA SORORITAS", "INFANTRY"],
+        faction_keywords=["ADEPTA SORORITAS"],
+    )
+    leader = _create_unit(
+        "Canoness",
+        datasheet_id="canoness-ds",
+        keywords=["ADEPTA SORORITAS", "INFANTRY", "CHARACTER", "CANONESS"],
+        faction_keywords=["ADEPTA SORORITAS"],
+        attached_to=["battle-sisters-ds"],
+    )
+    enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], toughness=5)
+    game, player, army = _build_game(sororitas_units=[leader, bodyguard], enemy_units=[enemy])
+
+    leader.attach_to_unit(bodyguard)
+    _apply_penitent_enhancement(
+        leader,
+        enh_id="000009029003",
+        name="Verse of Holy Piety",
+        description=(
+            "Once per battle, at the start of the battle round, select one Vow of Atonement. "
+            "Until the start of the next battle round, that Vow of Atonement is active for the bearer's unit "
+            "in addition to any that is active for your army."
+        ),
+    )
+
+    mgr = getattr(army, "adepta_sororitas_detachments", None)
+    assert mgr is not None
+
+    game.turn = 1
+    army.on_battle_round_start(1)
+
+    desperate_req = _find_quarry_request(
+        game,
+        ability="desperate_for_redemption",
+        battle_round=1,
+    )
+    assert desperate_req is not None
+    assert bool(_select_choice(game, player, desperate_req, choice_key="path_of_the_penitent").ok)
+
+    verse_req = _find_quarry_request(
+        game,
+        ability="verse_of_holy_piety_vow",
+        battle_round=1,
+        source_unit_id=str(get_entity_id(leader)),
+    )
+    assert verse_req is not None
+    assert bool(_select_choice(game, player, verse_req, choice_key="death_before_disgrace").ok)
+    assert mgr.verse_of_holy_piety_active_vow_key(bodyguard, battle_round=1) == "death_before_disgrace"
+
+    leader.models[0].wounds = 0
+    leader.detach_from_unit()
+
+    assert leader.attached_to is None
+    assert leader not in list(getattr(bodyguard, "attached_leaders", []) or [])
+    assert mgr.verse_of_holy_piety_active_vow_key(bodyguard, battle_round=1) == "death_before_disgrace"
+
+
 def test_refrain_of_enduring_faith_grants_invulnerable_save_only_while_leading():
     bodyguard = _create_unit(
         "Battle Sisters Squad",

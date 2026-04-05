@@ -435,6 +435,108 @@ class TestActsOfFaith(unittest.TestCase):
 
         self.assertEqual(mgr.miracle_dice, [4, 5])
 
+    def test_litany_of_deeds_can_reroll_saintly_example_miracle_dice(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(
+            map=SimpleNamespace(roll_reroll_provider=lambda **_kwargs: True),
+            phase=SimpleNamespace(name="FIGHT_PHASE"),
+        )
+        player.game = game
+        army = self._make_army("AS", player)
+
+        imagifier = self._make_unit("Imagifier", army, acts=False, litany=True)
+        enhancement = SimpleNamespace(name="Saintly Example", id="000008470002")
+        unit = self._make_unit("Canoness", army, acts=True, enhancement=enhancement)
+        army.units = [imagifier, unit]
+
+        imagifier.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        unit.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+
+        mgr = aof.ActsOfFaithManager(army)
+
+        seq = iter([2, 1, 6, 2, 5])  # D3 extra, then two D6 miracle dice with Litany rerolls.
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": next(seq)
+        try:
+            mgr.on_model_destroyed(unit, unit.models[0], game=game)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [6, 5])
+
+    def test_miracle_die_can_be_used_on_reroll_if_not_previously_used_this_phase(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        calls = {"count": 0}
+
+        def _provider(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return None
+            pool = list(kwargs.get("pool", []) or [])
+            return max(pool) if pool else None
+
+        game = SimpleNamespace(
+            map=SimpleNamespace(miracle_dice_provider=_provider),
+            phase=SimpleNamespace(name="CHARGE_PHASE"),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = self._make_army("AS", player)
+        unit = self._make_unit("Battle Sisters", army, acts=True)
+        army.units = [unit]
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [6]
+
+        old_get_dice_roll = aof.get_dice_roll
+        aof.get_dice_roll = lambda _faces=6: 1
+        try:
+            roll_1, dice_1, used_1 = mgr.resolve_roll(unit, roll_type="charge", game=game, dice_count=2, die_faces=6)
+            roll_2, dice_2, used_2 = mgr.resolve_roll(unit, roll_type="charge", game=game, dice_count=2, die_faces=6)
+        finally:
+            aof.get_dice_roll = old_get_dice_roll
+
+        self.assertFalse(used_1)
+        self.assertEqual(roll_1, 2)
+        self.assertEqual(dice_1, [1, 1])
+        self.assertTrue(used_2)
+        self.assertEqual(roll_2, 7)
+        self.assertEqual(dice_2, [6, 1])
+        self.assertEqual(mgr.miracle_dice, [])
+
+    def test_reroll_after_using_miracle_die_does_not_restore_or_reuse_it(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        game = SimpleNamespace(
+            map=SimpleNamespace(miracle_dice_provider=lambda **kwargs: max(list(kwargs.get("pool", []) or []), default=None)),
+            phase=SimpleNamespace(name="CHARGE_PHASE"),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = self._make_army("AS", player)
+        unit = self._make_unit("Battle Sisters", army, acts=True)
+        army.units = [unit]
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [6, 5]
+
+        old_get_dice_roll = aof.get_dice_roll
+        aof.get_dice_roll = lambda _faces=6: 1
+        try:
+            roll_1, dice_1, used_1 = mgr.resolve_roll(unit, roll_type="charge", game=game, dice_count=2, die_faces=6)
+            roll_2, dice_2, used_2 = mgr.resolve_roll(unit, roll_type="charge", game=game, dice_count=2, die_faces=6)
+        finally:
+            aof.get_dice_roll = old_get_dice_roll
+
+        self.assertTrue(used_1)
+        self.assertEqual(roll_1, 7)
+        self.assertEqual(dice_1, [6, 1])
+        self.assertFalse(used_2)
+        self.assertEqual(roll_2, 2)
+        self.assertEqual(dice_2, [1, 1])
+        self.assertEqual(mgr.miracle_dice, [5])
+
     def test_recount_the_deeds_grants_miracle_die_when_led_unit_destroys_enemy_unit(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 

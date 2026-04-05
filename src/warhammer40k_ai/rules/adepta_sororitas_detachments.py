@@ -35,6 +35,9 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
     _DIVINE_ASPECT_PENDING_KEY = "enhancement_divine_aspect_pending"
     _DIVINE_ASPECT_SOURCE_NAME = "Divine Aspect"
     _VERSE_OF_HOLY_PIETY_SOURCE_NAME = "Verse of Holy Piety"
+    _VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_VOW_KEY = "enhancement_verse_of_holy_piety_root_active_vow"
+    _VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_BATTLE_ROUND_KEY = "enhancement_verse_of_holy_piety_root_active_battle_round"
+    _VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_PLAYER_ID_KEY = "enhancement_verse_of_holy_piety_root_active_player_id"
     _DESPERATE_FOR_REDEMPTION_VOWS = (
         (_PATH_OF_THE_PENITENT_KEY, "The Path of the Penitent"),
         (_ABSOLUTION_IN_BATTLE_KEY, "Absolution in Battle"),
@@ -660,6 +663,16 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         source_sr["enhancement_verse_of_holy_piety_active_battle_round"] = int(battle_round or 0)
         source_sr["enhancement_verse_of_holy_piety_active_player_id"] = str(player_id or "")
         source_unit.special_rules = source_sr
+        root = self._unit_root(source_unit)
+        if root is not None:
+            root_sr = getattr(root, "special_rules", None)
+            if not isinstance(root_sr, dict):
+                root_sr = {}
+            root_sr = dict(root_sr)
+            root_sr[self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_VOW_KEY] = key
+            root_sr[self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_BATTLE_ROUND_KEY] = int(battle_round or 0)
+            root_sr[self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_PLAYER_ID_KEY] = str(player_id or "")
+            root.special_rules = root_sr
         return True
 
     def clear_verse_of_holy_piety_active_vows(self) -> None:
@@ -676,12 +689,18 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
                 "enhancement_verse_of_holy_piety_active_vow" not in sr
                 and "enhancement_verse_of_holy_piety_active_battle_round" not in sr
                 and "enhancement_verse_of_holy_piety_active_player_id" not in sr
+                and self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_VOW_KEY not in sr
+                and self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_BATTLE_ROUND_KEY not in sr
+                and self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_PLAYER_ID_KEY not in sr
             ):
                 continue
             sr = dict(sr)
             sr.pop("enhancement_verse_of_holy_piety_active_vow", None)
             sr.pop("enhancement_verse_of_holy_piety_active_battle_round", None)
             sr.pop("enhancement_verse_of_holy_piety_active_player_id", None)
+            sr.pop(self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_VOW_KEY, None)
+            sr.pop(self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_BATTLE_ROUND_KEY, None)
+            sr.pop(self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_PLAYER_ID_KEY, None)
             unit.special_rules = sr
 
     def verse_of_holy_piety_active_vow_key(self, unit, *, game=None, battle_round=None) -> str:
@@ -698,6 +717,20 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             battle_round_int = int(battle_round or 0)
         except (TypeError, ValueError):
             battle_round_int = 0
+        root_sr = getattr(root, "special_rules", None)
+        if isinstance(root_sr, dict):
+            root_key = self._normalize_desperate_for_redemption_vow_key(
+                str(root_sr.get(self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_VOW_KEY, "") or "")
+            )
+            if root_key:
+                try:
+                    root_selected_round = int(
+                        root_sr.get(self._VERSE_OF_HOLY_PIETY_ROOT_ACTIVE_BATTLE_ROUND_KEY, 0) or 0
+                    )
+                except (TypeError, ValueError):
+                    root_selected_round = 0
+                if not (root_selected_round and battle_round_int and root_selected_round != battle_round_int):
+                    return root_key
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
