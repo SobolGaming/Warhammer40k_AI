@@ -45,6 +45,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLINDING RADIANCE",
     "BALEFUL HALO",
     "BLAZING IRE",
+    "CLEANSING FLAMES",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
@@ -648,7 +649,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "WARP VISION",
     "CORRUPT REALSPACE",
     "PRAISE THE FALLEN",
+    "RIGHTEOUS BLOWS",
     "RIGHTEOUS VENGEANCE",
+    "RITES OF FIRE",
     "SANCTIFIED IMMOLATION",
     "SPIRIT OF THE MARTYR",
     "SUFFERING AND SACRIFICE",
@@ -8671,6 +8674,10 @@ class StratagemManager(
             raise
         try:
             self._queue_army_of_faith_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_bringers_of_flame_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

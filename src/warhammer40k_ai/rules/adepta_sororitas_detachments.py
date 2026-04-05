@@ -168,6 +168,18 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             return None
         return getattr(player, "game", None)
 
+    def _attached_unit_disembarked_from_transport_this_round(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        return bool(transport_id)
+
     @classmethod
     def _normalize_desperate_for_redemption_vow_key(cls, choice_key: str) -> str:
         key = str(choice_key or "").strip().lower()
@@ -1781,6 +1793,67 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if distance <= 0.0 or distance > 6.0 + 1e-6:
             return 0, ""
         return 1, self.FERVENT_PURGATION_NAME
+
+    def bringers_of_flame_rites_of_fire_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_bringers_of_flame():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None:
+            return 0, ""
+        get_parent_army = getattr(root, "get_parent_army", None)
+        root_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if root_army is not self.army:
+            return 0, ""
+        if not self.unit_is_adepta_sororitas(root):
+            return 0, ""
+        if not self._attached_unit_disembarked_from_transport_this_round(root):
+            return 0, ""
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged_fn = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged_fn) and not bool(is_ranged_fn()):
+            return 0, ""
+
+        sr = getattr(root, "special_rules", None)
+        active = sr.get("bringers_of_flame_rites_of_fire_active") if isinstance(sr, dict) else None
+        if not isinstance(active, dict):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        current_owner = str(maybe_entity_id(current_player) or getattr(current_player, "id", "") or "")
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper() or "UNKNOWN"
+        current_phase_key = f"{current_turn}:{current_owner}:{current_phase}"
+        if str(active.get("phase_key", "") or "") != current_phase_key:
+            return 0, ""
+
+        within_six = bool(unit_within_range_of_unit(root, target_root, 6.0, use_attached_aggregate=True))
+        if not within_six:
+            return 0, ""
+
+        game_map = getattr(game_obj, "map", None)
+        target_within_objective_fn = getattr(root, "_target_within_objective_range", None)
+        if not callable(target_within_objective_fn):
+            return 0, ""
+        if not bool(target_within_objective_fn(target_root, game_map)):
+            return 0, ""
+
+        source = str(active.get("source", "") or "Rites of Fire").strip() or "Rites of Fire"
+        return 1, source
 
     def blood_of_martyrs_hit_bonus(self, model, unit) -> tuple[int, str]:
         """

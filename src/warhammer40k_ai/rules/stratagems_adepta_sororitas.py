@@ -344,6 +344,68 @@ class AdeptaSororitasStratagemMixin:
                 return True
         return False
 
+    @staticmethod
+    def _as_unit_models(unit: Any) -> list[Any]:
+        root = AdeptaSororitasStratagemMixin._as_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            return list(get_models() or [])
+        return list(getattr(root, "models", []) or [])
+
+    @staticmethod
+    def _as_model_is_alive(model: Any) -> bool:
+        if model is None:
+            return False
+        alive = getattr(model, "is_alive", None)
+        if callable(alive):
+            return bool(alive())
+        return bool(alive)
+
+    @staticmethod
+    def _as_profile_has_keyword(profile: Any, keyword: str) -> bool:
+        target = str(keyword or "").strip().upper()
+        if not target or profile is None:
+            return False
+        get_keywords = getattr(profile, "get_keywords", None)
+        if callable(get_keywords):
+            for value in list(get_keywords() or []):
+                text = str(value or "").strip().upper()
+                if text == target or text.startswith(f"{target} "):
+                    return True
+        parent = getattr(profile, "parent_wargear", None)
+        if parent is not None and target == "TORRENT":
+            is_torrent = getattr(parent, "is_torrent", None)
+            if callable(is_torrent) and bool(is_torrent()):
+                return True
+        return False
+
+    def _as_unit_has_weapon_profiles(
+        self,
+        unit: Any,
+        *,
+        attack_type: str,
+        required_keyword: str = "",
+    ) -> bool:
+        for model in self._as_unit_models(unit):
+            if not self._as_model_is_alive(model):
+                continue
+            for profile in self._as_model_weapon_profiles(model, attack_type=attack_type):
+                if required_keyword and not self._as_profile_has_keyword(profile, required_keyword):
+                    continue
+                return True
+        return False
+
+    def _as_unit_has_ranged_weapon(self, unit: Any) -> bool:
+        return self._as_unit_has_weapon_profiles(unit, attack_type="ranged")
+
+    def _as_unit_has_torrent_ranged_weapon(self, unit: Any) -> bool:
+        return self._as_unit_has_weapon_profiles(unit, attack_type="ranged", required_keyword="TORRENT")
+
+    def _as_unit_has_melee_weapon(self, unit: Any) -> bool:
+        return self._as_unit_has_weapon_profiles(unit, attack_type="melee")
+
     def _army_of_faith_angelic_descent_candidates(self) -> list[Any]:
         if not self._is_army_of_faith():
             return []
@@ -586,6 +648,77 @@ class AdeptaSororitasStratagemMixin:
                     profiles.append(profile)
         return profiles
 
+    def _bringers_of_flame_battlefield_units(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_disembarked_from_transport: bool = False,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_bringers_of_flame():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adepta_sororitas_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_disembarked_from_transport:
+                if not bool(getattr(round_state, "disembarked_this_round", False)):
+                    continue
+                if not str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip():
+                    continue
+            out.append(root)
+        return sorted(out, key=self._as_sort_key)
+
+    def _bringers_of_flame_cleansing_flames_candidates(self) -> list[Any]:
+        return [
+            unit
+            for unit in self._bringers_of_flame_battlefield_units(require_not_shot=True, require_targetable=True)
+            if self._as_unit_has_torrent_ranged_weapon(unit)
+        ]
+
+    def _bringers_of_flame_righteous_blows_candidates(self) -> list[Any]:
+        return [
+            unit
+            for unit in self._bringers_of_flame_battlefield_units(require_not_fought=True, require_targetable=True)
+            if self._as_unit_has_melee_weapon(unit)
+        ]
+
+    def _bringers_of_flame_rites_of_fire_candidates(self) -> list[Any]:
+        return [
+            unit
+            for unit in self._bringers_of_flame_battlefield_units(
+                require_not_shot=True,
+                require_disembarked_from_transport=True,
+                require_targetable=True,
+            )
+            if self._as_unit_has_ranged_weapon(unit)
+        ]
+
     def _as_battlefield_units(
         self,
         *,
@@ -729,7 +862,7 @@ class AdeptaSororitasStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
-    def _queue_army_of_faith_phase_start_reaction(
+    def _queue_adepta_sororitas_phase_start_reaction(
         self,
         *,
         stratagem_name: str,
@@ -763,6 +896,19 @@ class AdeptaSororitasStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_army_of_faith_phase_start_reaction(
+        self,
+        *,
+        stratagem_name: str,
+        phase_name: str,
+        candidates: list[Any],
+    ) -> None:
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name=stratagem_name,
+            phase_name=phase_name,
+            candidates=candidates,
+        )
+
     def _queue_army_of_faith_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_army_of_faith():
             return
@@ -794,6 +940,32 @@ class AdeptaSororitasStratagemMixin:
             stratagem_name="FAITH AND FURY",
             phase_name="Fight phase",
             candidates=self._army_of_faith_faith_and_fury_candidates(),
+        )
+
+    def _queue_bringers_of_flame_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_bringers_of_flame():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            self._queue_adepta_sororitas_phase_start_reaction(
+                stratagem_name="CLEANSING FLAMES",
+                phase_name="Shooting phase",
+                candidates=self._bringers_of_flame_cleansing_flames_candidates(),
+            )
+            self._queue_adepta_sororitas_phase_start_reaction(
+                stratagem_name="RITES OF FIRE",
+                phase_name="Shooting phase",
+                candidates=self._bringers_of_flame_rites_of_fire_candidates(),
+            )
+            return
+        if phase_key != "FIGHT_PHASE":
+            return
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name="RIGHTEOUS BLOWS",
+            phase_name="Fight phase",
+            candidates=self._bringers_of_flame_righteous_blows_candidates(),
         )
 
     def _queue_army_of_faith_blinding_radiance_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
@@ -1599,6 +1771,12 @@ class AdeptaSororitasStratagemMixin:
             return self._use_bringers_of_flame_blazing_ire(stratagem, **kwargs)
         if name_u == "CARRY FORTH THE FAITHFUL":
             return self._use_bringers_of_flame_carry_forth_the_faithful(stratagem, **kwargs)
+        if name_u == "CLEANSING FLAMES":
+            return self._use_bringers_of_flame_cleansing_flames(stratagem, **kwargs)
+        if name_u == "RIGHTEOUS BLOWS":
+            return self._use_bringers_of_flame_righteous_blows(stratagem, **kwargs)
+        if name_u == "RITES OF FIRE":
+            return self._use_bringers_of_flame_rites_of_fire(stratagem, **kwargs)
         if name_u == "BLINDING RADIANCE":
             return self._use_army_of_faith_blinding_radiance(stratagem, **kwargs)
         if name_u == "DIVINE GUIDANCE":
@@ -1782,6 +1960,224 @@ class AdeptaSororitasStratagemMixin:
         logger.info(
             "INFO: CARRY FORTH THE FAITHFUL: %s can re-roll Advance; disembarking after Advance is allowed but those units cannot charge this turn.",
             getattr(root, "name", "Transport"),
+        )
+        return True
+
+    def _use_bringers_of_flame_cleansing_flames(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bringers_of_flame():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CLEANSING FLAMES: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CLEANSING FLAMES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CLEANSING FLAMES: not your Shooting phase")
+            return False
+        eligible = candidates or self._bringers_of_flame_cleansing_flames_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: CLEANSING FLAMES: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: CLEANSING FLAMES: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: CLEANSING FLAMES: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: CLEANSING FLAMES: target is not ADEPTA SORORITAS")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: CLEANSING FLAMES: target has already shot")
+            return False
+        if not self._as_unit_has_torrent_ranged_weapon(root):
+            logger.error("ERROR: CLEANSING FLAMES: target has no Torrent ranged weapons")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._as_phase_key(kwargs.get("phase_name") or self._current_phase_name or "")
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for profile in self._as_model_weapon_profiles(model, attack_type="ranged"):
+                if not self._as_profile_has_keyword(profile, "TORRENT"):
+                    continue
+                lookup_name_fn = getattr(profile, "_temporary_weapon_lookup_name", None)
+                weapon_name = lookup_name_fn() if callable(lookup_name_fn) else str(getattr(profile, "name", "") or "")
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                set_keywords(
+                    key=f"bringers_of_flame_cleansing_flames:{self._as_sort_key(root)}:{model_id}:{weapon_name}",
+                    weapon_name=weapon_name,
+                    keywords=["DEVASTATING WOUNDS"],
+                    source=str(stratagem.name or "CLEANSING FLAMES"),
+                    expires_phase=phase_key,
+                    attack_type="ranged",
+                )
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CLEANSING FLAMES: %s gains [DEVASTATING WOUNDS] on Torrent ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_bringers_of_flame_righteous_blows(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bringers_of_flame():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RIGHTEOUS BLOWS: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: RIGHTEOUS BLOWS: wrong phase")
+            return False
+        eligible = candidates or self._bringers_of_flame_righteous_blows_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target is not ADEPTA SORORITAS")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target has already fought")
+            return False
+        if not self._as_unit_has_melee_weapon(root):
+            logger.error("ERROR: RIGHTEOUS BLOWS: target has no melee weapons")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._as_phase_key(kwargs.get("phase_name") or self._current_phase_name or "")
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for profile in self._as_model_weapon_profiles(model, attack_type="melee"):
+                lookup_name_fn = getattr(profile, "_temporary_weapon_lookup_name", None)
+                weapon_name = lookup_name_fn() if callable(lookup_name_fn) else str(getattr(profile, "name", "") or "")
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                set_keywords(
+                    key=f"bringers_of_flame_righteous_blows:{self._as_sort_key(root)}:{model_id}:{weapon_name}",
+                    weapon_name=weapon_name,
+                    keywords=["LETHAL HITS"],
+                    source=str(stratagem.name or "RIGHTEOUS BLOWS"),
+                    expires_phase=phase_key,
+                    attack_type="melee",
+                )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["bringers_of_flame_righteous_blows_active"] = {
+            "phase_key": self._as_turn_phase_key(self.game),
+            "battle_shock_triggered": False,
+            "source": str(stratagem.name or "RIGHTEOUS BLOWS"),
+        }
+        root.special_rules = sr
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RIGHTEOUS BLOWS: %s gains [LETHAL HITS] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_bringers_of_flame_rites_of_fire(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bringers_of_flame():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RITES OF FIRE: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: RITES OF FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RITES OF FIRE: not your Shooting phase")
+            return False
+        eligible = candidates or self._bringers_of_flame_rites_of_fire_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: RITES OF FIRE: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: RITES OF FIRE: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: RITES OF FIRE: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: RITES OF FIRE: target is not ADEPTA SORORITAS")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: RITES OF FIRE: target has already shot")
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            logger.error("ERROR: RITES OF FIRE: target did not disembark this round")
+            return False
+        if not str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip():
+            logger.error("ERROR: RITES OF FIRE: target did not disembark from a transport this round")
+            return False
+        if not self._as_unit_has_ranged_weapon(root):
+            logger.error("ERROR: RITES OF FIRE: target has no ranged weapons")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["bringers_of_flame_rites_of_fire_active"] = {
+            "phase_key": self._as_turn_phase_key(self.game),
+            "battle_shock_triggered": False,
+            "source": str(stratagem.name or "RITES OF FIRE"),
+        }
+        root.special_rules = sr
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RITES OF FIRE: %s gains +1 to wound on qualifying ranged attacks this phase and can force a Battle-shock test after a qualifying kill.",
+            getattr(root, "name", "Unit"),
         )
         return True
 

@@ -19430,6 +19430,24 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{int(bonus)} to wound from {source_name}")
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        rites_bonus_fn = getattr(as_mgr, "bringers_of_flame_rites_of_fire_wound_bonus", None) if as_mgr is not None else None
+        if callable(rites_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            wound_bonus, wound_source = rites_bonus_fn(
+                attacker,
+                target,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+                game=game,
+            )
+            if int(wound_bonus or 0):
+                source_name = str(wound_source or "Rites of Fire").strip() or "Rites of Fire"
+                dice_modifier += int(wound_bonus)
+                wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None

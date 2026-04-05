@@ -940,6 +940,13 @@ class ActsOfFaithManager:
                 destroyed_by_weapon_profile=destroyed_by_weapon_profile,
                 game=game,
             )
+            self._maybe_trigger_bringers_of_flame_stratagem_destroyed_model(
+                unit=unit,
+                destroyed_by_unit=destroyed_by_unit,
+                destroyed_by_model=destroyed_by_model,
+                destroyed_by_weapon_profile=destroyed_by_weapon_profile,
+                game=game,
+            )
             return
         self._maybe_trigger_recount_the_deeds_agathae_destroyed(unit=unit, model=model, game=game)
         enh = getattr(unit, "enhancement", None)
@@ -1199,6 +1206,74 @@ class ActsOfFaithManager:
             self.gain_miracle_die(game=game, allow_reroll=False, reason=reason)
             updated = dict(active)
             updated["awarded"] = True
+            sr = dict(sr)
+            sr[key] = updated
+            attacker_root.special_rules = sr
+            return
+
+    def _maybe_trigger_bringers_of_flame_stratagem_destroyed_model(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        destroyed_by_model,
+        destroyed_by_weapon_profile,
+        game=None,
+    ) -> None:
+        if not self._is_bringers_of_flame():
+            return
+        if unit is None or destroyed_by_unit is None:
+            return
+        target_root = self._unit_root(unit)
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if target_root is None or attacker_root is None:
+            return
+        if self._unit_in_army(target_root):
+            return
+        if not self._unit_in_army(attacker_root):
+            return
+
+        as_mgr = getattr(self.army, "adepta_sororitas_detachments", None) if self.army is not None else None
+        rites_bonus_fn = getattr(as_mgr, "bringers_of_flame_rites_of_fire_wound_bonus", None) if as_mgr is not None else None
+        turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if turn <= 0:
+            turn = 1
+
+        for key, default_source, melee_only, require_rites_condition in (
+            ("bringers_of_flame_righteous_blows_active", "Righteous Blows", True, False),
+            ("bringers_of_flame_rites_of_fire_active", "Rites of Fire", False, True),
+        ):
+            sr = self._unit_special_rules(attacker_root)
+            active = sr.get(key)
+            if not isinstance(active, dict):
+                continue
+            if str(active.get("phase_key", "") or "") != self._phase_key(game):
+                continue
+            if bool(active.get("battle_shock_triggered", False)):
+                continue
+            is_alive = getattr(target_root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if melee_only and not self._is_melee_weapon_profile(destroyed_by_weapon_profile):
+                continue
+            if require_rites_condition:
+                if not callable(rites_bonus_fn):
+                    continue
+                bonus, _source = rites_bonus_fn(
+                    destroyed_by_model,
+                    target_root,
+                    weapon_profile=destroyed_by_weapon_profile,
+                    game=game,
+                )
+                if int(bonus or 0) <= 0:
+                    continue
+            take_test = getattr(target_root, "take_battle_shock_test", None)
+            if not callable(take_test):
+                continue
+            take_test(int(turn))
+            updated = dict(active)
+            updated["battle_shock_triggered"] = True
+            updated["source"] = str(active.get("source", "") or default_source).strip() or default_source
             sr = dict(sr)
             sr[key] = updated
             attacker_root.special_rules = sr
