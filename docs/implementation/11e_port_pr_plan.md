@@ -184,7 +184,7 @@ shows what is done versus what remains.
 | PR-001 | Completed | Pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`). |
 | PR-002 | Completed | Pushed to `dev` on April 5, 2026 as commit `b234185c` (`Implement PR-002 army build domain extraction`). |
 | PR-003 | Completed | Pushed to `dev` on April 5, 2026 as commit `882103c9` (`Implement PR-003 runtime detachment integration`). |
-| PR-004 | Pending | Not started. |
+| PR-004 | Completed | Pushed to `dev` on April 5, 2026 as commit `5ca1a905` (`Implement PR-004 descriptor and state blob split`). |
 | PR-005 | Pending | Not started. |
 | PR-006 | Pending | Not started. |
 | PR-007 | Pending | Not started. |
@@ -360,7 +360,7 @@ The army-build model is not useful unless runtime systems can consume it directl
 
 ## PR-004 — Descriptor/state schema split and `ArmyBuildDescriptor`
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `5ca1a905` (`Implement PR-004 descriptor and state blob split`).
 
 ### Goal
 Make army construction a first-class descriptor family and split central schema/compiler files by concern before 11th-specific logic expands them further.
