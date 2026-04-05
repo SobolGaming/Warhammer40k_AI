@@ -182,8 +182,8 @@ shows what is done versus what remains.
 | PR | Status | Notes |
 |---|---|---|
 | PR-001 | Completed | Pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`). |
-| PR-002 | Completed | Pushed to `dev` on April 5, 2026. |
-| PR-003 | Completed | Implemented and pushed to `dev` on April 5, 2026. |
+| PR-002 | Completed | Pushed to `dev` on April 5, 2026 as commit `b234185c` (`Implement PR-002 army build domain extraction`). |
+| PR-003 | Completed | Pushed to `dev` on April 5, 2026 as commit `882103c9` (`Implement PR-003 runtime detachment integration`). |
 | PR-004 | Pending | Not started. |
 | PR-005 | Pending | Not started. |
 | PR-006 | Pending | Not started. |
@@ -196,9 +196,7 @@ shows what is done versus what remains.
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
 
-**Status:** Completed and pushed to `dev` on April 5, 2026 in commit `af21acb1`.
-
-**Status:** Completed and pushed to `dev` on April 5, 2026.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`).
 
 ### Goal
 Create the package/file scaffolding that will let the 11th-edition work land into focused modules instead of growing existing god files. Reorganize tests into package-aligned directories.
@@ -254,7 +252,7 @@ Keep this PR mostly structural. If it grows too large, split the test reorg into
 
 ## PR-002 — Extract army-build domain from `army.py` / `army_muster.py`
 
-**Status:** Completed and pushed to `dev` on April 5, 2026.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `b234185c` (`Implement PR-002 army build domain extraction`).
 
 ### Goal
 Introduce a dedicated army construction layer that models 11th-edition list building separately from runtime army state.
@@ -314,10 +312,10 @@ This is the most important domain seam. Multi-detachment, detachment points, upg
 
 ## PR-003 — Multi-detachment runtime integration and detachment-instance APIs
 
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `882103c9` (`Implement PR-003 runtime detachment integration`).
+
 ### Goal
 Make multi-detachment a runtime primitive and remove the single `army.detachment_type` assumption from engine/rules integration points.
-
-**Status:** Completed and pushed to `dev` on April 5, 2026.
 
 ### Why now
 The army-build model is not useful unless runtime systems can consume it directly.
@@ -361,6 +359,8 @@ The army-build model is not useful unless runtime systems can consume it directl
 ---
 
 ## PR-004 — Descriptor/state schema split and `ArmyBuildDescriptor`
+
+**Status:** Pending.
 
 ### Goal
 Make army construction a first-class descriptor family and split central schema/compiler files by concern before 11th-specific logic expands them further.
@@ -419,6 +419,8 @@ This is the seam that protects future model portability and replay consistency.
 
 ## PR-005 — Pregame flow state machine and `game.py` / `player.py` decomposition
 
+**Status:** Pending.
+
 ### Goal
 Replace the current setup sprawl with an explicit, testable, data-driven pregame state machine that can represent the announced 11th sequence without treating preview text as final release logic. Break apart `game.py` and `player.py` while doing it.
 
@@ -474,6 +476,8 @@ The port will become fragile if 11th setup flow is layered onto the existing gam
 
 ## PR-006 — Mission pack compiler, Force Dispositions, and mission/deployment rewrite
 
+**Status:** Pending.
+
 ### Goal
 Replace the hard-coded matched-play mission combination table with a data-driven mission/disposition compiler that can express the announced 11th concepts once final data is ingested, without hard-coding preview articles as final canon.
 
@@ -526,6 +530,8 @@ The current fixed mission-combination table is too 10th-shaped and blocks portab
 
 ## PR-007 — Objective-site runtime model and battlefield map decomposition
 
+**Status:** Pending.
+
 ### Goal
 Refactor objective handling so the engine can represent terrain-footprint / key-location objectives without pretending everything is a circular marker.
 
@@ -574,6 +580,8 @@ This is the second major 11th-edition pressure point after army construction.
 ---
 
 ## PR-008 — Attachment model rewrite, Leader/Support semantics, and `unit.py` / `army.py` decomposition
+
+**Status:** Pending.
 
 ### Goal
 Move attachment semantics to the build/runtime seam and make leader/support/bodyguard behavior explicit and testable, while keeping preview-derived rule details provisional until the final 11th text is available.
@@ -627,6 +635,8 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 
 ## PR-009 — Edition invariants, combat timing hooks, and attack/fight decomposition
 
+**Status:** Pending.
+
 ### Goal
 Centralize the engine services, validation points, and timing hooks required by the previewed 11th-edition invariants, and split the combat monoliths while doing it. Do not treat preview text as final canonical behavior until PR-012.
 
@@ -674,6 +684,8 @@ These are rules-semantics changes that should live at engine level, not as incid
 ---
 
 ## PR-010 — Replay/telemetry/training-manifest updates and safe pre-11th AI scope
+
+**Status:** Pending.
 
 ### Goal
 Update replay, telemetry, relabeling, and training-manifest systems so future models can survive the edition transition with descriptor- and bundle-aware conditioning.
@@ -734,6 +746,8 @@ Only after the runtime seams are stable should the data pipeline be updated to m
 
 ## PR-011 — Remove 10th-only assumptions, collapse temporary adapters, and update docs to 11th-first-ready
 
+**Status:** Pending.
+
 ### Goal
 Delete transitional 10th-only architectural assumptions so the codebase does not carry long-lived migration debt, while keeping final rules exactness deferred to PR-012.
 
@@ -777,6 +791,8 @@ The project does not intend to keep supporting 10th after 11th launches.
 ---
 
 ## PR-012 — Release-day alignment PR (required when final 11th rules are in hand)
+
+**Status:** Pending.
 
 ### Goal
 Swap preview-driven placeholders and assumptions for final release-day data and exact wording once the real 11th core rules / mission pack / army-construction texts are available.
