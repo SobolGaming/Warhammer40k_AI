@@ -8250,6 +8250,84 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if callable(on_field_fn) and not bool(on_field_fn(root)):
                 return ("Righteous Purpose units must be on the battlefield or embarked within a Transport.")
         return ()
+    if ability == "champions_of_faith_suffer_not_the_unfaithful_choice":
+        if is_skip_choice(request, result):
+            return ("SUFFER NOT THE UNFAITHFUL choice cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("SUFFER NOT THE UNFAITHFUL choice army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("SUFFER NOT THE UNFAITHFUL choice manager is unavailable.",)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("SUFFER NOT THE UNFAITHFUL choice unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("SUFFER NOT THE UNFAITHFUL choice unit was not found.",)
+        validate_choice = getattr(stratagem_mgr, "validate_champions_of_faith_suffer_choice", None)
+        if not callable(validate_choice):
+            return ("SUFFER NOT THE UNFAITHFUL choice validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            attack_type=str(ctx.get("attack_type", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "SUFFER NOT THE UNFAITHFUL choice is not valid."),)
+        return ()
+    if ability == "champions_of_faith_bastion_of_faith_secondary":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("BASTION OF FAITH secondary choice army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("BASTION OF FAITH secondary choice manager is unavailable.",)
+        primary_unit = resolve_unit(game, payload.get("primary_unit_id") or ctx.get("primary_unit_id"))
+        if primary_unit is None:
+            return ("BASTION OF FAITH primary unit was not found.",)
+        primary_root = (
+            primary_unit.get_attached_unit_root()
+            if hasattr(primary_unit, "get_attached_unit_root")
+            else primary_unit
+        )
+        if primary_root is None:
+            return ("BASTION OF FAITH primary unit was not found.",)
+        validate_choice = getattr(stratagem_mgr, "validate_champions_of_faith_bastion_secondary_choice", None)
+        if not callable(validate_choice):
+            return ("BASTION OF FAITH secondary choice validation is unavailable.",)
+        valid, reason = validate_choice(
+            primary_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+            candidate_unit_ids=list(ctx.get("candidate_unit_ids", []) or []),
+        )
+        if not bool(valid):
+            return (str(reason or "BASTION OF FAITH secondary choice is not valid."),)
+        return ()
     if ability in (
         "grey_knights_augurium_grimoire_of_conjunctions",
         "grey_knights_augurium_shield_of_prophecy",
@@ -20534,6 +20612,115 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "selected_unit_ids": [str(v or "") for v in applied_ids if str(v or "").strip()],
             "source": ability_name,
         }
+    if ability == "champions_of_faith_suffer_not_the_unfaithful_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_champions_of_faith_suffer_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            attack_type=str(ctx.get("attack_type", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "SUFFER NOT THE UNFAITHFUL"
+        ).strip() or "SUFFER NOT THE UNFAITHFUL"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        choice_label = str(outcome.get("choice_label", "") or outcome.get("choice_key", "") or "choice")
+        attack_type = str(outcome.get("attack_type", "") or "").strip().lower()
+        attack_label = f" {attack_type}" if attack_type else ""
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} selected {choice_label} for{attack_label} weapons.",
+        )
+        return outcome
+    if ability == "champions_of_faith_bastion_of_faith_secondary":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        primary_unit = resolve_unit(game, payload.get("primary_unit_id") or ctx.get("primary_unit_id"))
+        if primary_unit is None:
+            return None
+        primary_root = (
+            primary_unit.get_attached_unit_root()
+            if hasattr(primary_unit, "get_attached_unit_root")
+            else primary_unit
+        )
+        if primary_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_champions_of_faith_bastion_secondary_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            primary_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+            candidate_unit_ids=list(ctx.get("candidate_unit_ids", []) or []),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "BASTION OF FAITH"
+        ).strip() or "BASTION OF FAITH"
+        primary_name = str(outcome.get("primary_unit_name", "") or getattr(primary_root, "name", "Unit"))
+        if bool(outcome.get("skipped", False)):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no second Celestian Sacresants unit selected for {primary_name}.",
+            )
+        else:
+            target_name = str(outcome.get("target_unit_name", "") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {target_name} also gains -1 to hit this phase.",
+            )
+        return outcome
     if ability == "desperate_for_redemption":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

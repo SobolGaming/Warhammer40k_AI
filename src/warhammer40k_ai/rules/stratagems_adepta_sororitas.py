@@ -104,6 +104,11 @@ class AdeptaSororitasStratagemMixin:
         checker = getattr(mgr, "is_bringers_of_flame", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_champions_of_faith(self) -> bool:
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "is_champions_of_faith", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_adepta_sororitas_unit(self, unit: Any) -> bool:
         root = self._as_root(unit)
         if root is None:
@@ -250,6 +255,15 @@ class AdeptaSororitasStratagemMixin:
             except Exception:
                 continue
         return int(total)
+
+    @staticmethod
+    def _as_is_battle_shocked(unit: Any) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "is_battle_shocked", None)
+        if callable(checker):
+            return bool(checker())
+        return bool(getattr(unit, "battle_shocked", False))
 
     def _as_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -456,6 +470,86 @@ class AdeptaSororitasStratagemMixin:
         if not phase_key:
             phase_key = "UNKNOWN"
         return f"{turn}:{owner_id}:{phase_key}"
+
+    def _as_current_turn(self) -> int:
+        if self.game is None:
+            return 0
+        return int(getattr(self.game, "turn", 0) or 0)
+
+    def _as_current_turn_owner_id(self) -> str:
+        if self.game is None:
+            return ""
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        return str(getattr(active_player, "id", "") or "")
+
+    def _as_submit_decision_request(self, request: Any) -> bool:
+        if request is None or self.game is None:
+            return False
+        request_decision = getattr(self.game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def _as_pending_choose_quarry_request(
+        self,
+        *,
+        player_id: str = "",
+        ctx_filters: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        if self.game is None:
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        filters = dict(ctx_filters or {})
+        for pending in list(queue.list() or []):
+            if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            if player_id and str(getattr(pending, "player_id", "") or "") != str(player_id):
+                continue
+            ctx = dict(getattr(pending, "context", {}) or {})
+            matches = True
+            for key, value in filters.items():
+                if key in {"phase_name", "phase_key"}:
+                    if self._as_phase_key(ctx.get(key, "") or "") != self._as_phase_key(value):
+                        matches = False
+                        break
+                    continue
+                if key == "turn":
+                    if int(ctx.get("turn", 0) or 0) != int(value or 0):
+                        matches = False
+                        break
+                    continue
+                if str(ctx.get(key, "") or "").strip() != str(value or "").strip():
+                    matches = False
+                    break
+            if matches:
+                return True
+        return False
+
+    def _champions_of_faith_is_righteous(self, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None or not self._is_champions_of_faith():
+            return False
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "righteous_purpose_is_righteous", None) if mgr is not None else None
+        return bool(checker(root)) if callable(checker) else False
+
+    @staticmethod
+    def _champions_of_faith_is_celestian_sacresants(unit: Any) -> bool:
+        root = AdeptaSororitasStratagemMixin._as_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return name == "celestian sacresants" or name.startswith("celestian sacresants ")
 
     def _army_of_faith_battlefield_units(
         self,
@@ -719,6 +813,574 @@ class AdeptaSororitasStratagemMixin:
             if self._as_unit_has_ranged_weapon(unit)
         ]
 
+    def _champions_of_faith_battlefield_units(
+        self,
+        *,
+        require_righteous: bool = False,
+        require_sacresants: bool = False,
+        require_not_battle_shocked: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_champions_of_faith():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adepta_sororitas_unit(root):
+                continue
+            if require_righteous and not self._champions_of_faith_is_righteous(root):
+                continue
+            if require_sacresants and not self._champions_of_faith_is_celestian_sacresants(root):
+                continue
+            if require_not_battle_shocked and self._as_is_battle_shocked(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._as_sort_key)
+
+    def _champions_of_faith_path_of_the_righteous_candidates(self) -> list[Any]:
+        return self._champions_of_faith_battlefield_units(require_not_fought=True, require_targetable=True)
+
+    def _champions_of_faith_shield_of_denial_candidates(self, *, source_unit: Any) -> list[Any]:
+        root = self._as_root(source_unit)
+        if root is None or not self._is_champions_of_faith():
+            return []
+        if not self._as_owned_by_player(root, self.player):
+            return []
+        if not self._as_on_battlefield(root):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return []
+        if not self._is_adepta_sororitas_unit(root):
+            return []
+        return [root]
+
+    def _champions_of_faith_suffer_not_the_unfaithful_candidates(self, *, phase_name: str) -> list[Any]:
+        phase_lower = self._as_phase_name_lower(phase_name)
+        candidates = self._champions_of_faith_battlefield_units(
+            require_righteous=True,
+            require_not_shot=phase_lower == "shooting phase",
+            require_not_fought=phase_lower == "fight phase",
+            require_targetable=True,
+        )
+        if phase_lower == "shooting phase":
+            return [unit for unit in candidates if self._as_unit_has_ranged_weapon(unit)]
+        if phase_lower == "fight phase":
+            return [unit for unit in candidates if self._as_unit_has_melee_weapon(unit)]
+        return []
+
+    def _champions_of_faith_to_the_heart_of_heresy_candidates(self) -> list[Any]:
+        return [
+            unit
+            for unit in self._champions_of_faith_battlefield_units(require_not_fought=True, require_targetable=True)
+            if self._as_unit_has_melee_weapon(unit)
+        ]
+
+    def _champions_of_faith_indefatigable_dedication_candidates(self, *, moved_unit: Any, action: Any) -> list[Any]:
+        if str(action or "").strip().lower() != "fall_back":
+            return []
+        root = self._as_root(moved_unit)
+        if root is None:
+            return []
+        candidates = self._champions_of_faith_battlefield_units(require_targetable=True)
+        return [root] if self._as_unit_in_candidates(root, candidates) else []
+
+    def _champions_of_faith_bastion_of_faith_candidates(self, *, target_units: Any) -> list[Any]:
+        if not self._is_champions_of_faith():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._champions_of_faith_is_celestian_sacresants(root):
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid not in seen:
+                seen.add(uid)
+                out.append(root)
+        return sorted(out, key=self._as_sort_key)
+
+    def _champions_of_faith_bastion_secondary_candidates(self, *, primary_unit: Any) -> list[Any]:
+        primary_root = self._as_root(primary_unit)
+        if primary_root is None:
+            return []
+        if not self._champions_of_faith_is_righteous(primary_root):
+            return []
+        out: list[Any] = []
+        for unit in self._champions_of_faith_battlefield_units(
+            require_sacresants=True,
+            require_not_battle_shocked=True,
+            require_targetable=True,
+        ):
+            if unit is primary_root:
+                continue
+            if not unit_within_range_of_unit(primary_root, unit, 6.0, use_attached_aggregate=True):
+                continue
+            out.append(unit)
+        return sorted(out, key=self._as_sort_key)
+
+    @staticmethod
+    def _champions_of_faith_parse_suffer_choice(raw_choice: Any) -> str:
+        choice = raw_choice
+        if isinstance(choice, dict):
+            choice = (
+                choice.get("choice_key")
+                or choice.get("choice")
+                or choice.get("selection")
+                or choice.get("value")
+                or choice.get("label")
+            )
+        key = str(choice or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if key in {"LETHAL", "LETHAL_HITS", "[LETHAL_HITS]"}:
+            return "LETHAL_HITS"
+        if key in {"SUSTAINED", "SUSTAINED_HITS", "SUSTAINED_HITS_1", "[SUSTAINED_HITS_1]"}:
+            return "SUSTAINED_HITS_1"
+        return ""
+
+    @staticmethod
+    def _champions_of_faith_suffer_choice_label(choice_key: str) -> str:
+        if str(choice_key or "").strip().upper() == "LETHAL_HITS":
+            return "LETHAL HITS"
+        return "SUSTAINED HITS 1"
+
+    @staticmethod
+    def _as_resolve_game_unit(game: Any, unit_id: str) -> Any:
+        if game is None:
+            return None
+        registry = getattr(game, "entity_registry", None)
+        if registry is None or not hasattr(registry, "get"):
+            return None
+        target_id = str(unit_id or "").strip()
+        if not target_id:
+            return None
+        unit = registry.get(target_id, kind="unit")
+        if unit is not None:
+            return unit
+        return registry.get(target_id)
+
+    def _build_champions_of_faith_suffer_choice_request(
+        self,
+        *,
+        unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._as_root(unit)
+        if root is None:
+            return None
+        unit_id = self._as_sort_key(root)
+        if not unit_id:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        phase_label = str(phase_name or "").strip() or "Fight phase"
+        turn = self._as_current_turn()
+        turn_owner_id = self._as_current_turn_owner_id()
+        if self._as_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "champions_of_faith_suffer_not_the_unfaithful_choice",
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'SUFFER NOT THE UNFAITHFUL'}: choose a weapon ability.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    "Lethal Hits",
+                    payload={"choice_key": "LETHAL_HITS", "unit_id": unit_id},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits 1",
+                    payload={"choice_key": "SUSTAINED_HITS_1", "unit_id": unit_id},
+                ),
+            ],
+            context={
+                "ability": "champions_of_faith_suffer_not_the_unfaithful_choice",
+                "ability_name": str(stratagem_name or "").strip() or "SUFFER NOT THE UNFAITHFUL",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "attack_type": "ranged" if self._as_phase_name_lower(phase_label) == "shooting phase" else "melee",
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_choice_keys": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "stratagem_name": str(stratagem_name or "").strip() or "SUFFER NOT THE UNFAITHFUL",
+                "optional": False,
+            },
+        )
+
+    def validate_champions_of_faith_suffer_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._as_root(unit)
+        if root is None:
+            return False, "SUFFER NOT THE UNFAITHFUL choice unit was not found."
+        if player is not None and player is not self.player:
+            return False, "SUFFER NOT THE UNFAITHFUL choice must be resolved by the owning player."
+        if not self._is_champions_of_faith():
+            return False, "SUFFER NOT THE UNFAITHFUL requires Champions of Faith."
+        if not self._as_owned_by_player(root, self.player):
+            return False, "SUFFER NOT THE UNFAITHFUL target must belong to you."
+        if not self._as_on_battlefield(root):
+            return False, "SUFFER NOT THE UNFAITHFUL target must be on the battlefield."
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return False, "SUFFER NOT THE UNFAITHFUL target can no longer be selected."
+        if not self._champions_of_faith_is_righteous(root):
+            return False, "SUFFER NOT THE UNFAITHFUL target must be Righteous."
+        if game is not None:
+            current_phase = self._as_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._as_phase_key(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "SUFFER NOT THE UNFAITHFUL choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "SUFFER NOT THE UNFAITHFUL choice is no longer in the same turn."
+            if turn_owner_id:
+                active_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(active_player, "id", "") or "")
+                if current_owner_id and current_owner_id != str(turn_owner_id):
+                    return False, "SUFFER NOT THE UNFAITHFUL choice is no longer in the same turn."
+        phase_lower = self._as_phase_name_lower(phase_name)
+        round_state = getattr(root, "round_state", None)
+        if phase_lower == "shooting phase":
+            if bool(getattr(round_state, "shot_this_round", False)):
+                return False, "SUFFER NOT THE UNFAITHFUL target has already been selected to shoot."
+            if not self._as_unit_has_ranged_weapon(root):
+                return False, "SUFFER NOT THE UNFAITHFUL target has no ranged weapons."
+        elif phase_lower == "fight phase":
+            if bool(getattr(round_state, "fought_this_phase", False)):
+                return False, "SUFFER NOT THE UNFAITHFUL target has already been selected to fight."
+            if not self._as_unit_has_melee_weapon(root):
+                return False, "SUFFER NOT THE UNFAITHFUL target has no melee weapons."
+        else:
+            return False, "SUFFER NOT THE UNFAITHFUL choice requires the Shooting or Fight phase."
+        expected_attack_type = "ranged" if phase_lower == "shooting phase" else "melee"
+        if attack_type and str(attack_type or "").strip().lower() != expected_attack_type:
+            return False, "SUFFER NOT THE UNFAITHFUL choice payload does not match the phase."
+        choice_key = self._champions_of_faith_parse_suffer_choice(payload)
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False, "SUFFER NOT THE UNFAITHFUL choice must be LETHAL HITS or SUSTAINED HITS 1."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "SUFFER NOT THE UNFAITHFUL":
+            return False, "SUFFER NOT THE UNFAITHFUL choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_champions_of_faith_suffer_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        attack_type: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> Any:
+        valid, _reason = self.validate_champions_of_faith_suffer_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            attack_type=attack_type,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._as_root(unit)
+        if root is None:
+            return None
+        choice_key = self._champions_of_faith_parse_suffer_choice(payload)
+        keyword = self._champions_of_faith_suffer_choice_label(choice_key)
+        phase_key = self._as_phase_key(phase_name)
+        resolved_attack_type = str(attack_type or "").strip().lower() or (
+            "ranged" if self._as_phase_name_lower(phase_name) == "shooting phase" else "melee"
+        )
+        stratagem_source = str(stratagem_name or payload.get("stratagem_name", "") or "SUFFER NOT THE UNFAITHFUL")
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for profile in self._as_model_weapon_profiles(model, attack_type=resolved_attack_type):
+                lookup_name_fn = getattr(profile, "_temporary_weapon_lookup_name", None)
+                weapon_name = lookup_name_fn() if callable(lookup_name_fn) else str(getattr(profile, "name", "") or "")
+                if not weapon_name:
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                set_keywords(
+                    key=f"champions_of_faith_suffer_not_the_unfaithful:{self._as_sort_key(root)}:{model_id}:{weapon_name}",
+                    weapon_name=weapon_name,
+                    keywords=[keyword],
+                    source=stratagem_source,
+                    expires_phase=phase_key,
+                    attack_type=resolved_attack_type,
+                )
+        return {
+            "unit_id": self._as_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "choice_key": choice_key,
+            "choice_label": keyword,
+            "attack_type": resolved_attack_type,
+            "stratagem_name": stratagem_source,
+        }
+
+    def _build_champions_of_faith_bastion_secondary_request(
+        self,
+        *,
+        primary_unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        primary_root = self._as_root(primary_unit)
+        if primary_root is None:
+            return None
+        candidates = self._champions_of_faith_bastion_secondary_candidates(primary_unit=primary_root)
+        if not candidates:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        primary_unit_id = self._as_sort_key(primary_root)
+        phase_label = str(phase_name or "").strip() or "Fight phase"
+        turn = self._as_current_turn()
+        turn_owner_id = self._as_current_turn_owner_id()
+        if self._as_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "champions_of_faith_bastion_of_faith_secondary",
+                "primary_unit_id": primary_unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={"action": "skip", "primary_unit_id": primary_unit_id},
+            )
+        ]
+        for unit in candidates:
+            unit_id = self._as_sort_key(unit)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Celestian Sacresants") or "Celestian Sacresants"),
+                    payload={
+                        "target_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "primary_unit_id": primary_unit_id,
+                    },
+                )
+            )
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'BASTION OF FAITH'}: select another Celestian Sacresants unit to protect, or None.",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "champions_of_faith_bastion_of_faith_secondary",
+                "ability_name": str(stratagem_name or "").strip() or "BASTION OF FAITH",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "primary_unit_id": primary_unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_unit_ids": [self._as_sort_key(unit) for unit in candidates],
+                "stratagem_name": str(stratagem_name or "").strip() or "BASTION OF FAITH",
+                "optional": True,
+            },
+        )
+
+    def validate_champions_of_faith_bastion_secondary_choice(
+        self,
+        primary_unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+        candidate_unit_ids: Optional[list[str]] = None,
+    ) -> tuple[bool, str]:
+        primary_root = self._as_root(primary_unit)
+        if primary_root is None:
+            return False, "BASTION OF FAITH primary unit was not found."
+        if player is not None and player is not self.player:
+            return False, "BASTION OF FAITH secondary choice must be resolved by the owning player."
+        if not self._is_champions_of_faith():
+            return False, "BASTION OF FAITH requires Champions of Faith."
+        if not self._champions_of_faith_is_righteous(primary_root):
+            return False, "BASTION OF FAITH secondary choice requires the primary unit to be Righteous."
+        if game is not None:
+            current_phase = self._as_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._as_phase_key(phase_name or "Fight phase")
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "BASTION OF FAITH secondary choice is no longer in the Fight phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "BASTION OF FAITH secondary choice is no longer in the same turn."
+            if turn_owner_id:
+                active_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(active_player, "id", "") or "")
+                if current_owner_id and current_owner_id != str(turn_owner_id):
+                    return False, "BASTION OF FAITH secondary choice is no longer in the same turn."
+        if str(payload.get("action", "") or "").strip().lower() == "skip":
+            return True, ""
+        target_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+        if not target_id:
+            return False, "BASTION OF FAITH secondary choice requires a target unit or None."
+        target_unit = self._as_resolve_game_unit(game, target_id)
+        if target_unit is None:
+            return False, "BASTION OF FAITH secondary target was not found."
+        target_root = self._as_root(target_unit)
+        if target_root is None:
+            return False, "BASTION OF FAITH secondary target was not found."
+        allowed_ids = {str(v or "").strip() for v in list(candidate_unit_ids or []) if str(v or "").strip()}
+        target_root_id = self._as_sort_key(target_root)
+        if allowed_ids and target_root_id not in allowed_ids:
+            return False, "BASTION OF FAITH secondary target is no longer eligible."
+        if not self._as_owned_by_player(target_root, self.player):
+            return False, "BASTION OF FAITH secondary target must belong to you."
+        if not self._as_on_battlefield(target_root):
+            return False, "BASTION OF FAITH secondary target must be on the battlefield."
+        if bool(self._unit_cannot_be_target_of_stratagem(target_root)):
+            return False, "BASTION OF FAITH secondary target can no longer be selected."
+        if not self._champions_of_faith_is_celestian_sacresants(target_root):
+            return False, "BASTION OF FAITH secondary target must be a Celestian Sacresants unit."
+        if self._as_is_battle_shocked(target_root):
+            return False, "BASTION OF FAITH secondary target cannot be Battle-shocked."
+        if not unit_within_range_of_unit(primary_root, target_root, 6.0, use_attached_aggregate=True):
+            return False, "BASTION OF FAITH secondary target must be within 6\" of the primary unit."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "BASTION OF FAITH":
+            return False, "BASTION OF FAITH secondary choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_champions_of_faith_bastion_secondary_choice(
+        self,
+        primary_unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+        candidate_unit_ids: Optional[list[str]] = None,
+    ) -> Any:
+        valid, _reason = self.validate_champions_of_faith_bastion_secondary_choice(
+            primary_unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+            candidate_unit_ids=candidate_unit_ids,
+        )
+        if not valid:
+            return None
+        primary_root = self._as_root(primary_unit)
+        if primary_root is None:
+            return None
+        if str(payload.get("action", "") or "").strip().lower() == "skip":
+            return {
+                "primary_unit_id": self._as_sort_key(primary_root),
+                "primary_unit_name": str(getattr(primary_root, "name", "Unit") or "Unit"),
+                "skipped": True,
+                "stratagem_name": str(stratagem_name or "BASTION OF FAITH"),
+            }
+        target_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+        target_unit = self._as_resolve_game_unit(game, target_id)
+        target_root = self._as_root(target_unit)
+        if target_root is None:
+            return None
+        self._append_defensive_effect(
+            target_root,
+            "defensive_hit_mods",
+            {
+                "value": 1,
+                "attack_type": "melee",
+                "expires_phase": self._as_phase_key(phase_name or "Fight phase"),
+                "source": str(stratagem_name or "BASTION OF FAITH"),
+            },
+        )
+        return {
+            "primary_unit_id": self._as_sort_key(primary_root),
+            "primary_unit_name": str(getattr(primary_root, "name", "Unit") or "Unit"),
+            "target_unit_id": self._as_sort_key(target_root),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+            "skipped": False,
+            "stratagem_name": str(stratagem_name or "BASTION OF FAITH"),
+        }
+
     def _as_battlefield_units(
         self,
         *,
@@ -968,6 +1630,37 @@ class AdeptaSororitasStratagemMixin:
             candidates=self._bringers_of_flame_righteous_blows_candidates(),
         )
 
+    def _queue_champions_of_faith_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_champions_of_faith():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "SHOOTING_PHASE":
+            if player is not self.player:
+                return
+            self._queue_adepta_sororitas_phase_start_reaction(
+                stratagem_name="SUFFER NOT THE UNFAITHFUL",
+                phase_name="Shooting phase",
+                candidates=self._champions_of_faith_suffer_not_the_unfaithful_candidates(phase_name="Shooting phase"),
+            )
+            return
+        if phase_key != "FIGHT_PHASE":
+            return
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name="PATH OF THE RIGHTEOUS",
+            phase_name="Fight phase",
+            candidates=self._champions_of_faith_path_of_the_righteous_candidates(),
+        )
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name="SUFFER NOT THE UNFAITHFUL",
+            phase_name="Fight phase",
+            candidates=self._champions_of_faith_suffer_not_the_unfaithful_candidates(phase_name="Fight phase"),
+        )
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name="TO THE HEART OF HERESY",
+            phase_name="Fight phase",
+            candidates=self._champions_of_faith_to_the_heart_of_heresy_candidates(),
+        )
+
     def _queue_army_of_faith_blinding_radiance_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
         if attacking_unit is None or not self._is_army_of_faith():
             return
@@ -1032,6 +1725,54 @@ class AdeptaSororitasStratagemMixin:
             return
         resolved_phase = str(phase_name or self._current_phase_name or "").strip() or "Any phase"
         candidates = self._army_of_faith_shield_of_faith_candidates(source_unit=root)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="mortal_wound_allocated",
+            stratagem_name=stratagem.name,
+            phase_name=resolved_phase,
+            unit=root,
+        ):
+            return
+        payload = {
+            "event": "mortal_wound_allocated",
+            "phase_name": resolved_phase,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "source_unit": root,
+            "attacking_unit": attacker_unit,
+            "target_model": target_model,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_champions_of_faith_shield_of_denial_reactions(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any,
+        target_model: Any,
+        phase_name: str,
+    ) -> None:
+        if target_unit is None or not self._is_champions_of_faith():
+            return
+        root = self._as_root(target_unit)
+        if root is None or not self._as_owned_by_player(root, self.player):
+            return
+        if not self._is_adepta_sororitas_unit(root):
+            return
+        stratagem = self.get_by_name("SHIELD OF DENIAL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        resolved_phase = str(phase_name or self._current_phase_name or "").strip() or "Any phase"
+        candidates = self._champions_of_faith_shield_of_denial_candidates(source_unit=root)
         if not candidates:
             return
         if self._hallowed_reaction_already_queued(
@@ -1203,6 +1944,44 @@ class AdeptaSororitasStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_champions_of_faith_fight_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_champions_of_faith():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "fight phase":
+            return
+        if self._as_owned_by_player(attacking_unit, self.player):
+            return
+        stratagem = self.get_by_name("BASTION OF FAITH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._champions_of_faith_bastion_of_faith_candidates(target_units=target_units)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacking_unit,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_hallowed_martyrs_shooting_resolved_reactions(self, *, attacker_unit: Any, hits_by_target: Any = None) -> None:
         if attacker_unit is None or not self._is_hallowed_martyrs():
             return
@@ -1323,6 +2102,56 @@ class AdeptaSororitasStratagemMixin:
             "target_unit": root,
             "candidates": [root],
             "action": "advance",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_champions_of_faith_move_started_reactions(self, *, unit: Any, action: Any) -> None:
+        if unit is None or not self._is_champions_of_faith():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        root = self._as_root(unit)
+        if root is None:
+            return
+        if not self._as_owned_by_player(root, self.player):
+            return
+        if not self._as_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_adepta_sororitas_unit(root):
+            return
+        stratagem = self.get_by_name("INDEFATIGABLE DEDICATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._champions_of_faith_indefatigable_dedication_candidates(moved_unit=root, action=action)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_started":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": candidates,
+            "action": "fall_back",
         }
         self._queue_reaction(payload, use_timer=False)
 
@@ -1765,6 +2594,78 @@ class AdeptaSororitasStratagemMixin:
             ring += step
         return None
 
+    def _cleanup_champions_of_faith_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_champions_of_faith():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        active_turn_owner_id = self._as_current_turn_owner_id()
+        current_turn = self._as_current_turn()
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            root_id = self._as_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            path_owner = str(sr.get("champions_of_faith_path_of_the_righteous_turn_owner", "") or "")
+            path_turn = int(sr.get("champions_of_faith_path_of_the_righteous_turn", 0) or 0)
+            if (
+                sr.get("champions_of_faith_path_of_the_righteous_active") is True
+                and path_owner
+                and active_turn_owner_id
+                and path_owner == active_turn_owner_id
+                and (not path_turn or not current_turn or path_turn == current_turn)
+            ):
+                for key in (
+                    "champions_of_faith_path_of_the_righteous_active",
+                    "champions_of_faith_path_of_the_righteous_turn_owner",
+                    "champions_of_faith_path_of_the_righteous_turn",
+                    "champions_of_faith_path_of_the_righteous_source",
+                    "stratagem_pile_in_distance_override",
+                    "stratagem_consolidate_distance_override",
+                    "stratagem_choreographer_of_war_source",
+                    "stratagem_choreographer_of_war_expires_phase",
+                    "stratagem_choreographer_of_war_turn_owner",
+                    "stratagem_choreographer_of_war_turn",
+                ):
+                    sr.pop(key, None)
+                cache = getattr(root, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    cache.pop("choreographer_of_war_source", None)
+            retreat_owner = str(sr.get("champions_of_faith_indefatigable_dedication_turn_owner", "") or "")
+            retreat_turn = int(sr.get("champions_of_faith_indefatigable_dedication_turn", 0) or 0)
+            if (
+                sr.get("champions_of_faith_indefatigable_dedication_active") is True
+                and retreat_owner
+                and active_turn_owner_id
+                and retreat_owner == active_turn_owner_id
+                and (not retreat_turn or not current_turn or retreat_turn == current_turn)
+            ):
+                for key in (
+                    "champions_of_faith_indefatigable_dedication_active",
+                    "champions_of_faith_indefatigable_dedication_turn_owner",
+                    "champions_of_faith_indefatigable_dedication_turn",
+                    "champions_of_faith_indefatigable_dedication_source",
+                    "champions_of_faith_indefatigable_dedication_can_charge",
+                ):
+                    sr.pop(key, None)
+                cache = getattr(root, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    cache.pop("fell_back_and_shoot", None)
+            root.special_rules = sr
+
     def _use_adepta_sororitas_hallowed_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "BLAZING IRE":
@@ -1777,6 +2678,18 @@ class AdeptaSororitasStratagemMixin:
             return self._use_bringers_of_flame_righteous_blows(stratagem, **kwargs)
         if name_u == "RITES OF FIRE":
             return self._use_bringers_of_flame_rites_of_fire(stratagem, **kwargs)
+        if name_u == "BASTION OF FAITH":
+            return self._use_champions_of_faith_bastion_of_faith(stratagem, **kwargs)
+        if name_u == "INDEFATIGABLE DEDICATION":
+            return self._use_champions_of_faith_indefatigable_dedication(stratagem, **kwargs)
+        if name_u == "PATH OF THE RIGHTEOUS":
+            return self._use_champions_of_faith_path_of_the_righteous(stratagem, **kwargs)
+        if name_u == "SHIELD OF DENIAL":
+            return self._use_champions_of_faith_shield_of_denial(stratagem, **kwargs)
+        if name_u == "SUFFER NOT THE UNFAITHFUL":
+            return self._use_champions_of_faith_suffer_not_the_unfaithful(stratagem, **kwargs)
+        if name_u == "TO THE HEART OF HERESY":
+            return self._use_champions_of_faith_to_the_heart_of_heresy(stratagem, **kwargs)
         if name_u == "BLINDING RADIANCE":
             return self._use_army_of_faith_blinding_radiance(stratagem, **kwargs)
         if name_u == "DIVINE GUIDANCE":
@@ -2178,6 +3091,447 @@ class AdeptaSororitasStratagemMixin:
         logger.info(
             "INFO: RITES OF FIRE: %s gains +1 to wound on qualifying ranged attacks this phase and can force a Battle-shock test after a qualifying kill.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_champions_of_faith_bastion_of_faith(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BASTION OF FAITH":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BASTION OF FAITH: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: BASTION OF FAITH: wrong phase")
+            return False
+        eligible = candidates or self._champions_of_faith_bastion_of_faith_candidates(target_units=target_units)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BASTION OF FAITH: target is not currently eligible")
+            return False
+        if attacking_unit is not None and self._as_owned_by_player(attacking_unit, self.player):
+            logger.error("ERROR: BASTION OF FAITH: attacker is not enemy")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: BASTION OF FAITH: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: BASTION OF FAITH: target cannot be selected")
+            return False
+        if not self._champions_of_faith_is_celestian_sacresants(root):
+            logger.error("ERROR: BASTION OF FAITH: target must be Celestian Sacresants")
+            return False
+        secondary_candidates = self._champions_of_faith_bastion_secondary_candidates(primary_unit=root)
+        secondary_request = None
+        if secondary_candidates:
+            secondary_request = self._build_champions_of_faith_bastion_secondary_request(
+                primary_unit=root,
+                phase_name="Fight phase",
+                stratagem_name=str(getattr(stratagem, "name", "") or "BASTION OF FAITH"),
+            )
+            if secondary_request is None:
+                logger.error("ERROR: BASTION OF FAITH: failed to build secondary selection request")
+                return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        self._append_defensive_effect(
+            root,
+            "defensive_hit_mods",
+            {
+                "value": 1,
+                "attack_type": "melee",
+                "expires_phase": self._as_phase_key("Fight phase"),
+                "source": str(stratagem.name or "BASTION OF FAITH"),
+            },
+        )
+        if secondary_request is not None and not self._as_submit_decision_request(secondary_request):
+            logger.error("ERROR: BASTION OF FAITH: failed to queue secondary selection request")
+            return False
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BASTION OF FAITH: %s gains -1 to hit against melee attacks%s.",
+            getattr(root, "name", "Unit"),
+            " and queued an optional second Sacresants selection"
+            if secondary_request is not None
+            else "",
+        )
+        return True
+
+    def _use_champions_of_faith_indefatigable_dedication(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or not candidates or action is None) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "INDEFATIGABLE DEDICATION":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if action is None:
+                    action = reaction.get("action")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: not your Movement phase")
+            return False
+        if str(action or "").strip().lower() != "fall_back":
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: target unit must have just Fallen Back")
+            return False
+        eligible = candidates or self._champions_of_faith_indefatigable_dedication_candidates(moved_unit=root, action=action)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: INDEFATIGABLE DEDICATION: target is not ADEPTA SORORITAS")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["champions_of_faith_indefatigable_dedication_active"] = True
+        sr["champions_of_faith_indefatigable_dedication_turn_owner"] = self._as_current_turn_owner_id()
+        sr["champions_of_faith_indefatigable_dedication_turn"] = self._as_current_turn()
+        sr["champions_of_faith_indefatigable_dedication_source"] = str(stratagem.name or "INDEFATIGABLE DEDICATION")
+        sr["champions_of_faith_indefatigable_dedication_can_charge"] = self._champions_of_faith_is_righteous(root)
+        root.special_rules = sr
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.pop("fell_back_and_shoot", None)
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: INDEFATIGABLE DEDICATION: %s can shoot after Falling Back this turn%s.",
+            getattr(root, "name", "Unit"),
+            " and charge as well" if self._champions_of_faith_is_righteous(root) else "",
+        )
+        return True
+
+    def _use_champions_of_faith_path_of_the_righteous(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: wrong phase")
+            return False
+        eligible = candidates or self._champions_of_faith_path_of_the_righteous_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: target is not ADEPTA SORORITAS")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: PATH OF THE RIGHTEOUS: target has already fought")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        turn_owner_id = self._as_current_turn_owner_id()
+        current_turn = self._as_current_turn()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["champions_of_faith_path_of_the_righteous_active"] = True
+        sr["champions_of_faith_path_of_the_righteous_turn_owner"] = turn_owner_id
+        sr["champions_of_faith_path_of_the_righteous_turn"] = current_turn
+        sr["champions_of_faith_path_of_the_righteous_source"] = str(stratagem.name or "PATH OF THE RIGHTEOUS")
+        sr["stratagem_pile_in_distance_override"] = max(float(sr.get("stratagem_pile_in_distance_override", 0.0) or 0.0), 6.0)
+        sr["stratagem_consolidate_distance_override"] = max(
+            float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0),
+            6.0,
+        )
+        if self._champions_of_faith_is_righteous(root):
+            sr["stratagem_choreographer_of_war_source"] = str(stratagem.name or "PATH OF THE RIGHTEOUS")
+            sr["stratagem_choreographer_of_war_expires_phase"] = "FIGHT_PHASE"
+            sr["stratagem_choreographer_of_war_turn_owner"] = turn_owner_id
+            sr["stratagem_choreographer_of_war_turn"] = current_turn
+        root.special_rules = sr
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.pop("choreographer_of_war_source", None)
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PATH OF THE RIGHTEOUS: %s can Pile-in and Consolidate up to 6\" this phase%s.",
+            getattr(root, "name", "Unit"),
+            " and follows the closest enemy unit rule" if self._champions_of_faith_is_righteous(root) else "",
+        )
+        return True
+
+    def _use_champions_of_faith_shield_of_denial(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        source_unit = kwargs.get("source_unit") or kwargs.get("trigger_unit") or kwargs.get("suffering_unit")
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (source_unit is None or unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SHIELD OF DENIAL":
+                    continue
+                if source_unit is None:
+                    source_unit = reaction.get("source_unit") or reaction.get("trigger_unit")
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if source_unit is None:
+            logger.error("ERROR: SHIELD OF DENIAL: no source unit provided")
+            return False
+        if unit is None:
+            logger.error("ERROR: SHIELD OF DENIAL: no target unit provided")
+            return False
+        source_root = self._as_root(source_unit)
+        root = self._as_root(unit)
+        if source_root is None or root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip() or "Any phase"
+        eligible = candidates or self._champions_of_faith_shield_of_denial_candidates(source_unit=source_root)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SHIELD OF DENIAL: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: SHIELD OF DENIAL: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SHIELD OF DENIAL: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: SHIELD OF DENIAL: target is not ADEPTA SORORITAS")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._as_phase_key(phase_name)
+        fnp_value = 5 if self._champions_of_faith_is_righteous(root) else 6
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+            if not callable(set_temporary_fnp):
+                continue
+            set_temporary_fnp(
+                key=f"champions_of_faith_shield_of_denial:{self._as_sort_key(root)}:{get_entity_id(model)}",
+                value=fnp_value,
+                source=str(stratagem.name or "SHIELD OF DENIAL"),
+                condition="against mortal wounds",
+                expires_phase=phase_key,
+            )
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SHIELD OF DENIAL: %s gains Feel No Pain %d+ against mortal wounds this phase.",
+            getattr(root, "name", "Unit"),
+            int(fnp_value),
+        )
+        return True
+
+    def _use_champions_of_faith_suffer_not_the_unfaithful(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: shooting-phase use requires your Shooting phase")
+            return False
+        eligible = candidates or self._champions_of_faith_suffer_not_the_unfaithful_candidates(
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        )
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target is not ADEPTA SORORITAS")
+            return False
+        if not self._champions_of_faith_is_righteous(root):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target must be Righteous")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: target has already fought")
+            return False
+        choice_request = self._build_champions_of_faith_suffer_choice_request(
+            unit=root,
+            phase_name="Shooting phase" if phase_name == "shooting phase" else "Fight phase",
+            stratagem_name=str(getattr(stratagem, "name", "") or "SUFFER NOT THE UNFAITHFUL"),
+        )
+        if choice_request is None:
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: failed to build choice request")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._as_submit_decision_request(choice_request):
+            logger.error("ERROR: SUFFER NOT THE UNFAITHFUL: failed to queue choice request")
+            return False
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUFFER NOT THE UNFAITHFUL: queued keyword choice for %s.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_champions_of_faith_to_the_heart_of_heresy(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_champions_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TO THE HEART OF HERESY: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: TO THE HEART OF HERESY: wrong phase")
+            return False
+        eligible = candidates or self._champions_of_faith_to_the_heart_of_heresy_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: TO THE HEART OF HERESY: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: TO THE HEART OF HERESY: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: TO THE HEART OF HERESY: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: TO THE HEART OF HERESY: target is not ADEPTA SORORITAS")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: TO THE HEART OF HERESY: target has already fought")
+            return False
+        if not self._as_unit_has_melee_weapon(root):
+            logger.error("ERROR: TO THE HEART OF HERESY: target has no melee weapons")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._as_phase_key("Fight phase")
+        ap_bonus = 1 if self._champions_of_faith_is_righteous(root) else 0
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            for profile in self._as_model_weapon_profiles(model, attack_type="melee"):
+                lookup_name_fn = getattr(profile, "_temporary_weapon_lookup_name", None)
+                weapon_name = lookup_name_fn() if callable(lookup_name_fn) else str(getattr(profile, "name", "") or "")
+                if not weapon_name:
+                    continue
+                set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                set_bonus(
+                    key=f"champions_of_faith_to_the_heart_of_heresy:{self._as_sort_key(root)}:{model_id}:{weapon_name}",
+                    weapon_name=weapon_name,
+                    strength_bonus=1,
+                    ap_bonus=ap_bonus,
+                    source=str(stratagem.name or "TO THE HEART OF HERESY"),
+                    expires_phase=phase_key,
+                )
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TO THE HEART OF HERESY: %s gains +1 Strength on melee weapons this phase%s.",
+            getattr(root, "name", "Unit"),
+            " and +1 AP" if ap_bonus else "",
         )
         return True
 

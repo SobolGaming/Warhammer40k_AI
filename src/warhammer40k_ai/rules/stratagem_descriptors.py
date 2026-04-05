@@ -2456,6 +2456,93 @@ _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BRINGERS_OF_FLAME_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CHAMPIONS_OF_FAITH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009832006": StratagemToolDescriptor(
+        stratagem_id="000009832006",
+        name="Bastion of Faith",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="celestian_sacresants_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="melee_hit_penalty_with_optional_secondary_sacresants_within_6_if_righteous",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "attack_type": "melee",
+            "hit_penalty": 1,
+            "optional_secondary_required_unit_name": "Celestian Sacresants",
+            "optional_secondary_range_inches": 6.0,
+            "optional_secondary_requires_not_battle_shocked": True,
+            "optional_secondary_requires_righteous_target": True,
+        },
+    ),
+    "000009832007": StratagemToolDescriptor(
+        stratagem_id="000009832007",
+        name="Indefatigable Dedication",
+        timing="your_movement_phase_after_fall_back",
+        target="adepta_sororitas_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="fall_back_shoot_with_optional_fall_back_charge_if_righteous",
+        cp_cost=1,
+        effect_params={
+            "allow_shoot_after_fall_back": True,
+            "allow_charge_after_fall_back_if_righteous": True,
+        },
+    ),
+    "000009832005": StratagemToolDescriptor(
+        stratagem_id="000009832005",
+        name="Path of the Righteous",
+        timing="fight_phase_start",
+        target="adepta_sororitas_unit_not_yet_fought",
+        duration="until_end_of_turn",
+        effect="pile_in_and_consolidate_up_to_6_with_closest_enemy_unit_rule_if_righteous",
+        cp_cost=1,
+        effect_params={
+            "pile_in_distance": 6,
+            "consolidate_distance": 6,
+            "righteous_uses_closest_enemy_unit_rule": True,
+        },
+    ),
+    "000009832002": StratagemToolDescriptor(
+        stratagem_id="000009832002",
+        name="Shield of Denial",
+        timing="any_phase_after_friendly_unit_suffers_mortal_wound",
+        target="adepta_sororitas_unit",
+        duration="until_end_of_phase",
+        effect="mortal_wound_fnp_6_or_5_if_righteous",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 6, "feel_no_pain_if_righteous": 5, "condition": "against mortal wounds"},
+    ),
+    "000009832003": StratagemToolDescriptor(
+        stratagem_id="000009832003",
+        name="Suffer Not the Unfaithful",
+        timing="your_shooting_phase_or_fight_phase_on_select",
+        target="righteous_adepta_sororitas_unit_not_yet_acted",
+        duration="until_end_of_phase",
+        effect="choose_lethal_hits_or_sustained_hits_1_for_unit_weapons",
+        cp_cost=1,
+        effect_params={
+            "choices": {
+                "LETHAL_HITS": {"keywords": ["LETHAL HITS"]},
+                "SUSTAINED_HITS_1": {"keywords": ["SUSTAINED HITS 1"]},
+            }
+        },
+    ),
+    "000009832004": StratagemToolDescriptor(
+        stratagem_id="000009832004",
+        name="To the Heart of Heresy",
+        timing="fight_phase_start",
+        target="adepta_sororitas_unit_not_yet_fought",
+        duration="until_end_of_turn",
+        effect="melee_strength_bonus_with_ap_bonus_if_righteous",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "strength_bonus": 1, "ap_bonus_if_righteous": 1},
+    ),
+}
+
+_CHAMPIONS_OF_FAITH_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_FAITH_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -11549,6 +11636,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BRINGERS_OF_FLAME_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CHAMPIONS_OF_FAITH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -11918,6 +12008,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)
+        or _CHAMPIONS_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)

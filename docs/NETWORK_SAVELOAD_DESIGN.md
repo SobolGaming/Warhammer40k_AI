@@ -236,6 +236,8 @@ Command phase:
 - primarch_of_the_first_legion_dialog: CHOOSE_QUARRY {choice_keys[2]} (context `ability="primarch_of_the_first_legion"`, `ability_name="Primarch of the First Legion"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices=2`, `optional=false`)
 - mist_wreathed_shadow_realms_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="mist_wreathed_shadow_realms"`, `ability_name="Mist-wreathed Shadow Realms"`, `source_unit_id`, `unit_id`, `battle_round`, `phase="COMMAND_PHASE"`)
 - embodied_prophecy_dialog: CHOOSE_QUARRY {choice_key} (context `ability="embodied_prophecy"`, `ability_name`, `phase="Fight phase"`, `unit_id`, `source_unit_id`, `battle_round`, `turn_owner_id`, `candidate_choices[]`, `optional=false`)
+- suffer_not_the_unfaithful_dialog: CHOOSE_QUARRY {choice_key} (context `ability="champions_of_faith_suffer_not_the_unfaithful_choice"`, `ability_name="SUFFER NOT THE UNFAITHFUL"`, `phase_name`, `unit_id`, `attack_type`, `turn`, `turn_owner_id`, `candidate_choice_keys[]`, `optional=false`)
+- bastion_of_faith_secondary_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="champions_of_faith_bastion_of_faith_secondary"`, `ability_name="BASTION OF FAITH"`, `primary_unit_id`, `phase_name="Fight phase"`, `turn`, `turn_owner_id`, `candidate_unit_ids[]`, `optional=true`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)
 - here_be_loot_dialog: CHOOSE_QUARRY {objective_id} (context `ability="here_be_loot"`, `ability_name="Here Be Loot"`, `army_id`, `battle_round`, `candidate_objective_ids[]`, `optional=false`)

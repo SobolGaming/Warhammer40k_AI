@@ -18634,6 +18634,19 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("champions_of_faith_indefatigable_dedication_active")):
+                owner = str(sr.get("champions_of_faith_indefatigable_dedication_turn_owner", "") or "")
+                turn = int(sr.get("champions_of_faith_indefatigable_dedication_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
@@ -20040,6 +20053,23 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if self._carnival_sycophantic_surge_active_for_charge(game=game):
                     return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if (
+                isinstance(sr, dict)
+                and bool(sr.get("champions_of_faith_indefatigable_dedication_active"))
+                and bool(sr.get("champions_of_faith_indefatigable_dedication_can_charge"))
+            ):
+                owner = str(sr.get("champions_of_faith_indefatigable_dedication_turn_owner", "") or "")
+                turn = int(sr.get("champions_of_faith_indefatigable_dedication_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
         except Exception:
             pass
         try:

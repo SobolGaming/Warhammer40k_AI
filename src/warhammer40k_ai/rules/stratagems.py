@@ -42,6 +42,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSOR IMPERATIVE",
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
+    "BASTION OF FAITH",
     "BLINDING RADIANCE",
     "BALEFUL HALO",
     "BLAZING IRE",
@@ -126,6 +127,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RESTORATIVE IMPULSE",
     "SYNAPTIC SHIELD",
     "PARASITIC PAYLOAD",
+    "PATH OF THE RIGHTEOUS",
     "PHEROMONE WAYPOINTS",
     "SPONTANEOUS HYPERCORROSION",
     "UNSEEN LURKERS",
@@ -156,6 +158,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENSLAVED ARTIFICE",
     "ENFOLDING NIGHTMARE",
     "IMAGE OF DEATH",
+    "INDEFATIGABLE DEDICATION",
     "LIGHT OF THE EMPEROR",
     "MASS TRANSMOGRIFICATION",
     "METHODICAL MURDER",
@@ -169,6 +172,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "POISONER'S ART",
     "POSTMORTALITY",
     "SPREADING MADNESS",
+    "SUFFER NOT THE UNFAITHFUL",
     "SENTINELS OF ETERNITY",
     "SUFFER NO RIVAL",
     "SYNERGISTIC EMPOWERMENT",
@@ -193,6 +197,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAID AND FADE",
     "TAILORED TOXINS",
     "TAKEN ALIVE",
+    "TO THE HEART OF HERESY",
     "SCRAMBLED COORDINATES",
     "RUINOUS RAID",
     "SADISTIC DISPLAY",
@@ -213,6 +218,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SIEGECRAFT",
     "SEIZE THE PRIZE",
     "SECURE BIOMASS",
+    "SHIELD OF DENIAL",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
     "DESECRATION OF WORLDS",
@@ -2277,6 +2283,7 @@ class StratagemManager(
             "FUELLED BY FAITH",
             "LAYERED WARDS",
             "PROTECTION OF THE DARK PRINCE",
+            "SHIELD OF DENIAL",
             "SHIELD OF FAITH",
             "THIEVES OF PAIN",
         }:
@@ -2465,6 +2472,7 @@ class StratagemManager(
             "FIGHTING SHADOWS",
         }
         fight_reaction_names = {
+            "BASTION OF FAITH",
             "BALEFUL HALO",
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
@@ -8681,6 +8689,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_champions_of_faith_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_hallowed_martyrs_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9615,6 +9627,10 @@ class StratagemManager(
     def _on_phase_end(self, player, phase, **kwargs):
         try:
             self._cleanup_tau_kroot_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_champions_of_faith_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Queue NEW ORDERS at end of your Command phase
@@ -11803,6 +11819,7 @@ class StratagemManager(
             action=action,
         )
         self._queue_bringers_of_flame_move_started_reactions(unit=unit, action=action)
+        self._queue_champions_of_faith_move_started_reactions(unit=unit, action=action)
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
         self._queue_orks_move_started_reactions(unit=unit, action=action)
@@ -14320,6 +14337,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_champions_of_faith_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_pantheon_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -16494,6 +16518,15 @@ class StratagemManager(
             raise
         try:
             self._queue_army_of_faith_shield_of_faith_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_champions_of_faith_shield_of_denial_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,
