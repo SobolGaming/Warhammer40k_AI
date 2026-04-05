@@ -8,6 +8,7 @@ from .event.system import EventSystem
 from .event_log import DeterministicEventLog
 from ..battlefield.map import Map, Objective
 from .mission_cards import PrimaryMissionCard, SecondaryMissionCard
+from . import game_decision_runtime, game_scoring, game_serialization
 from ..roster.player import Player
 from ..units.unit import Unit
 from ..units.model import Model
@@ -11947,205 +11948,7 @@ class Game(
 
     def request_decision(self, request: DecisionRequest) -> None:
         """Queue a decision request (interrupt window)."""
-        if request is None:
-            return
-        request.finalize_candidates()
-        # Ensure dice roll state exists on clients for dice roll decisions.
-        try:
-            from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
-            if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
-                ctx = dict(getattr(request, "context", {}) or {})
-                roll_id = ctx.get("roll_id")
-                if roll_id is not None and self.roll_manager is not None:
-                    if self.roll_manager.get_roll(int(roll_id)) is None:
-                        from .dice_rolls import DiceRollState
-                        spec = dict(ctx.get("roll_spec", {}) or {})
-                        self.roll_manager.rolls[int(roll_id)] = DiceRollState(
-                            roll_id=int(roll_id),
-                            player_id=request.player_id,
-                            spec=spec,
-                            status="pending",
-                        )
-        except Exception:
-            pass
-        ctx = dict(getattr(request, "context", {}) or {})
-        ruleset_ctx = self.get_ruleset_context()
-        if "rules_bundle" not in ctx:
-            ctx["rules_bundle"] = dict(ruleset_ctx or {})
-        elif dict(ctx.get("rules_bundle", {}) or {}) != dict(ruleset_ctx or {}):
-            raise ValueError("Decision context rules_bundle mismatch with game rules bundle.")
-        for key, value in ruleset_ctx.items():
-            if key not in ctx:
-                ctx[key] = value
-            elif ctx.get(key) != value:
-                raise ValueError(f"Decision context ruleset mismatch for {key}: {ctx.get(key)} != {value}")
-        rules_bundle = getattr(self, "ruleset_bundle", None)
-        rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
-        if rules_bundle_id and "rules_bundle_id" not in ctx:
-            ctx["rules_bundle_id"] = rules_bundle_id
-        descriptor_bundle = compile_descriptor_bundle(self)
-        if "descriptor_ids" not in ctx or not isinstance(ctx.get("descriptor_ids"), dict):
-            ctx["descriptor_ids"] = descriptor_bundle.descriptor_ids()
-        else:
-            descriptor_ids = dict(ctx.get("descriptor_ids", {}) or {})
-            expected_descriptor_ids = descriptor_bundle.descriptor_ids()
-            for key, value in expected_descriptor_ids.items():
-                existing_value = descriptor_ids.get(key)
-                if existing_value in (None, "", []):
-                    descriptor_ids[key] = value
-            ctx["descriptor_ids"] = descriptor_ids
-        if "descriptor_bundle_id" not in ctx:
-            ctx["descriptor_bundle_id"] = str(descriptor_bundle.bundle_id)
-        ctx = ensure_version_adapter_boundary(ctx)
-        plan_player_id = str(getattr(request, "player_id", "") or "")
-        if not plan_player_id:
-            current_player = self.get_current_player() if self.players else None
-            plan_player_id = str(getattr(current_player, "id", "") or "")
-        if plan_player_id:
-            plan = self.get_or_create_tier1_plan(plan_player_id)
-            tier2_bundle = self.get_or_create_tier2_task_bundle(plan_player_id)
-            if "plan_id" not in ctx:
-                ctx["plan_id"] = plan.plan_id
-            if "turn_plan" not in ctx:
-                ctx["turn_plan"] = plan.to_dict()
-            if "score_window_state" not in ctx:
-                ctx["score_window_state"] = {
-                    "windows": [window.to_dict() for window in list(plan.scoring_windows or [])],
-                    "battle_round": int(getattr(plan, "battle_round", 0) or 0),
-                }
-            if "opportunity_catalog" not in ctx:
-                ctx["opportunity_catalog"] = {
-                    "priority": [opp.to_dict() for opp in list(plan.priority_opportunities or [])],
-                    "denial": [opp.to_dict() for opp in list(plan.denial_opportunities or [])],
-                }
-            if "mission_state" not in ctx:
-                ctx["mission_state"] = {
-                    "selected_mission_info": dict(getattr(self, "selected_mission_info", {}) or {}),
-                    "secondary_mission_mode": str(getattr(self, "secondary_mission_mode", "") or ""),
-                }
-            if "terrain_state_summary" not in ctx:
-                map_obj = getattr(self, "map", None)
-                terrain_features = list(getattr(map_obj, "terrain_features", []) or [])
-                terrain_ids = sorted(str(getattr(feature, "id", "") or "") for feature in terrain_features)
-                ctx["terrain_state_summary"] = {
-                    "terrain_count": int(len(terrain_features)),
-                    "terrain_ids": terrain_ids,
-                }
-            if "cp_reserve_policy" not in ctx:
-                ctx["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
-            unit_id = str(ctx.get("unit_id", "") or "")
-            task = tier2_bundle.tasks_by_unit_id.get(unit_id) if unit_id else None
-            if task is not None:
-                if "tier2_task" not in ctx:
-                    ctx["tier2_task"] = task.to_dict()
-                if "movement_intent" not in ctx:
-                    ctx["movement_intent"] = task.movement_intent.to_dict()
-                if "compute_tier" not in ctx:
-                    ctx["compute_tier"] = str(task.compute_tier)
-            if "compute_tier" not in ctx:
-                ctx["compute_tier"] = "P1"
-        time_manager = getattr(self, "time_manager", None)
-        if time_manager is None:
-            time_manager = TimeManager()
-            self.time_manager = time_manager
-        ctx = time_manager.decorate_context(request.decision_type, ctx)
-        if request.decision_type in (
-            DECISION_CHOOSE_DEPLOYMENT_ZONE,
-            DECISION_SELECT_NEXT_DEPLOY_UNIT,
-            DECISION_DECLARE_RESERVES,
-            DECISION_SCOUT_MOVE,
-        ):
-            deployment_intent = DeploymentIntent.from_context(ctx)
-            ctx["deployment_intent"] = deployment_intent.to_dict()
-            request.context = ctx
-            deployment_candidates, deployment_mask, solver_ms, fallback_mode = generate_deployment_candidates(
-                self,
-                request,
-                deployment_intent,
-            )
-            if deployment_candidates:
-                normalized_candidates: list[CandidateAction] = []
-                for candidate in list(deployment_candidates or []):
-                    metadata = dict(candidate.metadata or {})
-                    metadata["solver_ms"] = int(max(0, solver_ms))
-                    metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
-                    normalized_candidates.append(
-                        CandidateAction(
-                            action_id=str(candidate.action_id),
-                            params=dict(candidate.params or {}),
-                            metadata=metadata,
-                        )
-                    )
-                request.candidates = normalized_candidates
-                request.mask = [bool(value) for value in list(deployment_mask or [])]
-                if len(request.mask) != len(request.candidates):
-                    request.mask = [True] * len(request.candidates)
-                request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
-        if request.decision_type == DECISION_MOVE_UNIT:
-            placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
-            if placement_kind == "deployment":
-                deployment_intent = DeploymentIntent.from_context(ctx)
-                ctx["deployment_intent"] = deployment_intent.to_dict()
-                request.context = ctx
-                deployment_candidates, deployment_mask, solver_ms, fallback_mode = generate_deployment_candidates(
-                    self,
-                    request,
-                    deployment_intent,
-                )
-                if deployment_candidates:
-                    normalized_candidates: list[CandidateAction] = []
-                    for candidate in list(deployment_candidates or []):
-                        metadata = dict(candidate.metadata or {})
-                        metadata["solver_ms"] = int(max(0, solver_ms))
-                        metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
-                        normalized_candidates.append(
-                            CandidateAction(
-                                action_id=str(candidate.action_id),
-                                params=dict(candidate.params or {}),
-                                metadata=metadata,
-                            )
-                        )
-                    request.candidates = normalized_candidates
-                    request.mask = [bool(value) for value in list(deployment_mask or [])]
-                    if len(request.mask) != len(request.candidates):
-                        request.mask = [True] * len(request.candidates)
-                    request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
-            else:
-                # Placement-style move decisions are resolved via explicit model_positions payloads.
-                # Skip generic move candidate generation for these to avoid expensive unused solver work.
-                if placement_kind not in ("advance_redeploy_9h", "normal_move_redeploy_9h"):
-                    if getattr(self, "path_witness_store", None) is None:
-                        self.path_witness_store = PathWitnessStore()
-                    intent = MovementIntent.from_context(ctx)
-                    ctx["movement_intent"] = intent.to_dict()
-                    request.context = ctx
-                    move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
-                    if move_candidates:
-                        normalized_candidates: list[CandidateAction] = []
-                        for candidate in list(move_candidates or []):
-                            metadata = dict(candidate.metadata or {})
-                            metadata["solver_ms"] = int(max(0, solver_ms))
-                            metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
-                            normalized_candidates.append(
-                                CandidateAction(
-                                    action_id=str(candidate.action_id),
-                                    params=dict(candidate.params or {}),
-                                    metadata=metadata,
-                                )
-                            )
-                        request.candidates = normalized_candidates
-                        request.mask = [bool(value) for value in list(move_mask or [])]
-                        if len(request.mask) != len(request.candidates):
-                            request.mask = [True] * len(request.candidates)
-                        request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
-        semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
-        ensure_candidate_semantic_metadata(
-            request,
-            rules_bundle_id=semantic_rules_bundle_id,
-        )
-        request.context = ctx
-        self.decision_queue.add(request)
-        self.event_system.publish("decision_requested", request=request, game=self)
+        game_decision_runtime.request_decision(self, request)
 
     def request_dice_roll(self, *, player_id: Optional[str], spec: dict, prompt: Optional[str] = None) -> DecisionRequest:
         """Create and queue a dice roll decision via the roll manager."""
@@ -13339,54 +13142,20 @@ class Game(
         return False
 
     def get_winner(self) -> Player | None:
-        # Return the winning player or None if the game is not over
-        if self.is_game_over():
-            self.finalize_battle_scoring()
-            if not self.players:
-                return None
-            max_vp = max((p.get_score() for p in self.players), default=0)
-            winners = [p for p in self.players if p.get_score() == max_vp]
-            if len(winners) != 1:
-                return None  # Draw
-            return winners[0]
-        return None
+        return game_scoring.get_winner(self)
 
     def get_loser(self) -> Player | None:
-        if self.is_game_over():
-            self.finalize_battle_scoring()
-            if not self.players:
-                return None
-            min_vp = min((p.get_score() for p in self.players), default=0)
-            losers = [p for p in self.players if p.get_score() == min_vp]
-            if len(losers) != 1:
-                return None  # Draw
-            return losers[0]
-        return None
+        return game_scoring.get_loser(self)
 
     def get_state(self) -> Dict[str, Any]:
-        # Return the current game state as a dictionary.
-        # TODO: refine for serialization and network transport.
-        return {
-            "players": self.players,
-            "battlefield": self.battlefield,
-            "map": self.map,
-            "current_player": self.get_current_player(),
-            "turn": self.turn,
-            "phase": self.phase,
-        }
+        return game_serialization.get_state(self)
 
     def save_snapshot(self) -> dict:
-        """Serialize the current game state into a snapshot payload."""
-        from .snapshot import snapshot_game
-
-        return snapshot_game(self)
+        return game_serialization.save_snapshot(self)
 
     @staticmethod
     def load_snapshot(snapshot: dict) -> "Game":
-        """Load a game instance from a snapshot payload."""
-        from .snapshot import load_game_snapshot
-
-        return load_game_snapshot(snapshot)
+        return game_serialization.load_snapshot(snapshot)
 
     def _emergency_combat_embarkation_used_this_turn(self, transport) -> bool:
         if transport is None:

@@ -10,17 +10,12 @@ from .player_intent_gateway import IntentRoutedGameProxy, PlayerIntentGateway
 from .command_dispatcher import CommandResult
 from .commands import GameCommand
 from .game import Game
+from .game_setup_flow import driver_managed_setup_phases
 from .mission_selection import iter_mission_combinations
-from .phase import SetupPhase
 from ..utility.dice import get_dice_roll
 from ..utility.game_context import game_context, roll_context
 
-_DRIVER_MANAGED_SETUP_PHASES = {
-    SetupPhase.MUSTER_ARMIES,
-    SetupPhase.SELECT_MISSION_OBJECTIVES,
-    SetupPhase.CREATE_BATTLEFIELD,
-    SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER,
-}
+_DRIVER_MANAGED_SETUP_PHASES = driver_managed_setup_phases()
 
 
 @dataclass(frozen=True)

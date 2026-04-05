@@ -52,6 +52,12 @@ This progression is orchestrated through the shared `AuthoritativeSessionDriver`
 (`src/warhammer40k_ai/engine/authoritative_session_driver.py`), so setup
 sequencing logic is not owned exclusively by `NetworkServer`.
 
+The engine now also exposes an explicit pregame step model through
+`Game.get_pregame_flow_state()`; see `docs/PREGAME_SETUP_FLOW.md`.
+That model records the preview-aligned steps `determine_deployment`,
+`optional_twist`, and `select_secondary_missions` as derived or stubbed
+steps without changing the current command-level setup compatibility flow.
+
 Local runtime parity note:
 - `scripts/main.py` uses `LocalAuthoritativeRuntime` (`src/warhammer40k_ai/engine/local_runtime.py`)
   to run the same driver-managed pre-formation setup phases in-process

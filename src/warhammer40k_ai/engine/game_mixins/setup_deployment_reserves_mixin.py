@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+from .. import game_setup_flow
 from ..prospective_positions import calculate_prospective_model_positions
 import logging
 logger = logging.getLogger(__name__)
@@ -2739,105 +2740,23 @@ class GameSetupDeploymentReservesMixin:
 
     def is_in_setup_phase(self) -> bool:
         """Check if we're still in the setup phase."""
-        return not self.setup_complete
+        return game_setup_flow.is_in_setup_phase(self)
 
     def get_current_setup_phase(self) -> SetupPhase:
         """Get the current setup phase."""
-        return self.setup_phase
+        return game_setup_flow.get_current_setup_phase(self)
+
+    def get_pregame_flow_state(self):
+        """Return the explicit pregame flow state, including provisional preview-only steps."""
+        return game_setup_flow.build_pregame_flow_state(self)
 
     def _advance_setup_phase_impl(self) -> bool:
         """Advance to the next setup phase. Returns True if setup is complete."""
-        if self.setup_complete:
-            return True
-        
-        current_phase_value = self.setup_phase.value
-        next_phase_value = current_phase_value + 1
-        
-        if next_phase_value >= len(SetupPhase):
-            # Setup is complete, start battle rounds
-            self.setup_complete = True
-            # AIRCRAFT are treated as Strategic Reserves once the battle starts.
-            for player in list(self.players or []):
-                if player is None:
-                    raise RuntimeError("Missing player when applying aircraft reserve updates.")
-                army = player.get_army()
-                if army is None:
-                    raise RuntimeError(f"Missing army for {player.name} when applying aircraft reserve updates.")
-                for unit in list(army.units):
-                    if unit is None:
-                        continue
-                    if not bool(getattr(unit, "is_aircraft", False)):
-                        continue
-                    if bool(getattr(unit, "hover_mode", False)):
-                        continue
-                    if str(getattr(unit, "reserve_status", "deployed")) != "reserves":
-                        continue
-                    unit.set_reserve_status("strategic_reserves")
-            # Set current player to first turn player
-            if self.first_turn_player_index is not None:
-                self.current_player_index = self.first_turn_player_index
-            else:
-                # Default: attacker goes first
-                self.current_player_index = self.attacker_index if self.attacker_index is not None else 0
-            
-            # Set the battle round starting player to whoever goes first
-            self.battle_round_starting_player_index = self.current_player_index
-            self.phase = BattleRoundPhases.COMMAND_PHASE
-
-            # BR1 start-of-battle-round hook:
-            # At game start we haven't completed a full round cycle yet, so the normal
-            # next_phase() logic won't publish battle_round_started until BR2.
-            # Publish it now so "start of the first battle round" abilities trigger (e.g. Shalaxi quarry).
-            for player in list(self.players or []):
-                if player is None:
-                    raise RuntimeError("Missing player when starting battle round.")
-                army = player.get_army()
-                if army is None:
-                    raise RuntimeError(f"Missing army for {player.name} when starting battle round.")
-                for unit in list(army.units):
-                    unit.initialize_round()
-                # Army-level battle round start hook (faction rules/buffs)
-                army.on_battle_round_start(self.turn)
-            self.event_system.publish("battle_round_started", game=self, battle_round=self.turn)
-
-            # Start of Command phase for the first battle round.
-            self.start_command_phase()
-
-            # Show detailed first turn information
-            first_turn_player = self.get_current_player()
-            if self.first_turn_player_index == self.attacker_index:
-                role = "Attacker"
-            elif self.first_turn_player_index == self.defender_index:
-                role = "Defender"
-            else:
-                role = "Player"
-
-            logger.info(f"Setup complete! {first_turn_player.name} ({role}) goes first")
-            return True
-        else:
-            self.setup_phase = SetupPhase(next_phase_value)
-            if self.setup_phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
-                if bool(getattr(self, "is_authoritative", True)):
-                    self.request_mission_selection()
-            if self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
-                self._queue_prebattle_rules_start_requests()
-            logger.info(f"Advanced to setup phase: {self.setup_phase.name}")
-            return False
+        return game_setup_flow.advance_setup_phase_impl(self)
 
     def advance_setup_phase(self) -> bool:
         """Advance to the next setup phase. Returns True if setup is complete."""
-        if self.in_command_context():
-            return self._advance_setup_phase_impl()
-        player_id = None
-        try:
-            player_id = self.get_current_player().id
-        except Exception:
-            player_id = None
-        cmd = GameCommand.create(CMD_ADVANCE_SETUP_PHASE, player_id=player_id)
-        result = self.apply_command(cmd)
-        if getattr(result, "ok", False):
-            return bool(getattr(result, "value", False))
-        return bool(self.setup_complete)
+        return game_setup_flow.advance_setup_phase(self)
 
     def execute_muster_armies_phase(
         self,
@@ -4609,59 +4528,11 @@ class GameSetupDeploymentReservesMixin:
 
     def _execute_current_setup_phase_impl(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""
-        if self.setup_phase == SetupPhase.MUSTER_ARMIES:
-            self.execute_muster_armies_phase(
-                kwargs.get('player1_army_file'), 
-                kwargs.get('player2_army_file')
-            )
-        elif self.setup_phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
-            self.execute_select_mission_objectives_phase()
-        elif self.setup_phase == SetupPhase.CREATE_BATTLEFIELD:
-            self.execute_create_battlefield_phase()
-        elif self.setup_phase == SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER:
-            self.execute_determine_attacker_defender_phase()
-        elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
-            self.execute_declare_battle_formations_phase()
-        elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
-            decision_makers = kwargs.get('decision_makers')
-            if decision_makers is None:
-                decision_makers = getattr(self, "_pending_setup_decision_makers", None)
-            self.execute_deploy_armies_phase(
-                manual_phases=kwargs.get('manual_phases', False),
-                decision_makers=decision_makers
-            )
-        elif self.setup_phase == SetupPhase.REDEPLOY_UNITS:
-            self.execute_redeploy_units_phase()
-        elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
-            self.execute_determine_first_turn_order_phase()
-        elif self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
-            self.execute_resolve_prebattle_rules_phase()
+        game_setup_flow.execute_current_setup_phase_impl(self, **kwargs)
 
     def execute_current_setup_phase(self, **kwargs) -> None:
         """Execute the current setup phase via command dispatch."""
-        if self.in_command_context():
-            self._execute_current_setup_phase_impl(**kwargs)
-            return
-        decision_makers = kwargs.get("decision_makers")
-        if decision_makers is not None:
-            # Store temporarily so command dispatch can stay serializable.
-            self._pending_setup_decision_makers = decision_makers
-        payload = {
-            "player1_army_file": kwargs.get("player1_army_file"),
-            "player2_army_file": kwargs.get("player2_army_file"),
-            "manual_phases": bool(kwargs.get("manual_phases", False)),
-        }
-        player_id = None
-        try:
-            player_id = self.get_current_player().id
-        except Exception:
-            player_id = None
-        cmd = GameCommand.create(CMD_EXECUTE_SETUP_PHASE, player_id=player_id, payload=payload)
-        try:
-            self.apply_command(cmd)
-        finally:
-            if decision_makers is not None:
-                self._pending_setup_decision_makers = None
+        game_setup_flow.execute_current_setup_phase(self, **kwargs)
 
     def _apply_selected_mission(self, combination: dict, layout: object) -> None:
         self.selected_mission_info = {
