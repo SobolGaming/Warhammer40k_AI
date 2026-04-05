@@ -10,7 +10,8 @@ The codebase is now carrying explicit landing zones for the 11th-edition port-pr
 work. PR-001 is structural only: it adds scaffolding, test-layout guardrails, and
 focused destination modules while keeping current gameplay behavior intact.
 
-Review expectations for this work are documented in `docs/11E_PORTING_ARCHITECTURE.md`.
+Review expectations and PR status for this work are documented in
+`docs/implementation/11e_port_pr_plan.md`.
 
 ## High-level runtime modes
 
