@@ -3,7 +3,11 @@
 This note captures the repository-level guardrails for the 11th-edition port-prep
 work described in [docs/implementation/11e_port_pr_plan.md](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/docs/implementation/11e_port_pr_plan.md).
 
-PR-001 is structural only. It creates landing zones and review guardrails so
+**Status:** PR-001 is completed and was pushed to `dev` on April 5, 2026 in
+commit `af21acb1`. Remaining PR status is tracked in
+[docs/implementation/11e_port_pr_plan.md](/c:/Users/nostr/Documents/Projects/Warhammer40k_AI/docs/implementation/11e_port_pr_plan.md).
+
+PR-001 was structural only. It created landing zones and review guardrails so
 subsequent PRs can reduce monolith size without changing canonical gameplay
 behavior ahead of release-day rules ingestion.
 
@@ -52,7 +56,7 @@ The port plan is implemented subject to the existing repository constraints:
 - Move companion support data with the tests that consume it when those tests rely
   on sibling-relative paths.
 
-## PR-001 scope boundary
+## PR-001 scope boundary [COMPLETED]
 
 PR-001 may:
 
