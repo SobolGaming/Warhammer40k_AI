@@ -185,7 +185,7 @@ shows what is done versus what remains.
 | PR-002 | Completed | Pushed to `dev` on April 5, 2026 as commit `b234185c` (`Implement PR-002 army build domain extraction`). |
 | PR-003 | Completed | Pushed to `dev` on April 5, 2026 as commit `882103c9` (`Implement PR-003 runtime detachment integration`). |
 | PR-004 | Completed | Pushed to `dev` on April 5, 2026 as commit `5ca1a905` (`Implement PR-004 descriptor and state blob split`). |
-| PR-005 | Pending | Not started. |
+| PR-005 | Completed | Pushed to `dev` on April 5, 2026 as commit `27c56016` (`Implement PR-005 pregame flow and facade splits`). |
 | PR-006 | Pending | Not started. |
 | PR-007 | Pending | Not started. |
 | PR-008 | Pending | Not started. |
@@ -419,7 +419,7 @@ This is the seam that protects future model portability and replay consistency.
 
 ## PR-005 — Pregame flow state machine and `game.py` / `player.py` decomposition
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `27c56016` (`Implement PR-005 pregame flow and facade splits`).
 
 ### Goal
 Replace the current setup sprawl with an explicit, testable, data-driven pregame state machine that can represent the announced 11th sequence without treating preview text as final release logic. Break apart `game.py` and `player.py` while doing it.
