@@ -13,6 +13,7 @@ Boundary payload:
 - `rules_bundle_id`
 - `descriptor_bundle_id`
 - `descriptor_ids`
+- `descriptor_ids.army_build_descriptor_id`
 - `conditioning_keys`
 - `conditioning_signature`
 
@@ -25,3 +26,4 @@ Purpose:
 - keep the rules-conditioned path patchable without touching invariant board encoding
 - provide deterministic conditioning signatures for replay and training dataset slicing
 - stabilize adapter inputs before introducing ML framework dependencies
+- distinguish not just mission/deployment/terrain semantics, but also the army-construction semantics that produced the battle

@@ -8,7 +8,7 @@ Canonical schema:
 Runtime guarantees:
 - A `DecisionRecord` is emitted for each resolved decision.
 - Every record includes decomposed `rules_bundle` ids plus convenience `rules_bundle_id`.
-- Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/tool`) used at record time.
+- Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/army-build/tool`) used at record time.
 - Decision context descriptor ids are compiled by Tier 0 (`docs/RULES_DESCRIPTOR_COMPILER.md`) and injected by `Game.request_decision(...)`.
 - If a request is recorded without descriptor ids in context, `DecisionRecordStore` recompiles descriptor ids from current game state before emission.
 - Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.

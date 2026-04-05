@@ -30,6 +30,7 @@ def _normalized_descriptor_ids(value: Any) -> dict[str, Any]:
             if str(item)
         ),
         "deployment_descriptor_id": str(source.get("deployment_descriptor_id", "") or ""),
+        "army_build_descriptor_id": str(source.get("army_build_descriptor_id", "") or ""),
         "tool_descriptor_ids": sorted(
             str(item)
             for item in list(source.get("tool_descriptor_ids", []) or [])
@@ -85,6 +86,7 @@ def build_version_adapter_boundary(
         "objective_descriptor_ids",
         "terrain_descriptor_ids",
         "deployment_descriptor_id",
+        "army_build_descriptor_id",
         "tool_descriptor_ids",
     )
     signature_payload = {

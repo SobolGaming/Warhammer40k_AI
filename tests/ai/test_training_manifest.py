@@ -45,6 +45,7 @@ def _record(decision_id: str, decision_type: str, *, relabel_status: str = "upda
             "objective_descriptor_ids": ["objective_descriptor:test"],
             "terrain_descriptor_ids": ["terrain_descriptor:test"],
             "deployment_descriptor_id": "deployment_descriptor:test",
+            "army_build_descriptor_id": "army_build_descriptor:test",
             "tool_descriptor_ids": ["tool_descriptor:test"],
         },
         "candidates": [

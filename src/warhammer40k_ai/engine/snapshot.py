@@ -30,6 +30,9 @@ from ..battlefield.map import (
     WoodsTerrain,
 )
 from ..roster.army import Army
+from ..roster.army_attachments import AttachmentBinding
+from ..roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from ..roster.army_runtime import DetachmentInstance
 from ..roster.player import Player, PlayerControl
 from ..units.model import Model
 from ..units.status_effects import BattleShockEffect, StatusEffect
@@ -1074,6 +1077,45 @@ def _apply_army_state(army: Army, data: dict, registry: EntityRegistry) -> None:
         if key in _ARMY_STATE_EXCLUDE:
             continue
         setattr(army, key, value)
+
+    blueprint = getattr(army, "army_blueprint", None)
+    if isinstance(blueprint, dict):
+        army.army_blueprint = ArmyBlueprint.from_dict(blueprint)
+
+    validated_muster = getattr(army, "validated_muster", None)
+    if isinstance(validated_muster, dict):
+        army.validated_muster = ValidatedMuster.from_dict(validated_muster)
+
+    army.build_detachments = [
+        detachment if isinstance(detachment, DetachmentSelection) else DetachmentSelection.from_dict(detachment)
+        for detachment in list(getattr(army, "build_detachments", []) or [])
+        if isinstance(detachment, (DetachmentSelection, dict))
+    ]
+    army.detachments = [
+        detachment if isinstance(detachment, DetachmentInstance) else DetachmentInstance.from_dict(detachment)
+        for detachment in list(getattr(army, "detachments", []) or [])
+        if isinstance(detachment, (DetachmentInstance, dict))
+    ]
+    army.build_unit_entries = [
+        entry if isinstance(entry, RosterEntry) else RosterEntry.from_dict(entry)
+        for entry in list(getattr(army, "build_unit_entries", []) or [])
+        if isinstance(entry, (RosterEntry, dict))
+    ]
+    army.build_enhancement_assignments = [
+        assignment if isinstance(assignment, EnhancementAssignment) else EnhancementAssignment.from_dict(assignment)
+        for assignment in list(getattr(army, "build_enhancement_assignments", []) or [])
+        if isinstance(assignment, (EnhancementAssignment, dict))
+    ]
+    army.build_attachment_bindings = [
+        binding if isinstance(binding, AttachmentBinding) else AttachmentBinding.from_dict(binding)
+        for binding in list(getattr(army, "build_attachment_bindings", []) or [])
+        if isinstance(binding, (AttachmentBinding, dict))
+    ]
+    army.attachment_bindings = [
+        binding if isinstance(binding, AttachmentBinding) else AttachmentBinding.from_dict(binding)
+        for binding in list(getattr(army, "attachment_bindings", []) or [])
+        if isinstance(binding, (AttachmentBinding, dict))
+    ]
 
     managers = data.get("rule_managers", {}) or {}
     for key, mgr_state in managers.items():

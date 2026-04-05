@@ -206,6 +206,7 @@
         "objective_descriptor_ids",
         "terrain_descriptor_ids",
         "deployment_descriptor_id",
+        "army_build_descriptor_id",
         "tool_descriptor_ids"
       ],
       "properties": {
@@ -225,6 +226,9 @@
           }
         },
         "deployment_descriptor_id": {
+          "type": "string"
+        },
+        "army_build_descriptor_id": {
           "type": "string"
         },
         "tool_descriptor_ids": {

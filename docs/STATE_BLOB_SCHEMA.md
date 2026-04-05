@@ -12,6 +12,7 @@ Top-level fields:
 - `phase`
 - `active_player_id`
 - `players`
+- `army_build_state`
 - `mission_state`
 - `deployment_state`
 - `objectives`
@@ -23,13 +24,15 @@ Top-level fields:
 Design notes:
 - Terrain geometry and terrain semantics are public and versioned.
 - Objective markers and score sources are distinct concepts when the active mission pack requires that split.
+- `army_build_state` carries public army-construction semantics plus the active `army_build_descriptor_id`.
 - The state must preserve enough structure for descriptor recompilation and cross-version relabeling.
 - Hidden information remains hidden in player-perspective snapshots.
+- The generator is split across `state_blob_rules.py`, `state_blob_players.py`, `state_blob_mission.py`, `state_blob_objectives.py`, `state_blob_terrain.py`, and `state_blob_units.py`, with `state_blob.py` kept as the stable facade.
 
 Perspective rules:
 - Omniscient state includes full hidden/public information consistent with replay requirements.
 - Player-observation state hides opponent hidden information and preserves only legal information for that player.
-- Public geometry/state (terrain, objectives, control regions) is included for all players.
+- Public geometry/state (terrain, objectives, control regions, army-build state) is included for all players.
 
 Derived deterministic feature examples:
 - `in_engagement_range`

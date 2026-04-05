@@ -155,6 +155,7 @@ def _descriptor_bundle_fingerprint(descriptor_ids: dict[str, Any]) -> str:
             str(item) for item in list(descriptor_ids.get("terrain_descriptor_ids", []) or []) if str(item)
         ),
         "deployment_descriptor_id": str(descriptor_ids.get("deployment_descriptor_id", "") or ""),
+        "army_build_descriptor_id": str(descriptor_ids.get("army_build_descriptor_id", "") or ""),
         "tool_descriptor_ids": sorted(
             str(item) for item in list(descriptor_ids.get("tool_descriptor_ids", []) or []) if str(item)
         ),

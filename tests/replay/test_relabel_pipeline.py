@@ -128,6 +128,7 @@ def _semantic_record(decision_type: str, params: dict, metadata: dict | None = N
             "objective_descriptor_ids": ["objective_descriptor:test"],
             "terrain_descriptor_ids": ["terrain_descriptor:test"],
             "deployment_descriptor_id": "deployment_descriptor:test",
+            "army_build_descriptor_id": "army_build_descriptor:test",
             "tool_descriptor_ids": ["tool_descriptor:stratagem:test"],
         },
         "omniscient_state": {},

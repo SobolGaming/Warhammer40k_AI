@@ -3,6 +3,7 @@ import pytest
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.descriptor_compiler import compile_descriptor_bundle
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR, DECISION_CONFIRM_EXAMPLE
 from warhammer40k_ai.engine.decision_requests import build_player_color_selection_requests
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
@@ -11,7 +12,11 @@ from warhammer40k_ai.engine.mission_cards import MarkedForDeathSecondary, TakeAn
 from warhammer40k_ai.engine.missions import CutoutType, DeploymentZone, DeploymentZoneType, ZoneCutout
 from warhammer40k_ai.engine.phase import BattleRoundPhases, SetupPhase
 from warhammer40k_ai.engine.snapshot import ANGLE_SCALE, POSITION_SCALE, load_game_snapshot, snapshot_game
+from warhammer40k_ai.engine.state_blob import canonical_omniscient_state
 from warhammer40k_ai.roster.army import Army, parse_army_list
+from warhammer40k_ai.roster.army_attachments import AttachmentBinding
+from warhammer40k_ai.roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
+from warhammer40k_ai.roster.army_runtime import apply_validated_muster_to_army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit, UnitRoundState
@@ -291,6 +296,72 @@ def test_snapshot_roundtrip_preserves_wargear_profile_references(waha_helper):
 
     assert loaded_profile is loaded_wargear.profiles[profile_name]
     assert loaded_profile.parent_wargear is loaded_wargear
+
+
+def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
+    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army.faction_id = "SM"
+    apply_validated_muster_to_army(
+        army,
+        ValidatedMuster(
+            blueprint=ArmyBlueprint(
+                faction="Space Marines",
+                points_limit=2000,
+                detachments=[
+                    DetachmentSelection(
+                        selection_id="detachment_alpha",
+                        detachment_type="Gladius Task Force",
+                        detachment_points_cost=2,
+                    )
+                ],
+                detachment_points_budget=4,
+                unit_entries=[
+                    RosterEntry(
+                        entry_id="unit_captain",
+                        name="Captain",
+                        count=1,
+                        detachment_selection_id="detachment_alpha",
+                        is_warlord=True,
+                    )
+                ],
+                enhancement_assignments=[
+                    EnhancementAssignment(
+                        assignment_id="enhancement_1",
+                        enhancement_name="Honours of Battle",
+                        target_entry_id="unit_captain",
+                        detachment_selection_id="detachment_alpha",
+                    )
+                ],
+                attachment_bindings=[
+                    AttachmentBinding(
+                        binding_id="binding_1",
+                        bodyguard_entry_id="unit_captain",
+                        leader_entry_id="unit_captain",
+                    )
+                ],
+                force_disposition="Assault",
+                allowed_force_dispositions=["Assault", "Siege"],
+            ),
+            faction_id="SM",
+            detachment_points_spent=2,
+        ),
+    )
+    player = Player("Player One", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.turn = 1
+
+    before_descriptor_ids = compile_descriptor_bundle(game).descriptor_ids()
+    snapshot = snapshot_game(game)
+    loaded = load_game_snapshot(snapshot)
+    after_descriptor_ids = compile_descriptor_bundle(loaded).descriptor_ids()
+    loaded_state = canonical_omniscient_state(loaded)
+    loaded_army = loaded.players[0].army
+
+    assert after_descriptor_ids["army_build_descriptor_id"] == before_descriptor_ids["army_build_descriptor_id"]
+    assert loaded_state["army_build_state"]["army_build_descriptor_id"] == before_descriptor_ids["army_build_descriptor_id"]
+    assert loaded_army.army_blueprint.primary_detachment_type == "Gladius Task Force"
+    assert loaded_army.validated_muster.detachment_points_spent == 2
+    assert loaded_army.detachment_points_summary == {"budget": 4, "spent": 2, "remaining": 2}
 
 
 def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_helper):

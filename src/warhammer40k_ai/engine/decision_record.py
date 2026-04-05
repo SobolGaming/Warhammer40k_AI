@@ -17,6 +17,7 @@ from .state_blob import all_player_obs_states, canonical_omniscient_state
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_MISSION_DESCRIPTOR_ID = "unknown_mission_descriptor"
 DEFAULT_DEPLOYMENT_DESCRIPTOR_ID = "unknown_deployment_descriptor"
+DEFAULT_ARMY_BUILD_DESCRIPTOR_ID = "unknown_army_build_descriptor"
 
 
 def _repo_root() -> Path:
@@ -90,6 +91,7 @@ def _context_rules_bundle(request: DecisionRequest, game: object) -> RulesetBund
 def _descriptor_ids_complete(value: dict[str, Any]) -> bool:
     mission_descriptor_id = str(value.get("mission_descriptor_id", "") or "")
     deployment_descriptor_id = str(value.get("deployment_descriptor_id", "") or "")
+    army_build_descriptor_id = str(value.get("army_build_descriptor_id", "") or "")
     objective_descriptor_ids = value.get("objective_descriptor_ids")
     terrain_descriptor_ids = value.get("terrain_descriptor_ids")
     tool_descriptor_ids = value.get("tool_descriptor_ids")
@@ -98,6 +100,8 @@ def _descriptor_ids_complete(value: dict[str, Any]) -> bool:
         and mission_descriptor_id != DEFAULT_MISSION_DESCRIPTOR_ID
         and bool(deployment_descriptor_id)
         and deployment_descriptor_id != DEFAULT_DEPLOYMENT_DESCRIPTOR_ID
+        and bool(army_build_descriptor_id)
+        and army_build_descriptor_id != DEFAULT_ARMY_BUILD_DESCRIPTOR_ID
         and isinstance(objective_descriptor_ids, list)
         and isinstance(terrain_descriptor_ids, list)
         and isinstance(tool_descriptor_ids, list)
@@ -110,12 +114,14 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
     if isinstance(raw, dict):
         mission_descriptor_id = str(raw.get("mission_descriptor_id") or "")
         deployment_descriptor_id = str(raw.get("deployment_descriptor_id") or "")
+        army_build_descriptor_id = str(raw.get("army_build_descriptor_id") or "")
         objective_descriptor_ids = _normalize_str_list(raw.get("objective_descriptor_ids"))
         terrain_descriptor_ids = _normalize_str_list(raw.get("terrain_descriptor_ids"))
         tool_descriptor_ids = _normalize_str_list(raw.get("tool_descriptor_ids"))
     else:
         mission_descriptor_id = str(ctx.get("mission_descriptor_id") or "")
         deployment_descriptor_id = str(ctx.get("deployment_descriptor_id") or "")
+        army_build_descriptor_id = str(ctx.get("army_build_descriptor_id") or "")
         objective_descriptor_ids = _normalize_str_list(ctx.get("objective_descriptor_ids"))
         terrain_descriptor_ids = _normalize_str_list(ctx.get("terrain_descriptor_ids"))
         tool_descriptor_ids = _normalize_str_list(ctx.get("tool_descriptor_ids"))
@@ -124,6 +130,7 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
         "objective_descriptor_ids": objective_descriptor_ids,
         "terrain_descriptor_ids": terrain_descriptor_ids,
         "deployment_descriptor_id": deployment_descriptor_id or DEFAULT_DEPLOYMENT_DESCRIPTOR_ID,
+        "army_build_descriptor_id": army_build_descriptor_id or DEFAULT_ARMY_BUILD_DESCRIPTOR_ID,
         "tool_descriptor_ids": tool_descriptor_ids,
     }
     if _descriptor_ids_complete(resolved):
@@ -141,6 +148,12 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
             compiled_descriptor_ids.get("deployment_descriptor_id", "")
             or DEFAULT_DEPLOYMENT_DESCRIPTOR_ID
         )
+    army_build_descriptor_id = str(resolved.get("army_build_descriptor_id", "") or "")
+    if not army_build_descriptor_id or army_build_descriptor_id == DEFAULT_ARMY_BUILD_DESCRIPTOR_ID:
+        army_build_descriptor_id = str(
+            compiled_descriptor_ids.get("army_build_descriptor_id", "")
+            or DEFAULT_ARMY_BUILD_DESCRIPTOR_ID
+        )
     return {
         "mission_descriptor_id": mission_descriptor_id,
         "objective_descriptor_ids": _normalize_str_list(
@@ -152,6 +165,7 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
             or compiled_descriptor_ids.get("terrain_descriptor_ids")
         ),
         "deployment_descriptor_id": deployment_descriptor_id,
+        "army_build_descriptor_id": army_build_descriptor_id,
         "tool_descriptor_ids": _normalize_str_list(
             resolved.get("tool_descriptor_ids")
             or compiled_descriptor_ids.get("tool_descriptor_ids")

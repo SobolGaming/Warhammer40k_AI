@@ -23,6 +23,7 @@ def test_version_adapter_boundary_builder_is_deterministic() -> None:
             "objective_descriptor_ids": ["objective_descriptor:1"],
             "terrain_descriptor_ids": ["terrain_descriptor:1"],
             "deployment_descriptor_id": "deployment_descriptor:1",
+            "army_build_descriptor_id": "army_build_descriptor:1",
             "tool_descriptor_ids": ["tool_descriptor:1"],
         },
     }
@@ -52,3 +53,4 @@ def test_request_context_includes_version_adapter_boundary() -> None:
     assert boundary["rules_bundle_id"] == request.context["rules_bundle_id"]
     assert boundary["descriptor_bundle_id"] == request.context["descriptor_bundle_id"]
     assert boundary["descriptor_ids"] == request.context["descriptor_ids"]
+    assert boundary["descriptor_ids"]["army_build_descriptor_id"].startswith("army_build_descriptor:")

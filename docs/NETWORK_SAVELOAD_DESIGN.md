@@ -144,7 +144,7 @@ DecisionRequest:
 - request_id
 - actor_player_id
 - decision_type (enum)
-- context (phase, phase_step, unit_id, target_id, weapon_id, rules_bundle, rules_bundle_id, descriptor_ids, etc)
+- context (phase, phase_step, unit_id, target_id, weapon_id, rules_bundle, rules_bundle_id, descriptor_ids including `army_build_descriptor_id`, etc)
 - options (list of valid options with IDs and parameters)
 - candidates (list of CandidateAction: action_id, params, metadata)
 - mask (bool list aligned to candidates; false = illegal)
