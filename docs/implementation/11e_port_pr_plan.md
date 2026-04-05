@@ -187,7 +187,7 @@ shows what is done versus what remains.
 | PR-004 | Completed | Pushed to `dev` on April 5, 2026 as commit `5ca1a905` (`Implement PR-004 descriptor and state blob split`). |
 | PR-005 | Completed | Pushed to `dev` on April 5, 2026 as commit `27c56016` (`Implement PR-005 pregame flow and facade splits`). |
 | PR-006 | Completed | Pushed to `dev` on April 5, 2026 as commit `327328e8` (`Implement PR-006 mission pack compiler and deployment split`). |
-| PR-007 | Pending | Not started. |
+| PR-007 | Completed | Pushed to `dev` on April 5, 2026 as commit `f5f265c7` (`Implement PR-007 objective site runtime and map split`). |
 | PR-008 | Pending | Not started. |
 | PR-009 | Pending | Not started. |
 | PR-010 | Pending | Not started. |
@@ -535,7 +535,7 @@ The current fixed mission-combination table is too 10th-shaped and blocks portab
 
 ## PR-007 — Objective-site runtime model and battlefield map decomposition
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `f5f265c7` (`Implement PR-007 objective site runtime and map split`).
 
 ### Goal
 Refactor objective handling so the engine can represent terrain-footprint / key-location objectives without pretending everything is a circular marker.
@@ -581,6 +581,11 @@ This is the second major 11th-edition pressure point after army construction.
 ### Non-goals
 - No combat/timing changes yet.
 - No final release-day terrain-pack ingestion yet.
+
+### Implementation notes
+- Objective runtime now separates `ObjectiveSite`, `ControlRegion`, and `ScoreSource` in the battlefield layer while preserving `ObjectivePoint` as the stable import alias.
+- `map.py` now acts as the stable facade over focused battlefield modules: `map_geometry.py`, `terrain_runtime.py`, `objective_sites.py`, and `control_queries.py`.
+- State blobs, descriptors, and snapshots now preserve marker, terrain-footprint, and keyed-feature objective-site semantics; `state_blob_version` is now `1.2.0`.
 
 ---
 
