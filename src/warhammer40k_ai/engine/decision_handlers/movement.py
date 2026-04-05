@@ -456,6 +456,82 @@ def _validate_cursed_circlet_positions(
     return ()
 
 
+def _validate_devout_fanaticism_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    reactive_move_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_kind != "devout_fanaticism" and reactive_move_type != "devout_fanaticism":
+        return ()
+    if unit is None:
+        return ("Move unit: Devout Fanaticism requires a valid unit.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ("Move unit: Devout Fanaticism requires a game map.",)
+
+    try:
+        from ...utility.calcs import MovementType, get_validation_rules, validate_final_position
+    except ImportError:
+        return ("Move unit: Devout Fanaticism validation rules are unavailable.",)
+
+    validation_rules = get_validation_rules(MovementType.BLOOD_SURGE, moving_unit=unit)
+    validation_rules["closest_enemy_unit_reason"] = "Devout Fanaticism"
+    excluded_keywords = {
+        str(value or "").strip().upper()
+        for value in list(
+            context.get("devout_fanaticism_closest_enemy_exclude_keywords_any", ("AIRCRAFT",))
+            or ("AIRCRAFT",)
+        )
+        if str(value or "").strip()
+    }
+    if excluded_keywords:
+        validation_rules["closest_enemy_unit_exclude_keywords"] = excluded_keywords
+    try:
+        max_distance = float(context.get("max_distance", 0) or 0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    if max_distance > 0:
+        validation_rules["max_distance_override"] = float(max_distance)
+
+    positions_by_id: dict[str, tuple[float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "").strip()
+        position = entry.get("position") or []
+        if not model_id or not isinstance(position, (list, tuple)) or len(position) < 2:
+            continue
+        try:
+            positions_by_id[model_id] = (
+                float(position[0]),
+                float(position[1]),
+                float(position[2]) if len(position) > 2 else 0.0,
+            )
+        except (TypeError, ValueError):
+            continue
+
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    for model in list(models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        if not model_id or model_id not in positions_by_id:
+            continue
+        validation = validate_final_position(model, positions_by_id[model_id], validation_rules, game_map)
+        if not bool((validation or {}).get("valid", False)):
+            reason = str((validation or {}).get("reason", "") or "invalid final position")
+            return (f"Move unit: Devout Fanaticism {reason}.",)
+    return ()
+
+
 def _validate_enfolding_nightmare_positions(
     game: object,
     unit: object,
@@ -1348,6 +1424,14 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if cursed_circlet_errors:
         return cursed_circlet_errors
+    devout_fanaticism_errors = _validate_devout_fanaticism_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if devout_fanaticism_errors:
+        return devout_fanaticism_errors
     enfolding_nightmare_errors = _validate_enfolding_nightmare_positions(
         game,
         unit,

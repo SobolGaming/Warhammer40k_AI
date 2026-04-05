@@ -20490,12 +20490,18 @@ def _stratagem_support(
         "BLAZING IRE": "Opponent Shooting phase reaction after an enemy unit resolves its attacks: selected ADEPTA SORORITAS TRANSPORT with embarked units can disembark one embarked unit and queue reactive shooting restricted to the attacking enemy unit.",
         "CARRY FORTH THE FAITHFUL": "Your Movement phase reaction before an ADEPTA SORORITAS TRANSPORT Advances: that TRANSPORT can re-roll its Advance roll this turn, and units can disembark from it after it Advances (counting as having made a Normal move and unable to declare a charge this turn).",
         "CLEANSING FLAMES": "Your Shooting phase: selected ADEPTA SORORITAS unit with Torrent ranged weapons that has not shot gains [DEVASTATING WOUNDS] on those Torrent weapons until end of phase.",
+        "BOUNDLESS ZEAL": "Your Movement phase reaction after an ADEPTA SORORITAS unit Falls Back: selected unit chooses shoot or charge this turn despite Falling Back, while PENITENT units gain both automatically.",
         "RIGHTEOUS BLOWS": "Fight phase: selected ADEPTA SORORITAS unit that has not fought gains [LETHAL HITS] on melee weapons until end of phase, and the first surviving enemy unit that loses a model to those attacks must take a Battle-shock test.",
         "RITES OF FIRE": "Your Shooting phase: selected ADEPTA SORORITAS unit that disembarked from a TRANSPORT this turn gains +1 to wound on ranged attacks against enemies within 6\" and objective range until end of phase, and the first surviving enemy unit that loses a model to those qualifying attacks must take a Battle-shock test.",
         "BLINDING RADIANCE": "Opponent Shooting/Fight phase reaction after enemy targets are selected: selected targeted ADEPTA SORORITAS unit, or a friendly JUMP PACK unit within 3\" of it, imposes -1 to hit until end of phase; a JUMP PACK target extends that protection to nearby friendly ADEPTA SORORITAS units within 3\".",
+        "DEVOUT FANATICISM": "Opponent Shooting phase reaction after an enemy unit resolves its attacks: selected PENITENT unit that was targeted by that attacker makes a reactive move of up to D6\" toward the closest non-AIRCRAFT enemy unit and can move within Engagement Range.",
         "DIVINE GUIDANCE": "Shooting/Fight phase: selected ADEPTA SORORITAS unit that has not yet acted improves AP by 1 this phase and gains 1 Miracle die the first time it destroys an enemy model with those attacks.",
         "FAITH AND FURY": "Fight phase: selected ADEPTA SORORITAS unit that has not fought gains [LANCE] on melee weapons this phase and gains 1 Miracle die the first time it destroys an enemy model with those attacks.",
+        "FINAL REDEMPTION": "Any phase reaction on a just-destroyed PENITENT unit within range of a controlled objective: the selected objective becomes sticky under your control until your opponent controls it at the start or end of a turn.",
+        "LASH OF GUILT": "Your Movement phase reaction before a PENITENT unit Advances: selected unit can charge after Advancing this turn, and PENITENT ENGINES units treat the Advance roll as a fixed 6\".",
         "LIGHT OF THE EMPEROR": "Command phase: selected ADEPTA SORORITAS unit ignores characteristic, hit/wound, and non-save roll/test modifiers until end of turn; if it has JUMP PACK, nearby friendly ADEPTA SORORITAS units within 3\" are also blessed while they remain nearby.",
+        "PASSION OF THE PENITENT": "Fight phase: selected PENITENT unit that has not fought scores critical melee hits on unmodified 5+ for PENITENT models until end of phase.",
+        "PURITY OF SUFFERING": "Opponent Shooting phase or the Fight phase reaction after an enemy unit selects its targets: selected PENITENT unit gains Feel No Pain 4+ for PENITENT models until end of phase.",
         "SHIELD OF FAITH": "Any phase reaction after a friendly ADEPTA SORORITAS unit suffers a mortal wound: selected ADEPTA SORORITAS unit, or a friendly JUMP PACK unit within 3\", gains Feel No Pain 5+ against mortal wounds until end of phase; a JUMP PACK target extends that protection to nearby friendly ADEPTA SORORITAS units within 3\".",
         "RIGHTEOUS VENGEANCE": "Fight phase: selected ADEPTA SORORITAS unit that has not fought re-rolls melee Hit rolls, and re-rolls melee Wound rolls against Below Half-strength targets, until end of phase.",
         "ANGELIC DESCENT": "End of opponent Fight phase: selected ADEPTA SORORITAS JUMP PACK unit that is not in Engagement Range enters Strategic Reserves.",
@@ -20764,6 +20770,15 @@ def _stratagem_support(
         "000009742005",
         "000009742006",
         "000009742007",
+    }:
+        return ("Supported", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000009030002",
+        "000009030003",
+        "000009030004",
+        "000009030005",
+        "000009030006",
+        "000009030007",
     }:
         return ("Supported", _note("Implemented in engine."), name_u)
 

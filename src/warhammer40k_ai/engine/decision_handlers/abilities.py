@@ -8290,6 +8290,45 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "SUFFER NOT THE UNFAITHFUL choice is not valid."),)
         return ()
+    if ability == "penitent_host_boundless_zeal_mode":
+        if is_skip_choice(request, result):
+            return ("BOUNDLESS ZEAL choice cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("BOUNDLESS ZEAL choice army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("BOUNDLESS ZEAL choice manager is unavailable.",)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("BOUNDLESS ZEAL choice unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("BOUNDLESS ZEAL choice unit was not found.",)
+        validate_choice = getattr(stratagem_mgr, "validate_penitent_host_boundless_zeal_choice", None)
+        if not callable(validate_choice):
+            return ("BOUNDLESS ZEAL choice validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "BOUNDLESS ZEAL choice is not valid."),)
+        return ()
     if ability == "champions_of_faith_bastion_of_faith_secondary":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -20662,6 +20701,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game,
             player,
             f"{ability_name}: {unit_name} selected {choice_label} for{attack_label} weapons.",
+        )
+        return outcome
+    if ability == "penitent_host_boundless_zeal_mode":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_penitent_host_boundless_zeal_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            turn=int(ctx.get("turn", 0) or 0),
+            turn_owner_id=str(ctx.get("turn_owner_id", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "BOUNDLESS ZEAL"
+        ).strip() or "BOUNDLESS ZEAL"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        choice_label = str(outcome.get("choice_label", "") or outcome.get("choice_key", "") or "choice")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} selected {choice_label} after Falling Back.",
         )
         return outcome
     if ability == "champions_of_faith_bastion_of_faith_secondary":

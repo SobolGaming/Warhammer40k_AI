@@ -2543,6 +2543,83 @@ _CHAMPIONS_OF_FAITH_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAMPIONS_OF_FAITH_STRATAGEM_DESCRIPTORS.values()
 }
 
+_PENITENT_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009030006": StratagemToolDescriptor(
+        stratagem_id="000009030006",
+        name="Boundless Zeal",
+        timing="your_movement_phase_after_fall_back",
+        target="adepta_sororitas_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="fall_back_shoot_or_charge_choice_with_penitent_both",
+        cp_cost=1,
+        effect_params={
+            "allow_shoot_after_fall_back": True,
+            "allow_charge_after_fall_back": True,
+            "penitent_units_get_both": True,
+        },
+    ),
+    "000009030007": StratagemToolDescriptor(
+        stratagem_id="000009030007",
+        name="Devout Fanaticism",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="penitent_unit_targeted_by_enemy_attacker",
+        duration="immediate",
+        effect="reactive_move_toward_closest_enemy_after_enemy_shoots",
+        cp_cost=1,
+        effect_params={
+            "max_distance_roll": "D6",
+            "allow_engagement_range": True,
+            "closest_enemy_unit_exclude_keywords": ["AIRCRAFT"],
+        },
+    ),
+    "000009030002": StratagemToolDescriptor(
+        stratagem_id="000009030002",
+        name="Final Redemption",
+        timing="any_phase_on_destroyed_unit",
+        target="destroyed_penitent_unit_within_controlled_objective",
+        duration="persistent_until_broken_at_turn_boundary",
+        effect="objective_marker_sticky_control_on_destroyed_penitent_unit",
+        cp_cost=1,
+    ),
+    "000009030005": StratagemToolDescriptor(
+        stratagem_id="000009030005",
+        name="Lash of Guilt",
+        timing="movement_phase_before_penitent_unit_advances",
+        target="penitent_unit_not_yet_selected_to_move",
+        duration="until_end_of_turn",
+        effect="charge_after_advance_with_penitent_engines_fixed_advance_six",
+        cp_cost=1,
+        effect_params={
+            "allow_charge_after_advance": True,
+            "penitent_engines_fixed_advance": 6,
+        },
+    ),
+    "000009030004": StratagemToolDescriptor(
+        stratagem_id="000009030004",
+        name="Passion of the Penitent",
+        timing="fight_phase_start",
+        target="penitent_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_critical_hits_on_5plus_for_penitent_models",
+        cp_cost=1,
+        effect_params={"critical_hit_threshold": 5},
+    ),
+    "000009030003": StratagemToolDescriptor(
+        stratagem_id="000009030003",
+        name="Purity of Suffering",
+        timing="opponent_shooting_phase_or_fight_phase_after_enemy_targets_selected",
+        target="penitent_unit_targeted_by_enemy_attacks",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_4_for_penitent_models",
+        cp_cost=1,
+        effect_params={"feel_no_pain": 4},
+    ),
+}
+
+_PENITENT_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PENITENT_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -11639,6 +11716,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CHAMPIONS_OF_FAITH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _PENITENT_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12009,6 +12089,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)
         or _CHAMPIONS_OF_FAITH_STRATAGEM_BY_NAME.get(key)
+        or _PENITENT_HOST_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)

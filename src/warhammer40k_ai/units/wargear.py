@@ -16854,6 +16854,27 @@ class WargearProfile:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             if is_melee:
                 unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                context_fn = getattr(root, "_penitent_host_passion_of_the_penitent_context", None) if root is not None else None
+                if callable(context_fn):
+                    game_now = None
+                    try:
+                        army_now = root.get_parent_army() if root is not None else None
+                        game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+                    except Exception:
+                        game_now = None
+                    ctx = context_fn(attacker_model=attacker, game=game_now)
+                    if isinstance(ctx, dict):
+                        threshold = int(ctx.get("crit_threshold", 5) or 5)
+                        source = str(ctx.get("source", "") or "PASSION OF THE PENITENT").strip() or "PASSION OF THE PENITENT"
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
                 threshold_fn = getattr(mgr, "martial_mastery_crit_hit_threshold", None) if mgr is not None else None

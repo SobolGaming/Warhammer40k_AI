@@ -7809,6 +7809,53 @@ class ActionsMovementMixin:
                 return None
         return {"crit_threshold": threshold, "source": source}
 
+    def _penitent_host_passion_of_the_penitent_context(self, *, attacker_model=None, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("penitent_host_passion_of_the_penitent_active")):
+            return None
+        if attacker_model is not None:
+            has_keyword = getattr(attacker_model, "has_keyword", None)
+            if not callable(has_keyword) or not bool(has_keyword("PENITENT")):
+                return None
+        source = (
+            str(sr.get("penitent_host_passion_of_the_penitent_source", "") or "PASSION OF THE PENITENT").strip()
+            or "PASSION OF THE PENITENT"
+        )
+        try:
+            threshold = int(sr.get("penitent_host_passion_of_the_penitent_crit_threshold", 5) or 5)
+        except Exception:
+            threshold = 5
+        threshold = max(2, min(6, int(threshold)))
+        if game is None:
+            return {"crit_threshold": threshold, "source": source}
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and phase_name != "FIGHT_PHASE":
+            return None
+        try:
+            effect_turn = int(sr.get("penitent_host_passion_of_the_penitent_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("penitent_host_passion_of_the_penitent_turn_owner", "") or "")
+        if effect_owner:
+            try:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"crit_threshold": threshold, "source": source}
+
     def _pantheon_entrophasic_aura_targeting_context(self, *, target=None, game=None) -> Optional[dict]:
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self
@@ -18647,6 +18694,23 @@ class ActionsMovementMixin:
                         return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if (
+                isinstance(sr, dict)
+                and bool(sr.get("penitent_host_boundless_zeal_active"))
+                and str(sr.get("penitent_host_boundless_zeal_mode", "") or "").strip().lower() in {"shoot", "both"}
+            ):
+                owner = str(sr.get("penitent_host_boundless_zeal_turn_owner", "") or "")
+                turn = int(sr.get("penitent_host_boundless_zeal_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
@@ -19749,6 +19813,19 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("penitent_host_lash_of_guilt_active")):
+                owner = str(sr.get("penitent_host_lash_of_guilt_turn_owner", "") or "")
+                turn = int(sr.get("penitent_host_lash_of_guilt_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         spec_fn = getattr(self, "_advance_and_charge_once_per_battle_spec", None)
         if callable(spec_fn):
             return spec_fn() is not None
@@ -20064,6 +20141,23 @@ class ActionsMovementMixin:
             ):
                 owner = str(sr.get("champions_of_faith_indefatigable_dedication_turn_owner", "") or "")
                 turn = int(sr.get("champions_of_faith_indefatigable_dedication_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if (
+                isinstance(sr, dict)
+                and bool(sr.get("penitent_host_boundless_zeal_active"))
+                and str(sr.get("penitent_host_boundless_zeal_mode", "") or "").strip().lower() in {"charge", "both"}
+            ):
+                owner = str(sr.get("penitent_host_boundless_zeal_turn_owner", "") or "")
+                turn = int(sr.get("penitent_host_boundless_zeal_turn", 0) or 0)
                 game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
                 if game is None:
                     return True

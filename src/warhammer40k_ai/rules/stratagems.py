@@ -2096,6 +2096,7 @@ class StratagemManager(
             "INEXORABLE EFFICIENCY",
             "KHAINE’S VENGEANCE",
             "CARRY FORTH THE FAITHFUL",
+            "LASH OF GUILT",
             "SEIZE THE PRIZE",
             "FEEDING FRENZY",
             "MIRESLICK",
@@ -2182,6 +2183,7 @@ class StratagemManager(
             "PREVENTATIVE PURGE",
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
+            "BOUNDLESS ZEAL",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2248,6 +2250,7 @@ class StratagemManager(
             "JOIN THE HUNT",
             "THE GRISLY FEAST",
             "YOUR TIME IS NIGH",
+            "FINAL REDEMPTION",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
         if "JOIN THE HUNT" in names:
@@ -2363,6 +2366,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_exemplars_wisdom)
         if "BLAZING IRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bringers_of_flame_blazing_ire)
+        if "DEVOUT FANATICISM" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_penitent_host_devout_fanaticism)
         if names & {"VENGEFUL SORROW", "INTO THE BREACH"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if "VENOMOUS WRATH" in names:
@@ -2425,6 +2430,7 @@ class StratagemManager(
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "BLINDING RADIANCE",
+            "PURITY OF SUFFERING",
     "LIGHTNING-FAST REACTIONS",
     "LEONINE AGGRESSION",
     "MACABRE RESILIENCE",
@@ -2474,6 +2480,7 @@ class StratagemManager(
         fight_reaction_names = {
             "BASTION OF FAITH",
             "BALEFUL HALO",
+            "PURITY OF SUFFERING",
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
             "BRUTAL ATTRITION",
@@ -8693,6 +8700,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_penitent_host_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_hallowed_martyrs_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9631,6 +9642,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_champions_of_faith_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_penitent_host_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Queue NEW ORDERS at end of your Command phase
@@ -11820,6 +11835,7 @@ class StratagemManager(
         )
         self._queue_bringers_of_flame_move_started_reactions(unit=unit, action=action)
         self._queue_champions_of_faith_move_started_reactions(unit=unit, action=action)
+        self._queue_penitent_host_move_started_reactions(unit=unit, action=action)
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
         self._queue_orks_move_started_reactions(unit=unit, action=action)
@@ -11863,6 +11879,7 @@ class StratagemManager(
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
         self._queue_legion_of_excess_move_end_reactions(unit=unit, action=action)
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
+        self._queue_penitent_host_move_end_reactions(unit=unit, action=action)
         self._queue_votann_hearthband_move_end_reactions(unit=unit, action=action)
         self._queue_votann_hearthfyre_move_end_reactions(unit=unit, action=action)
         self._process_votann_hearthfyre_move_end_effects(unit=unit, action=action)
@@ -12861,6 +12878,13 @@ class StratagemManager(
             hits_by_target=hits_by_target,
         )
 
+    def _on_unit_shooting_resolved_penitent_host_devout_fanaticism(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ):
+        self._queue_penitent_host_shooting_resolved_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_aeldari_corsair(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_aeldari_corsair_shooting_resolved_reactions(
@@ -13166,6 +13190,13 @@ class StratagemManager(
             raise
         try:
             self._queue_veterans_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_penitent_host_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -14338,6 +14369,13 @@ class StratagemManager(
             raise
         try:
             self._queue_champions_of_faith_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_penitent_host_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -17054,6 +17092,13 @@ class StratagemManager(
             raise
         try:
             self._queue_hallowed_martyrs_unit_destroyed_reactions(
+                unit=unit,
+                last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_penitent_host_unit_destroyed_reactions(
                 unit=unit,
                 last_model=last_model,
             )

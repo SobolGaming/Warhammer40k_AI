@@ -109,6 +109,11 @@ class AdeptaSororitasStratagemMixin:
         checker = getattr(mgr, "is_champions_of_faith", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_penitent_host(self) -> bool:
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "is_penitent_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_adepta_sororitas_unit(self, unit: Any) -> bool:
         root = self._as_root(unit)
         if root is None:
@@ -118,6 +123,35 @@ class AdeptaSororitasStratagemMixin:
         if callable(checker):
             return bool(checker(root))
         return self._as_has_keyword(root, "ADEPTA SORORITAS")
+
+    def _is_penitent_unit(self, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "unit_is_penitent", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._as_has_keyword(root, "PENITENT")
+
+    def _is_penitent_model(self, model: Any, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "model_is_penitent", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(model, root))
+        has_any_keyword = getattr(model, "has_any_keyword", None)
+        if callable(has_any_keyword) and bool(has_any_keyword("PENITENT")):
+            return True
+        return self._is_penitent_unit(root)
+
+    def _is_penitent_engines_unit(self, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        return self._is_penitent_unit(root) and self._as_has_keyword(root, "PENITENT ENGINES")
 
     def _is_adepta_sororitas_infantry_or_walker(self, unit: Any) -> bool:
         root = self._as_root(unit)
@@ -951,6 +985,356 @@ class AdeptaSororitasStratagemMixin:
             out.append(unit)
         return sorted(out, key=self._as_sort_key)
 
+    def _penitent_host_battlefield_units(
+        self,
+        *,
+        require_penitent: bool = True,
+        require_not_fought: bool = False,
+        require_not_shot: bool = False,
+        require_targetable: bool = True,
+    ) -> list[Any]:
+        if not self._is_penitent_host():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adepta_sororitas_unit(root):
+                continue
+            if require_penitent and not self._is_penitent_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._as_sort_key)
+
+    def _penitent_host_passion_of_the_penitent_candidates(self) -> list[Any]:
+        return [
+            unit
+            for unit in self._penitent_host_battlefield_units(
+                require_penitent=True,
+                require_not_fought=True,
+                require_targetable=True,
+            )
+            if self._as_unit_has_melee_weapon(unit)
+        ]
+
+    def _penitent_host_lash_of_guilt_candidates(self, *, moved_unit: Any, action: Any) -> list[Any]:
+        if str(action or "").strip().lower() != "advance":
+            return []
+        root = self._as_root(moved_unit)
+        if root is None:
+            return []
+        candidates = self._penitent_host_battlefield_units(require_penitent=True, require_targetable=True)
+        return [root] if self._as_unit_in_candidates(root, candidates) else []
+
+    def _penitent_host_boundless_zeal_candidates(self, *, moved_unit: Any, action: Any) -> list[Any]:
+        if str(action or "").strip().lower() != "fall_back":
+            return []
+        root = self._as_root(moved_unit)
+        if root is None:
+            return []
+        candidates = self._penitent_host_battlefield_units(require_penitent=False, require_targetable=True)
+        return [root] if self._as_unit_in_candidates(root, candidates) else []
+
+    def _penitent_host_purity_of_suffering_candidates(self, *, target_units: Any) -> list[Any]:
+        if not self._is_penitent_host():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_penitent_unit(root):
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid not in seen:
+                seen.add(uid)
+                out.append(root)
+        return sorted(out, key=self._as_sort_key)
+
+    def _penitent_host_objective_candidates(self, *, unit: Any, last_model: Any = None) -> list[Any]:
+        root = self._as_root(unit)
+        if root is None or self.game is None:
+            return []
+        snapshot = getattr(self.game, "_objective_control_snapshot", None)
+        if not isinstance(snapshot, dict) or not snapshot:
+            return []
+        pos = None
+        if last_model is not None:
+            get_location = getattr(last_model, "get_location", None)
+            if callable(get_location):
+                pos = get_location()
+        if pos is None:
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                get_location = getattr(model, "get_location", None)
+                if callable(get_location):
+                    pos = get_location()
+                    break
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        try:
+            ux = float(pos[0])
+            uy = float(pos[1])
+        except (TypeError, ValueError):
+            return []
+        base_radius = 0.0
+        base = getattr(last_model, "model_base", None) if last_model is not None else None
+        if base is None:
+            models = list(getattr(root, "models", []) or [])
+            if models:
+                base = getattr(models[0], "model_base", None)
+        if base is not None:
+            try:
+                base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                base_radius = 0.0
+        candidates: list[Any] = []
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if snapshot.get(loc) is not self.player:
+                continue
+            try:
+                radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                dx = ux - float(getattr(loc, "x", 0.0))
+                dy = uy - float(getattr(loc, "y", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if math.sqrt(dx * dx + dy * dy) <= (radius + base_radius):
+                candidates.append(objective)
+        return candidates
+
+    def _penitent_host_devout_targets(self) -> dict[str, list[Any]]:
+        snapshots = getattr(self, "_penitent_host_devout_target_units_by_attacker", None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            self._penitent_host_devout_target_units_by_attacker = snapshots
+        return snapshots
+
+    @staticmethod
+    def _penitent_host_parse_boundless_zeal_choice(raw_choice: Any) -> str:
+        choice = raw_choice
+        if isinstance(choice, dict):
+            choice = (
+                choice.get("choice_key")
+                or choice.get("choice")
+                or choice.get("selection")
+                or choice.get("value")
+                or choice.get("label")
+            )
+        key = str(choice or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if key in {"SHOOT", "SHOOT_AFTER_FALL_BACK"}:
+            return "SHOOT"
+        if key in {"CHARGE", "CHARGE_AFTER_FALL_BACK"}:
+            return "CHARGE"
+        return ""
+
+    @staticmethod
+    def _penitent_host_boundless_zeal_choice_label(choice_key: str) -> str:
+        if str(choice_key or "").strip().upper() == "CHARGE":
+            return "Charge"
+        return "Shoot"
+
+    def _build_penitent_host_boundless_zeal_choice_request(
+        self,
+        *,
+        unit: Any,
+        phase_name: str,
+        stratagem_name: str,
+    ) -> Any:
+        if self.game is None or not bool(getattr(self.game, "is_authoritative", True)):
+            return None
+        root = self._as_root(unit)
+        if root is None:
+            return None
+        unit_id = self._as_sort_key(root)
+        if not unit_id:
+            return None
+        player_id = str(getattr(self.player, "id", "") or "")
+        phase_label = str(phase_name or "").strip() or "Movement phase"
+        turn = self._as_current_turn()
+        turn_owner_id = self._as_current_turn_owner_id()
+        if self._as_pending_choose_quarry_request(
+            player_id=player_id,
+            ctx_filters={
+                "ability": "penitent_host_boundless_zeal_mode",
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+            },
+        ):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'BOUNDLESS ZEAL'}: choose Shoot or Charge.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    "Shoot",
+                    payload={"choice_key": "SHOOT", "unit_id": unit_id},
+                ),
+                DecisionOption.create(
+                    "Charge",
+                    payload={"choice_key": "CHARGE", "unit_id": unit_id},
+                ),
+            ],
+            context={
+                "ability": "penitent_host_boundless_zeal_mode",
+                "ability_name": str(stratagem_name or "").strip() or "BOUNDLESS ZEAL",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "phase_name": phase_label,
+                "turn": turn,
+                "turn_owner_id": turn_owner_id,
+                "candidate_choice_keys": ["SHOOT", "CHARGE"],
+                "stratagem_name": str(stratagem_name or "").strip() or "BOUNDLESS ZEAL",
+                "optional": False,
+            },
+        )
+
+    def validate_penitent_host_boundless_zeal_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._as_root(unit)
+        if root is None:
+            return False, "BOUNDLESS ZEAL choice unit was not found."
+        if player is not None and player is not self.player:
+            return False, "BOUNDLESS ZEAL choice must be resolved by the owning player."
+        if not self._is_penitent_host():
+            return False, "BOUNDLESS ZEAL requires Penitent Host."
+        if not self._as_owned_by_player(root, self.player):
+            return False, "BOUNDLESS ZEAL target must belong to you."
+        if not self._as_on_battlefield(root):
+            return False, "BOUNDLESS ZEAL target must be on the battlefield."
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return False, "BOUNDLESS ZEAL target can no longer be selected."
+        if not self._is_adepta_sororitas_unit(root):
+            return False, "BOUNDLESS ZEAL target must be ADEPTA SORORITAS."
+        if self._is_penitent_unit(root):
+            return False, "BOUNDLESS ZEAL mode choice is only used for non-PENITENT units."
+        if game is not None:
+            current_phase = self._as_phase_key(getattr(getattr(game, "phase", None), "name", "") or "")
+            expected_phase = self._as_phase_key(phase_name)
+            if current_phase and expected_phase and current_phase != expected_phase:
+                return False, "BOUNDLESS ZEAL choice is no longer in the same phase."
+            if int(turn or 0) > 0 and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                return False, "BOUNDLESS ZEAL choice is no longer in the same turn."
+            if turn_owner_id:
+                active_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner_id = str(getattr(active_player, "id", "") or "")
+                if current_owner_id and current_owner_id != str(turn_owner_id):
+                    return False, "BOUNDLESS ZEAL choice is no longer in the same turn."
+        if self._as_phase_name_lower(phase_name) != "movement phase":
+            return False, "BOUNDLESS ZEAL choice requires the Movement phase."
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "fell_back_this_round", False)):
+            return False, "BOUNDLESS ZEAL target must have just Fallen Back."
+        choice_key = self._penitent_host_parse_boundless_zeal_choice(payload)
+        if choice_key not in {"SHOOT", "CHARGE"}:
+            return False, "BOUNDLESS ZEAL choice must be Shoot or Charge."
+        resolved_name = str(stratagem_name or payload.get("stratagem_name", "") or "").strip().upper()
+        if resolved_name and resolved_name != "BOUNDLESS ZEAL":
+            return False, "BOUNDLESS ZEAL choice payload does not match the stratagem."
+        return True, ""
+
+    def apply_penitent_host_boundless_zeal_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        turn: int = 0,
+        turn_owner_id: str = "",
+        stratagem_name: str = "",
+    ) -> Any:
+        valid, _reason = self.validate_penitent_host_boundless_zeal_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            turn=turn,
+            turn_owner_id=turn_owner_id,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._as_root(unit)
+        if root is None:
+            return None
+        choice_key = self._penitent_host_parse_boundless_zeal_choice(payload)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["penitent_host_boundless_zeal_active"] = True
+        sr["penitent_host_boundless_zeal_mode"] = "shoot" if choice_key == "SHOOT" else "charge"
+        sr["penitent_host_boundless_zeal_turn_owner"] = str(turn_owner_id or self._as_current_turn_owner_id())
+        sr["penitent_host_boundless_zeal_turn"] = int(turn or self._as_current_turn())
+        sr["penitent_host_boundless_zeal_source"] = (
+            str(stratagem_name or payload.get("stratagem_name", "") or "BOUNDLESS ZEAL").strip() or "BOUNDLESS ZEAL"
+        )
+        root.special_rules = sr
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.pop("fell_back_and_shoot", None)
+        return {
+            "unit_id": self._as_sort_key(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "choice_key": choice_key,
+            "choice_label": self._penitent_host_boundless_zeal_choice_label(choice_key),
+            "stratagem_name": str(stratagem_name or payload.get("stratagem_name", "") or "BOUNDLESS ZEAL"),
+        }
+
     @staticmethod
     def _champions_of_faith_parse_suffer_choice(raw_choice: Any) -> str:
         choice = raw_choice
@@ -1661,6 +2045,19 @@ class AdeptaSororitasStratagemMixin:
             candidates=self._champions_of_faith_to_the_heart_of_heresy_candidates(),
         )
 
+    def _queue_penitent_host_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_penitent_host():
+            return
+        self._penitent_host_devout_targets().clear()
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        self._queue_adepta_sororitas_phase_start_reaction(
+            stratagem_name="PASSION OF THE PENITENT",
+            phase_name="Fight phase",
+            candidates=self._penitent_host_passion_of_the_penitent_candidates(),
+        )
+
     def _queue_army_of_faith_blinding_radiance_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
         if attacking_unit is None or not self._is_army_of_faith():
             return
@@ -1982,6 +2379,92 @@ class AdeptaSororitasStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_penitent_host_shooting_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_penitent_host():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "shooting phase":
+            return
+        if self._as_owned_by_player(attacking_unit, self.player):
+            return
+        attacker_root = self._as_root(attacking_unit)
+        if attacker_root is None:
+            return
+        attacker_id = self._as_sort_key(attacker_root)
+        if attacker_id:
+            snapshots = self._penitent_host_devout_targets()
+            snapshots[attacker_id] = list(target_units or [])
+        stratagem = self.get_by_name("PURITY OF SUFFERING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._penitent_host_purity_of_suffering_candidates(target_units=target_units)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_penitent_host_fight_target_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_penitent_host():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "fight phase":
+            return
+        if self._as_owned_by_player(attacking_unit, self.player):
+            return
+        attacker_root = self._as_root(attacking_unit)
+        if attacker_root is None:
+            return
+        stratagem = self.get_by_name("PURITY OF SUFFERING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._penitent_host_purity_of_suffering_candidates(target_units=target_units)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_hallowed_martyrs_shooting_resolved_reactions(self, *, attacker_unit: Any, hits_by_target: Any = None) -> None:
         if attacker_unit is None or not self._is_hallowed_martyrs():
             return
@@ -2155,6 +2638,102 @@ class AdeptaSororitasStratagemMixin:
         }
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_penitent_host_move_started_reactions(self, *, unit: Any, action: Any) -> None:
+        if unit is None or not self._is_penitent_host():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if str(action or "").strip().lower() != "advance":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        root = self._as_root(unit)
+        if root is None:
+            return
+        if not self._as_owned_by_player(root, self.player):
+            return
+        if not self._as_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        stratagem = self.get_by_name("LASH OF GUILT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._penitent_host_lash_of_guilt_candidates(moved_unit=root, action=action)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_started":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": candidates,
+            "action": "advance",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_penitent_host_move_end_reactions(self, *, unit: Any, action: Any) -> None:
+        if unit is None or not self._is_penitent_host():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if str(action or "").strip().lower() != "fall_back":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        root = self._as_root(unit)
+        if root is None:
+            return
+        if not self._as_owned_by_player(root, self.player):
+            return
+        if not self._as_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        stratagem = self.get_by_name("BOUNDLESS ZEAL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._penitent_host_boundless_zeal_candidates(moved_unit=root, action=action)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": candidates,
+            "action": "fall_back",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_bringers_of_flame_shooting_resolved_reactions(self, *, attacker_unit: Any, hits_by_target: Any = None) -> None:
         if attacker_unit is None or not self._is_bringers_of_flame():
             return
@@ -2213,6 +2792,55 @@ class AdeptaSororitasStratagemMixin:
             "cp_cost": stratagem.cp_cost,
             "enemy_unit": attacker_unit,
             "attacking_unit": attacker_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_penitent_host_shooting_resolved_reactions(self, *, attacker_unit: Any) -> None:
+        if attacker_unit is None or not self._is_penitent_host():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "shooting phase":
+            return
+        if self._as_owned_by_player(attacker_unit, self.player):
+            return
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is self.player:
+            return
+        attacker_root = self._as_root(attacker_unit)
+        if attacker_root is None:
+            return
+        stratagem = self.get_by_name("DEVOUT FANATICISM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacker_id = self._as_sort_key(attacker_root)
+        targets = []
+        if attacker_id:
+            targets = list(self._penitent_host_devout_targets().pop(attacker_id, []) or [])
+        candidates = self._penitent_host_purity_of_suffering_candidates(target_units=targets)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -2321,6 +2949,45 @@ class AdeptaSororitasStratagemMixin:
             "destroyed_model": last_model,
             "destroyed_position": destroyed_position,
             "miracle_dice_pool": list(pool),
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_penitent_host_unit_destroyed_reactions(self, *, unit: Any, last_model: Any) -> None:
+        if unit is None or not self._is_penitent_host():
+            return
+        root = self._as_root(unit)
+        if root is None:
+            return
+        if not self._as_owned_by_player(root, self.player):
+            return
+        if not self._is_penitent_unit(root):
+            return
+        stratagem = self.get_by_name("FINAL REDEMPTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._penitent_host_objective_candidates(unit=root, last_model=last_model)
+        if not candidates:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "")
+        if self._hallowed_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            unit=root,
+        ):
+            return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "objective_candidates": candidates,
         }
         self._queue_reaction(payload, use_timer=False)
 
@@ -2666,6 +3333,92 @@ class AdeptaSororitasStratagemMixin:
                     cache.pop("fell_back_and_shoot", None)
             root.special_rules = sr
 
+    def _cleanup_penitent_host_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_penitent_host():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in {"MOVEMENT_PHASE", "FIGHT_PHASE"}:
+            return
+        active_turn_owner_id = self._as_current_turn_owner_id()
+        current_turn = self._as_current_turn()
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            root_id = self._as_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            if phase_name == "FIGHT_PHASE":
+                lash_owner = str(sr.get("penitent_host_lash_of_guilt_turn_owner", "") or "")
+                lash_turn = int(sr.get("penitent_host_lash_of_guilt_turn", 0) or 0)
+                if (
+                    sr.get("penitent_host_lash_of_guilt_active") is True
+                    and lash_owner
+                    and active_turn_owner_id
+                    and lash_owner == active_turn_owner_id
+                    and (not lash_turn or not current_turn or lash_turn == current_turn)
+                ):
+                    for key in (
+                        "penitent_host_lash_of_guilt_active",
+                        "penitent_host_lash_of_guilt_turn_owner",
+                        "penitent_host_lash_of_guilt_turn",
+                        "penitent_host_lash_of_guilt_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+                zeal_owner = str(sr.get("penitent_host_boundless_zeal_turn_owner", "") or "")
+                zeal_turn = int(sr.get("penitent_host_boundless_zeal_turn", 0) or 0)
+                if (
+                    sr.get("penitent_host_boundless_zeal_active") is True
+                    and zeal_owner
+                    and active_turn_owner_id
+                    and zeal_owner == active_turn_owner_id
+                    and (not zeal_turn or not current_turn or zeal_turn == current_turn)
+                ):
+                    for key in (
+                        "penitent_host_boundless_zeal_active",
+                        "penitent_host_boundless_zeal_mode",
+                        "penitent_host_boundless_zeal_turn_owner",
+                        "penitent_host_boundless_zeal_turn",
+                        "penitent_host_boundless_zeal_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+                passion_owner = str(sr.get("penitent_host_passion_of_the_penitent_turn_owner", "") or "")
+                passion_turn = int(sr.get("penitent_host_passion_of_the_penitent_turn", 0) or 0)
+                if (
+                    sr.get("penitent_host_passion_of_the_penitent_active") is True
+                    and passion_owner
+                    and active_turn_owner_id
+                    and passion_owner == active_turn_owner_id
+                    and (not passion_turn or not current_turn or passion_turn == current_turn)
+                ):
+                    for key in (
+                        "penitent_host_passion_of_the_penitent_active",
+                        "penitent_host_passion_of_the_penitent_crit_threshold",
+                        "penitent_host_passion_of_the_penitent_turn_owner",
+                        "penitent_host_passion_of_the_penitent_turn",
+                        "penitent_host_passion_of_the_penitent_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if changed:
+                cache = getattr(root, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    cache.pop("fell_back_and_shoot", None)
+                root.special_rules = sr
+
     def _use_adepta_sororitas_hallowed_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "BLAZING IRE":
@@ -2678,6 +3431,18 @@ class AdeptaSororitasStratagemMixin:
             return self._use_bringers_of_flame_righteous_blows(stratagem, **kwargs)
         if name_u == "RITES OF FIRE":
             return self._use_bringers_of_flame_rites_of_fire(stratagem, **kwargs)
+        if name_u == "BOUNDLESS ZEAL":
+            return self._use_penitent_host_boundless_zeal(stratagem, **kwargs)
+        if name_u == "DEVOUT FANATICISM":
+            return self._use_penitent_host_devout_fanaticism(stratagem, **kwargs)
+        if name_u == "FINAL REDEMPTION":
+            return self._use_penitent_host_final_redemption(stratagem, **kwargs)
+        if name_u == "LASH OF GUILT":
+            return self._use_penitent_host_lash_of_guilt(stratagem, **kwargs)
+        if name_u == "PASSION OF THE PENITENT":
+            return self._use_penitent_host_passion_of_the_penitent(stratagem, **kwargs)
+        if name_u == "PURITY OF SUFFERING":
+            return self._use_penitent_host_purity_of_suffering(stratagem, **kwargs)
         if name_u == "BASTION OF FAITH":
             return self._use_champions_of_faith_bastion_of_faith(stratagem, **kwargs)
         if name_u == "INDEFATIGABLE DEDICATION":
@@ -3090,6 +3855,463 @@ class AdeptaSororitasStratagemMixin:
         self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: RITES OF FIRE: %s gains +1 to wound on qualifying ranged attacks this phase and can force a Battle-shock test after a qualifying kill.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_penitent_host_boundless_zeal(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or not candidates or action is None) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BOUNDLESS ZEAL":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if action is None:
+                    action = reaction.get("action")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BOUNDLESS ZEAL: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: BOUNDLESS ZEAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BOUNDLESS ZEAL: not your Movement phase")
+            return False
+        if str(action or "").strip().lower() != "fall_back":
+            logger.error("ERROR: BOUNDLESS ZEAL: target must have just Fallen Back")
+            return False
+        eligible = candidates or self._penitent_host_boundless_zeal_candidates(moved_unit=root, action=action)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: BOUNDLESS ZEAL: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: BOUNDLESS ZEAL: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: BOUNDLESS ZEAL: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: BOUNDLESS ZEAL: target is not ADEPTA SORORITAS")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        if self._is_penitent_unit(root):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["penitent_host_boundless_zeal_active"] = True
+            sr["penitent_host_boundless_zeal_mode"] = "both"
+            sr["penitent_host_boundless_zeal_turn_owner"] = self._as_current_turn_owner_id()
+            sr["penitent_host_boundless_zeal_turn"] = self._as_current_turn()
+            sr["penitent_host_boundless_zeal_source"] = str(stratagem.name or "BOUNDLESS ZEAL")
+            root.special_rules = sr
+            cache = getattr(root, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("fell_back_and_shoot", None)
+            self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+            logger.info(
+                "INFO: BOUNDLESS ZEAL: %s can shoot and charge after Falling Back this turn.",
+                getattr(root, "name", "Unit"),
+            )
+            return True
+        choice_request = self._build_penitent_host_boundless_zeal_choice_request(
+            unit=root,
+            phase_name="Movement phase",
+            stratagem_name=str(getattr(stratagem, "name", "") or "BOUNDLESS ZEAL"),
+        )
+        if choice_request is None:
+            logger.error("ERROR: BOUNDLESS ZEAL: failed to build choice request")
+            return False
+        if not self._as_submit_decision_request(choice_request):
+            logger.error("ERROR: BOUNDLESS ZEAL: failed to queue choice request")
+            return False
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BOUNDLESS ZEAL: queued Shoot-or-Charge choice for %s.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_penitent_host_devout_fanaticism(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or attacking_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DEVOUT FANATICISM":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DEVOUT FANATICISM: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        attacker_root = self._as_root(attacking_unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DEVOUT FANATICISM: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DEVOUT FANATICISM: not opponent's Shooting phase")
+            return False
+        eligible = candidates
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: DEVOUT FANATICISM: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: DEVOUT FANATICISM: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: DEVOUT FANATICISM: target cannot be selected")
+            return False
+        if not self._is_penitent_unit(root):
+            logger.error("ERROR: DEVOUT FANATICISM: target must be PENITENT")
+            return False
+        if attacker_root is not None and self._as_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: DEVOUT FANATICISM: attacker is not enemy")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: DEVOUT FANATICISM: reactive move queue unavailable")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        max_distance = max(0, int(dice_module.get_roll("D6") or 0))
+        if max_distance <= 0:
+            logger.error("ERROR: DEVOUT FANATICISM: invalid reactive move distance")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="devout_fanaticism",
+            movement_type="reactive",
+            reactive_movement_type="devout_fanaticism",
+            source=str(getattr(stratagem, "name", "") or "DEVOUT FANATICISM"),
+            attacker_unit=attacker_root,
+            allow_engagement_range=True,
+            extra_context={
+                "devout_fanaticism_source": str(getattr(stratagem, "name", "") or "DEVOUT FANATICISM"),
+                "devout_fanaticism_closest_enemy_exclude_keywords_any": ["AIRCRAFT"],
+            },
+        )
+        if request is not None:
+            request.context["reactive_move_allow_engagement_range"] = True
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEVOUT FANATICISM: %s can make a reactive move of up to %d\" toward the closest enemy unit.",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_penitent_host_final_redemption(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if (unit is None or not objective_candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "FINAL REDEMPTION":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit") or reaction.get("destroyed_unit")
+                if not objective_candidates:
+                    objective_candidates = list(reaction.get("objective_candidates") or [])
+                break
+        if unit is None:
+            logger.error("ERROR: FINAL REDEMPTION: no destroyed unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        if objective is None:
+            objective = objective_candidates[0] if objective_candidates else None
+        if objective is None:
+            logger.error("ERROR: FINAL REDEMPTION: no objective marker available")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: FINAL REDEMPTION: objective is not eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            return False
+        if not self._is_penitent_unit(root):
+            logger.error("ERROR: FINAL REDEMPTION: target must be PENITENT")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None:
+            logger.error("ERROR: FINAL REDEMPTION: objective marker location is unavailable")
+            return False
+        set_sticky = getattr(objective_location, "set_sticky_control", None)
+        if callable(set_sticky):
+            set_sticky(self.player, source="penitent_host_final_redemption")
+        else:
+            objective_location.sticky_controller = self.player
+            objective_location.sticky_source = "penitent_host_final_redemption"
+            objective_location.controlling_player = self.player
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: FINAL REDEMPTION: objective remains under your control until broken.")
+        return True
+
+    def _use_penitent_host_lash_of_guilt(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        action = kwargs.get("action")
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or not candidates or action is None) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "LASH OF GUILT":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if action is None:
+                    action = reaction.get("action")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: LASH OF GUILT: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: LASH OF GUILT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: LASH OF GUILT: not your Movement phase")
+            return False
+        if str(action or "").strip().lower() != "advance":
+            logger.error("ERROR: LASH OF GUILT: target must have just been selected to Advance")
+            return False
+        eligible = candidates or self._penitent_host_lash_of_guilt_candidates(moved_unit=root, action=action)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: LASH OF GUILT: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: LASH OF GUILT: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: LASH OF GUILT: target cannot be selected")
+            return False
+        if not self._is_penitent_unit(root):
+            logger.error("ERROR: LASH OF GUILT: target must be PENITENT")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["penitent_host_lash_of_guilt_active"] = True
+        sr["penitent_host_lash_of_guilt_turn_owner"] = self._as_current_turn_owner_id()
+        sr["penitent_host_lash_of_guilt_turn"] = self._as_current_turn()
+        sr["penitent_host_lash_of_guilt_source"] = str(stratagem.name or "LASH OF GUILT")
+        if self._is_penitent_engines_unit(root):
+            entry_tag = f"stratagem:penitent_host_lash_of_guilt:{self._as_sort_key(root)}"
+            effects = list(sr.get("advance_no_roll_effects", []) or [])
+            kept = [
+                entry
+                for entry in effects
+                if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == entry_tag)
+            ]
+            kept.append(
+                {
+                    "distance": 6,
+                    "source": str(stratagem.name or "LASH OF GUILT"),
+                    "tag": entry_tag,
+                    "expires_phase": "MOVEMENT_PHASE",
+                }
+            )
+            sr["advance_no_roll_effects"] = kept
+        root.special_rules = sr
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LASH OF GUILT: %s can charge after Advancing this turn%s.",
+            getattr(root, "name", "Unit"),
+            " and treats the Advance roll as 6" if self._is_penitent_engines_unit(root) else "",
+        )
+        return True
+
+    def _use_penitent_host_passion_of_the_penitent(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PASSION OF THE PENITENT: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: PASSION OF THE PENITENT: wrong phase")
+            return False
+        eligible = candidates or self._penitent_host_passion_of_the_penitent_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PASSION OF THE PENITENT: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: PASSION OF THE PENITENT: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: PASSION OF THE PENITENT: target cannot be selected")
+            return False
+        if not self._is_penitent_unit(root):
+            logger.error("ERROR: PASSION OF THE PENITENT: target must be PENITENT")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: PASSION OF THE PENITENT: target has already fought")
+            return False
+        if not self._as_unit_has_melee_weapon(root):
+            logger.error("ERROR: PASSION OF THE PENITENT: target has no melee weapons")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["penitent_host_passion_of_the_penitent_active"] = True
+        sr["penitent_host_passion_of_the_penitent_crit_threshold"] = 5
+        sr["penitent_host_passion_of_the_penitent_turn_owner"] = self._as_current_turn_owner_id()
+        sr["penitent_host_passion_of_the_penitent_turn"] = self._as_current_turn()
+        sr["penitent_host_passion_of_the_penitent_source"] = str(stratagem.name or "PASSION OF THE PENITENT")
+        root.special_rules = sr
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PASSION OF THE PENITENT: %s scores critical melee hits on 5+ this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_penitent_host_purity_of_suffering(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_penitent_host():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PURITY OF SUFFERING":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PURITY OF SUFFERING: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        attacker_root = self._as_root(attacking_unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PURITY OF SUFFERING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: PURITY OF SUFFERING: not opponent's Shooting phase")
+            return False
+        eligible = candidates or self._penitent_host_purity_of_suffering_candidates(target_units=target_units)
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: PURITY OF SUFFERING: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: PURITY OF SUFFERING: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: PURITY OF SUFFERING: target cannot be selected")
+            return False
+        if not self._is_penitent_unit(root):
+            logger.error("ERROR: PURITY OF SUFFERING: target must be PENITENT")
+            return False
+        if attacker_root is not None and self._as_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: PURITY OF SUFFERING: attacker is not enemy")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        phase_key = self._as_phase_key("Shooting phase" if phase_name == "shooting phase" else "Fight phase")
+        for model in self._as_unit_models(root):
+            if not self._as_model_is_alive(model):
+                continue
+            if not self._is_penitent_model(model, root):
+                continue
+            set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+            if not callable(set_temporary_fnp):
+                continue
+            set_temporary_fnp(
+                key=f"penitent_host_purity_of_suffering:{self._as_sort_key(root)}:{get_entity_id(model)}",
+                value=4,
+                source=str(stratagem.name or "PURITY OF SUFFERING"),
+                expires_phase=phase_key,
+            )
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PURITY OF SUFFERING: %s gains Feel No Pain 4+ for PENITENT models this phase.",
             getattr(root, "name", "Unit"),
         )
         return True
