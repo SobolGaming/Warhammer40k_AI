@@ -174,7 +174,29 @@ These are not hard rules, but they should guide review:
 
 # PR sequence
 
+## PR status tracker
+
+Update this tracker whenever a planned PR is completed and pushed so the document
+shows what is done versus what remains.
+
+| PR | Status | Notes |
+|---|---|---|
+| PR-001 | Completed | Pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`). |
+| PR-002 | Pending | Not started. |
+| PR-003 | Pending | Not started. |
+| PR-004 | Pending | Not started. |
+| PR-005 | Pending | Not started. |
+| PR-006 | Pending | Not started. |
+| PR-007 | Pending | Not started. |
+| PR-008 | Pending | Not started. |
+| PR-009 | Pending | Not started. |
+| PR-010 | Pending | Not started. |
+| PR-011 | Pending | Not started. |
+| PR-012 | Pending | Not started. |
+
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
+
+**Status:** Completed and pushed to `dev` on April 5, 2026 in commit `af21acb1`.
 
 ### Goal
 Create the package/file scaffolding that will let the 11th-edition work land into focused modules instead of growing existing god files. Reorganize tests into package-aligned directories.
@@ -869,4 +891,3 @@ The port-prep effort is complete when all of the following are true:
 8. Giant files have been materially reduced and split along coherent responsibility boundaries.
 9. The codebase is 11th-first and no longer architecturally anchored to 10th.
 10. Pre-11th training is limited to portable, descriptor-conditioned components.
-
