@@ -4,6 +4,7 @@ import pytest
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_MISSION
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.mission_selection import DEFAULT_MISSION_PACK_ID
 from warhammer40k_ai.engine.phase import SetupPhase
 from warhammer40k_ai.roster.player import Player, PlayerControl
 
@@ -46,6 +47,22 @@ def test_request_mission_selection_is_idempotent_for_pending_request() -> None:
 
     assert second.decision_id == first.decision_id
     assert len(_pending_mission_requests(game)) == 1
+
+
+def test_request_mission_selection_exposes_pack_aware_payloads() -> None:
+    game = _build_game(authoritative=True)
+
+    request = game.request_mission_selection()
+    combinations = [
+        dict(getattr(option, "payload", {}) or {}).get("combination", {})
+        for option in list(request.options or [])
+    ]
+
+    assert combinations
+    assert any(combo.get("combination_id") == "M" for combo in combinations)
+    assert all(combo.get("pack_id") == DEFAULT_MISSION_PACK_ID for combo in combinations)
+    assert all(combo.get("deployment_definition_id") for combo in combinations)
+    assert all(combo.get("secondary_rule_set_id") for combo in combinations)
 
 
 def test_set_selected_mission_clears_pending_mission_requests() -> None:

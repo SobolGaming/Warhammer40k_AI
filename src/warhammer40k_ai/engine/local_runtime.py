@@ -11,7 +11,7 @@ from .command_dispatcher import CommandResult
 from .commands import GameCommand
 from .game import Game
 from .game_setup_flow import driver_managed_setup_phases
-from .mission_selection import iter_mission_combinations
+from .mission_selection import iter_random_mission_options
 from ..utility.dice import get_dice_roll
 from ..utility.game_context import game_context, roll_context
 
@@ -120,7 +120,7 @@ class LocalAuthoritativeRuntime:
         queue_fn(request)
 
     def _default_choose_random_mission(self, game: Game) -> tuple[dict, int]:
-        combos = iter_mission_combinations()
+        combos = iter_random_mission_options(game)
         if not combos:
             raise RuntimeError("No mission combinations available for random selection.")
         with game_context(game), roll_context("mission_selection"):

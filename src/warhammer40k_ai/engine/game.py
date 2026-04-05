@@ -11965,12 +11965,16 @@ class Game(
             for pending in list(queue.list() or []):
                 if str(getattr(pending, "decision_type", "")) == DECISION_CHOOSE_MISSION:
                     return pending
-        from .mission_selection import iter_mission_combinations
+        from .mission_selection import build_mission_selection_catalog
 
-        combos = iter_mission_combinations()
+        combos = build_mission_selection_catalog(self)
         options = []
         for combo in combos:
-            label = f"{combo.get('id')} - {combo.get('primary')} / {combo.get('deployment')}"
+            pack_short_name = str(combo.get("pack_short_name", "") or "").strip()
+            if pack_short_name:
+                label = f"[{pack_short_name}] {combo.get('id')} - {combo.get('primary')} / {combo.get('deployment')}"
+            else:
+                label = f"{combo.get('id')} - {combo.get('primary')} / {combo.get('deployment')}"
             options.append(DecisionOption.create(label, payload={"combination": dict(combo)}))
         player_id = None
         try:

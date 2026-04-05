@@ -163,6 +163,18 @@ def _derived_preview_steps_status(game, *, current_step_index: int) -> dict[Preg
     selected_mission = dict(getattr(game, "selected_mission_info", {}) or {})
     has_selected_mission = bool(selected_mission)
     secondary_mode = str(getattr(game, "secondary_mission_mode", "") or "").strip()
+    mission_pack_name = str(
+        selected_mission.get("mission_pack_short_name")
+        or selected_mission.get("mission_pack_name")
+        or selected_mission.get("mission_pack_id")
+        or ""
+    ).strip()
+    deployment_name = str(selected_mission.get("deployment", "") or "").strip()
+    twist_name = str(selected_mission.get("twist_name", "") or "").strip()
+    twist_definition_id = str(selected_mission.get("twist_definition_id", "") or "").strip()
+    twist_is_stubbed = bool(selected_mission.get("twist_is_stubbed", False))
+    secondary_rule_set_name = str(selected_mission.get("secondary_rule_set_name", "") or "").strip()
+    secondary_selection_stage = str(selected_mission.get("secondary_selection_stage", "") or "").strip()
     statuses: dict[PregameStepId, tuple[str, str | None]] = {}
 
     if current_step_index <= 1:
@@ -173,26 +185,56 @@ def _derived_preview_steps_status(game, *, current_step_index: int) -> dict[Preg
             statuses[PregameStepId.DETERMINE_DEPLOYMENT] = ("pending", None)
             statuses[PregameStepId.OPTIONAL_TWIST] = ("pending", None)
     else:
-        deployment_name = str(selected_mission.get("deployment", "") or "").strip()
         if has_selected_mission and deployment_name:
+            detail = f"Derived from selected mission definition as deployment '{deployment_name}'."
+            if mission_pack_name:
+                detail = f"Derived from {mission_pack_name} mission data as deployment '{deployment_name}'."
             statuses[PregameStepId.DETERMINE_DEPLOYMENT] = (
                 "completed",
-                f"Derived from selected mission combination as deployment '{deployment_name}'.",
+                detail,
             )
         else:
             statuses[PregameStepId.DETERMINE_DEPLOYMENT] = (
                 "stubbed",
                 "No explicit deployment-definition selection is stored yet; current runtime derives it from the mission combination.",
             )
-        statuses[PregameStepId.OPTIONAL_TWIST] = (
-            "stubbed",
-            "No twist content is applied yet; the step remains an explicit placeholder.",
-        )
+        if not has_selected_mission:
+            statuses[PregameStepId.OPTIONAL_TWIST] = (
+                "stubbed",
+                "No twist content is applied yet; the step remains an explicit placeholder.",
+            )
+        elif not twist_definition_id:
+            statuses[PregameStepId.OPTIONAL_TWIST] = (
+                "stubbed",
+                "No explicit twist definition is stored yet; the step remains an explicit placeholder.",
+            )
+        elif twist_definition_id == "none":
+            detail = "Selected mission pack has no separate twist step."
+            if mission_pack_name:
+                detail = f"{mission_pack_name} has no separate twist step."
+            statuses[PregameStepId.OPTIONAL_TWIST] = ("completed", detail)
+        elif twist_is_stubbed:
+            detail = "No twist content is applied yet; the step remains an explicit placeholder."
+            if twist_name and mission_pack_name:
+                detail = f"{mission_pack_name} twist '{twist_name}' remains a provisional placeholder."
+            elif twist_name:
+                detail = f"Twist '{twist_name}' remains a provisional placeholder."
+            statuses[PregameStepId.OPTIONAL_TWIST] = ("stubbed", detail)
+        else:
+            detail = "Twist data is recorded in the selected mission."
+            if twist_name:
+                detail = f"Twist '{twist_name}' recorded in selected mission data."
+            statuses[PregameStepId.OPTIONAL_TWIST] = ("completed", detail)
 
     if current_step_index <= 5:
         statuses[PregameStepId.SELECT_SECONDARY_MISSIONS] = ("pending", None)
     else:
         detail = "Secondary selection remains deferred to command-phase deck draw."
+        if secondary_rule_set_name and secondary_selection_stage:
+            detail = (
+                f"Secondary rule set '{secondary_rule_set_name}' currently resolves via "
+                f"'{secondary_selection_stage}'."
+            )
         if secondary_mode:
             detail = f"Secondary selection mode placeholder recorded as '{secondary_mode}'."
         statuses[PregameStepId.SELECT_SECONDARY_MISSIONS] = ("stubbed", detail)

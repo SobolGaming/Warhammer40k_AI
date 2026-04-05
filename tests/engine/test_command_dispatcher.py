@@ -12,6 +12,7 @@ from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game, SetupPhase
+from warhammer40k_ai.engine.mission_selection import default_mission_selection
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 
@@ -71,8 +72,8 @@ def test_execute_setup_phase_rejects_unknown_payload_keys():
 
 def test_select_mission_sets_primary_cards():
     game = _make_game()
-    combination = {"id": "TEST1", "primary": "Take and Hold", "deployment": "Test"}
-    layout = {"layout": 1}
+    combination, layout = default_mission_selection()
+    layout = {"layout": layout}
     cmd = GameCommand.create(
         CMD_SELECT_MISSION,
         player_id=game.get_current_player().id,
@@ -80,10 +81,13 @@ def test_select_mission_sets_primary_cards():
     )
     result = game.apply_command(cmd)
     assert result.ok is True
-    assert game.selected_mission_info["primary"] == "Take and Hold"
+    assert game.selected_mission_info["primary"] == combination["primary"]
+    assert game.selected_mission_info["mission_pack_id"] == "chapter_approved_2025_2026"
+    assert game.selected_mission_info["deployment_definition_id"] == combination["deployment_definition_id"]
+    assert game.selected_mission_info["secondary_rule_set_id"] == "chapter_approved_2025_2026"
     for player in game.players:
         assert player.primary_mission is not None
-        assert player.primary_mission.name == "Take and Hold"
+        assert player.primary_mission.name == combination["primary"]
 
 
 def test_set_deployment_waiting_flag():

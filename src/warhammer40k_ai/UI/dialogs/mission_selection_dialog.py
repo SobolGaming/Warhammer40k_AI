@@ -1,6 +1,6 @@
 """
-Mission Selection Dialog for Chapter Approved 2025/2026
-Displays approved combinations of Primary Mission, Deployment, and Terrain Layout
+Mission Selection Dialog
+Displays mission-pack entries with primary mission, deployment, and terrain layout.
 """
 
 import pygame
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class MissionSelectionDialog(BaseDialog):
-    """Dialog for selecting official Chapter Approved mission combinations."""
+    """Dialog for selecting mission-pack entries and terrain layouts."""
     
     def __init__(self, screen_width: int, screen_height: int, combinations: Optional[Iterable[Dict]] = None):
         # Calculate dialog dimensions first
@@ -21,7 +21,7 @@ class MissionSelectionDialog(BaseDialog):
         dialog_height = min(700, screen_height - 100)
         
         super().__init__(screen_width, screen_height, dialog_width, dialog_height)
-        self.title = "Select Mission - Chapter Approved 2025/2026"
+        self.title = "Select Mission Pack Entry"
         
         # Store dialog dimensions for convenience
         self.dialog_width = dialog_width
@@ -42,7 +42,7 @@ class MissionSelectionDialog(BaseDialog):
         self.font_header = get_ui_font(22, bold=True)
         self.font_normal = get_ui_font(18, bold=False)
         self.font_small = get_ui_font(16, bold=False)
-        # Row/status text is intentionally smaller so long Chapter Approved names
+        # Row/status text is intentionally smaller so long mission-pack names
         # fit within the fixed table columns.
         self.font_row = get_ui_font(14, bold=False)
         
@@ -149,6 +149,7 @@ class MissionSelectionDialog(BaseDialog):
             combo_sig.append(
                 (
                     str(combo.get("id", "")),
+                    str(combo.get("pack_short_name", "")),
                     str(combo.get("primary", "")),
                     str(combo.get("deployment", "")),
                     tuple(str(layout) for layout in (combo.get("layouts", []) or [])),
@@ -239,10 +240,11 @@ class MissionSelectionDialog(BaseDialog):
                 # Check if clicking on layout buttons
                 # Account for dialog position + content area offset + layout buttons position
                 content_area_x = dialog_x + 10  # Content area starts at dialog_x + 10
-                layouts_x = content_area_x + 445  # Match drawing position from _draw_combinations
-                if layouts_x <= x <= dialog_x + self.dialog_width - 20:
+                combination = self.combinations[row_index]
+                layouts_x = content_area_x + 635  # Match drawing position from _draw_combinations
+                layouts_width = len(combination.get("layouts", []) or []) * (self.layout_button_size + 5)
+                if layouts_x <= x <= layouts_x + layouts_width:
                     layout_index = (x - layouts_x) // (self.layout_button_size + 5)
-                    combination = self.combinations[row_index]
                     if 0 <= layout_index < len(combination["layouts"]):
                         self.selected_combination = row_index
                         self.selected_layout = combination["layouts"][layout_index]
@@ -259,19 +261,48 @@ class MissionSelectionDialog(BaseDialog):
         """Handle mouse hover for visual feedback."""
         # Could implement hover effects here if desired
         pass
+
+    def _random_candidate_indices(self) -> List[int]:
+        indices = [
+            index
+            for index, combo in enumerate(self.combinations)
+            if bool(combo.get("random_selection_enabled", True))
+        ]
+        if indices:
+            return indices
+        return list(range(len(self.combinations)))
     
     def pick_random_mission(self):
         """Randomly select a mission combination and terrain layout."""
+        if not self.combinations:
+            return
         rng = resolve_rng()
-        # Pick a random combination from A-T
-        self.selected_combination = rng.randint(0, len(self.combinations) - 1)
+        candidate_indices = self._random_candidate_indices()
+        self.selected_combination = int(rng.choice(candidate_indices))
         
         # Pick a random terrain layout from the available options
         combination = self.combinations[self.selected_combination]
         self.selected_layout = rng.choice(combination["layouts"])
         self._invalidate_content_cache()
-        
-        logger.info(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
+
+        pack_short_name = str(combination.get("pack_short_name", "") or "").strip()
+        if pack_short_name:
+            logger.info(
+                "Randomly selected: [%s] %s - %s / %s / Layout %s",
+                pack_short_name,
+                combination["id"],
+                combination["primary"],
+                combination["deployment"],
+                self.selected_layout,
+            )
+        else:
+            logger.info(
+                "Randomly selected: %s - %s / %s / Layout %s",
+                combination["id"],
+                combination["primary"],
+                combination["deployment"],
+                self.selected_layout,
+            )
     
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events. Return True if handled."""
@@ -305,7 +336,7 @@ class MissionSelectionDialog(BaseDialog):
         screen.blit(title_surface, (title_x, dialog_y + 20))
         
         # Instructions
-        instruction_text = "Select a mission combination and terrain layout"
+        instruction_text = "Select a mission-pack entry and terrain layout"
         instruction_surface = self.font_normal.render(instruction_text, True, self.color_text_secondary)
         instruction_x = dialog_x + (self.dialog_width - instruction_surface.get_width()) // 2
         screen.blit(instruction_surface, (instruction_x, dialog_y + 50))
@@ -341,9 +372,10 @@ class MissionSelectionDialog(BaseDialog):
         # Column headers
         headers = [
             ("ID", 20, 30),
-            ("Primary Mission", 50, 200),
-            ("Deployment", 270, 150),
-            ("Terrain Layouts", 440, 200)
+            ("Pack", 55, 100),
+            ("Primary Mission", 165, 280),
+            ("Deployment", 455, 170),
+            ("Terrain Layouts", 635, 210),
         ]
         
         header_rect = pygame.Rect(0, y, surface.get_width(), self.header_height - 5)
@@ -376,17 +408,22 @@ class MissionSelectionDialog(BaseDialog):
             # Mission ID
             id_surface = self.font_row.render(combo["id"], True, self.color_text)
             surface.blit(id_surface, (25, y + 8))
+
+            # Mission pack
+            pack_label = str(combo.get("pack_short_name") or combo.get("pack_display_name") or "").strip()
+            pack_surface = self.font_row.render(pack_label, True, self.color_text_secondary)
+            surface.blit(pack_surface, (60, y + 8))
             
             # Primary Mission
             primary_surface = self.font_row.render(combo["primary"], True, self.color_text)
-            surface.blit(primary_surface, (55, y + 8))
+            surface.blit(primary_surface, (170, y + 8))
             
             # Deployment
             deployment_surface = self.font_row.render(combo["deployment"], True, self.color_text)
-            surface.blit(deployment_surface, (275, y + 8))
+            surface.blit(deployment_surface, (460, y + 8))
             
             # Terrain Layout buttons
-            layouts_x = 445
+            layouts_x = 635
             for j, layout in enumerate(combo["layouts"]):
                 button_x = layouts_x + j * (self.layout_button_size + 5)
                 button_rect = pygame.Rect(button_x, y + 3, self.layout_button_size, self.layout_button_size - 6)
@@ -469,7 +506,11 @@ class MissionSelectionDialog(BaseDialog):
         # Selection status
         if self.selected_combination is not None:
             combo = self.combinations[self.selected_combination]
-            status_text = f"Selected: {combo['id']} - {combo['primary']} / {combo['deployment']}"
+            pack_short_name = str(combo.get("pack_short_name", "") or "").strip()
+            status_text = "Selected: "
+            if pack_short_name:
+                status_text += f"[{pack_short_name}] "
+            status_text += f"{combo['id']} - {combo['primary']} / {combo['deployment']}"
             if self.selected_layout is not None:
                 status_text += f" / Layout {self.selected_layout}"
             else:

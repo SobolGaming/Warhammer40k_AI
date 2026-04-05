@@ -186,6 +186,7 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _show_mission_selection_dialog(self):
         """Show the mission selection dialog for SELECT_MISSION_OBJECTIVES phase."""
         from ..dialogs import MissionSelectionDialog, MissionSelectionModal
+        from ...engine.mission_selection import default_mission_selection, find_matching_option
         from ...utility.decision_utils import resolve_decision_command
         from ...engine.decision_kinds import DECISION_CHOOSE_MISSION
 
@@ -217,7 +218,24 @@ class SetupPhaseHandler(BasePhaseHandler):
                 logger.error("ERROR: Mission selection option not found in decision options")
                 return
             resolve_decision_command(self.game, req, option_id, result_payload={"layout": layout})
-            logger.info(f"Mission selected: {combination.get('id')} - {combination.get('primary')} / {combination.get('deployment')} / Layout {layout}")
+            pack_short_name = str(combination.get("pack_short_name", "") or "").strip()
+            if pack_short_name:
+                logger.info(
+                    "Mission selected: [%s] %s - %s / %s / Layout %s",
+                    pack_short_name,
+                    combination.get("id"),
+                    combination.get("primary"),
+                    combination.get("deployment"),
+                    layout,
+                )
+            else:
+                logger.info(
+                    "Mission selected: %s - %s / %s / Layout %s",
+                    combination.get("id"),
+                    combination.get("primary"),
+                    combination.get("deployment"),
+                    layout,
+                )
 
             # Execute the phase and advance
             _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
@@ -226,10 +244,28 @@ class SetupPhaseHandler(BasePhaseHandler):
         def _cancel() -> None:
             logger.info("Mission selection cancelled - using default")
             if req.options:
-                default_opt = req.options[0]
-                combo = dict(getattr(default_opt, "payload", {}) or {}).get("combination", {})
-                layouts = list(combo.get("layouts", []) or [])
-                layout = layouts[0] if layouts else 1
+                default_combo, layout = default_mission_selection()
+                options = [
+                    dict(getattr(option, "payload", {}) or {}).get("combination", {})
+                    for option in list(req.options or [])
+                ]
+                matched_combo = find_matching_option(
+                    options,
+                    pack_id=default_combo.get("pack_id"),
+                    combination_id=default_combo.get("combination_id") or default_combo.get("id"),
+                )
+                default_opt = None
+                if matched_combo is not None:
+                    for option in list(req.options or []):
+                        combo = dict(getattr(option, "payload", {}) or {}).get("combination", {})
+                        if combo == matched_combo:
+                            default_opt = option
+                            break
+                if default_opt is None:
+                    default_opt = req.options[0]
+                    combo = dict(getattr(default_opt, "payload", {}) or {}).get("combination", {})
+                    layouts = list(combo.get("layouts", []) or [])
+                    layout = layouts[0] if layouts else 1
                 resolve_decision_command(self.game, req, default_opt.option_id, result_payload={"layout": layout})
             _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
             _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
@@ -241,7 +277,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        logger.info("Mission Selection Dialog opened - choose from approved combinations A-T")
+        logger.info("Mission Selection Dialog opened - choose a mission-pack entry and terrain layout")
 
     def _show_leader_attachment_dialog(self):
         """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""

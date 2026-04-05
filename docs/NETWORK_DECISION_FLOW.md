@@ -1,6 +1,6 @@
 # Network Decision Flow (As Implemented)
 
-Status: Current behavior (Jan 2026)
+Status: Current behavior (April 2026)
 
 This document describes the **server/client decision flow** as implemented today, including
 which steps are **simultaneous** vs **sequential**, and **when the server waits** on player input.
@@ -55,7 +55,7 @@ sequencing logic is not owned exclusively by `NetworkServer`.
 The engine now also exposes an explicit pregame step model through
 `Game.get_pregame_flow_state()`; see `docs/PREGAME_SETUP_FLOW.md`.
 That model records the preview-aligned steps `determine_deployment`,
-`optional_twist`, and `select_secondary_missions` as derived or stubbed
+`optional_twist`, and `select_secondary_missions` as explicit derived/stubbed
 steps without changing the current command-level setup compatibility flow.
 
 Local runtime parity note:
@@ -65,7 +65,10 @@ Local runtime parity note:
 
 1. MUSTER_ARMIES → server advances immediately once both players are ready.
 2. SELECT_MISSION_OBJECTIVES
-   - Server rolls a random mission combination + layout (deterministic dice).
+   - Server rolls a random mission-pack entry + layout (deterministic dice).
+   - Auto-random currently stays on the default `chapter_approved_2025_2026`
+     pack, even though the authoritative UI can expose additional eligible
+     provisional packs.
    - Server sends `CMD_SELECT_MISSION`, then `CMD_EXECUTE_SETUP_PHASE`,
      then `CMD_ADVANCE_SETUP_PHASE`.
 3. CREATE_BATTLEFIELD

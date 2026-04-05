@@ -41,7 +41,7 @@ from ..engine.decision_requests import (
     build_transport_assignment_requests,
     build_reserves_allocation_request,
 )
-from ..engine.mission_selection import iter_mission_combinations
+from ..engine.mission_selection import iter_random_mission_options
 from ..roster.player import Player, PlayerControl
 from ..roster.army import ArmyValidationError, parse_army_list_text
 from ..utility.dice import get_dice_roll
@@ -338,7 +338,7 @@ class NetworkServer:
         return await self._apply_server_command(command, broadcast=broadcast)
 
     def _choose_random_mission(self, game: Game) -> tuple[dict, int]:
-        combos = iter_mission_combinations()
+        combos = iter_random_mission_options(game)
         if not combos:
             raise RuntimeError("No mission combinations available for random selection.")
         with game_context(game), roll_context("mission_selection"):

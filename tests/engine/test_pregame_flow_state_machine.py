@@ -78,11 +78,11 @@ def test_pregame_flow_marks_preview_deployment_and_secondary_steps_explicitly() 
     assert statuses[PregameStepId.DETERMINE_MISSION][0] == "completed"
     assert statuses[PregameStepId.DETERMINE_DEPLOYMENT] == (
         "completed",
-        "Derived from selected mission combination as deployment 'Crucible of Battle'.",
+        "Derived from selected mission definition as deployment 'Crucible of Battle'.",
     )
     assert statuses[PregameStepId.OPTIONAL_TWIST] == (
         "stubbed",
-        "No twist content is applied yet; the step remains an explicit placeholder.",
+        "No explicit twist definition is stored yet; the step remains an explicit placeholder.",
     )
     assert statuses[PregameStepId.SELECT_SECONDARY_MISSIONS] == (
         "stubbed",

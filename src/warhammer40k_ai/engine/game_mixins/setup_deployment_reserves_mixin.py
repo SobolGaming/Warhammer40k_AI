@@ -2864,16 +2864,20 @@ class GameSetupDeploymentReservesMixin:
         self.commands = ["attack", "defend", "move"]
         logger.info(f"Commands configured: {self.commands}")
         
-        # Store selected mission info for use in CREATE_BATTLEFIELD phase
-        # This will be set by the UI when the mission selection dialog is used
-        if not hasattr(self, 'selected_mission_info'):
-            # Use a valid default combination - M: Purge the Foe / Crucible of Battle / Layout 1
-            self.selected_mission_info = {
-                "combination_id": "M",
-                "primary": "Purge the Foe",  # Valid with Crucible of Battle
-                "deployment": "Crucible of Battle",   
-                "layout": 1  # Valid layout for this combination
-            }
+        # Store selected mission info for use in CREATE_BATTLEFIELD phase.
+        # This will be set by the UI when the mission selection dialog is used.
+        selected_mission_info = dict(getattr(self, "selected_mission_info", {}) or {})
+        if not selected_mission_info:
+            from ..mission_selection import default_mission_selection, selected_mission_info_from_choice
+
+            default_choice, default_layout = default_mission_selection()
+            self.selected_mission_info = selected_mission_info_from_choice(
+                default_choice,
+                layout=default_layout,
+                existing_secondary_mode=getattr(self, "secondary_mission_mode", None),
+            )
+            if not str(getattr(self, "secondary_mission_mode", "") or "").strip():
+                self.secondary_mission_mode = self.selected_mission_info.get("secondary_mission_mode", "tactical")
             logger.info(f"Using default mission: {self.selected_mission_info}")
         else:
             logger.info(f"Mission selected: {self.selected_mission_info}")
@@ -2898,12 +2902,15 @@ class GameSetupDeploymentReservesMixin:
     def execute_create_battlefield_phase(self, mission_name: str = None) -> None:
         """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""
         logger.info("CREATE BATTLEFIELD: Setting up battlefield...")
-        
-        # Use selected mission info if available, otherwise use provided mission_name or default
-        if hasattr(self, 'selected_mission_info'):
-            deployment_mission = self.selected_mission_info["deployment"]
-            terrain_layout = self.selected_mission_info["layout"]
-            primary_mission = self.selected_mission_info["primary"]
+
+        selected_mission_info = dict(getattr(self, "selected_mission_info", {}) or {})
+        if selected_mission_info:
+            from ..deployment_flow import selected_deployment_plan
+
+            deployment_plan = selected_deployment_plan(self)
+            deployment_mission = deployment_plan.deployment_name
+            terrain_layout = deployment_plan.layout
+            primary_mission = deployment_plan.primary_mission_name
         else:
             deployment_mission = mission_name or "Crucible of Battle"
             terrain_layout = 1
@@ -4535,12 +4542,17 @@ class GameSetupDeploymentReservesMixin:
         game_setup_flow.execute_current_setup_phase(self, **kwargs)
 
     def _apply_selected_mission(self, combination: dict, layout: object) -> None:
-        self.selected_mission_info = {
-            "combination_id": combination.get("id"),
-            "primary": combination.get("primary"),
-            "deployment": combination.get("deployment"),
-            "layout": layout,
-        }
+        from ..mission_selection import selected_mission_info_from_choice
+
+        self.selected_mission_info = selected_mission_info_from_choice(
+            dict(combination or {}),
+            layout=layout,
+            existing_secondary_mode=getattr(self, "secondary_mission_mode", None),
+        )
+        self.secondary_mission_mode = str(
+            self.selected_mission_info.get("secondary_mission_mode", getattr(self, "secondary_mission_mode", ""))
+            or ""
+        )
         queue = getattr(self, "decision_queue", None)
         if queue is not None and hasattr(queue, "list") and hasattr(queue, "pop"):
             pending_ids = [

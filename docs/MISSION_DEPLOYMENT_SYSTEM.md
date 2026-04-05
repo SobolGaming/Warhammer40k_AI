@@ -1,8 +1,39 @@
 # Mission Deployment System
 
 ## Overview
-Missions are defined as polygonal deployment zones with objective marker placements. The system
-uses mission data to build deployment zones, create objectives, and validate deployment placement.
+Mission selection is now split into two layers:
+
+- a mission-pack compiler that determines which mission entries are legal for the current armies
+- deployment/runtime logic that turns the selected entry into zones, terrain layout, and objectives
+
+This keeps Chapter Approved 2025-26 supported as the current matched-play default while also
+allowing additional provisional mission packs to appear when the armies expose compatible
+Force Dispositions.
+
+The deployment layer still uses polygonal mission data to build deployment zones, create
+objectives, and validate placement.
+
+## Mission-pack compiler
+Defined in `src/warhammer40k_ai/engine/mission_selection.py`:
+
+- `ForceDisposition`
+- `MissionPack`
+- `MissionPairing`
+- `MissionDefinition`
+- `DeploymentDefinition`
+- `TwistDefinition`
+- `SecondaryRuleSet`
+
+Current pack behavior:
+
+- `chapter_approved_2025_2026`
+  - default pack
+  - used by server/local auto-random mission selection
+  - preserves the current Chapter Approved A-T rotation
+- `provisional_11e_preview`
+  - optional preview-era pack
+  - only appears when both armies expose matching force dispositions
+  - remains explicitly provisional and twist-stubbed
 
 ## Mission model
 Defined in `src/warhammer40k_ai/engine/missions.py`:
@@ -34,10 +65,16 @@ Deployment zone vertices and objective marker coordinates are encoded directly i
 class (see `engine/missions.py`).
 
 ## Integration
+- `Game.request_mission_selection` compiles the visible mission catalog from the current players'
+  force dispositions.
+- `Game.execute_select_mission_objectives_phase` defaults through the mission-pack compiler when
+  no explicit choice has been made yet.
 - `Game.execute_create_battlefield_phase` reads `game.selected_mission_info` and chooses:
   - deployment mission name
   - terrain layout
   - primary mission name
+- `deployment_flow.selected_deployment_plan` converts `selected_mission_info` into a validated
+  deployment plan with mission-pack and secondary/twist metadata.
 - `DeploymentManager.create_deployment_zones` returns compound zone dicts with
   `mission_zones` (polygon zones + cutouts).
 - `DeploymentManager.setup_mission_objectives` uses `create_objectives_from_mission` to add
@@ -48,7 +85,13 @@ class (see `engine/missions.py`).
   rectangular zones are not supported.
 
 ## Files
+- `src/warhammer40k_ai/engine/mission_selection.py`
 - `src/warhammer40k_ai/engine/missions.py`
 - `src/warhammer40k_ai/engine/deployment.py`
+- `src/warhammer40k_ai/engine/deployment_flow.py`
+- `src/warhammer40k_ai/engine/deployment_validation.py`
+- `src/warhammer40k_ai/engine/deployment_types.py`
+- `src/warhammer40k_ai/engine/deployment_candidates.py`
+- `src/warhammer40k_ai/engine/deployment_heuristics.py`
 - `src/warhammer40k_ai/engine/game.py`
 - `src/warhammer40k_ai/battlefield/terrain_layouts.py`

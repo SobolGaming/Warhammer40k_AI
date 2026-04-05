@@ -1,6 +1,6 @@
 # Pregame Setup Flow
 
-Status: Current implementation after PR-005 (April 2026)
+Status: Current implementation after PR-006 (April 2026)
 
 This document describes the explicit pregame state model now exposed by the engine.
 It does not treat preview-era 11th-edition sequencing text as finalized rules content.
@@ -68,8 +68,8 @@ The explicit step model intentionally keeps the existing `SetupPhase` enum stabl
 |---|---|
 | `muster_armies` | `SetupPhase.MUSTER_ARMIES` |
 | `determine_mission` | `SetupPhase.SELECT_MISSION_OBJECTIVES` |
-| `determine_deployment` | Derived from `selected_mission_info["deployment"]` during `SELECT_MISSION_OBJECTIVES` |
-| `optional_twist` | Stubbed placeholder during `SELECT_MISSION_OBJECTIVES` |
+| `determine_deployment` | Derived from compiled mission-pack data during `SELECT_MISSION_OBJECTIVES` |
+| `optional_twist` | Explicit twist state during `SELECT_MISSION_OBJECTIVES` (completed for "no twist", stubbed for provisional placeholders) |
 | `create_battlefield` | `SetupPhase.CREATE_BATTLEFIELD` |
 | `determine_attacker_and_defender` | `SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER` |
 | `select_secondary_missions` | Stubbed placeholder after attacker/defender resolution |
@@ -97,9 +97,11 @@ instead of being duplicated locally.
 Three preview-era steps are now explicit even though the runtime is not yet a full
 11th-edition mission/deployment implementation:
 
-- `determine_deployment`: currently derived from the selected mission combination.
-- `optional_twist`: explicit placeholder only; no twist content is applied yet.
-- `select_secondary_missions`: explicit placeholder only; current secondary handling still starts from command-phase deck draw / current mode flags.
+- `determine_deployment`: derived from compiler-selected `DeploymentDefinition` data.
+- `optional_twist`: explicit state is recorded from the selected mission pack. Current Chapter Approved
+  entries resolve this step as "no twist"; provisional preview entries still remain stubbed.
+- `select_secondary_missions`: explicit placeholder only; current secondary handling still starts from
+  command-phase deck draw / current mode flags.
 
 This is deliberate. The step model records the intended pregame structure without
 hard-coding preview content as final release canon.

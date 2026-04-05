@@ -147,6 +147,12 @@ def _validate_select_mission(game: object, command: GameCommand) -> Sequence[str
     missing = required - set(combination.keys())
     if missing:
         return (f"Mission combination missing keys: {sorted(missing)}",)
+    try:
+        from .deployment_validation import validate_selected_mission_choice
+
+        validate_selected_mission_choice(combination, layout=layout)
+    except (KeyError, TypeError, ValueError) as exc:
+        return (str(exc),)
     return ()
 
 
