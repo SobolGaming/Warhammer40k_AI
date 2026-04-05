@@ -25,10 +25,14 @@ the only path that builds full runtime units today.
     enhancement assignments, attachment bindings, and Force Disposition data.
 - `DetachmentSelection` (`src/warhammer40k_ai/roster/army_build.py`)
   - Represents one selected detachment and its detachment-point cost.
+- `DetachmentInstance` (`src/warhammer40k_ai/roster/army_runtime.py`)
+  - Runtime counterpart of `DetachmentSelection`.
+  - Carries runtime detachment identity, owning faction, detachment type, and detachment-point cost.
 - `RosterEntry` (`src/warhammer40k_ai/roster/army_build.py`)
   - Build-side unit entry used before runtime `Unit` objects are materialized.
 - `EnhancementAssignment` (`src/warhammer40k_ai/roster/army_build.py`)
   - Explicit enhancement-to-unit assignment record.
+  - Its metadata can now represent upgrade-tag targeting for eligible non-Character units.
 - `AttachmentBinding` (`src/warhammer40k_ai/roster/army_attachments.py`)
   - Explicit build-side leader/support attachment selection.
 - `ValidatedMuster` (`src/warhammer40k_ai/roster/army_build.py`)
@@ -55,6 +59,9 @@ the only path that builds full runtime units today.
   - Builds a runtime `Army` façade and attaches:
     - `army.army_blueprint`
     - `army.validated_muster`
+    - `army.detachments`
+    - `army.detachment_points_summary`
+    - `army.attachment_bindings`
     - build-side detachments / unit entries / enhancement assignments / attachment bindings
     - detachment-point budget/spend metadata
     - Force Disposition metadata
@@ -88,6 +95,9 @@ the only path that builds full runtime units today.
 #### Runtime/list validation
 
 - Army list parsing in the network server (`army_submit`) still runs `Army.validate()` on the parsed list.
+- Runtime detachment-aware rule lookups now consume `army.detachments` through shared helpers in
+  `army.py` / `detachment_manager.py`, with `army.detachment_type` retained only as a narrow
+  compatibility adapter.
 - The existing runtime/list validation in `Army` still includes:
   - Epic Hero duplicates
   - warlord eligibility restrictions
@@ -95,6 +105,8 @@ the only path that builds full runtime units today.
   - named unit caps inferred from ability text
   - Ynnari Epic Hero restrictions
   - the rest of the established roster validation currently housed in `army.py`
+- Enhancement assignment validation now also supports upgrade-tag representations for
+  eligible non-Character units.
 
 #### UI touchpoints
 
@@ -123,6 +135,9 @@ the only path that builds full runtime units today.
 - `ArmyMusterRequest` now has explicit `to_dict()` / `from_dict()` support so
   multi-detachment request payloads, enhancement assignments, and attachment bindings have
   a stable serializable form.
+- Runtime `DetachmentInstance` values are also serializable through army snapshot state, and
+  session manifests now expose `detachment_types` alongside the legacy primary
+  `detachment_type`.
 - This remains the placeholder path for future network-safe mustering inputs.
   See `docs/NETWORK_SAVELOAD_DESIGN.md` for serialization requirements.
 
@@ -131,8 +146,6 @@ the only path that builds full runtime units today.
 - In-engine unit materialization from `RosterEntry` is not implemented yet.
 - Attachment bindings are representable and validated structurally, but they do not yet drive
   runtime unit joining; that remains later port work.
-- Multi-detachment is represented at build time, but runtime detachment instances and rule
-  provider integration remain PR-003 work.
 - The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine
   other than existing Daemonic Allegiance prompts when applicable.
@@ -147,4 +160,4 @@ When full UI mustering is implemented, this scaffolding is expected to grow into
 - runtime unit materialization from `ValidatedMuster`,
 - validation of points limits, mustering restrictions, and spawn-only units,
 - stable IDs for unit selections so networked clients can replay the same choices,
-- detachment-instance runtime integration consuming the build-side model directly.
+- runtime attachment and enhancement assignment application consuming the build-side model directly.

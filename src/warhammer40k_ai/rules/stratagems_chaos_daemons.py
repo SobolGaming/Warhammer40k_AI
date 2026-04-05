@@ -69,6 +69,9 @@ class ChaosDaemonsStratagemMixin:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_scintillating_legion_detachment"):
             return bool(mgr.is_scintillating_legion_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Scintillating Legion"))
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "scintillating legion"
 
@@ -81,6 +84,9 @@ class ChaosDaemonsStratagemMixin:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_blood_legion_detachment"):
             return bool(mgr.is_blood_legion_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Blood Legion"))
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "blood legion"
 
@@ -93,6 +99,9 @@ class ChaosDaemonsStratagemMixin:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_shadow_legion_detachment"):
             return bool(mgr.is_shadow_legion_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Shadow Legion"))
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "shadow legion"
 
@@ -105,6 +114,9 @@ class ChaosDaemonsStratagemMixin:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_legion_of_excess_detachment"):
             return bool(mgr.is_legion_of_excess_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Legion of Excess"))
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "legion of excess"
 
@@ -117,6 +129,9 @@ class ChaosDaemonsStratagemMixin:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_plague_legion_detachment"):
             return bool(mgr.is_plague_legion_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Plague Legion"))
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "plague legion"
 

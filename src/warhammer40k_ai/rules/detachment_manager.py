@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 
 class DetachmentManagerBase:
@@ -14,10 +15,50 @@ class DetachmentManagerBase:
         return re.sub(r"\s+", " ", t).strip()
 
     def _get_detachment_type(self) -> str:
-        try:
-            return str(getattr(self.army, "detachment_type", "") or "")
-        except Exception:
+        if self.army is None:
             return ""
+        get_primary = getattr(self.army, "get_primary_detachment_type", None)
+        if callable(get_primary):
+            return str(get_primary(self.faction_id or "") or "")
+        return str(getattr(self.army, "detachment_type", "") or "")
+
+    def _get_detachment_instances(self) -> list:
+        if self.army is None:
+            return []
+        get_instances = getattr(self.army, "get_detachment_instances_for_faction", None)
+        if callable(get_instances):
+            instances = list(get_instances(self.faction_id or getattr(self.army, "faction_id", "")) or [])
+            if instances:
+                return instances
+        get_all = getattr(self.army, "get_detachment_instances", None)
+        if callable(get_all):
+            instances = list(get_all() or [])
+            if instances:
+                return instances
+        detachment_type = str(getattr(self.army, "detachment_type", "") or "").strip()
+        if not detachment_type:
+            return []
+        faction_id = str(self.faction_id or getattr(self.army, "faction_id", "") or "").strip().upper()
+        return [
+            SimpleNamespace(
+                detachment_type=detachment_type,
+                faction_id=faction_id,
+                selection_id="legacy_detachment",
+            )
+        ]
+
+    def _detachment_name_matches(self, detachment_name: str, target_name: str) -> bool:
+        det = self._norm(detachment_name)
+        target = self._norm(target_name)
+        if not det or not target:
+            return False
+        if det == target:
+            return True
+        if det.endswith("s") and det[:-1] == target:
+            return True
+        if target.endswith("s") and target[:-1] == det:
+            return True
+        return det in target or target in det
 
     def _unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
@@ -54,17 +95,15 @@ class DetachmentManagerBase:
             return True
         return fid == str(faction_id or "").strip().upper()
 
-    def detachment_matches(self, detachment_name: str) -> bool:
+    def get_matching_detachment_instances(self, detachment_name: str) -> list:
         if self.faction_id and not self._army_faction_matches(self.faction_id):
-            return False
-        det = self._norm(self._get_detachment_type())
-        target = self._norm(detachment_name)
-        if not det or not target:
-            return False
-        if det == target:
-            return True
-        if det.endswith("s") and det[:-1] == target:
-            return True
-        if target.endswith("s") and target[:-1] == det:
-            return True
-        return det in target or target in det
+            return []
+        matches = []
+        for detachment in self._get_detachment_instances():
+            name = str(getattr(detachment, "detachment_type", "") or "")
+            if self._detachment_name_matches(name, detachment_name):
+                matches.append(detachment)
+        return matches
+
+    def detachment_matches(self, detachment_name: str) -> bool:
+        return bool(self.get_matching_detachment_instances(detachment_name))

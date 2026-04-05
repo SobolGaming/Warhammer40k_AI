@@ -67,6 +67,8 @@ def _player_stub(player: object) -> dict:
     score_fn = getattr(player, "get_vp_breakdown", None)
     score = score_fn() if callable(score_fn) else {}
     army = getattr(player, "army", None)
+    get_detachment_types = getattr(army, "get_detachment_types", None) if army is not None else None
+    detachment_types = list(get_detachment_types() or []) if callable(get_detachment_types) else []
     return {
         "player_id": getattr(player, "id", None),
         "name": getattr(player, "name", None),
@@ -75,6 +77,7 @@ def _player_stub(player: object) -> dict:
         "score": score,
         "faction": getattr(army, "faction", None) if army is not None else None,
         "detachment_type": getattr(army, "detachment_type", None) if army is not None else None,
+        "detachment_types": detachment_types,
     }
 
 

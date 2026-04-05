@@ -70,7 +70,13 @@ class CombatDoctrinesManager:
             is_gladius = getattr(mgr, "is_gladius_task_force", None)
             if callable(is_gladius) and is_gladius():
                 return True
-        det = str(getattr(self.army, "detachment_type", "") or "").strip().lower()
+        army = self.army
+        if army is None:
+            return False
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Gladius Task Force"))
+        det = str(getattr(army, "detachment_type", "") or "").strip().lower()
         return "gladius" in det and "task force" in det
 
     def _is_mastered_doctrines(self) -> bool:
@@ -79,7 +85,13 @@ class CombatDoctrinesManager:
             is_blade = getattr(mgr, "is_blade_of_ultramar", None)
             if callable(is_blade) and is_blade():
                 return True
-        det = str(getattr(self.army, "detachment_type", "") or "").strip().lower()
+        army = self.army
+        if army is None:
+            return False
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Blade of Ultramar"))
+        det = str(getattr(army, "detachment_type", "") or "").strip().lower()
         return "blade of ultramar" in det
 
     def _army_has_combat_doctrines(self) -> bool:

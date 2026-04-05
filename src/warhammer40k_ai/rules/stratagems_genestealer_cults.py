@@ -92,6 +92,9 @@ class GenestealerCultsStratagemMixin:
         if army is None:
             return False
         faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Host of Ascension"))
         detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
         return faction_id == "GC" and detachment == "host of ascension"
 
@@ -104,6 +107,9 @@ class GenestealerCultsStratagemMixin:
         if army is None:
             return False
         faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return faction_id == "GC" and bool(has_detachment("Brood Brother Auxilia"))
         detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
         return faction_id == "GC" and detachment == "brood brother auxilia"
 

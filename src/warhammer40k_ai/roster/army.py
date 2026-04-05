@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, Set, List, Optional
+from typing import Any, Tuple, Dict, Set, List, Optional
 from ..units.unit import Unit
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
@@ -290,12 +290,15 @@ class Army:
         self._has_tally_of_pestilence: Optional[bool] = None
         self.army_blueprint = None
         self.validated_muster = None
+        self.detachments = []
         self.build_detachments = []
         self.build_unit_entries = []
         self.build_enhancement_assignments = []
         self.build_attachment_bindings = []
+        self.attachment_bindings = []
         self.detachment_points_budget = None
         self.detachment_points_spent = 0
+        self.detachment_points_summary = {}
         self.force_disposition = None
         self.allowed_force_dispositions = []
         self.build_metadata = {}
@@ -494,14 +497,110 @@ class Army:
             self.detachment_managers["emperors_children_detachments"] = self.emperors_children_detachments
 
     def get_detachment_manager_for_faction(self, faction_id: str):
-        from ..rules.detachment_registry import DETACHMENT_MANAGER_BY_FACTION_ID
+        from ..rules.detachment_registry import get_detachment_manager_attr_for_faction
         fid = str(faction_id or "").strip().upper()
         if not fid:
             return None
-        attr = DETACHMENT_MANAGER_BY_FACTION_ID.get(fid)
+        attr = get_detachment_manager_attr_for_faction(fid)
         if not attr:
             return None
         return getattr(self, attr, None)
+
+    def get_detachment_manager_for_detachment_instance(self, detachment_instance):
+        if detachment_instance is None:
+            return None
+        faction_id = str(
+            getattr(detachment_instance, "faction_id", "") or getattr(self, "faction_id", "")
+        ).strip().upper()
+        return self.get_detachment_manager_for_faction(faction_id)
+
+    def _normalize_detachment_name(self, value: object) -> str:
+        text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+        return re.sub(r"\s+", " ", text).strip()
+
+    def get_detachment_instances(self) -> list:
+        detachments = list(getattr(self, "detachments", []) or [])
+        if detachments:
+            from .army_runtime import DetachmentInstance
+
+            normalized = [
+                detachment
+                if isinstance(detachment, DetachmentInstance)
+                else DetachmentInstance.from_dict(detachment)
+                for detachment in detachments
+            ]
+            self.detachments = normalized
+            return normalized
+        detachment_type = str(getattr(self, "detachment_type", "") or "").strip()
+        if not detachment_type:
+            return []
+        from .army_runtime import DetachmentInstance
+
+        faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
+        return [
+            DetachmentInstance(
+                instance_id="legacy_detachment_instance",
+                selection_id="legacy_detachment",
+                faction_id=faction_id or "UNKNOWN",
+                detachment_type=detachment_type,
+                detachment_points_cost=int(getattr(self, "detachment_points_spent", 0) or 0),
+                metadata={"adapter_source": "army.detachment_type"},
+            )
+        ]
+
+    def get_detachment_instances_for_faction(self, faction_id: str | None = None) -> list:
+        target = str(faction_id or getattr(self, "faction_id", "") or "").strip().upper()
+        detachments = list(self.get_detachment_instances() or [])
+        if not target:
+            return detachments
+        return [
+            detachment
+            for detachment in detachments
+            if str(getattr(detachment, "faction_id", "") or "").strip().upper() in {"", target}
+        ]
+
+    def get_detachment_types(self, faction_id: str | None = None) -> list[str]:
+        names: list[str] = []
+        for detachment in self.get_detachment_instances_for_faction(faction_id):
+            name = str(getattr(detachment, "detachment_type", "") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def get_primary_detachment_instance(self, faction_id: str | None = None):
+        detachments = self.get_detachment_instances_for_faction(faction_id)
+        if detachments:
+            return detachments[0]
+        return None
+
+    def get_primary_detachment_type(self, faction_id: str | None = None) -> str:
+        detachment = self.get_primary_detachment_instance(faction_id)
+        if detachment is not None:
+            return str(getattr(detachment, "detachment_type", "") or "")
+        return str(getattr(self, "detachment_type", "") or "")
+
+    def has_detachment_type(self, *names: str, faction_id: str | None = None) -> bool:
+        detachment_names = [
+            self._normalize_detachment_name(name)
+            for name in self.get_detachment_types(faction_id)
+            if self._normalize_detachment_name(name)
+        ]
+        if not detachment_names:
+            return False
+        for name in names:
+            target = self._normalize_detachment_name(name)
+            if not target:
+                continue
+            for det in detachment_names:
+                if det == target:
+                    return True
+                if det.endswith("s") and det[:-1] == target:
+                    return True
+                if target.endswith("s") and target[:-1] == det:
+                    return True
+                if det in target or target in det:
+                    return True
+        return False
 
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1113,6 +1212,96 @@ class Army:
             return False
         return bool(allows_fn(unit, enhancement))
 
+    def _normalize_upgrade_tag(self, value: object) -> str:
+        text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        return re.sub(r"[^a-z0-9_]+", "", text)
+
+    def _unit_upgrade_tags(self, unit: Unit) -> set[str]:
+        tags: set[str] = set()
+        raw_tags = list(getattr(unit, "upgrade_tags", []) or [])
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            raw_tags.extend(list(sr.get("upgrade_tags", []) or []))
+        metadata = dict(getattr(unit, "build_metadata", {}) or {})
+        raw_tags.extend(list(metadata.get("upgrade_tags", []) or []))
+        return {
+            normalized
+            for tag in raw_tags
+            if (normalized := self._normalize_upgrade_tag(tag))
+        }
+
+    def _enhancement_assignment_metadata(
+        self,
+        unit: Unit,
+        assignment_metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        if isinstance(assignment_metadata, dict):
+            return dict(assignment_metadata)
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            stored = sr.get("enhancement_assignment_metadata", {})
+            if isinstance(stored, dict):
+                return dict(stored)
+        return {}
+
+    def _selected_upgrade_tag(
+        self,
+        unit: Unit,
+        assignment_metadata: Optional[dict[str, Any]] = None,
+    ) -> str:
+        metadata = self._enhancement_assignment_metadata(unit, assignment_metadata)
+        candidates = [
+            metadata.get("upgrade_tag"),
+            metadata.get("upgradeTag"),
+            metadata.get("selected_upgrade_tag"),
+        ]
+        for candidate in candidates:
+            normalized = self._normalize_upgrade_tag(candidate)
+            if normalized:
+                return normalized
+        return ""
+
+    def _enhancement_allows_upgrade_tag_target(
+        self,
+        unit: Unit,
+        enhancement: Enhancement,
+        *,
+        assignment_metadata: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        raw_allowed_tags = tuple(getattr(enhancement, "eligible_upgrade_tags", ()) or ())
+        allowed_tags = {
+            self._normalize_upgrade_tag(tag)
+            for tag in raw_allowed_tags
+            if self._normalize_upgrade_tag(tag)
+        }
+        if not allowed_tags:
+            return False
+        unit_tags = self._unit_upgrade_tags(unit)
+        if not unit_tags:
+            return False
+        selected_tag = self._selected_upgrade_tag(unit, assignment_metadata)
+        if selected_tag:
+            supports_tag = getattr(enhancement, "supports_upgrade_tag", None)
+            if callable(supports_tag):
+                return bool(supports_tag(selected_tag)) and selected_tag in unit_tags
+            return selected_tag in allowed_tags and selected_tag in unit_tags
+        return bool(unit_tags.intersection(allowed_tags))
+
+    def _enhancement_allows_non_character_unit(
+        self,
+        unit: Unit,
+        enhancement: Enhancement,
+        *,
+        assignment_metadata: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        if self._veterans_of_the_void_allows_enhancement(unit, enhancement):
+            return True
+        return self._enhancement_allows_upgrade_tag_target(
+            unit,
+            enhancement,
+            assignment_metadata=assignment_metadata,
+        )
+
     def _veterans_of_the_void_max_enhancements(self) -> int:
         ae_mgr = getattr(self, "aeldari_detachments", None)
         if ae_mgr is None:
@@ -1259,11 +1448,27 @@ class Army:
                 f"Daemonic Allegiance requires a keyword selection for: {names}."
             )
 
-    def add_enhancement(self, enhancement, character_unit):
-        # Assign an Enhancement to a Character unit
-        veterans_override = self._veterans_of_the_void_allows_enhancement(character_unit, enhancement)
-        if not veterans_override and (not character_unit.is_character or character_unit.is_epic_hero):
-            raise ArmyValidationError(f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible.")
+    def add_enhancement(
+        self,
+        enhancement,
+        character_unit,
+        *,
+        assignment_metadata: Optional[dict[str, Any]] = None,
+    ):
+        # Assign an Enhancement to a Character unit or an explicitly tagged upgrade target.
+        allows_non_character = self._enhancement_allows_non_character_unit(
+            character_unit,
+            enhancement,
+            assignment_metadata=assignment_metadata,
+        )
+        if character_unit.is_epic_hero:
+            raise ArmyValidationError(
+                f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible."
+            )
+        if not allows_non_character and not character_unit.is_character:
+            raise ArmyValidationError(
+                f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible."
+            )
         if self._unit_cannot_receive_enhancements(character_unit):
             raise ArmyValidationError(f"Character '{character_unit.name}' cannot be given Enhancements.")
         if character_unit.enhancement:
@@ -1275,18 +1480,18 @@ class Army:
                     f"Enhancement '{enhancement.name}' belongs to faction {enhancement.faction_id}, "
                     f"but army faction is {self.faction_id}."
                 )
-        if getattr(self, "detachment_type", None) and getattr(enhancement, "detachment", ""):
+        if self.get_detachment_types() and getattr(enhancement, "detachment", ""):
             mgr = self.get_detachment_manager_for_faction(getattr(enhancement, "faction_id", "") or self.faction_id)
             if mgr is not None:
                 if not mgr.detachment_matches(enhancement.detachment):
                     raise ArmyValidationError(
                         f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
-                        f"but army detachment is '{self.detachment_type}'."
+                        f"but army detachments are '{', '.join(self.get_detachment_types())}'."
                     )
-            elif self.detachment_type != enhancement.detachment:
+            elif not self.has_detachment_type(enhancement.detachment):
                 raise ArmyValidationError(
                     f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
-                    f"but army detachment is '{self.detachment_type}'."
+                    f"but army detachments are '{', '.join(self.get_detachment_types())}'."
                 )
         eligibility_fn = getattr(enhancement, "is_unit_eligible", None)
         if callable(eligibility_fn) and not eligibility_fn(character_unit):
@@ -1299,6 +1504,16 @@ class Army:
                 f"Enhancement '{enhancement.name}' has model-only eligibility requirements that '{character_unit.name}' does not meet."
             )
         character_unit.enhancement = enhancement
+        metadata = self._enhancement_assignment_metadata(character_unit, assignment_metadata)
+        if metadata:
+            sr = getattr(character_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["enhancement_assignment_metadata"] = metadata
+            selected_upgrade_tag = self._selected_upgrade_tag(character_unit, metadata)
+            if selected_upgrade_tag:
+                sr["enhancement_upgrade_tag"] = selected_upgrade_tag
+            character_unit.special_rules = sr
         apply_fn = getattr(enhancement, "apply_to_unit", None)
         if callable(apply_fn):
             apply_fn(character_unit)
@@ -1881,9 +2096,13 @@ class Army:
         # Rule 3: Enhancements can only be assigned to non-Epic Hero Characters
         for unit in self.units:
             if unit.enhancement:
-                veterans_override = self._veterans_of_the_void_allows_enhancement(unit, unit.enhancement)
-                if unit.is_epic_hero and not veterans_override:
+                allows_non_character = self._enhancement_allows_non_character_unit(unit, unit.enhancement)
+                if unit.is_epic_hero:
                     raise ArmyValidationError(f"Epic Hero '{unit.name}' cannot have Enhancements assigned.")
+                if not allows_non_character and not unit.is_character:
+                    raise ArmyValidationError(
+                        f"Enhancements can only be assigned to non-Epic Hero Characters. '{unit.name}' is not eligible."
+                    )
                 if self._unit_cannot_receive_enhancements(unit):
                     raise ArmyValidationError(f"Unit '{unit.name}' cannot be given Enhancements.")
                 eligibility_fn = getattr(unit.enhancement, "is_unit_eligible", None)
@@ -2860,7 +3079,8 @@ class Army:
         return active
 
     def __str__(self):
-        return f"Army: {self.faction} - {self.detachment_type}\n{self.units}"
+        detachment_summary = ", ".join(self.get_detachment_types()) or self.detachment_type
+        return f"Army: {self.faction} - {detachment_summary}\n{self.units}"
 
     def __eq__(self, other):
         return self._id == other._id

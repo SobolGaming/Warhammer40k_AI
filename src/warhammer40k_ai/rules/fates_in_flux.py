@@ -69,6 +69,9 @@ class FatesInFluxManager:
         mgr = getattr(army, "chaos_daemons_detachments", None)
         if mgr is not None and hasattr(mgr, "is_scintillating_legion_detachment"):
             return bool(mgr.is_scintillating_legion_detachment())
+        has_detachment = getattr(army, "has_detachment_type", None)
+        if callable(has_detachment):
+            return bool(has_detachment("Scintillating Legion"))
         det = self._normalize_detachment(getattr(army, "detachment_type", "") or "")
         return det == self._normalize_detachment("Scintillating Legion")
 

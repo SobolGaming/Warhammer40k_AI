@@ -183,7 +183,7 @@ shows what is done versus what remains.
 |---|---|---|
 | PR-001 | Completed | Pushed to `dev` on April 5, 2026 as commit `af21acb1` (`Add 11e port scaffolding and reorganize tests`). |
 | PR-002 | Completed | Pushed to `dev` on April 5, 2026. |
-| PR-003 | Pending | Not started. |
+| PR-003 | Completed | Implemented and pushed to `dev` on April 5, 2026. |
 | PR-004 | Pending | Not started. |
 | PR-005 | Pending | Not started. |
 | PR-006 | Pending | Not started. |
@@ -197,6 +197,8 @@ shows what is done versus what remains.
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
 
 **Status:** Completed and pushed to `dev` on April 5, 2026 in commit `af21acb1`.
+
+**Status:** Completed and pushed to `dev` on April 5, 2026.
 
 ### Goal
 Create the package/file scaffolding that will let the 11th-edition work land into focused modules instead of growing existing god files. Reorganize tests into package-aligned directories.
@@ -314,6 +316,8 @@ This is the most important domain seam. Multi-detachment, detachment points, upg
 
 ### Goal
 Make multi-detachment a runtime primitive and remove the single `army.detachment_type` assumption from engine/rules integration points.
+
+**Status:** Completed and pushed to `dev` on April 5, 2026.
 
 ### Why now
 The army-build model is not useful unless runtime systems can consume it directly.

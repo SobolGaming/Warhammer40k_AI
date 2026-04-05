@@ -1454,6 +1454,7 @@ class Enhancement:
     eligibility_clause: str = ""
     eligibility_keyword_groups: Tuple[frozenset[str], ...] = field(default_factory=tuple)
     eligibility_name_options: Tuple[str, ...] = field(default_factory=tuple)
+    eligible_upgrade_tags: Tuple[str, ...] = field(default_factory=tuple)
     _effects: Tuple[EnhancementEffectSpec, ...] = field(default_factory=tuple, repr=False)
 
     @classmethod
@@ -1474,6 +1475,7 @@ class Enhancement:
             eligibility_clause=str(getattr(eligibility, "clause", "") or ""),
             eligibility_keyword_groups=tuple(getattr(eligibility, "keyword_groups", ()) or ()),
             eligibility_name_options=tuple(getattr(eligibility, "name_options", ()) or ()),
+            eligible_upgrade_tags=tuple(data.get("eligible_upgrade_tags", ()) or ()),
             _effects=tuple(parse_enhancement_effects(str(data.get("description", "") or ""))),
         )
 
@@ -15926,6 +15928,17 @@ class Enhancement:
             if set(group).issubset(norm_keywords):
                 return True
         return False
+
+    def supports_upgrade_tag(self, tag: str) -> bool:
+        normalized = normalize_enhancement_token(tag)
+        if not normalized:
+            return False
+        allowed = {
+            normalize_enhancement_token(value)
+            for value in tuple(self.eligible_upgrade_tags or ())
+            if str(value or "").strip()
+        }
+        return normalized in allowed
 
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"

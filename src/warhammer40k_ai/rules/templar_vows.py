@@ -76,15 +76,19 @@ class TemplarVowsManager:
         except Exception:
             pass
         try:
-            det = _norm(getattr(self.army, "detachment_type", ""))
-            if det in {"black templars", "righteous crusaders", "righteous crusade"}:
+            has_detachment = getattr(self.army, "has_detachment_type", None)
+            if callable(has_detachment) and has_detachment("Black Templars", "Righteous Crusaders"):
                 return True
         except Exception:
             pass
         try:
             if not hasattr(self.army, "space_marines_detachments"):
                 faction = str(getattr(self.army, "faction", "") or "").strip()
-                detachment = str(getattr(self.army, "detachment_type", "") or "").strip()
+                primary_detachment = getattr(self.army, "get_primary_detachment_type", None)
+                if callable(primary_detachment):
+                    detachment = str(primary_detachment() or "").strip()
+                else:
+                    detachment = str(getattr(self.army, "detachment_type", "") or "").strip()
                 if not faction and not detachment:
                     try:
                         from .space_marines_detachments import CHAPTER_KEYWORD_MAP

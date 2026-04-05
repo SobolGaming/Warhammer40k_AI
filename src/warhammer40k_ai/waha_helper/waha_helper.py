@@ -167,7 +167,7 @@ class WahaHelper:
                     continue
                 if wanted_faction and s_faction == wanted_faction:
                     if s_det:
-                        if wanted_detachment and s_det == wanted_detachment:
+                        if not wanted_detachment or s_det == wanted_detachment:
                             results.append(s)
                     else:
                         results.append(s)

@@ -1720,7 +1720,10 @@ class Stratagem:
         self.name = name
         self.type = type
         self.description = description
-        self.cp_cost = int(cp_cost) if isinstance(cp_cost, (int, str)) else 0
+        try:
+            self.cp_cost = int(cp_cost or 0)
+        except (TypeError, ValueError):
+            self.cp_cost = 0
         self.turn = turn
         self.phase = phase
         self.detachment = detachment or ""
@@ -1749,15 +1752,20 @@ class Stratagem:
         if is_global:
             return True
         # Otherwise must match faction and (if present) detachment
-        if getattr(army, "faction_id", None) and army.faction_id != self.faction_id:
+        army_faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        stratagem_faction_id = str(self.faction_id or "").strip().upper()
+        if army_faction_id and stratagem_faction_id and army_faction_id != stratagem_faction_id:
             return False
         if self.detachment:
             mgr = None
             get_mgr = getattr(army, "get_detachment_manager_for_faction", None)
             if callable(get_mgr):
-                mgr = get_mgr(self.faction_id)
+                mgr = get_mgr(stratagem_faction_id)
             if mgr is not None:
                 return bool(mgr.detachment_matches(self.detachment))
+            has_detachment = getattr(army, "has_detachment_type", None)
+            if callable(has_detachment):
+                return bool(has_detachment(self.detachment, faction_id=stratagem_faction_id))
             # Must match detachment name exactly (source data string)
             return getattr(army, "detachment_type", "") == self.detachment
         return True
@@ -8230,8 +8238,7 @@ class StratagemManager(
         except Exception:
             raise
         faction_id = getattr(army, "faction_id", None)
-        detachment = getattr(army, "detachment_type", None)
-        raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=detachment)
+        raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=None)
         tnorm = lambda t: (t or "").strip().lower()
         filtered: list[dict] = []
         for s in list(raw or []):
@@ -8265,10 +8272,14 @@ class StratagemManager(
                 return int((entry.get("id") or "0").strip())
             except Exception:
                 raise
-        by_name: dict[str, dict] = {}
+        by_name: dict[tuple[str, str, str], dict] = {}
         for entry in filtered:
-            name_key = (entry.get("name", "") or "").strip().lower()
-            if not name_key:
+            name_key = (
+                (entry.get("name", "") or "").strip().lower(),
+                (entry.get("faction_id", "") or "").strip().upper(),
+                (entry.get("detachment", "") or "").strip().lower(),
+            )
+            if not name_key[0]:
                 continue
             prev = by_name.get(name_key)
             if prev is None or _id_key(entry) > _id_key(prev):
@@ -8276,7 +8287,13 @@ class StratagemManager(
         unique = list(by_name.values())
         # Stable ordering
         unique.sort(key=lambda e: ((e.get("name") or "").strip().lower(), -_id_key(e)))
-        self.available = [Stratagem.from_json(s) for s in unique]
+        available: list[Stratagem] = []
+        for entry in unique:
+            stratagem = Stratagem.from_json(entry)
+            if army is not None and not stratagem.applies_to_army(army):
+                continue
+            available.append(stratagem)
+        self.available = available
 
     def _subscribe_events(self, *, event_system=None, group: Optional[str] = None) -> None:
         if not self.game:

@@ -57,3 +57,25 @@ DETACHMENT_MANAGER_BY_FACTION_ID = {
     if getattr(cls, "faction_id", "")
 }
 DETACHMENT_MANAGER_BY_FACTION_ID["EC"] = "emperors_children_detachments"
+
+
+def get_detachment_manager_attr_for_faction(faction_id: str | None) -> str | None:
+    fid = str(faction_id or "").strip().upper()
+    if not fid:
+        return None
+    return DETACHMENT_MANAGER_BY_FACTION_ID.get(fid)
+
+
+def get_detachment_manager_class_for_faction(faction_id: str | None):
+    attr = get_detachment_manager_attr_for_faction(faction_id)
+    if not attr:
+        return None
+    return DETACHMENT_MANAGER_CLASSES.get(attr)
+
+
+__all__ = [
+    "DETACHMENT_MANAGER_BY_FACTION_ID",
+    "DETACHMENT_MANAGER_CLASSES",
+    "get_detachment_manager_attr_for_faction",
+    "get_detachment_manager_class_for_faction",
+]

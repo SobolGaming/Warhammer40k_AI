@@ -11,6 +11,7 @@ class RulesContext:
     army: object
     faction_id: str
     detachment_type: str
+    detachment_types: tuple[str, ...] = field(default_factory=tuple)
     _manager_cache: dict[tuple[str, tuple[str, ...]], bool] = field(default_factory=dict, init=False, repr=False)
 
     @classmethod
@@ -21,20 +22,38 @@ class RulesContext:
             army = getattr(player, "army", None)
         faction_id = ""
         detachment_type = ""
+        detachment_types: tuple[str, ...] = ()
         if army is not None:
             try:
                 faction_id = str(getattr(army, "faction_id", "") or "")
             except Exception:
                 faction_id = ""
+            get_detachment_types = getattr(army, "get_detachment_types", None)
+            if callable(get_detachment_types):
+                try:
+                    detachment_values = [
+                        str(value or "").strip()
+                        for value in list(get_detachment_types() or [])
+                        if str(value or "").strip()
+                    ]
+                except Exception:
+                    detachment_values = []
+                detachment_types = tuple(detachment_values)
             try:
-                detachment_type = str(getattr(army, "detachment_type", "") or "")
+                detachment_type = str(
+                    getattr(army, "get_primary_detachment_type", lambda: getattr(army, "detachment_type", ""))()
+                    or ""
+                )
             except Exception:
                 detachment_type = ""
+            if not detachment_types and detachment_type:
+                detachment_types = (detachment_type,)
         return cls(
             player=player,
             army=army,
             faction_id=faction_id,
             detachment_type=detachment_type,
+            detachment_types=detachment_types,
         )
 
     def has_faction_id(self, *ids: str) -> bool:
@@ -51,23 +70,25 @@ class RulesContext:
         return re.sub(r"\s+", " ", norm).strip()
 
     def has_detachment_type(self, *names: str) -> bool:
-        if not self.detachment_type:
-            return False
-        det = self._normalize_detachment(self.detachment_type)
-        if not det:
+        values = tuple(self.detachment_types or ()) or ((self.detachment_type,) if self.detachment_type else ())
+        if not values:
             return False
         for name in names:
             target = self._normalize_detachment(name)
             if not target:
                 continue
-            if det == target:
-                return True
-            if det.endswith("s") and det[:-1] == target:
-                return True
-            if target.endswith("s") and target[:-1] == det:
-                return True
-            if det in target or target in det:
-                return True
+            for value in values:
+                det = self._normalize_detachment(value)
+                if not det:
+                    continue
+                if det == target:
+                    return True
+                if det.endswith("s") and det[:-1] == target:
+                    return True
+                if target.endswith("s") and target[:-1] == det:
+                    return True
+                if det in target or target in det:
+                    return True
         return False
 
     def manager_active(self, attr: str, method_names: Iterable[str] = ()) -> bool:
