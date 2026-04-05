@@ -42,6 +42,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSOR IMPERATIVE",
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
+    "BLINDING RADIANCE",
     "BALEFUL HALO",
     "BLAZING IRE",
     "BULWARK IMPERATIVE",
@@ -60,6 +61,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
     "CORROSIVE VISCERA",
+    "DIVINE GUIDANCE",
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
@@ -68,6 +70,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL WEAPONRY",
     "EXEMPLAR'S WISDOM",
     "EXEMPLAR’S WISDOM",
+    "FAITH AND FURY",
     "AUTOSTIMULANTS",
     "BLACK CRUSADE",
     "BROODGUARD IMPULSE",
@@ -152,6 +155,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENSLAVED ARTIFICE",
     "ENFOLDING NIGHTMARE",
     "IMAGE OF DEATH",
+    "LIGHT OF THE EMPEROR",
     "MASS TRANSMOGRIFICATION",
     "METHODICAL MURDER",
     "MORTIS PROTOCOLS",
@@ -680,6 +684,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SENSORY EXCRUCIATION",
     "SKULLS BEGET BLOOD",
     "SHEATHED IN BRASS",
+    "SHIELD OF FAITH",
     "THIEVES OF PAIN",
     "WRATH UNDENIABLE",
     "FLICKERING REALITY",
@@ -2269,6 +2274,7 @@ class StratagemManager(
             "FUELLED BY FAITH",
             "LAYERED WARDS",
             "PROTECTION OF THE DARK PRINCE",
+            "SHIELD OF FAITH",
             "THIEVES OF PAIN",
         }:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
@@ -2408,6 +2414,7 @@ class StratagemManager(
             "BRAZEN CONTEMPT",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
+            "BLINDING RADIANCE",
     "LIGHTNING-FAST REACTIONS",
     "LEONINE AGGRESSION",
     "MACABRE RESILIENCE",
@@ -2490,6 +2497,7 @@ class StratagemManager(
             "MASTERS ARE WATCHING",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
+            "BLINDING RADIANCE",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
             "ORKS IS NEVER BEATEN",
@@ -8662,6 +8670,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_army_of_faith_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_hallowed_martyrs_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -13948,6 +13960,13 @@ class StratagemManager(
                             self._queue_reaction(payload)
         except Exception:
             raise
+        try:
+            self._queue_army_of_faith_blinding_radiance_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # Generic defensive reactions (after targets selected).
         try:
             self._queue_generic_defensive_reactions(
@@ -15345,6 +15364,13 @@ class StratagemManager(
                             self._queue_reaction(payload)
         except Exception:
             raise
+        try:
+            self._queue_army_of_faith_blinding_radiance_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # Generic defensive reactions (after targets selected).
         try:
             self._queue_generic_defensive_reactions(
@@ -16452,6 +16478,15 @@ class StratagemManager(
             raise
         try:
             self._queue_space_marines_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_army_of_faith_shield_of_faith_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,

@@ -919,10 +919,27 @@ class ActsOfFaithManager:
             game=game,
         )
 
-    def on_model_destroyed(self, unit, model, *, game=None, game_map=None) -> None:
+    def on_model_destroyed(
+        self,
+        unit,
+        model,
+        *,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        destroyed_by_weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> None:
         if unit is None or model is None or not self._army_has_rule():
             return
         if not self._unit_in_army(unit):
+            self._maybe_trigger_army_of_faith_stratagem_destroyed_model(
+                unit=unit,
+                destroyed_by_unit=destroyed_by_unit,
+                destroyed_by_model=destroyed_by_model,
+                destroyed_by_weapon_profile=destroyed_by_weapon_profile,
+                game=game,
+            )
             return
         self._maybe_trigger_recount_the_deeds_agathae_destroyed(unit=unit, model=model, game=game)
         enh = getattr(unit, "enhancement", None)
@@ -1144,6 +1161,48 @@ class ActsOfFaithManager:
         sr = dict(sr)
         sr["enhancement_blade_of_saint_ellynor_active_fight"] = updated
         attacker_root.special_rules = sr
+
+    def _maybe_trigger_army_of_faith_stratagem_destroyed_model(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        destroyed_by_model,
+        destroyed_by_weapon_profile,
+        game=None,
+    ) -> None:
+        if not self._is_army_of_faith():
+            return
+        target_root = self._unit_root(unit)
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if target_root is None or attacker_root is None:
+            return
+        if self._unit_in_army(target_root):
+            return
+        if not self._unit_in_army(attacker_root):
+            return
+        for key, default_reason, melee_only in (
+            ("army_of_faith_divine_guidance_active", "Divine Guidance", False),
+            ("army_of_faith_faith_and_fury_active", "Faith and Fury", True),
+        ):
+            sr = self._unit_special_rules(attacker_root)
+            active = sr.get(key)
+            if not isinstance(active, dict):
+                continue
+            if str(active.get("phase_key", "") or "") != self._phase_key(game):
+                continue
+            if bool(active.get("awarded", False)):
+                continue
+            if melee_only and not self._is_melee_weapon_profile(destroyed_by_weapon_profile):
+                continue
+            reason = str(active.get("source", "") or default_reason).strip() or default_reason
+            self.gain_miracle_die(game=game, allow_reroll=False, reason=reason)
+            updated = dict(active)
+            updated["awarded"] = True
+            sr = dict(sr)
+            sr[key] = updated
+            attacker_root.special_rules = sr
+            return
 
     def _maybe_trigger_psalm_of_righteous_judgement(
         self,

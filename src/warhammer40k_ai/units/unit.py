@@ -2966,7 +2966,7 @@ class Unit(
                     mods = list(filt(mods, kind="move", base_val=int(base_val or 0)))
             except Exception:
                 pass
-        if ckey in {"toughness", "leadership", "objective_control"}:
+        if ckey in {"toughness", "leadership", "objective_control", "save"}:
             try:
                 rule_fn = getattr(self, "_ironstorm_unbowed_conviction_ignore_modifiers_rule", None)
                 rule = rule_fn(kind=ckey) if callable(rule_fn) else None
@@ -2975,6 +2975,12 @@ class Unit(
             if not isinstance(rule, dict):
                 try:
                     rule_fn = getattr(self, "_thousand_sons_warpforged_ignore_modifiers_rule", None)
+                    rule = rule_fn(kind=ckey) if callable(rule_fn) else None
+                except Exception:
+                    rule = None
+            if not isinstance(rule, dict):
+                try:
+                    rule_fn = getattr(self, "_adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule", None)
                     rule = rule_fn(kind=ckey) if callable(rule_fn) else None
                 except Exception:
                     rule = None
@@ -2994,7 +3000,7 @@ class Unit(
                             base_val=int(base_val or 0),
                         )
                     elif choice_key == "ignore_negative":
-                        if ckey == "leadership":
+                        if ckey in {"leadership", "save"}:
                             kept = []
                             for mod in list(mods or []):
                                 try:

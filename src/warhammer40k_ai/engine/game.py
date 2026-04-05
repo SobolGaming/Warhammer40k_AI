@@ -11810,14 +11810,35 @@ class Game(
             return
         on_select(unit, game=self, selecting_player=selecting_player)
 
-    def _on_model_destroyed_acts_of_faith(self, unit=None, model=None, **_kwargs) -> None:
-        if unit is None or model is None:
+    def _on_model_destroyed_acts_of_faith(self, unit=None, model=None, target_unit=None, target_model=None, **_kwargs) -> None:
+        resolved_unit = unit if unit is not None else target_unit
+        resolved_model = model if model is not None else target_model
+        if resolved_unit is None or resolved_model is None:
             return
-        army = unit.get_parent_army()
-        mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-        if mgr is None:
-            return
-        mgr.on_model_destroyed(unit, model, game=self, game_map=self.map)
+        seen_armies: set[str] = set()
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            army_id = str(get_entity_id(army) or "")
+            if army_id and army_id in seen_armies:
+                continue
+            if army_id:
+                seen_armies.add(army_id)
+            mgr = getattr(army, "acts_of_faith", None)
+            if mgr is None:
+                continue
+            mgr.on_model_destroyed(
+                resolved_unit,
+                resolved_model,
+                game=self,
+                game_map=self.map,
+                destroyed_by_unit=_kwargs.get("destroyed_by_unit", _kwargs.get("attacker_unit")),
+                destroyed_by_model=_kwargs.get("destroyed_by_model", _kwargs.get("attacker_model")),
+                destroyed_by_weapon_profile=_kwargs.get("destroyed_by_weapon_profile", _kwargs.get("weapon_profile")),
+            )
 
     def _on_unit_destroyed_transport_rules(self, unit=None, last_model=None, game_map=None, **_kwargs) -> None:
         """

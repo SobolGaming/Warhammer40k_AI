@@ -1598,19 +1598,24 @@ class StateAttachmentMixin:
         if roll_result is None:
             roll_result = get_roll("2D6")
         leadership_value = self.leadership
-        mod = 0
+        post_shoot_mod = 0
+        aura_mod = 0
+        canticles_mod = 0
+        witherbone_mod = 0
+        persistent_mod = 0
+        soulforged_mod = 0
         try:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            mod = int(self._post_shoot_leadership_debuff_modifier(game))
+            post_shoot_mod = int(self._post_shoot_leadership_debuff_modifier(game))
             try:
                 from ...utility.aura_effects import get_aura_battleshock_test_modifiers
                 aura_mods = get_aura_battleshock_test_modifiers(self, game_map=getattr(game, "map", None))
                 for val, _src in list(aura_mods or []):
-                    mod += int(val)
+                    aura_mod += int(val)
             except Exception:
                 pass
-            mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
+            canticles_mod = int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
             try:
                 dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
                 modifier_fn = (
@@ -1620,7 +1625,7 @@ class StateAttachmentMixin:
                 )
                 if callable(modifier_fn):
                     test_mod, _source = modifier_fn(self, game=game)
-                    mod += int(test_mod or 0)
+                    witherbone_mod = int(test_mod or 0)
             except Exception:
                 pass
             try:
@@ -1630,7 +1635,9 @@ class StateAttachmentMixin:
             try:
                 persistent_rules = getattr(root_for_mod, "special_rules", None)
                 if isinstance(persistent_rules, dict):
-                    mod += int(persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0)
+                    persistent_mod = int(
+                        persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0
+                    )
             except Exception:
                 pass
             try:
@@ -1640,9 +1647,31 @@ class StateAttachmentMixin:
             sr = getattr(root_for_mod, "special_rules", None)
             if isinstance(sr, dict):
                 soulforged_mod = int(sr.get("soulforged_warpack_dark_pact_test_modifier", 0) or 0)
-                mod += int(soulforged_mod)
         except Exception:
-            mod = 0
+            post_shoot_mod = 0
+            aura_mod = 0
+            canticles_mod = 0
+            witherbone_mod = 0
+            persistent_mod = 0
+            soulforged_mod = 0
+        try:
+            ignore_rule = self._light_of_the_emperor_ignore_test_modifier_rule()
+            post_shoot_mod = self._filter_light_of_the_emperor_test_modifier(post_shoot_mod, rule=ignore_rule)
+            aura_mod = self._filter_light_of_the_emperor_test_modifier(aura_mod, rule=ignore_rule)
+            canticles_mod = self._filter_light_of_the_emperor_test_modifier(canticles_mod, rule=ignore_rule)
+            witherbone_mod = self._filter_light_of_the_emperor_test_modifier(witherbone_mod, rule=ignore_rule)
+            persistent_mod = self._filter_light_of_the_emperor_test_modifier(persistent_mod, rule=ignore_rule)
+            soulforged_mod = self._filter_light_of_the_emperor_test_modifier(soulforged_mod, rule=ignore_rule)
+        except Exception:
+            pass
+        mod = (
+            int(post_shoot_mod)
+            + int(aura_mod)
+            + int(canticles_mod)
+            + int(witherbone_mod)
+            + int(persistent_mod)
+            + int(soulforged_mod)
+        )
         try:
             mod_roll = int(roll_result) + int(mod)
         except Exception:
@@ -1871,12 +1900,15 @@ class StateAttachmentMixin:
             leadership_value = int(getattr(model, "leadership", self.leadership))
         except Exception:
             leadership_value = self.leadership
-        mod = 0
+        post_shoot_mod = 0
+        canticles_mod = 0
+        witherbone_mod = 0
+        persistent_mod = 0
         try:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            mod = int(self._post_shoot_leadership_debuff_modifier(game))
-            mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
+            post_shoot_mod = int(self._post_shoot_leadership_debuff_modifier(game))
+            canticles_mod = int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
             dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
             modifier_fn = (
                 getattr(dg_mgr, "shamblerot_witherbone_pipes_leadership_test_modifier", None)
@@ -1885,16 +1917,30 @@ class StateAttachmentMixin:
             )
             if callable(modifier_fn):
                 test_mod, _source = modifier_fn(self, game=game)
-                mod += int(test_mod or 0)
+                witherbone_mod = int(test_mod or 0)
             try:
                 root_for_mod = self.get_attached_unit_root()
             except Exception:
                 root_for_mod = self
             persistent_rules = getattr(root_for_mod, "special_rules", None)
             if isinstance(persistent_rules, dict):
-                mod += int(persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0)
+                persistent_mod = int(
+                    persistent_rules.get("obeisance_your_time_is_nigh_leadership_test_modifier", 0) or 0
+                )
         except Exception:
-            mod = 0
+            post_shoot_mod = 0
+            canticles_mod = 0
+            witherbone_mod = 0
+            persistent_mod = 0
+        try:
+            ignore_rule = self._light_of_the_emperor_ignore_test_modifier_rule()
+            post_shoot_mod = self._filter_light_of_the_emperor_test_modifier(post_shoot_mod, rule=ignore_rule)
+            canticles_mod = self._filter_light_of_the_emperor_test_modifier(canticles_mod, rule=ignore_rule)
+            witherbone_mod = self._filter_light_of_the_emperor_test_modifier(witherbone_mod, rule=ignore_rule)
+            persistent_mod = self._filter_light_of_the_emperor_test_modifier(persistent_mod, rule=ignore_rule)
+        except Exception:
+            pass
+        mod = int(post_shoot_mod) + int(canticles_mod) + int(witherbone_mod) + int(persistent_mod)
         try:
             mod_roll = int(roll_result) + int(mod)
         except Exception:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from itertools import combinations
 
 from ..utility.entity_ids import maybe_entity_id
-from ..utility.aura_utils import distance_between_models_bases_3d
+from ..utility.aura_utils import distance_between_models_bases_3d, unit_within_range_of_unit
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -40,6 +40,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         (_ABSOLUTION_IN_BATTLE_KEY, "Absolution in Battle"),
         (_DEATH_BEFORE_DISGRACE_KEY, "Death Before Disgrace"),
     )
+    _LIGHT_OF_THE_EMPEROR_ACTIVE_KEY = "army_of_faith_light_of_the_emperor_active"
+    _LIGHT_OF_THE_EMPEROR_TURN_KEY = "army_of_faith_light_of_the_emperor_turn"
+    _LIGHT_OF_THE_EMPEROR_OWNER_KEY = "army_of_faith_light_of_the_emperor_turn_owner"
+    _LIGHT_OF_THE_EMPEROR_SOURCE_KEY = "army_of_faith_light_of_the_emperor_source"
+    _LIGHT_OF_THE_EMPEROR_JUMP_PACK_AURA_KEY = "army_of_faith_light_of_the_emperor_jump_pack_aura"
 
     def __init__(self, army=None):
         super().__init__(army=army)
@@ -1582,6 +1587,147 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if not self.unit_is_adepta_sororitas(unit):
             return 1
         return 2
+
+    def clear_light_of_the_emperor(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        changed = False
+        for key in (
+            self._LIGHT_OF_THE_EMPEROR_ACTIVE_KEY,
+            self._LIGHT_OF_THE_EMPEROR_TURN_KEY,
+            self._LIGHT_OF_THE_EMPEROR_OWNER_KEY,
+            self._LIGHT_OF_THE_EMPEROR_SOURCE_KEY,
+            self._LIGHT_OF_THE_EMPEROR_JUMP_PACK_AURA_KEY,
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+        return changed
+
+    def apply_light_of_the_emperor(self, target_unit, *, game=None, source_name: str = "") -> bool:
+        if not self.is_army_of_faith() or target_unit is None:
+            return False
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_is_alive(root):
+            return False
+        if not self.unit_is_adepta_sororitas(root):
+            return False
+        if not self._unit_is_deployed_on_battlefield(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        game_obj = self._resolve_game_context(game=game)
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        sr[self._LIGHT_OF_THE_EMPEROR_ACTIVE_KEY] = True
+        sr[self._LIGHT_OF_THE_EMPEROR_SOURCE_KEY] = (
+            str(source_name or "LIGHT OF THE EMPEROR").strip() or "LIGHT OF THE EMPEROR"
+        )
+        sr[self._LIGHT_OF_THE_EMPEROR_JUMP_PACK_AURA_KEY] = bool(self._unit_has_keyword(root, "JUMP PACK"))
+        sr[self._LIGHT_OF_THE_EMPEROR_OWNER_KEY] = str(
+            maybe_entity_id(current_player) or getattr(current_player, "id", "") or ""
+        )
+        sr[self._LIGHT_OF_THE_EMPEROR_TURN_KEY] = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        root.special_rules = sr
+        return True
+
+    def _light_of_the_emperor_state(self, unit, *, game=None) -> tuple[bool, str, bool]:
+        root = self._unit_root(unit)
+        if root is None:
+            return False, "", False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._LIGHT_OF_THE_EMPEROR_ACTIVE_KEY, False)):
+            return False, "", False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            owner_id = str(sr.get(self._LIGHT_OF_THE_EMPEROR_OWNER_KEY, "") or "")
+            try:
+                effect_turn = int(sr.get(self._LIGHT_OF_THE_EMPEROR_TURN_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner_id = str(maybe_entity_id(current_player) or getattr(current_player, "id", "") or "")
+            if (effect_turn and current_turn and effect_turn != current_turn) or (
+                owner_id and current_owner_id and owner_id != current_owner_id
+            ):
+                self.clear_light_of_the_emperor(root)
+                return False, "", False
+        source = str(sr.get(self._LIGHT_OF_THE_EMPEROR_SOURCE_KEY, "") or "LIGHT OF THE EMPEROR").strip()
+        if not source:
+            source = "LIGHT OF THE EMPEROR"
+        return True, source, bool(sr.get(self._LIGHT_OF_THE_EMPEROR_JUMP_PACK_AURA_KEY, False))
+
+    def _light_of_the_emperor_applies_to_unit(self, unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_army_of_faith():
+            return False, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_is_alive(root):
+            return False, ""
+        if not self.unit_is_adepta_sororitas(root):
+            return False, ""
+        active, source, _jump_pack_aura = self._light_of_the_emperor_state(root, game=game)
+        if active:
+            return True, source
+        if not self._unit_is_deployed_on_battlefield(root):
+            return False, ""
+        army = self.army
+        if army is None:
+            return False, ""
+        seen: set[str] = set()
+        for unit_entry in list(getattr(army, "units", []) or []):
+            source_root = self._unit_root(unit_entry)
+            source_id = self._unit_id(source_root)
+            if source_root is None or not source_id or source_id in seen:
+                continue
+            seen.add(source_id)
+            if source_root is root:
+                continue
+            if not self._unit_is_alive(source_root):
+                continue
+            if not self._unit_is_deployed_on_battlefield(source_root):
+                continue
+            if not self._unit_has_keyword(source_root, "JUMP PACK"):
+                continue
+            source_active, source_name, jump_pack_aura = self._light_of_the_emperor_state(source_root, game=game)
+            if not source_active or not jump_pack_aura:
+                continue
+            if unit_within_range_of_unit(source_root, root, 3.0, use_attached_aggregate=True):
+                return True, source_name
+        return False, ""
+
+    def light_of_the_emperor_ignore_modifier_rule(self, unit, *, kind: str, game=None) -> dict | None:
+        if not self.is_army_of_faith():
+            return None
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+            "save",
+        }:
+            return None
+        applies, source = self._light_of_the_emperor_applies_to_unit(unit, game=game)
+        if not applies:
+            return None
+        return {
+            "source": str(source or "LIGHT OF THE EMPEROR").strip() or "LIGHT OF THE EMPEROR",
+            "default_choice": "ignore_negative",
+        }
 
     def fervent_purgation_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_bringers_of_flame():

@@ -10433,6 +10433,27 @@ class WargearProfile:
                     "forced_choice": str(ts_rule.get("forced_choice", "") or "").strip(),
                     "default_choice": str(ts_rule.get("default_choice", "") or "").strip(),
                 }
+        sororitas_rule_fn = (
+            getattr(root, "_adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(sororitas_rule_fn):
+            try:
+                sororitas_rule = sororitas_rule_fn(kind="hit")
+            except Exception:
+                sororitas_rule = None
+            if isinstance(sororitas_rule, dict) and sororitas_rule:
+                return {
+                    "name": str(
+                        sororitas_rule.get("source", "") or "LIGHT OF THE EMPEROR"
+                    ).strip() or "LIGHT OF THE EMPEROR",
+                    "attack_type": "any",
+                    "skill_kinds": {"ballistic", "weapon"},
+                    "allow_hit": True,
+                    "forced_choice": str(sororitas_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(sororitas_rule.get("default_choice", "") or "").strip(),
+                }
 
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         patient_rule_fn = (
@@ -10684,6 +10705,26 @@ class WargearProfile:
                     "allow_wound": True,
                     "forced_choice": str(ts_rule.get("forced_choice", "") or "").strip(),
                     "default_choice": str(ts_rule.get("default_choice", "") or "").strip(),
+                }
+        sororitas_rule_fn = (
+            getattr(root, "_adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule", None)
+            if root is not None
+            else None
+        )
+        if callable(sororitas_rule_fn):
+            try:
+                sororitas_rule = sororitas_rule_fn(kind="wound")
+            except Exception:
+                sororitas_rule = None
+            if isinstance(sororitas_rule, dict) and sororitas_rule:
+                return {
+                    "name": str(
+                        sororitas_rule.get("source", "") or "LIGHT OF THE EMPEROR"
+                    ).strip() or "LIGHT OF THE EMPEROR",
+                    "attack_type": "any",
+                    "allow_wound": True,
+                    "forced_choice": str(sororitas_rule.get("forced_choice", "") or "").strip(),
+                    "default_choice": str(sororitas_rule.get("default_choice", "") or "").strip(),
                 }
         if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="wound"):
             return {

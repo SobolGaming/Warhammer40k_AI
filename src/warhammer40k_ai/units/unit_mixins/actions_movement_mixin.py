@@ -10681,6 +10681,12 @@ class ActionsMovementMixin:
         if isinstance(warpforged_rule, dict) and warpforged_rule:
             return warpforged_rule
         try:
+            sororitas_rule = self._adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule(kind="move")
+        except Exception:
+            sororitas_rule = None
+        if isinstance(sororitas_rule, dict) and sororitas_rule:
+            return sororitas_rule
+        try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
@@ -10809,6 +10815,45 @@ class ActionsMovementMixin:
         rule_fn = (
             getattr(ts_mgr, "warpforged_malevolent_animus_ignore_modifier_rule", None)
             if ts_mgr is not None
+            else None
+        )
+        if not callable(rule_fn):
+            return None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            rule = rule_fn(root, kind=kind_key, game=game)
+        except Exception:
+            rule = None
+        return rule if isinstance(rule, dict) and rule else None
+
+    def _adepta_sororitas_light_of_the_emperor_ignore_modifiers_rule(self, *, kind: str) -> Optional[dict]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {
+            "move",
+            "advance",
+            "charge",
+            "hit",
+            "wound",
+            "toughness",
+            "leadership",
+            "objective_control",
+            "save",
+        }:
+            return None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        rule_fn = (
+            getattr(as_mgr, "light_of_the_emperor_ignore_modifier_rule", None)
+            if as_mgr is not None
             else None
         )
         if not callable(rule_fn):

@@ -772,6 +772,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(ctxs, "acts_of_faith", ("_army_has_rule",)),
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_acts_of_faith"),
+                ("model_destroyed", "_on_model_destroyed_acts_of_faith"),
                 ("model_destroyed_before_removal", "_on_model_destroyed_acts_of_faith"),
                 ("fight_unit_selected", "_on_fight_unit_selected_acts_of_faith"),
                 ("battle_shock_test_resolved", "_on_battle_shock_test_resolved_acts_of_faith"),

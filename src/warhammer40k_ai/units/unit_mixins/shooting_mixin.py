@@ -2204,6 +2204,49 @@ class ShootingMixin:
         self.special_rules = sr
         self.take_battle_shock_test(int(current_turn or 1))
 
+    def _light_of_the_emperor_ignore_test_modifier_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        rule_fn = (
+            getattr(as_mgr, "light_of_the_emperor_ignore_modifier_rule", None)
+            if as_mgr is not None
+            else None
+        )
+        if not callable(rule_fn):
+            return None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            rule = rule_fn(root, kind="leadership", game=game)
+        except Exception:
+            rule = None
+        return rule if isinstance(rule, dict) and rule else None
+
+    @staticmethod
+    def _filter_light_of_the_emperor_test_modifier(value: int, *, rule: Optional[dict]) -> int:
+        try:
+            modifier_value = int(value or 0)
+        except Exception:
+            modifier_value = 0
+        if modifier_value == 0 or not isinstance(rule, dict):
+            return modifier_value
+        choice_key = str(rule.get("forced_choice", "") or rule.get("default_choice", "") or "").strip().lower()
+        if choice_key == "ignore_all":
+            return 0
+        if choice_key == "ignore_negative":
+            return 0 if modifier_value > 0 else modifier_value
+        if choice_key == "ignore_positive":
+            return 0 if modifier_value < 0 else modifier_value
+        return modifier_value
+
     def take_battle_shock_test(self, current_turn: int = 1):
         """Takes a battle shock test.
         
@@ -2377,6 +2420,14 @@ class ShootingMixin:
                         or "Tome of Bounteous Blessings"
                     )
                     extra_mod_reasons.append(f"{src_name} ({int(dg_mod):+d})")
+        except Exception:
+            pass
+        try:
+            ignore_rule = self._light_of_the_emperor_ignore_test_modifier_rule()
+            shadow_mod = self._filter_light_of_the_emperor_test_modifier(shadow_mod, rule=ignore_rule)
+            extra_mod = self._filter_light_of_the_emperor_test_modifier(extra_mod, rule=ignore_rule)
+            post_shoot_mod = self._filter_light_of_the_emperor_test_modifier(post_shoot_mod, rule=ignore_rule)
+            aura_mod = self._filter_light_of_the_emperor_test_modifier(aura_mod, rule=ignore_rule)
         except Exception:
             pass
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
