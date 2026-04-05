@@ -2,6 +2,12 @@
 
 Interactive Warhammer 40k 10th Edition rules implementation with a graphical UI, official setup phases, and full deployment sequencing.
 
+The repository is now in an 11th-edition-first port-prep phase. Structural work is
+landing behind stable façades so release-day 11th rules ingestion can happen
+cleanly without carrying a long-lived dual-edition architecture. See
+`docs/11E_PORTING_ARCHITECTURE.md` and
+`docs/implementation/11e_port_pr_plan.md` for the migration guardrails.
+
 ## Features
 
 - Official setup phases, deployment system, and battle round mechanics

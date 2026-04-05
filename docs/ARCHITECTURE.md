@@ -4,6 +4,14 @@ This repository implements a **Warhammer 40,000 (10th Edition) rules engine** wi
 
 This document is a *high-level* map of the codebase. Detailed designs live in `docs/` (notably networking/decisions, deployment, movement, terrain, etc.).
 
+## 11th edition port scaffolding
+
+The codebase is now carrying explicit landing zones for the 11th-edition port-prep
+work. PR-001 is structural only: it adds scaffolding, test-layout guardrails, and
+focused destination modules while keeping current gameplay behavior intact.
+
+Review expectations for this work are documented in `docs/11E_PORTING_ARCHITECTURE.md`.
+
 ## High-level runtime modes
 
 - **Local interactive game**: `python3 scripts/main.py ...` runs the engine and pygame UI in one process.
