@@ -186,7 +186,7 @@ shows what is done versus what remains.
 | PR-003 | Completed | Pushed to `dev` on April 5, 2026 as commit `882103c9` (`Implement PR-003 runtime detachment integration`). |
 | PR-004 | Completed | Pushed to `dev` on April 5, 2026 as commit `5ca1a905` (`Implement PR-004 descriptor and state blob split`). |
 | PR-005 | Completed | Pushed to `dev` on April 5, 2026 as commit `27c56016` (`Implement PR-005 pregame flow and facade splits`). |
-| PR-006 | Pending | Not started. |
+| PR-006 | Completed | Pushed to `dev` on April 5, 2026 as commit `327328e8` (`Implement PR-006 mission pack compiler and deployment split`). |
 | PR-007 | Pending | Not started. |
 | PR-008 | Pending | Not started. |
 | PR-009 | Pending | Not started. |
@@ -476,7 +476,7 @@ The port will become fragile if 11th setup flow is layered onto the existing gam
 
 ## PR-006 — Mission pack compiler, Force Dispositions, and mission/deployment rewrite
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `327328e8` (`Implement PR-006 mission pack compiler and deployment split`).
 
 ### Goal
 Replace the hard-coded matched-play mission combination table with a data-driven mission/disposition compiler that can express the announced 11th concepts once final data is ingested, without hard-coding preview articles as final canon.
@@ -525,6 +525,11 @@ The current fixed mission-combination table is too 10th-shaped and blocks portab
 - No final release-day mission balance tuning.
 - No AI training yet against the new mission space.
 - No presentation of preview-derived mission pairing details as final released rules.
+
+### Implementation notes
+- Chapter Approved 2025-26 remains fully supported as the current default/autorandom matched-play pack.
+- Additional provisional mission-pack entries can now appear when both armies expose compatible Force Dispositions.
+- Twist handling is explicit in setup state: Chapter Approved entries resolve as "no twist", while preview-era entries remain stubbed placeholders until PR-012.
 
 ---
 
