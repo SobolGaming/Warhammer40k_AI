@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 
+from shapely.geometry import Polygon
+
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory
+from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.mission_cards import SecondaryMissionCard
@@ -113,7 +117,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
     observed = player_obs_state(game, player.id)
     army_build = dict(omniscient.get("army_build_state", {}) or {})
 
-    assert str(omniscient.get("state_blob_version", "") or "") == "1.1.0"
+    assert str(omniscient.get("state_blob_version", "") or "") == "1.2.0"
     assert army_build["army_build_descriptor_id"].startswith("army_build_descriptor:")
     assert army_build["players"][0]["primary_detachment_type"] == "Gladius Task Force"
     assert army_build["players"][0]["detachment_points_summary"] == {
@@ -123,3 +127,30 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
     }
     assert army_build["players"][0]["force_disposition"] == "Assault"
     assert observed["army_build_state"] == omniscient["army_build_state"]
+
+
+def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> None:
+    player = Player("P1", army=Army("Chaos Daemons", "Test"))
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    site = ObjectiveSite.terrain_footprint(
+        footprint=Polygon([(10.0, 10.0), (16.0, 10.0), (16.0, 16.0), (10.0, 16.0)]),
+        feature_key="terrain_feature:central_ruin",
+        feature_label="Central Ruin",
+    )
+    objective = Objective(
+        name="Central Ruin Objective",
+        category=ObjectiveCategory.PRIMARY,
+        points=5,
+        description="Control the ruin footprint",
+        conditions=lambda game, point=site: point.primary_score_source().is_active(point.controlling_player),
+        location=site,
+    )
+    game.map.objectives = [objective]
+    game.objectives = [objective]
+
+    state = canonical_omniscient_state(game)
+
+    assert str(state.get("state_blob_version", "") or "") == "1.2.0"
+    assert state["objectives"][0]["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert state["control_regions"][0]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
+    assert state["scoring_surfaces"][0]["score_source_id"] == f"score_source:objective:{objective.id}"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..battlefield.objective_sites import resolve_objective_id, resolve_objective_site
 from .descriptor_bundle import CompiledDescriptor, descriptor_id, iter_objectives, iter_players, json_safe, safe_int
 
 
@@ -34,11 +35,21 @@ def scoring_window_payload(game: object) -> list[dict[str, Any]]:
 
 def build_mission_descriptor_payload(game: object) -> dict[str, Any]:
     selected = dict(getattr(game, "selected_mission_info", {}) or {})
-    objective_ids = [
-        str(getattr(objective, "id", "") or "")
-        for objective in iter_objectives(game)
-    ]
-    scoring_sources = [f"score_source:objective:{objective_id}" for objective_id in objective_ids if objective_id]
+    objective_ids = [resolve_objective_id(objective) for objective in iter_objectives(game)]
+    scoring_sources: list[str] = []
+    for objective in iter_objectives(game):
+        objective_id = resolve_objective_id(objective)
+        site = resolve_objective_site(objective)
+        if site is None or not hasattr(site, "score_sources"):
+            if objective_id:
+                scoring_sources.append(f"score_source:objective:{objective_id}")
+            continue
+        scoring_sources.extend(
+            str(getattr(source, "score_source_id", "") or "")
+            for source in list(getattr(site, "score_sources", []) or [])
+            if str(getattr(source, "score_source_id", "") or "")
+        )
+    scoring_sources = sorted({source for source in scoring_sources if str(source or "")})
     primary_name = str(selected.get("primary", "") or "").strip().lower()
     action_sites: list[str] = []
     if "terraform" in primary_name:

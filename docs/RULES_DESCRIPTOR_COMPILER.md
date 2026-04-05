@@ -35,6 +35,11 @@ Runtime integration:
 - `DecisionRecordStore` falls back to compiled descriptors if request context omits descriptor IDs.
 - Version-adapter conditioning includes `army_build_descriptor_id` alongside the existing descriptor families.
 
+Objective descriptor notes:
+- `ObjectiveDescriptor` now preserves site geometry independently from control/scoring bindings.
+- Descriptor payloads carry explicit objective-site geometry, explicit control-region semantics, and score-source bindings.
+- Terrain-footprint and keyed-feature objective sites therefore compile deterministically without pretending every objective is just a circular marker.
+
 Tool descriptor sources:
 - active enhancement descriptors on units (`enhancement_descriptors.py`)
 - active stratagem descriptors on player stratagem managers (`stratagem_descriptors.py`)

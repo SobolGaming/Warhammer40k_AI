@@ -29,6 +29,7 @@ from ..battlefield.map import (
     TerrainType,
     WoodsTerrain,
 )
+from ..battlefield.objective_sites import ScoreSource
 from ..roster.army import Army
 from ..roster.army_attachments import AttachmentBinding
 from ..roster.army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
@@ -44,7 +45,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -582,6 +583,35 @@ def _serialize_objective_point(point: ObjectivePoint) -> dict:
         "y": _to_fixed(point.y),
         "z": _to_fixed(point.z),
         "control_radius": _to_fixed(point.control_radius),
+        "site_kind": str(getattr(point, "site_kind", "MARKER") or "MARKER"),
+        "geometry_kind": str(getattr(point, "geometry_kind", "MARKER") or "MARKER"),
+        "feature_key": str(getattr(point, "feature_key", "") or ""),
+        "feature_label": str(getattr(point, "feature_label", "") or ""),
+        "footprint": _serialize_polygon(getattr(point, "footprint", None)),
+        "control_region": {
+            "region_id": str(getattr(getattr(point, "control_region", None), "region_id", "") or ""),
+            "kind": str(getattr(getattr(point, "control_region", None), "kind", "") or ""),
+            "center_x": _to_fixed(getattr(getattr(point, "control_region", None), "center_x", 0.0)),
+            "center_y": _to_fixed(getattr(getattr(point, "control_region", None), "center_y", 0.0)),
+            "center_z": _to_fixed(getattr(getattr(point, "control_region", None), "center_z", 0.0)),
+            "radius": _to_fixed(getattr(getattr(point, "control_region", None), "radius", 0.0)),
+            "footprint": _serialize_polygon(getattr(getattr(point, "control_region", None), "footprint", None)),
+            "feature_key": str(getattr(getattr(point, "control_region", None), "feature_key", "") or ""),
+            "feature_label": str(getattr(getattr(point, "control_region", None), "feature_label", "") or ""),
+            "metadata": encode_refs(dict(getattr(getattr(point, "control_region", None), "metadata", {}) or {})),
+        },
+        "score_sources": [
+            {
+                "score_source_id": str(getattr(source, "score_source_id", "") or ""),
+                "kind": str(getattr(source, "kind", "") or ""),
+                "label": str(getattr(source, "label", "") or ""),
+                "objective_id": str(getattr(source, "objective_id", "") or ""),
+                "points_value": int(getattr(source, "points_value", 0) or 0),
+                "metadata": encode_refs(dict(getattr(source, "metadata", {}) or {})),
+            }
+            for source in list(getattr(point, "score_sources", []) or [])
+        ],
+        "metadata": encode_refs(dict(getattr(point, "metadata", {}) or {})),
         "controlling_player_id": get_entity_id(point.controlling_player) if point.controlling_player else None,
         "terraformed_by_id": get_entity_id(point.terraformed_by) if point.terraformed_by else None,
         "cleansed_by_id": get_entity_id(point.cleansed_by) if point.cleansed_by else None,
@@ -600,13 +630,67 @@ def _serialize_objective_point(point: ObjectivePoint) -> dict:
 
 
 def _deserialize_objective_point(data: dict) -> ObjectivePoint:
-    point = ObjectivePoint(
-        x=_from_fixed(data["x"]),
-        y=_from_fixed(data["y"]),
-        z=_from_fixed(data.get("z", 0)),
-        control_radius=_from_fixed(data.get("control_radius", 0)),
-    )
+    footprint = _deserialize_polygon(data.get("footprint"))
+    site_kind = str(data.get("site_kind", "MARKER") or "MARKER").upper()
+    if site_kind == "TERRAIN_FOOTPRINT" and footprint is not None:
+        point = ObjectivePoint.terrain_footprint(
+            footprint=footprint,
+            z=_from_fixed(data.get("z", 0)),
+            feature_key=str(data.get("feature_key", "") or ""),
+            feature_label=str(data.get("feature_label", "") or ""),
+            metadata=decode_refs(data.get("metadata", {}) or {}, EntityRegistry()),
+        )
+    elif site_kind == "KEYED_FEATURE":
+        point = ObjectivePoint.keyed_feature(
+            feature_key=str(data.get("feature_key", "") or ""),
+            x=_from_fixed(data.get("x", 0)),
+            y=_from_fixed(data.get("y", 0)),
+            z=_from_fixed(data.get("z", 0)),
+            control_radius=_from_fixed(data.get("control_radius", 0)),
+            fallback_footprint=footprint,
+            feature_label=str(data.get("feature_label", "") or ""),
+            metadata=decode_refs(data.get("metadata", {}) or {}, EntityRegistry()),
+        )
+    else:
+        point = ObjectivePoint(
+            x=_from_fixed(data["x"]),
+            y=_from_fixed(data["y"]),
+            z=_from_fixed(data.get("z", 0)),
+            control_radius=_from_fixed(data.get("control_radius", 0)),
+        )
+        point.metadata = decode_refs(data.get("metadata", {}) or {}, EntityRegistry())
     point._id = str(data.get("id") or point._id)
+    point.site_kind = str(data.get("site_kind", getattr(point, "site_kind", "MARKER")) or "MARKER")
+    point.geometry_kind = str(data.get("geometry_kind", getattr(point, "geometry_kind", "MARKER")) or "MARKER")
+    point.feature_key = str(data.get("feature_key", getattr(point, "feature_key", "")) or "")
+    point.feature_label = str(data.get("feature_label", getattr(point, "feature_label", "")) or "")
+    point.footprint = footprint
+    control_region_data = dict(data.get("control_region", {}) or {})
+    if getattr(point, "control_region", None) is not None:
+        point.control_region.region_id = str(
+            control_region_data.get("region_id", getattr(point.control_region, "region_id", ""))
+            or getattr(point.control_region, "region_id", "")
+        )
+        point.control_region.kind = str(control_region_data.get("kind", getattr(point.control_region, "kind", "")) or getattr(point.control_region, "kind", ""))
+        point.control_region.center_x = _from_fixed(control_region_data.get("center_x", _to_fixed(getattr(point.control_region, "center_x", 0.0))))
+        point.control_region.center_y = _from_fixed(control_region_data.get("center_y", _to_fixed(getattr(point.control_region, "center_y", 0.0))))
+        point.control_region.center_z = _from_fixed(control_region_data.get("center_z", _to_fixed(getattr(point.control_region, "center_z", 0.0))))
+        point.control_region.radius = _from_fixed(control_region_data.get("radius", _to_fixed(getattr(point.control_region, "radius", 0.0))))
+        point.control_region.footprint = _deserialize_polygon(control_region_data.get("footprint")) or footprint
+        point.control_region.feature_key = str(control_region_data.get("feature_key", getattr(point.control_region, "feature_key", "")) or "")
+        point.control_region.feature_label = str(control_region_data.get("feature_label", getattr(point.control_region, "feature_label", "")) or "")
+        point.control_region.metadata = decode_refs(control_region_data.get("metadata", {}) or {}, EntityRegistry())
+    point.score_sources = [
+        ScoreSource(
+            score_source_id=str(item.get("score_source_id", "") or ""),
+            kind=str(item.get("kind", "") or ""),
+            label=str(item.get("label", "") or ""),
+            objective_id=str(item.get("objective_id", "") or ""),
+            points_value=int(item.get("points_value", 0) or 0),
+            metadata=decode_refs(item.get("metadata", {}) or {}, EntityRegistry()),
+        )
+        for item in list(data.get("score_sources", []) or [])
+    ]
     point.is_hazard = bool(data.get("is_hazard", False))
     point.removed = bool(data.get("removed", False))
     point.sticky_source = data.get("sticky_source", None)
@@ -646,6 +730,8 @@ def _deserialize_objective(data: dict, points_by_id: dict[str, ObjectivePoint]) 
         location=loc,
     )
     obj._id = str(data.get("id") or obj._id)
+    if loc is not None and hasattr(loc, "bind_objective"):
+        loc.bind_objective(obj._id, obj.name, points_value=int(obj.points or 0))
     obj.completed = bool(data.get("completed", False))
     return obj
 

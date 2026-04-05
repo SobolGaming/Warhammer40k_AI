@@ -1,6 +1,4 @@
 from typing import List, Optional, Tuple, Dict, Any
-import uuid
-from enum import Enum, auto
 from ..units.unit import Unit
 from ..units.model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level, get_pivot_cost
@@ -16,13 +14,13 @@ from shapely.errors import GEOSException
 from shapely.ops import unary_union
 from shapely.affinity import scale, translate
 
-from typing import TYPE_CHECKING, List, Tuple, Union
+from typing import Union
+from .map_geometry import battlefield_edge_repulsors, create_boundary_polygon as build_boundary_polygon
+from .objective_sites import Objective, ObjectiveCategory, ObjectivePoint
+from .terrain_runtime import TerrainFeature, TerrainType
 from ..utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from ..engine.game import Game
 
 
 class Map:
@@ -69,14 +67,7 @@ class Map:
         """
         Creates a Shapely Polygon representing the battlefield boundaries.
         """
-        # Assuming the battlefield starts at (0, 0)
-        vertices = [
-            (0, 0),  # Bottom-left corner
-            (self.width, 0),  # Bottom-right corner
-            (self.width, self.height),  # Top-right corner
-            (0, self.height),  # Top-left corner
-        ]
-        return Polygon(vertices)
+        return build_boundary_polygon(self.width, self.height)
 
     def add_terrain_feature(self, terrain_feature: 'TerrainFeature') -> None:
         """Add terrain feature."""
@@ -1231,95 +1222,8 @@ class Map:
         Returns:
             List of Shapely polygons representing battlefield edge repulsors
         """
-        from shapely.geometry import Polygon
-        
-        repulsors = []
-        repulsor_thickness = 0.5  # 0.5 inch thick repulsor zones
-        
-        # Left battlefield edge repulsor
-        left_edge = Polygon([
-            (-repulsor_thickness, -repulsor_thickness),
-            (0, -repulsor_thickness),
-            (0, self.height + repulsor_thickness),
-            (-repulsor_thickness, self.height + repulsor_thickness)
-        ])
-        repulsors.append(left_edge)
-        
-        # Right battlefield edge repulsor
-        right_edge = Polygon([
-            (self.width, -repulsor_thickness),
-            (self.width + repulsor_thickness, -repulsor_thickness),
-            (self.width + repulsor_thickness, self.height + repulsor_thickness),
-            (self.width, self.height + repulsor_thickness)
-        ])
-        repulsors.append(right_edge)
-        
-        # Bottom battlefield edge repulsor
-        bottom_edge = Polygon([
-            (-repulsor_thickness, -repulsor_thickness),
-            (self.width + repulsor_thickness, -repulsor_thickness),
-            (self.width + repulsor_thickness, 0),
-            (-repulsor_thickness, 0)
-        ])
-        repulsors.append(bottom_edge)
-        
-        # Top battlefield edge repulsor
-        top_edge = Polygon([
-            (-repulsor_thickness, self.height),
-            (self.width + repulsor_thickness, self.height),
-            (self.width + repulsor_thickness, self.height + repulsor_thickness),
-            (-repulsor_thickness, self.height + repulsor_thickness)
-        ])
-        repulsors.append(top_edge)
-        
-        return repulsors
+        return battlefield_edge_repulsors(self.width, self.height)
 
-
-class TerrainType(Enum):
-    """Types of terrain features."""
-    CRATER_AND_RUBBLE = auto()
-    BARRICADE_AND_FUEL_PIPES = auto()
-    DEBRIS_AND_STATUARY = auto()
-    HILLS_AND_SEALED_BUILDINGS = auto()
-    WOODS = auto()
-    RUINS = auto()
-
-
-class TerrainFeature:
-    """Base class for all terrain features using polygon-based approach."""
-
-    def __init__(self, terrain_type: TerrainType, footprint: Polygon,
-                 bounding_box: dict, traversal_rules: dict = None):
-        """
-        Args:
-            terrain_type: Type of terrain
-            footprint: 2D ground outline of the terrain
-            bounding_box: 3D bounding box for spatial indexing
-            traversal_rules: Rules for which units can traverse this terrain
-        """
-        self._id = str(uuid.uuid4())
-        self.terrain_type = terrain_type
-        self.footprint = footprint
-        self.bounding_box = bounding_box
-        self.traversal_rules = traversal_rules or {}
-        self.shadow_of_chaos_owner_ids: set[str] = set()
-
-    @property
-    def id(self) -> str:
-        return self._id
-
-    def point_in_bounds(self, position: Tuple[float, float, float]) -> bool:
-        """Check if a 3D position is within the terrain's bounding box."""
-        x, y, z = position
-        min_x, min_y, min_z = self.bounding_box["min"]
-        max_x, max_y, max_z = self.bounding_box["max"]
-        return (min_x <= x <= max_x and
-                min_y <= y <= max_y and
-                min_z <= z <= max_z)
-
-    def can_unit_traverse(self, unit) -> bool:
-        """Check if a unit can traverse this terrain. Override in subclasses."""
-        return True
 
 class RuinsTerrain(TerrainFeature):
     """RUINS terrain with walls, floors, and openings."""
@@ -2990,243 +2894,3 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
     
     # No RUINS terrain at this position
     return {'valid': True, 'reason': 'No RUINS terrain at position', 'floor_level': 0}
-
-
-class ObjectivePoint:
-    def __init__(self, x: float, y: float, z: float = 0.0, control_radius: float = 3.0) -> None:
-        self._id = str(uuid.uuid4())
-        self.x = x
-        self.y = y
-        self.z = z
-        self.control_radius = control_radius
-        self.controlling_player = None
-        # Chapter Approved 2025/26 Terraform tracking
-        self.terraformed_by = None
-        # Chapter Approved 2025/26 Cleanse tracking
-        self.cleansed_by = None
-        # Chapter Approved 2025/26 Unexploded Ordnance tracking (Hazard markers)
-        self.is_hazard: bool = False
-        # Some primaries can remove objectives (e.g., Scorched Earth, Supply Drop)
-        self.removed = False
-        # Sticky control tracking (e.g., Uphold the Honour of the Emperor)
-        self.sticky_controller = None
-        self.sticky_source = None
-        # Vanguard Spearhead: per-player sabotage markers from A Deadly Prize.
-        self.space_marines_vanguard_deadly_prize_sources: Dict[str, str] = {}
-        # Virulent Vectorium: Worldblight objective contagion source tracking
-        self.worldblight_controller = None
-        self.worldblight_source = None
-        self._objective_area_cache_key = None
-        self._objective_area_cache = None
-
-    @property
-    def id(self) -> str:
-        return self._id
-
-    def set_sticky_control(self, player, source: str | None = None) -> None:
-        self.sticky_controller = player
-        self.sticky_source = source
-        self.controlling_player = player
-
-    def update_control(self, game_state: 'Game') -> None:
-        # Determine which player controls the objective based on base overlap
-        prev_controller = self.controlling_player
-        prev_sticky = self.sticky_controller
-        prev_worldblight = getattr(self, "worldblight_controller", None)
-        prev_worldblight_source = getattr(self, "worldblight_source", None)
-        prev_removed = bool(getattr(self, "removed", False))
-        player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
-        shared_model_oc_cache = getattr(game_state, "_objective_control_model_oc_cache", None)
-        if not isinstance(shared_model_oc_cache, dict):
-            shared_model_oc_cache = None
-        
-        from shapely.geometry import Point
-
-        def _objective_area_shape():
-            key = (round(float(self.x), 6), round(float(self.y), 6), round(float(self.control_radius), 6))
-            if self._objective_area_cache is None or self._objective_area_cache_key != key:
-                self._objective_area_cache_key = key
-                self._objective_area_cache = Point(self.x, self.y).buffer(self.control_radius)
-            return self._objective_area_cache
-
-        def _model_overlaps_objective(model, objective_area) -> bool:
-            model_base = getattr(model, "model_base", None)
-            if model_base is None:
-                return False
-            # Exact for circular bases, and much faster than shapely polygon intersections.
-            if bool(getattr(model_base, "has_circular_base", False)):
-                try:
-                    radius = float(getattr(model_base, "get_radius", lambda: 0.0)())
-                    dx = float(getattr(model_base, "x", 0.0)) - float(self.x)
-                    dy = float(getattr(model_base, "y", 0.0)) - float(self.y)
-                    return (dx * dx + dy * dy) ** 0.5 <= (float(self.control_radius) + radius)
-                except (TypeError, ValueError):
-                    return False
-            try:
-                model_base_shape = model_base.get_base_shape()
-                return bool(model_base_shape.intersects(objective_area))
-            except (AttributeError, TypeError, ValueError, GEOSException):
-                try:
-                    distance = get_dist(self.x - model_base.x, self.y - model_base.y)
-                    model_base_radius = getattr(model_base, 'get_radius', lambda: 1.0)()
-                    return distance <= (self.control_radius + model_base_radius)
-                except (AttributeError, TypeError, ValueError):
-                    return False
-
-        def _model_objective_control(model) -> int:
-            if shared_model_oc_cache is None:
-                return int(getattr(model, "objective_control", 0) or 0)
-            model_key = int(id(model))
-            if model_key in shared_model_oc_cache:
-                return int(shared_model_oc_cache[model_key])
-            value = int(getattr(model, "objective_control", 0) or 0)
-            shared_model_oc_cache[model_key] = int(value)
-            return int(value)
-
-        # If removed, always uncontrolled
-        if getattr(self, 'removed', False):
-            self.controlling_player = None
-            self.sticky_controller = None
-            self.sticky_source = None
-            self.space_marines_vanguard_deadly_prize_sources = {}
-            self.worldblight_controller = None
-            self.worldblight_source = None
-            return
-        # Create/cached objective area as a circle
-        objective_area = _objective_area_shape()
-        
-        for player in game_state.players:
-            if not player.army:
-                continue
-            for unit in player.army.units:
-                # Avoid double-counting: attached leaders are counted as part of their bodyguard unit.
-                if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
-                    continue
-                if not unit.deployed or not unit.is_alive():
-                    continue
-                get_models = getattr(unit, "get_models_for_collision", None)
-                if callable(get_models):
-                    models = list(get_models() or [])
-                else:
-                    models = list(getattr(unit, "models", []) or [])
-                for model in models:
-                    if not model.is_alive:
-                        continue
-                    if _model_overlaps_objective(model, objective_area):
-                        oc_value = _model_objective_control(model)
-                        player_oc[player] += oc_value
-
-        # Determine controlling player based on OC values
-        if any(oc > 0 for oc in player_oc.values()):
-            max_oc = max(player_oc.values())
-            max_players = [player for player, oc in player_oc.items() if oc == max_oc]
-            if len(max_players) == 1:
-                self.controlling_player = max_players[0]
-            else:
-                # Tie - no one controls the objective
-                self.controlling_player = None
-        else:
-            self.controlling_player = None
-
-        # Sticky control: retain control unless opponent has greater OC at end of phase.
-        sticky_owner = getattr(self, "sticky_controller", None)
-        if sticky_owner is not None and sticky_owner in player_oc:
-            try:
-                sticky_oc = int(player_oc.get(sticky_owner, 0) or 0)
-            except (TypeError, ValueError):
-                sticky_oc = 0
-            opponent_max = 0
-            for player, oc in player_oc.items():
-                if player is sticky_owner:
-                    continue
-                try:
-                    opponent_max = max(opponent_max, int(oc or 0))
-                except (TypeError, ValueError):
-                    continue
-            sticky_source = getattr(self, "sticky_source", None)
-            allow_break = True
-            if sticky_source in {"corrupt_realspace", "space_marines_vanguard_deadly_prize"}:
-                allow_break = bool(getattr(game_state, "_corrupt_realspace_check", False))
-            if opponent_max > sticky_oc and allow_break:
-                # Sticky control broken.
-                self.sticky_controller = None
-                self.sticky_source = None
-            else:
-                # Retain control even if tied or empty.
-                self.controlling_player = sticky_owner
-
-        # Worldblight contagion objectives only persist while control is retained.
-        worldblight_owner = getattr(self, "worldblight_controller", None)
-        if worldblight_owner is not None and self.controlling_player is not worldblight_owner:
-            self.worldblight_controller = None
-            self.worldblight_source = None
-
-        if (
-            prev_controller is not self.controlling_player
-            or prev_sticky is not self.sticky_controller
-            or prev_worldblight is not getattr(self, "worldblight_controller", None)
-            or prev_worldblight_source != getattr(self, "worldblight_source", None)
-            or prev_removed != bool(getattr(self, "removed", False))
-        ):
-            event_system = getattr(game_state, "event_system", None)
-            if event_system is not None and hasattr(event_system, "publish"):
-                event_system.publish(
-                    "objective_control_changed",
-                    objective=self,
-                    previous_controller=prev_controller,
-                    controller=self.controlling_player,
-                    sticky_controller=self.sticky_controller,
-                    worldblight_controller=getattr(self, "worldblight_controller", None),
-                    worldblight_source=getattr(self, "worldblight_source", None),
-                    removed=bool(getattr(self, "removed", False)),
-                )
-        
-        # Debug output
-        oc_summary = {player.name: oc for player, oc in player_oc.items() if oc > 0}
-        if oc_summary:
-            logger.info(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) OC values: {oc_summary} -> controlled by {self.controlling_player.name if self.controlling_player else 'None'}")
-        else:
-            owner = self.controlling_player.name if self.controlling_player else 'None'
-            logger.info(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by {owner} (no models in range)")
-
-
-class ObjectiveCategory(Enum):
-    PRIMARY = auto()
-    SECONDARY = auto()
-    SECRET = auto()
-
-
-class Objective:
-    def __init__(self, name: str, category: ObjectiveCategory, points: int, description: str, conditions: callable, location: Optional[Tuple[float, float]] = None) -> None:
-        """
-        Represents an objective in Warhammer 40,000.
-        
-        Parameters:
-        - name (str): Name of the objective.
-        - category (ObjectiveCategory): Primary, Secondary, or Secret.
-        - points (int): Points rewarded upon completion.
-        - description (str): Explanation of the objective's goal.
-        - conditions (callable): A function or lambda to check if the objective is achieved.
-        - location (tuple): (x, y) coordinates for objectives on the map (optional).
-        """
-        self._id = str(uuid.uuid4())
-        self.name = name
-        self.category = category
-        self.points = points
-        self.description = description
-        self.conditions = conditions
-        self.location = location
-        self.completed = False
-
-    @property
-    def id(self) -> str:
-        return self._id
-
-    def check_completion(self, game_state: 'Game') -> bool:
-        """Evaluate if the objective is completed based on game state."""
-        self.completed = self.conditions(game_state)
-        return self.completed
-
-    def __repr__(self):
-        status = "Completed" if self.completed else "Incomplete"
-        return f"{self.name} ({self.category.name}): {status} - {self.points} points"

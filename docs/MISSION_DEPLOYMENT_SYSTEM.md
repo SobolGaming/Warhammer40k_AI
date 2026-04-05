@@ -13,6 +13,25 @@ Force Dispositions.
 The deployment layer still uses polygonal mission data to build deployment zones, create
 objectives, and validate placement.
 
+## Objective-site runtime model
+Objective runtime is no longer treated as "marker circle only" at the engine boundary.
+
+The battlefield layer now separates:
+
+- `ObjectiveSite`: the site/anchor geometry
+- `ControlRegion`: the space used for control checks
+- `ScoreSource`: the scoring surface bound to that site
+
+Current site styles:
+
+- marker objective sites
+- terrain-footprint objective sites
+- keyed-feature objective sites
+
+Default Chapter Approved missions still instantiate marker sites, but state blobs,
+descriptors, and snapshots now preserve the richer site/control/scoring split so
+terrain-footprint or keyed-feature missions can be added without reworking those schemas again.
+
 ## Mission-pack compiler
 Defined in `src/warhammer40k_ai/engine/mission_selection.py`:
 
@@ -79,6 +98,11 @@ class (see `engine/missions.py`).
   `mission_zones` (polygon zones + cutouts).
 - `DeploymentManager.setup_mission_objectives` uses `create_objectives_from_mission` to add
   objectives to the map.
+- Objective/control runtime now flows through:
+  - `battlefield/objective_sites.py`
+  - `battlefield/control_queries.py`
+  - `battlefield/map_geometry.py`
+  - `battlefield/terrain_runtime.py`
 - `Game._apply_primary_mission_setup_rules` applies primary-specific objective edits (e.g.,
   Hidden Supplies, Supply Drop).
 - `Game.is_position_in_deployment_zone` and related helpers only support mission polygon zones;
@@ -94,4 +118,8 @@ class (see `engine/missions.py`).
 - `src/warhammer40k_ai/engine/deployment_candidates.py`
 - `src/warhammer40k_ai/engine/deployment_heuristics.py`
 - `src/warhammer40k_ai/engine/game.py`
+- `src/warhammer40k_ai/battlefield/objective_sites.py`
+- `src/warhammer40k_ai/battlefield/control_queries.py`
+- `src/warhammer40k_ai/battlefield/map_geometry.py`
+- `src/warhammer40k_ai/battlefield/terrain_runtime.py`
 - `src/warhammer40k_ai/battlefield/terrain_layouts.py`

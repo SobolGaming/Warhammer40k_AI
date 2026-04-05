@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..battlefield.control_queries import deserialize_polygon_geometry
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
 from .state_blob_objectives import objective_entries
@@ -211,8 +212,20 @@ def objective_ids_in_range(unit: object, entries: list[dict[str, Any]]) -> list[
         base = getattr(model, "model_base", None)
         model_radius = safe_float(getattr(base, "get_radius", lambda: 0.0)(), 0.0) if base is not None else 0.0
         for objective in entries:
-            ox, oy, _oz = objective["position"]
-            control_radius = safe_float(objective["control_radius"], 0.0)
+            control_region = dict(objective.get("control_region", {}) or {})
+            kind = str(control_region.get("kind", "") or "").upper()
+            if kind in {"OBJECTIVE_CONTROL_FOOTPRINT", "OBJECTIVE_CONTROL_KEYED_FEATURE"}:
+                footprint = deserialize_polygon_geometry(control_region.get("footprint"))
+                if footprint is None:
+                    continue
+                try:
+                    if base is not None and base.get_base_shape().intersects(footprint):
+                        in_range.append(str(objective["objective_id"]))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                continue
+            ox, oy, _oz = control_region.get("center", objective["position"])
+            control_radius = safe_float(control_region.get("radius", objective["control_radius"]), 0.0)
             dx = float(x) - float(ox)
             dy = float(y) - float(oy)
             if ((dx * dx) + (dy * dy)) ** 0.5 <= (control_radius + model_radius):

@@ -1,6 +1,8 @@
 import pytest
+from shapely.geometry import Polygon as ShapelyPolygon
 
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.engine.descriptor_compiler import compile_descriptor_bundle
@@ -256,6 +258,40 @@ def test_snapshot_fixed_point_coordinates(waha_helper):
     assert model_data["position"]["x"] == int(round(3.333 * POSITION_SCALE))
     assert model_data["position"]["y"] == int(round(4.444 * POSITION_SCALE))
     assert model_data["position"]["facing"] == int(round(0.9876 * ANGLE_SCALE))
+
+
+def test_snapshot_roundtrip_preserves_polygon_objective_site() -> None:
+    player = Player("Player One", control=PlayerControl.LOCAL, army=Army("Chaos Daemons", "Test"))
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    site = ObjectiveSite.terrain_footprint(
+        footprint=ShapelyPolygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        feature_key="terrain_feature:central_ruin",
+        feature_label="Central Ruin",
+    )
+    objective = Objective(
+        name="Central Ruin Objective",
+        category=ObjectiveCategory.PRIMARY,
+        points=5,
+        description="Control the ruin footprint",
+        conditions=lambda game, point=site: point.primary_score_source().is_active(point.controlling_player),
+        location=site,
+    )
+    game.map.objectives = [objective]
+    game.objectives = [objective]
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_site = loaded.map.objectives[0].location
+
+    assert loaded_site.site_kind == "TERRAIN_FOOTPRINT"
+    assert loaded_site.geometry_kind == "POLYGON_FOOTPRINT"
+    assert loaded_site.feature_key == "terrain_feature:central_ruin"
+    assert loaded_site.primary_score_source().score_source_id == f"score_source:objective:{loaded.map.objectives[0].id}"
+    assert list(loaded_site.footprint.exterior.coords)[:4] == [
+        (8.0, 8.0),
+        (14.0, 8.0),
+        (14.0, 14.0),
+        (8.0, 14.0),
+    ]
 
 
 def test_snapshot_preserves_army_points_totals(waha_helper):

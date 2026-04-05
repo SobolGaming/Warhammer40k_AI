@@ -24,6 +24,10 @@ Top-level fields:
 Design notes:
 - Terrain geometry and terrain semantics are public and versioned.
 - Objective markers and score sources are distinct concepts when the active mission pack requires that split.
+- Objective entries now carry:
+  - site geometry (`MARKER`, `POLYGON_FOOTPRINT`, or `KEYED_FEATURE`)
+  - an explicit primary `control_region`
+  - one or more explicit `score_sources`
 - `army_build_state` carries public army-construction semantics plus the active `army_build_descriptor_id`.
 - The state must preserve enough structure for descriptor recompilation and cross-version relabeling.
 - Hidden information remains hidden in player-perspective snapshots.
@@ -40,3 +44,6 @@ Derived deterministic feature examples:
 - `score_source_ids_in_range`
 - `threat_flags.can_reach_enemy_engagement_this_turn`
 - `threat_flags.can_reach_score_source_this_turn`
+
+Version notes:
+- `1.2.0` adds explicit objective-site geometry/control/scoring payloads for terrain-footprint and keyed-feature objective support.

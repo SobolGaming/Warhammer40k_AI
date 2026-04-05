@@ -606,11 +606,12 @@ def create_objectives_from_mission(mission: OfficialMission, game_state=None) ->
     objectives = []
     
     for i, marker in enumerate(mission.get_objective_markers()):
-        objective_point = ObjectivePoint(
+        objective_point = ObjectivePoint.marker(
             x=marker.x,
-            y=marker.y, 
+            y=marker.y,
             z=marker.z,
-            control_radius=marker.control_radius
+            control_radius=marker.control_radius,
+            metadata={"mission_marker_id": str(marker.id or ""), "mission_marker_name": str(marker.name or "")},
         )
         
         # Create simple control objective
@@ -619,7 +620,7 @@ def create_objectives_from_mission(mission: OfficialMission, game_state=None) ->
             category=ObjectiveCategory.PRIMARY,
             points=5,  # Standard points per objective
             description=f"Control {marker.name} to score points",
-            conditions=lambda game, point=objective_point: point.controlling_player is not None,
+            conditions=lambda game, point=objective_point: point.primary_score_source().is_active(point.controlling_player),
             location=objective_point
         )
         

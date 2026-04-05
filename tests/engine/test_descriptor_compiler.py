@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from shapely.geometry import Polygon
+
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.descriptor_compiler import compile_descriptor_bundle
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
 from warhammer40k_ai.roster.army_build import (
@@ -175,3 +179,31 @@ def test_record_resolution_without_context_uses_compiled_descriptor_ids() -> Non
     assert isinstance(descriptor_ids["objective_descriptor_ids"], list)
     assert isinstance(descriptor_ids["terrain_descriptor_ids"], list)
     assert isinstance(descriptor_ids["tool_descriptor_ids"], list)
+
+
+def test_descriptor_compiler_emits_polygon_objective_site_semantics() -> None:
+    game, _player = _build_game()
+    site = ObjectiveSite.terrain_footprint(
+        footprint=Polygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        feature_key="terrain_feature:test",
+        feature_label="Central Ruin",
+    )
+    objective = Objective(
+        name="Central Ruin Objective",
+        category=ObjectiveCategory.PRIMARY,
+        points=5,
+        description="Control the ruin footprint",
+        conditions=lambda game, point=site: point.primary_score_source().is_active(point.controlling_player),
+        location=site,
+    )
+    game.map.objectives = [objective]
+    game.objectives = [objective]
+
+    bundle = compile_descriptor_bundle(game)
+    objective_payload = bundle.objective_descriptors[0].payload
+
+    assert objective_payload["site_kind"] == "TERRAIN_FOOTPRINT"
+    assert objective_payload["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert objective_payload["control_region"]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
+    assert objective_payload["score_source_bindings"] == [f"score_source:objective:{objective.id}"]
+    assert bundle.mission_descriptor.payload["primary_scoring_sources"] == [f"score_source:objective:{objective.id}"]
