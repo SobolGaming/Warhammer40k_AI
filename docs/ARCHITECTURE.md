@@ -252,6 +252,7 @@ Purpose: represent **things that act and can be acted upon** during the game.
 Responsibilities (typical):
 - `Unit`: composition (models), keywords, wounds/strength state, positional state, attachment relationships.
   - `unit.py` stays the stable facade, with extracted combat-runtime helpers in `units/unit_mixins/combat_runtime_mixin.py`.
+  - `units/unit_mixins/positioning_mixin.py` is now also a facade over focused positioning/runtime submixins for lifecycle, enhancement/bodyguard checks, attack bonus resolution, fight movement, and deployment traits.
 - `Model`: per-model wounds/alive state, base/footprint, per-model wargear assignment.
 - `Wargear` / weapon profiles: the equipment a model/unit can use; metadata used by rules/attack resolution.
 - `Ability`: rules-facing descriptors/triggers that the rules layer can bind behavior to.
