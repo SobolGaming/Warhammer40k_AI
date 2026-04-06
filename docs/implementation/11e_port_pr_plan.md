@@ -189,7 +189,7 @@ shows what is done versus what remains.
 | PR-006 | Completed | Pushed to `dev` on April 5, 2026 as commit `327328e8` (`Implement PR-006 mission pack compiler and deployment split`). |
 | PR-007 | Completed | Pushed to `dev` on April 5, 2026 as commit `f5f265c7` (`Implement PR-007 objective site runtime and map split`). |
 | PR-008 | Completed | Pushed to `dev` on April 5, 2026 as commit `412032aa` (`Implement PR-008 optional attachment runtime and setup integration`). |
-| PR-009 | Pending | Not started. |
+| PR-009 | Completed | Pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`). |
 | PR-010 | Pending | Not started. |
 | PR-011 | Pending | Not started. |
 | PR-012 | Pending | Not started. |
@@ -650,7 +650,7 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 
 ## PR-009 — Edition invariants, combat timing hooks, and attack/fight decomposition
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`).
 
 ### Goal
 Centralize the engine services, validation points, and timing hooks required by the previewed 11th-edition invariants, and split the combat monoliths while doing it. Do not treat preview text as final canonical behavior until PR-012.
@@ -670,7 +670,7 @@ These are rules-semantics changes that should live at engine level, not as incid
 4. Decompose:
    - `attack_resolution.py` -> `attack_sequence.py`, `attack_modifiers.py`, `damage_allocation.py`, `attack_reporting.py`
    - `fight_phase_manager.py` -> `fight_order.py`, `fight_engagement.py`, `fight_resolution.py`
-   - `unit.py` combat-related behavior -> `unit_combat.py`
+   - `unit.py` combat-related behavior -> `unit_mixins/combat_runtime_mixin.py` while preserving `unit.py` as the required facade
 5. Make these invariant checks version-aware through the rules bundle / adapter layer, but target 11th as the default end state.
 
 ### Start condition
