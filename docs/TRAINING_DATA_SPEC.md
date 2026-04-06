@@ -2,6 +2,11 @@
 
 Manifest module:
 - `src/warhammer40k_ai/engine/training_manifest.py`
+  - façade over:
+    - `training_manifest_schema.py`
+    - `training_manifest_builder.py`
+    - `training_manifest_io.py`
+    - `training_manifest_validate.py`
 
 CLI:
 - `scripts/build_training_manifest.py`
@@ -19,10 +24,33 @@ Manifest fields:
 - `total_records`
 - `rules_bundle_ids`
 - `descriptor_bundle_ids`
+- `mission_descriptor_ids`
+- `objective_descriptor_ids`
+- `terrain_descriptor_ids`
+- `deployment_descriptor_ids`
+- `army_build_descriptor_ids`
+- `tool_descriptor_ids`
 - `decision_type_counts`
 - `coverage`
 - `gameplay_quality`
 - `gate_requirements`
+- `slice_filters`
+
+Slice/filter fields:
+- `slice_filters.rules_bundle_ids`
+- `slice_filters.descriptor_bundle_ids`
+- `slice_filters.mission_descriptor_ids`
+- `slice_filters.objective_descriptor_ids`
+- `slice_filters.terrain_descriptor_ids`
+- `slice_filters.deployment_descriptor_ids`
+- `slice_filters.army_build_descriptor_ids`
+- `slice_filters.tool_descriptor_ids`
+
+Filtering semantics:
+- OR within one filter family
+- AND across different filter families
+- objective / terrain / tool filters match records that contain any requested descriptor in that family
+- rules / descriptor-bundle / mission / deployment / army-build filters match exact ids
 
 Coverage metrics:
 - `records_with_semantic_candidate_metadata`
@@ -118,6 +146,18 @@ python scripts/build_training_manifest.py \
   --min-tier3-records 10000
 ```
 
+Filtered slice example:
+
+```bash
+python scripts/build_training_manifest.py \
+  --input data/decision_records_relabeled.json \
+  --output data/training_manifest_gladius.json \
+  --source-tag mixed \
+  --rules-bundle-id rules_bundle:preview_11e \
+  --army-build-descriptor-id army_build_descriptor:gladius_slice \
+  --tool-descriptor-id tool_descriptor:stratagem:armor_of_contempt
+```
+
 CI gate example:
 
 ```bash
@@ -153,9 +193,23 @@ Validation policy:
 Purpose before ML libraries:
 - lock dataset structure and gate checks at the engine boundary
 - make retraining scope auditable by rules/descriptor provenance
+- make slice definitions auditable by rules bundle, army-build descriptor, and descriptor-family provenance
 - prevent silent regressions in candidate-semantic coverage
 - prevent low-information self-play corpora (for example repeated no-progression/near-0-0 games) from entering training
 - keep reward shaping explicit and profile-versioned (`docs/TRAINING_REWARD_PROFILES.md`)
+
+## Safe Pre-11th Training Policy
+
+Allowed before final 11th rules land:
+- Tier 3 micro-executors
+- candidate-level movement, targeting, and fight-order scorers
+- deterministic tool-usage policies conditioned on `rules_bundle_id`, `descriptor_bundle_id`, and descriptor families
+
+Deferred until final 11th rules land:
+- Tier 1 strategic planners
+- mission-wide planning policies tied to current objective geometry
+- deployment rankers that internalize the old mission system as canonical
+- list-building agents
 
 ## Deployment imitation/ranking artifacts
 

@@ -24,6 +24,7 @@ from warhammer40k_ai.engine.relabel import (
     relabel_decision_record,
 )
 from warhammer40k_ai.engine.ruleset import RulesetBundle
+from warhammer40k_ai.engine.version_adapter import build_version_adapter_boundary
 from warhammer40k_ai.roster.player import Player
 
 
@@ -108,10 +109,28 @@ def test_relabel_marks_invalid_when_chosen_action_missing() -> None:
 
 def _semantic_record(decision_type: str, params: dict, metadata: dict | None = None) -> dict:
     source_bundle = _target_bundle_with_suffix("source")
+    descriptor_ids = {
+        "mission_descriptor_id": "mission_descriptor:test",
+        "objective_descriptor_ids": ["objective_descriptor:test"],
+        "terrain_descriptor_ids": ["terrain_descriptor:test"],
+        "deployment_descriptor_id": "deployment_descriptor:test",
+        "army_build_descriptor_id": "army_build_descriptor:test",
+        "tool_descriptor_ids": ["tool_descriptor:stratagem:test"],
+    }
+    descriptor_bundle_id = "descriptor_bundle:test"
+    version_adapter_boundary = build_version_adapter_boundary(
+        {
+            "rules_bundle_id": source_bundle.rules_bundle_id,
+            "descriptor_bundle_id": descriptor_bundle_id,
+            "descriptor_ids": descriptor_ids,
+        }
+    ).to_dict()
     return {
         "decision_type": decision_type,
         "rules_bundle": source_bundle.to_dict(),
         "rules_bundle_id": source_bundle.rules_bundle_id,
+        "descriptor_bundle_id": descriptor_bundle_id,
+        "version_adapter_boundary": version_adapter_boundary,
         "candidates": [
             {
                 "action_id": f"{decision_type}:candidate",
@@ -123,14 +142,7 @@ def _semantic_record(decision_type: str, params: dict, metadata: dict | None = N
         "chosen_action_id": f"{decision_type}:candidate",
         "valid": True,
         "phase": "MOVEMENT",
-        "descriptor_ids": {
-            "mission_descriptor_id": "mission_descriptor:test",
-            "objective_descriptor_ids": ["objective_descriptor:test"],
-            "terrain_descriptor_ids": ["terrain_descriptor:test"],
-            "deployment_descriptor_id": "deployment_descriptor:test",
-            "army_build_descriptor_id": "army_build_descriptor:test",
-            "tool_descriptor_ids": ["tool_descriptor:stratagem:test"],
-        },
+        "descriptor_ids": descriptor_ids,
         "omniscient_state": {},
     }
 
@@ -210,3 +222,42 @@ def test_relabel_semantic_metadata_value_shift_for_required_decision_classes() -
             float(metadata.get(key, 0.0)) != float(source_metadata.get(key, 0.0))
             for key in SEMANTIC_NUMERIC_KEYS
         )
+
+
+def test_relabel_preserves_descriptor_and_state_provenance_fields() -> None:
+    target_bundle = _target_bundle_with_suffix("target")
+    record = _semantic_record(
+        DECISION_MOVE_UNIT,
+        {
+            "action": "confirm",
+            "unit_id": "unit_1",
+            "movement_type": "move",
+        },
+        metadata={"candidate_kind": "move"},
+    )
+    record["omniscient_state"] = {
+        "army_build_state": {
+            "army_build_descriptor_id": "army_build_descriptor:test",
+            "players": [
+                {
+                    "player_id": "player:test:1",
+                    "force_disposition": "Assault",
+                    "detachments": [{"selection_id": "detachment_alpha"}],
+                    "attachment_bindings": [{"binding_id": "binding_1"}],
+                }
+            ],
+        },
+        "objectives": [{"objective_site_id": "objective_site:1"}],
+        "scoring_surfaces": [{"score_source_id": "score_source:objective:1"}],
+        "control_regions": [{"region_id": "region:objective:1"}],
+    }
+
+    relabeled = relabel_decision_record(record, target_rules_bundle=target_bundle)
+
+    assert relabeled["descriptor_bundle_id"] == record["descriptor_bundle_id"]
+    assert relabeled["version_adapter_boundary"] == record["version_adapter_boundary"]
+    assert relabeled["descriptor_ids"] == record["descriptor_ids"]
+    assert relabeled["omniscient_state"]["army_build_state"] == record["omniscient_state"]["army_build_state"]
+    assert relabeled["omniscient_state"]["objectives"] == record["omniscient_state"]["objectives"]
+    assert relabeled["omniscient_state"]["scoring_surfaces"] == record["omniscient_state"]["scoring_surfaces"]
+    assert relabeled["omniscient_state"]["control_regions"] == record["omniscient_state"]["control_regions"]

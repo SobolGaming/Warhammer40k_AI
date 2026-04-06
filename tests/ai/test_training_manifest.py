@@ -3,6 +3,7 @@ from __future__ import annotations
 from warhammer40k_ai.engine.training_manifest import (
     PRE_ML_BASELINE_GATE_PROFILE_ID,
     build_training_manifest,
+    filter_training_records,
     validate_gate_profile_compliance,
     validate_training_manifest,
 )
@@ -33,6 +34,7 @@ def _record(decision_id: str, decision_type: str, *, relabel_status: str = "upda
         "decision_type": decision_type,
         "game_id": "game:test",
         "rules_bundle_id": "rules_bundle:test",
+        "descriptor_bundle_id": "descriptor_bundle:test",
         "relabel_status": relabel_status,
         "omniscient_state": {
             "players": [
@@ -147,3 +149,62 @@ def test_build_training_manifest_tracks_deployment_surface_coverage() -> None:
     assert float(coverage.get("deployment_semantic_metadata_ratio", 0.0) or 0.0) == 1.0
     gate = dict(manifest.get("gate_requirements", {}) or {})
     assert bool(gate.get("meets_required_deployment_semantic_metadata_ratio", False)) is True
+
+
+def test_build_training_manifest_lists_descriptor_family_ids_and_slice_filters() -> None:
+    record = _record("d1", "MOVE_UNIT")
+    manifest = build_training_manifest(
+        [record],
+        source_tag="human",
+        min_tier3_records=1,
+        rules_bundle_ids=["rules_bundle:test"],
+        army_build_descriptor_ids=["army_build_descriptor:test"],
+    ).to_dict()
+
+    assert manifest["descriptor_bundle_ids"] == ["descriptor_bundle:test"]
+    assert manifest["mission_descriptor_ids"] == ["mission_descriptor:test"]
+    assert manifest["objective_descriptor_ids"] == ["objective_descriptor:test"]
+    assert manifest["terrain_descriptor_ids"] == ["terrain_descriptor:test"]
+    assert manifest["deployment_descriptor_ids"] == ["deployment_descriptor:test"]
+    assert manifest["army_build_descriptor_ids"] == ["army_build_descriptor:test"]
+    assert manifest["tool_descriptor_ids"] == ["tool_descriptor:test"]
+    assert manifest["slice_filters"] == {
+        "rules_bundle_ids": ["rules_bundle:test"],
+        "descriptor_bundle_ids": [],
+        "mission_descriptor_ids": [],
+        "objective_descriptor_ids": [],
+        "terrain_descriptor_ids": [],
+        "deployment_descriptor_ids": [],
+        "army_build_descriptor_ids": ["army_build_descriptor:test"],
+        "tool_descriptor_ids": [],
+    }
+
+
+def test_filter_training_records_can_filter_on_army_build_and_tool_descriptors() -> None:
+    keep = _record("d1", "MOVE_UNIT")
+    keep["descriptor_bundle_id"] = "descriptor_bundle:keep"
+    keep["descriptor_ids"]["army_build_descriptor_id"] = "army_build_descriptor:keep"
+    keep["descriptor_ids"]["tool_descriptor_ids"] = ["tool_descriptor:keep", "tool_descriptor:shared"]
+
+    drop = _record("d2", "DECLARE_SHOTS")
+    drop["descriptor_bundle_id"] = "descriptor_bundle:drop"
+    drop["descriptor_ids"]["army_build_descriptor_id"] = "army_build_descriptor:drop"
+    drop["descriptor_ids"]["tool_descriptor_ids"] = ["tool_descriptor:drop"]
+
+    filtered, slice_filters = filter_training_records(
+        [keep, drop],
+        army_build_descriptor_ids=["army_build_descriptor:keep"],
+        tool_descriptor_ids=["tool_descriptor:shared"],
+    )
+
+    assert [record["decision_id"] for record in filtered] == ["d1"]
+    assert slice_filters.to_dict() == {
+        "rules_bundle_ids": [],
+        "descriptor_bundle_ids": [],
+        "mission_descriptor_ids": [],
+        "objective_descriptor_ids": [],
+        "terrain_descriptor_ids": [],
+        "deployment_descriptor_ids": [],
+        "army_build_descriptor_ids": ["army_build_descriptor:keep"],
+        "tool_descriptor_ids": ["tool_descriptor:shared"],
+    }

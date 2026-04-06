@@ -43,6 +43,11 @@ def test_decision_record_valid_choice_has_chosen_action_in_candidates() -> None:
     action_ids = {str(c["action_id"]) for c in record["candidates"]}
     assert record["valid"] is True
     assert record["chosen_action_id"] in action_ids
+    assert str(record.get("descriptor_bundle_id", "")).startswith("descriptor_bundle:")
+    boundary = dict(record.get("version_adapter_boundary", {}) or {})
+    assert boundary["rules_bundle_id"] == record["rules_bundle_id"]
+    assert boundary["descriptor_bundle_id"] == record["descriptor_bundle_id"]
+    assert boundary["descriptor_ids"] == record["descriptor_ids"]
 
 
 def test_decision_record_invalid_attempt_logs_rejection() -> None:

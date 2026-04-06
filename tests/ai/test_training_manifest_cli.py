@@ -25,6 +25,7 @@ def _record(decision_id: str, decision_type: str) -> dict:
         "decision_type": decision_type,
         "game_id": "game:test",
         "rules_bundle_id": "rules_bundle:test",
+        "descriptor_bundle_id": "descriptor_bundle:test",
         "relabel_status": "updated_under_target_rules_bundle",
         "omniscient_state": {
             "players": [
@@ -177,3 +178,47 @@ def test_build_training_manifest_cli_enforce_gate_profile_passes_for_baseline_da
     assert completed.returncode == 0
     manifest = json.loads(output_path.read_text(encoding="utf-8"))
     assert manifest["gate_requirements"]["meets_gate_profile"] is True
+
+
+def test_build_training_manifest_cli_filters_on_army_build_descriptor(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    input_path = tmp_path / "records.json"
+    output_path = tmp_path / "manifest.json"
+    keep = _record("d1", "MOVE_UNIT")
+    keep["descriptor_bundle_id"] = "descriptor_bundle:keep"
+    keep["descriptor_ids"]["army_build_descriptor_id"] = "army_build_descriptor:keep"
+    drop = _record("d2", "DECLARE_SHOTS")
+    drop["descriptor_bundle_id"] = "descriptor_bundle:drop"
+    drop["descriptor_ids"]["army_build_descriptor_id"] = "army_build_descriptor:drop"
+    input_path.write_text(
+        json.dumps([keep, drop], indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    script_path = repo_root / "scripts" / "build_training_manifest.py"
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--input",
+        str(input_path),
+        "--output",
+        str(output_path),
+        "--source-tag",
+        "mixed",
+        "--min-tier3-records",
+        "1",
+        "--army-build-descriptor-id",
+        "army_build_descriptor:keep",
+    ]
+    completed = subprocess.run(
+        cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+    assert completed.returncode == 0
+    manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert manifest["total_records"] == 1
+    assert manifest["army_build_descriptor_ids"] == ["army_build_descriptor:keep"]
+    assert manifest["slice_filters"]["army_build_descriptor_ids"] == ["army_build_descriptor:keep"]

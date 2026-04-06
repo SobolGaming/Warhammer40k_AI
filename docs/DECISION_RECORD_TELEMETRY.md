@@ -9,8 +9,11 @@ Runtime guarantees:
 - A `DecisionRecord` is emitted for each resolved decision.
 - Every record includes decomposed `rules_bundle` ids plus convenience `rules_bundle_id`.
 - Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/army-build/tool`) used at record time.
+- Every record includes the compiled `descriptor_bundle_id` used for the request.
+- Every record includes `version_adapter_boundary`, preserving the exact adapter-conditioned replay/training boundary that was active when the decision was made.
 - Decision context descriptor ids are compiled by Tier 0 (`docs/RULES_DESCRIPTOR_COMPILER.md`) and injected by `Game.request_decision(...)`.
 - If a request is recorded without descriptor ids in context, `DecisionRecordStore` recompiles descriptor ids from current game state before emission.
+- If a request is recorded without `descriptor_bundle_id` / `version_adapter_boundary`, `DecisionRecordStore` reconstructs them from the active rules bundle plus compiled descriptors before emission.
 - Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.
 - Semantic numeric metadata is computed deterministically from decision context and candidate params (movement, deployment-pregame, targeting, charge, fight, and tool classes), rather than static heuristic defaults.
 - Deployment candidates may include extra pregame deltas (`reserve_denial_delta`, `screen_integrity_delta`, `countercharge_coverage_delta`, `aura_connectivity_delta`, `projected_exposure_delta_if_enemy_goes_first`, `projected_melee_staging_delta`) in addition to portable `projected_*` keys.
@@ -21,6 +24,14 @@ Runtime guarantees:
 - For freeform human payloads (movement payloads with `model_positions`), the engine may inject a `HumanActionCandidate` so the chosen action is represented inside `candidates`.
 - Network auto-dice resolution paths (controller-hub and fallback event subscription) use the same `AutoDiceDecisionController` logic.
 - In-memory retention is bounded: default `1024` records (`WH40K_DECISION_RECORD_MAX`), oldest-first pruning, with `dropped_records` tracking.
+
+Replay/relabel provenance surfaces inside `omniscient_state`:
+- `army_build_state` including `army_build_descriptor_id`, detachments, attachment bindings, and Force Disposition
+- `objectives`
+- `scoring_surfaces`
+- `control_regions`
+
+These surfaces are preserved so replay, relabeling, and manifest slicing can condition on the same 11th-oriented runtime state that produced the original decision.
 
 Determinism fields:
 - `global_seed`

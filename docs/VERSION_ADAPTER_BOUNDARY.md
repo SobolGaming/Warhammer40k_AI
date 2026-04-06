@@ -28,6 +28,11 @@ Purpose:
 - stabilize adapter inputs before introducing ML framework dependencies
 - distinguish not just mission/deployment/terrain semantics, but also the army-construction semantics that produced the battle
 
+Persistence guarantees:
+- `Game.request_decision(...)` injects `descriptor_bundle_id` and `version_adapter_boundary` into decision context.
+- `DecisionRecordStore` preserves both fields in emitted DecisionRecords so replay, relabeling, and manifest building do not silently lose adapter provenance.
+- Training manifests can slice on `rules_bundle_id`, `descriptor_bundle_id`, and descriptor-family ids without recomputing or guessing the original adapter boundary.
+
 Edition-invariant consumers:
 - `src/warhammer40k_ai/engine/combat_timing.py` derives `CombatTimingProfile` from the active `rules_bundle_id` / version-adapter context.
 - Combat timing currently centralizes charge-target binding timing, fight-phase starting-player selection, pile-in/consolidate step enablement, and disembark charge policy selection behind that profile.

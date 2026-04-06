@@ -13,6 +13,8 @@
     "rules_bundle",
     "rules_bundle_id",
     "descriptor_ids",
+    "descriptor_bundle_id",
+    "version_adapter_boundary",
     "global_seed",
     "decision_seed",
     "omniscient_state",
@@ -49,6 +51,12 @@
     },
     "descriptor_ids": {
       "$ref": "#/$defs/DescriptorIds"
+    },
+    "descriptor_bundle_id": {
+      "type": "string"
+    },
+    "version_adapter_boundary": {
+      "$ref": "#/$defs/VersionAdapterBoundary"
     },
     "global_seed": {
       "type": "integer",
@@ -236,6 +244,49 @@
           "items": {
             "type": "string"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "VersionAdapterBoundary": {
+      "type": "object",
+      "required": [
+        "adapter_family",
+        "adapter_version",
+        "adapter_id",
+        "rules_bundle_id",
+        "descriptor_bundle_id",
+        "descriptor_ids",
+        "conditioning_keys",
+        "conditioning_signature"
+      ],
+      "properties": {
+        "adapter_family": {
+          "type": "string"
+        },
+        "adapter_version": {
+          "type": "string"
+        },
+        "adapter_id": {
+          "type": "string"
+        },
+        "rules_bundle_id": {
+          "type": "string"
+        },
+        "descriptor_bundle_id": {
+          "type": "string"
+        },
+        "descriptor_ids": {
+          "$ref": "#/$defs/DescriptorIds"
+        },
+        "conditioning_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conditioning_signature": {
+          "type": "string"
         }
       },
       "additionalProperties": false

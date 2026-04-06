@@ -60,23 +60,36 @@ def _relabel_context(record: dict[str, Any]) -> dict[str, Any]:
     phase = str(record.get("phase", "") or "")
     if phase:
         context["phase"] = phase
+    descriptor_bundle_id = str(record.get("descriptor_bundle_id", "") or "")
+    if descriptor_bundle_id:
+        context["descriptor_bundle_id"] = descriptor_bundle_id
     descriptor_ids = dict(record.get("descriptor_ids", {}) or {})
     if descriptor_ids:
         context["descriptor_ids"] = descriptor_ids
         context["tool_descriptor_ids"] = list(descriptor_ids.get("tool_descriptor_ids", []) or [])
+    version_adapter_boundary = dict(record.get("version_adapter_boundary", {}) or {})
+    if version_adapter_boundary:
+        context["version_adapter_boundary"] = version_adapter_boundary
     omniscient_state = record.get("omniscient_state")
     if isinstance(omniscient_state, dict):
         for key in (
+            "army_build_state",
+            "deployment_state",
             "movement_intent",
             "score_window_state",
             "opportunity_catalog",
             "mission_state",
+            "objectives",
+            "scoring_surfaces",
+            "control_regions",
             "terrain_state_summary",
             "cp_reserve_policy",
         ):
             value = omniscient_state.get(key)
             if isinstance(value, dict):
                 context[key] = dict(value)
+            elif isinstance(value, list):
+                context[key] = [dict(item or {}) if isinstance(item, dict) else item for item in list(value or [])]
     return context
 
 

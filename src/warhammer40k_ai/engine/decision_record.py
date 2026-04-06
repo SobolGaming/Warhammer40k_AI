@@ -8,13 +8,15 @@ from pathlib import Path
 import time
 from typing import Any, Optional
 
+from .descriptor_bundle import descriptor_bundle_id as build_descriptor_bundle_id
 from .descriptor_compiler import compile_descriptor_bundle
 from .decisions import CandidateAction, DecisionRequest, DecisionResult
 from .path_witness import build_model_path_witness_for_unit
 from .ruleset import RulesetBundle
 from .state_blob import all_player_obs_states, canonical_omniscient_state
+from .version_adapter import build_version_adapter_boundary
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 DEFAULT_MISSION_DESCRIPTOR_ID = "unknown_mission_descriptor"
 DEFAULT_DEPLOYMENT_DESCRIPTOR_ID = "unknown_deployment_descriptor"
 DEFAULT_ARMY_BUILD_DESCRIPTOR_ID = "unknown_army_build_descriptor"
@@ -173,6 +175,47 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
     }
 
 
+def _context_descriptor_bundle_id(
+    request: DecisionRequest,
+    game: object,
+    descriptor_ids: dict[str, Any],
+) -> str:
+    ctx = dict(getattr(request, "context", {}) or {})
+    explicit = str(ctx.get("descriptor_bundle_id", "") or "")
+    if explicit:
+        return explicit
+    compiled_bundle = compile_descriptor_bundle(game)
+    compiled_descriptor_ids = compiled_bundle.descriptor_ids()
+    if descriptor_ids == compiled_descriptor_ids:
+        return str(compiled_bundle.bundle_id or "")
+    return build_descriptor_bundle_id(
+        mission_descriptor_id=str(descriptor_ids.get("mission_descriptor_id", "") or ""),
+        objective_descriptor_ids=list(descriptor_ids.get("objective_descriptor_ids", []) or []),
+        terrain_descriptor_ids=list(descriptor_ids.get("terrain_descriptor_ids", []) or []),
+        deployment_descriptor_id=str(descriptor_ids.get("deployment_descriptor_id", "") or ""),
+        army_build_descriptor_id=str(descriptor_ids.get("army_build_descriptor_id", "") or ""),
+        tool_descriptor_ids=list(descriptor_ids.get("tool_descriptor_ids", []) or []),
+    )
+
+
+def _context_version_adapter_boundary(
+    request: DecisionRequest,
+    *,
+    rules_bundle_id: str,
+    descriptor_bundle_id: str,
+    descriptor_ids: dict[str, Any],
+) -> dict[str, Any]:
+    ctx = dict(getattr(request, "context", {}) or {})
+    raw = ctx.get("version_adapter_boundary")
+    if isinstance(raw, dict):
+        return dict(raw)
+    boundary_context = dict(ctx)
+    boundary_context["rules_bundle_id"] = str(rules_bundle_id or "")
+    boundary_context["descriptor_bundle_id"] = str(descriptor_bundle_id or "")
+    boundary_context["descriptor_ids"] = dict(descriptor_ids or {})
+    return build_version_adapter_boundary(boundary_context).to_dict()
+
+
 def _ensure_outcome_shape(outcome: dict[str, Any]) -> dict[str, Any]:
     immediate = dict(outcome.get("immediate_deltas", {}) or {})
     normalized: dict[str, Any] = {"immediate_deltas": immediate}
@@ -245,6 +288,7 @@ class DecisionRecordSchemaValidator:
         self._candidate_required = set(defs.get("CandidateAction", {}).get("required", []) or [])
         self._rules_bundle_required = set(defs.get("RulesBundle", {}).get("required", []) or [])
         self._descriptor_required = set(defs.get("DescriptorIds", {}).get("required", []) or [])
+        self._adapter_required = set(defs.get("VersionAdapterBoundary", {}).get("required", []) or [])
 
     def validate(self, record: dict[str, Any]) -> list[str]:
         errors: list[str] = []
@@ -294,6 +338,19 @@ class DecisionRecordSchemaValidator:
             for key in ("objective_descriptor_ids", "terrain_descriptor_ids", "tool_descriptor_ids"):
                 if key in descriptor_ids and not isinstance(descriptor_ids.get(key), list):
                     errors.append(f"descriptor_ids.{key} must be a list")
+        descriptor_bundle_id = str(record.get("descriptor_bundle_id", "") or "")
+        if not descriptor_bundle_id:
+            errors.append("descriptor_bundle_id must be a non-empty string")
+        version_adapter_boundary = record.get("version_adapter_boundary")
+        if not isinstance(version_adapter_boundary, dict):
+            errors.append("version_adapter_boundary must be an object")
+        else:
+            missing_boundary = sorted(field for field in self._adapter_required if field not in version_adapter_boundary)
+            if missing_boundary:
+                errors.append(
+                    "version_adapter_boundary missing required fields: "
+                    + ", ".join(missing_boundary)
+                )
 
         valid_flag = record.get("valid", True)
         if valid_flag is False:
@@ -366,6 +423,13 @@ class DecisionRecordStore:
     ) -> dict[str, Any]:
         rules_bundle = _context_rules_bundle(request, self.game)
         descriptor_ids = _context_descriptor_ids(request, self.game)
+        descriptor_bundle_id = _context_descriptor_bundle_id(request, self.game, descriptor_ids)
+        version_adapter_boundary = _context_version_adapter_boundary(
+            request,
+            rules_bundle_id=str(rules_bundle.rules_bundle_id or ""),
+            descriptor_bundle_id=descriptor_bundle_id,
+            descriptor_ids=descriptor_ids,
+        )
         global_seed = self._global_seed()
         decision_seed = self._decision_seed(request, global_seed)
         record = {
@@ -378,6 +442,8 @@ class DecisionRecordStore:
             "rules_bundle": rules_bundle.to_dict(),
             "rules_bundle_id": str(rules_bundle.rules_bundle_id),
             "descriptor_ids": descriptor_ids,
+            "descriptor_bundle_id": descriptor_bundle_id,
+            "version_adapter_boundary": version_adapter_boundary,
             "global_seed": global_seed,
             "decision_seed": decision_seed,
             "omniscient_state": _default_omniscient_state(self.game),

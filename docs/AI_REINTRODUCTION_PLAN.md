@@ -790,6 +790,19 @@ This is the preferred path for mission-pack churn, terrain-pack churn, and editi
 - Keep mission, objective, terrain, deployment, and tool semantics patchable as data.
 - Recompute semantic candidate features under the current bundle rather than reusing stale policy assumptions.
 
+## Safe To Train Before Final 11th Rules
+
+Allowed before final 11th rules land:
+- Tier 3 micro-executors
+- candidate-level movement, targeting, and fight-order scorers
+- deterministic tool-usage policies conditioned on `rules_bundle_id`, `descriptor_bundle_id`, and descriptor-family metadata
+
+Deferred until final 11th rules land:
+- Tier 1 strategic planners
+- mission-wide planning policies tied to current objective geometry
+- deployment rankers that internalize the old mission system as canonical
+- list-building agents
+
 ## ML Gate Criteria (Must Be Closed Before PR 15)
 
 - Training data specification finalized:
