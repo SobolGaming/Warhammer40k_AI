@@ -3928,6 +3928,7 @@ class StateAttachmentMixin:
         if self not in supports:
             supports.append(self)
         bodyguard.attached_support_units = supports
+        self._mark_support_attachment_binding(bodyguard, binding_id=None, source="runtime")
         # Refresh caches
         try:
             self._invalidate_ability_cache()
@@ -3950,6 +3951,7 @@ class StateAttachmentMixin:
         if self in supports:
             supports.remove(self)
         bodyguard.attached_support_units = supports
+        self._clear_support_attachment_binding(bodyguard)
         self.support_joined_to = None
         try:
             self._invalidate_ability_cache()
@@ -4225,6 +4227,7 @@ class StateAttachmentMixin:
         if self not in current:
             current.append(self)
         bodyguard.attached_leaders = current
+        self._mark_leader_attachment_binding(bodyguard, binding_id=None, source="runtime")
         try:
             self._apply_attached_possessed_formation_bonus(bodyguard)
         except Exception:
@@ -4369,6 +4372,7 @@ class StateAttachmentMixin:
             bodyguard.attached_leaders = leaders
         except Exception:
             pass
+        self._clear_leader_attachment_binding(bodyguard)
         self.attached_to = None
         try:
             self._clear_attached_unit_bodyguard_leader_scouts()

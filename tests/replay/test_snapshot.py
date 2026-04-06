@@ -400,6 +400,69 @@ def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
     assert loaded_army.detachment_points_summary == {"budget": 4, "spent": 2, "remaining": 2}
 
 
+def test_snapshot_roundtrip_preserves_authored_leader_attachment_runtime_state(waha_helper) -> None:
+    captain_datasheet = waha_helper.get_full_datasheet_info_by_name("Captain", faction_id="SM")
+    bodyguard_datasheet = waha_helper.get_full_datasheet_info_by_name("Bladeguard Veteran Squad", faction_id="SM")
+    assert captain_datasheet is not None
+    assert bodyguard_datasheet is not None
+
+    captain = Unit(captain_datasheet)
+    bodyguard = Unit(bodyguard_datasheet)
+
+    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army.faction_id = "SM"
+    army.add_unit(captain)
+    army.add_unit(bodyguard)
+    captain.set_build_entry_id("unit_captain")
+    bodyguard.set_build_entry_id("unit_bladeguard")
+    apply_validated_muster_to_army(
+        army,
+        ValidatedMuster(
+            blueprint=ArmyBlueprint(
+                faction="Space Marines",
+                points_limit=2000,
+                detachments=[
+                    DetachmentSelection(
+                        selection_id="detachment_alpha",
+                        detachment_type="Gladius Task Force",
+                    )
+                ],
+                unit_entries=[
+                    RosterEntry(entry_id="unit_captain", name="Captain"),
+                    RosterEntry(entry_id="unit_bladeguard", name="Bladeguard Veteran Squad"),
+                ],
+                attachment_bindings=[
+                    AttachmentBinding(
+                        binding_id="binding_1",
+                        bodyguard_entry_id="unit_bladeguard",
+                        leader_entry_id="unit_captain",
+                    )
+                ],
+            ),
+            faction_id="SM",
+        ),
+    )
+    army.apply_authored_attachment_bindings()
+
+    player = Player("Player One", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.map.units = [bodyguard]
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_army = loaded.players[0].army
+    loaded_units = {
+        str(getattr(unit, "build_entry_id", "") or ""): unit
+        for unit in list(loaded_army.units or [])
+    }
+    loaded_captain = loaded_units["unit_captain"]
+    loaded_bodyguard = loaded_units["unit_bladeguard"]
+
+    assert loaded_captain.attached_to is loaded_bodyguard
+    assert loaded_bodyguard.attached_leaders == [loaded_captain]
+    assert loaded_captain.has_build_authored_leader_attachment() is True
+    assert loaded_army.attachment_bindings[0].leader_entry_id == "unit_captain"
+
+
 def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_helper):
     game, unit_one, _, player_one, _ = _build_game(waha_helper)
 

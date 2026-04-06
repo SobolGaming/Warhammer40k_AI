@@ -1139,6 +1139,9 @@ def build_leader_attachment_requests(
     ]
     requests: List[DecisionRequest] = []
     for leader in leaders:
+        authored_binding = getattr(leader, "has_build_authored_leader_attachment", None)
+        if callable(authored_binding) and authored_binding():
+            continue
         options = _leader_attachment_options(leader, bodyguards)
         prompt = f"Attach leader {getattr(leader, 'name', 'Leader')}"
         request = DecisionRequest.create(
@@ -1203,6 +1206,9 @@ def build_support_artillery_attachment_requests(
     ]
     requests: List[DecisionRequest] = []
     for support_unit in supports:
+        authored_binding = getattr(support_unit, "has_build_authored_support_attachment", None)
+        if callable(authored_binding) and authored_binding():
+            continue
         options = _support_artillery_attachment_options(support_unit, bodyguards)
         current = getattr(support_unit, "support_joined_to", None)
         has_target_options = any(

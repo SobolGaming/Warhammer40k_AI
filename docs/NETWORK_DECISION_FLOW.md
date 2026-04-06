@@ -86,9 +86,11 @@ This is the first **simultaneous** decision stage. Each player can resolve their
 own formation choices independently while the server waits for both to finish.
 
 1. Server builds formation decisions per player:
+   - First applies authored build-time attachment bindings when they can be matched to
+     runtime units.
    - `CONFIRM_YES_NO` (Hover mode for eligible AIRCRAFT)
-   - `ATTACH_LEADER`
-   - `ATTACH_SUPPORT_ARTILLERY`
+   - `ATTACH_LEADER` (only for Leaders still unresolved after any authored bindings)
+   - `ATTACH_SUPPORT_ARTILLERY` (only for joined-support units still unresolved after any authored bindings)
    - `ASSIGN_TRANSPORT`
    - `DECLARE_RESERVES`
    - `CHOOSE_PLAGUE` (Death Guard faction — Nurgle's Gift army rule, if applicable)
@@ -104,6 +106,11 @@ own formation choices independently while the server waits for both to finish.
 
 If there are **no** formation decisions, the server executes and advances
 normally (broadcasting the commands/events).
+
+This preserves current 10th-edition parity:
+- rosters without authored attachment bindings still resolve attachments through
+  normal formation decisions
+- authored bindings only suppress the matching dialogs they have already resolved
 
 ---
 

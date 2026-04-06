@@ -60,6 +60,18 @@ Current ordered steps:
 The first seven steps are the explicit preview-aligned pregame model.
 Steps 8-12 are the legacy compatibility tail that still reflects the current runtime.
 
+## Declare Battle Formations Attachment Seeding
+
+`DECLARE_BATTLE_FORMATIONS` now has an explicit build/runtime attachment seam:
+
+- If an army carries authored `AttachmentBinding` records that can be matched to
+  runtime units through `build_entry_id`, those bindings are applied first.
+- `ATTACH_LEADER` and `ATTACH_SUPPORT_ARTILLERY` decisions are then queued only for
+  unresolved units.
+- This keeps the current 10th-edition flow intact for parsed lists and other rosters
+  that did not author attachments at list-build time, while allowing optional
+  build-authored bindings to pre-seed runtime setup.
+
 ## Mapping To Current `SetupPhase`
 
 The explicit step model intentionally keeps the existing `SetupPhase` enum stable.

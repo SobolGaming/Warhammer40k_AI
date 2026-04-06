@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from .army import Army
+from .army_attachment_runtime import assign_build_entry_ids_to_units
 from .army_build import DetachmentSelection, ValidatedMuster
 
 
@@ -150,6 +151,8 @@ def apply_validated_muster_to_army(army: Army, validated_muster: ValidatedMuster
         ),
         "warnings": list(validated_muster.warnings or []),
     }
+    if getattr(army, "units", None):
+        assign_build_entry_ids_to_units(army)
     return army
 
 

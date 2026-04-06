@@ -85,13 +85,13 @@ def _append_parsed_build_entry(
     unit_entries: list[RosterEntry],
     enhancement_assignments: list[EnhancementAssignment],
     *,
+    entry_id: str,
     unit_name: str,
     model_count: int,
     wargear_dict: Dict[str, Set[Tuple[str, int]]],
     enhancement: Enhancement | None,
     is_warlord: bool,
 ) -> None:
-    entry_id = f"parsed_unit_{len(unit_entries) + 1}"
     wargear, wargear_metadata = _serialize_wargear_dict(wargear_dict)
     entry = RosterEntry(
         entry_id=entry_id,
@@ -201,6 +201,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
 
         if not _is_bullet_line(line):
             if current_unit:
+                parsed_entry_id = f"parsed_unit_{len(parsed_unit_entries) + 1}"
                 add_unit_to_army(
                     army,
                     current_unit,
@@ -209,10 +210,12 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                     current_enhancement,
                     waha_helper,
                     is_warlord,
+                    build_entry_id=parsed_entry_id,
                 )
                 _append_parsed_build_entry(
                     parsed_unit_entries,
                     parsed_enhancement_assignments,
+                    entry_id=parsed_entry_id,
                     unit_name=current_unit.name,
                     model_count=current_model_count,
                     wargear_dict=current_wargear,
@@ -283,6 +286,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         current_wargear.setdefault(target_name, set()).add((item_name.strip(), quantity))
 
     if current_unit:
+        parsed_entry_id = f"parsed_unit_{len(parsed_unit_entries) + 1}"
         add_unit_to_army(
             army,
             current_unit,
@@ -291,10 +295,12 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             current_enhancement,
             waha_helper,
             is_warlord,
+            build_entry_id=parsed_entry_id,
         )
         _append_parsed_build_entry(
             parsed_unit_entries,
             parsed_enhancement_assignments,
+            entry_id=parsed_entry_id,
             unit_name=current_unit.name,
             model_count=current_model_count,
             wargear_dict=current_wargear,
@@ -368,6 +374,8 @@ def add_unit_to_army(
     enhancement: Enhancement | None,
     waha_helper: WahaHelper,
     is_warlord: bool,
+    *,
+    build_entry_id: str | None = None,
 ) -> None:
     def _normalize_gear_name(text: str) -> str:
         return (
@@ -463,6 +471,12 @@ def add_unit_to_army(
 
     unit.apply_daemonic_allegiance_selection()
     unit.validate_wargear_selection()
+    if build_entry_id:
+        set_entry_id = getattr(unit, "set_build_entry_id", None)
+        if callable(set_entry_id):
+            set_entry_id(build_entry_id)
+        else:
+            unit.build_entry_id = str(build_entry_id)
     if enhancement:
         army.add_enhancement(enhancement, unit)
     army.add_unit(unit)

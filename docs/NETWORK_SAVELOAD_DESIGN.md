@@ -171,8 +171,8 @@ Setup / Mission:
 
 Deployment / Pre-battle:
 - player_color_picker_dialog: CHOOSE_PLAYER_COLOR {player_id, hue_degrees, rgb} (context `selection_kind="player_color"`, `hue_step_degrees=15`)
-- leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
-- support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id} (used for joined support/retinue attachments)
+- leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id} (requested only when no authored build-time leader binding has already been applied during `DECLARE_BATTLE_FORMATIONS`)
+- support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id} (used for joined support/retinue attachments; requested only when no authored build-time support binding has already been applied during `DECLARE_BATTLE_FORMATIONS`)
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
 - deployment_zone_selection_dialog: CHOOSE_DEPLOYMENT_ZONE {zone_choice_id}
 - deployment_next_unit_dialog: SELECT_NEXT_DEPLOY_UNIT {unit_id}

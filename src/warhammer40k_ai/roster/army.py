@@ -1792,30 +1792,14 @@ class Army:
         )
 
     def validate_leaders(self):
-        # Map of units to their attached Leaders
-        unit_leader_map: dict = {}
-        leader_units = [unit for unit in self.units if getattr(unit, "is_leader", False)]
+        from .army_attachment_runtime import validate_leader_attachments
 
-        for leader in leader_units:
-            attached_to = getattr(leader, "attached_to", None)
-            # Leaders may be left unattached in 10e (optional), so only validate if set.
-            if attached_to is None:
-                continue
-            if attached_to not in self.units:
-                raise ArmyValidationError(f"Leader '{leader.name}' is attached to an invalid unit.")
-            if hasattr(leader, "can_attach_to") and not leader.can_attach_to(attached_to):
-                raise ArmyValidationError(f"Leader '{leader.name}' cannot be attached to '{attached_to.name}'.")
+        validate_leader_attachments(self)
 
-            unit_leader_map.setdefault(attached_to, []).append(leader)
+    def apply_authored_attachment_bindings(self) -> dict[str, int]:
+        from .army_attachment_runtime import apply_authored_attachment_bindings
 
-        # Enforce per-bodyguard leader limits
-        for bodyguard, leaders in unit_leader_map.items():
-            max_leaders_fn = getattr(bodyguard, "max_attached_leaders", None)
-            max_leaders = int(max_leaders_fn()) if callable(max_leaders_fn) else 1
-            if len(leaders) > max_leaders:
-                raise ArmyValidationError(
-                    f"Unit '{bodyguard.name}' has {len(leaders)} Leaders attached (max {max_leaders})."
-                )
+        return apply_authored_attachment_bindings(self)
 
     @staticmethod
     def _unit_matches_name_or_datasheet_id(unit, *, normalized_name: str, datasheet_id: str) -> bool:
@@ -1995,86 +1979,9 @@ class Army:
     def validate_support_artillery(self):
         """Validate joined-support attachments (Support Artillery + retinue-style joins)."""
         self.apply_declare_battle_formations_restrictions()
-        bodyguard_map: dict = {}
-        units_to_remove: list[Unit] = []
-        for unit in list(self.units or []):
-            if unit is None:
-                continue
-            try:
-                if not bool(getattr(unit, "has_joined_support_ability", lambda: False)()):
-                    continue
-            except Exception:
-                continue
-            requires_attachment = False
-            requires_attach_fn = getattr(unit, "joined_support_requires_attachment", None)
-            if callable(requires_attach_fn):
-                requires_attachment = bool(requires_attach_fn())
-            joined_to = getattr(unit, "support_joined_to", None)
-            if joined_to is None:
-                if requires_attachment:
-                    eligible_bodyguards: list[Unit] = []
-                    can_join_fn = getattr(unit, "can_join_support_artillery", None)
-                    if callable(can_join_fn):
-                        for candidate in list(self.units or []):
-                            if candidate is None or candidate is unit:
-                                continue
-                            try:
-                                if can_join_fn(candidate):
-                                    eligible_bodyguards.append(candidate)
-                            except Exception:
-                                continue
-                    if eligible_bodyguards:
-                        names = ", ".join(
-                            sorted(
-                                {
-                                    str(getattr(candidate, "name", "Unknown") or "Unknown")
-                                    for candidate in eligible_bodyguards
-                                }
-                            )
-                        )
-                        suffix = f" Eligible units: {names}." if names else "."
-                        raise ArmyValidationError(
-                            f"Joined support unit '{unit.name}' must join an eligible unit during Declare Battle Formations."
-                            f"{suffix}"
-                        )
-                    units_to_remove.append(unit)
-                continue
-            if joined_to not in self.units:
-                raise ArmyValidationError(f"Joined support unit '{unit.name}' is joined to an invalid unit.")
-            try:
-                if hasattr(unit, "can_join_support_artillery") and not unit.can_join_support_artillery(joined_to):
-                    raise ArmyValidationError(
-                        f"Joined support unit '{unit.name}' cannot join '{joined_to.name}'."
-                    )
-            except ArmyValidationError:
-                raise
-            except Exception:
-                raise ArmyValidationError(
-                    f"Joined support unit '{unit.name}' join validation failed for '{joined_to.name}'."
-                )
-            bodyguard_map.setdefault(joined_to, []).append(unit)
+        from .army_attachment_runtime import validate_support_attachments
 
-        for bodyguard, supports in bodyguard_map.items():
-            if len(supports) > 1:
-                names = ", ".join(s.name for s in supports if s)
-                raise ArmyValidationError(
-                    f"Unit '{bodyguard.name}' has multiple joined support units ({names})."
-                )
-
-        for unit in units_to_remove:
-            if unit not in self.units:
-                continue
-            self.units.remove(unit)
-            sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            sr["destroyed_before_battle"] = True
-            sr["destroyed_before_battle_reason"] = "Mandatory joined-support attachment was impossible."
-            unit.special_rules = sr
-            logger.info(
-                "Declare Battle Formations: removed '%s' as destroyed because no eligible mandatory joined-support target was available.",
-                getattr(unit, "name", "Unknown"),
-            )
+        validate_support_attachments(self)
         self._validate_company_heroes_mandatory_leader()
 
     def validate_enhancements(self):
@@ -4229,6 +4136,8 @@ def add_unit_to_army(
     enhancement: Enhancement,
     waha_helper: WahaHelper,
     is_warlord: bool,
+    *,
+    build_entry_id: str | None = None,
 ):
     from .army_parse import add_unit_to_army as _add_unit_to_army
 
@@ -4240,6 +4149,7 @@ def add_unit_to_army(
         enhancement,
         waha_helper,
         is_warlord,
+        build_entry_id=build_entry_id,
     )
 
 

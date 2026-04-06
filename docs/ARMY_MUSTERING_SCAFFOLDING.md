@@ -127,6 +127,9 @@ the only path that builds full runtime units today.
   - `add_unit_to_army()`
 - Parsed list files now also attach a build-side `ArmyBlueprint` / `ValidatedMuster`
   summary to the runtime `Army` so parsed rosters participate in the same new build model.
+- Parsed list units now also receive deterministic `build_entry_id` values aligned with
+  the parsed `RosterEntry` records so authored attachment bindings can be projected into
+  runtime setup when present.
 
 #### Save/load scaffolding
 
@@ -138,14 +141,19 @@ the only path that builds full runtime units today.
 - Runtime `DetachmentInstance` values are also serializable through army snapshot state, and
   session manifests now expose `detachment_types` alongside the legacy primary
   `detachment_type`.
+- Runtime units can now carry `build_entry_id` linkage to their build-side entries so
+  authored attachment bindings round-trip cleanly through setup/replay state.
 - This remains the placeholder path for future network-safe mustering inputs.
   See `docs/NETWORK_SAVELOAD_DESIGN.md` for serialization requirements.
 
 ### Current limitations
 
 - In-engine unit materialization from `RosterEntry` is not implemented yet.
-- Attachment bindings are representable and validated structurally, but they do not yet drive
-  runtime unit joining; that remains later port work.
+- Attachment bindings can now optionally pre-seed runtime leader/support joins during
+  `DECLARE_BATTLE_FORMATIONS` when the runtime army already has materialized units and
+  matching `build_entry_id` values.
+- The current 10th-edition declaration flow is still supported and remains the fallback
+  path for rosters that do not provide authored attachment bindings.
 - The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine
   other than existing Daemonic Allegiance prompts when applicable.
@@ -161,3 +169,5 @@ When full UI mustering is implemented, this scaffolding is expected to grow into
 - validation of points limits, mustering restrictions, and spawn-only units,
 - stable IDs for unit selections so networked clients can replay the same choices,
 - runtime attachment and enhancement assignment application consuming the build-side model directly.
+
+See `docs/ATTACHMENT_RUNTIME.md` for the current attachment build/runtime seam.

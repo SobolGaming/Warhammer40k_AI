@@ -3611,6 +3611,9 @@ class GameSetupDeploymentReservesMixin:
             apply_fn = getattr(army, "apply_declare_battle_formations_restrictions", None)
             if callable(apply_fn):
                 apply_fn()
+            apply_authored_bindings = getattr(army, "apply_authored_attachment_bindings", None)
+            if callable(apply_authored_bindings):
+                apply_authored_bindings()
 
         # Thousand Sons: Risen Rubricae selections are made at the start of this step.
         from ..decision_requests import build_risen_rubricae_requests

@@ -95,6 +95,7 @@ from .unit_mixins import (
     RulesParsingMixin,
     DatasheetWargearMixin,
     DamageDeathMixin,
+    AttachmentRuntimeMixin,
     StateAttachmentMixin,
     ActionsMovementMixin,
     ShootingMixin,
@@ -108,6 +109,7 @@ from .unit_mixins import (
     rules_parsing_mixin as _rules_parsing_mixin,
     datasheet_wargear_mixin as _datasheet_wargear_mixin,
     damage_death_mixin as _damage_death_mixin,
+    attachment_runtime_mixin as _attachment_runtime_mixin,
     state_attachment_mixin as _state_attachment_mixin,
     actions_movement_mixin as _actions_movement_mixin,
     shooting_mixin as _shooting_mixin,
@@ -122,6 +124,7 @@ _UNIT_MIXIN_MODULES = (
     _rules_parsing_mixin,
     _datasheet_wargear_mixin,
     _damage_death_mixin,
+    _attachment_runtime_mixin,
     _state_attachment_mixin,
     _actions_movement_mixin,
     _shooting_mixin,
@@ -141,6 +144,7 @@ class Unit(
     RulesParsingMixin,
     DatasheetWargearMixin,
     DamageDeathMixin,
+    AttachmentRuntimeMixin,
     StateAttachmentMixin,
     ActionsMovementMixin,
     ShootingMixin,
@@ -188,6 +192,7 @@ class Unit(
         self.attached_support_units: List['Unit'] = []
         # For Support Artillery units: track which unit this model is joined to (if any).
         self.support_joined_to = None
+        self.initialize_attachment_runtime_state()
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
             self.damaged_profile = self._parse_range(datasheet.damaged_w)

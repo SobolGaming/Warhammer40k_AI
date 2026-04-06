@@ -3,6 +3,7 @@
 from .rules_parsing_mixin import RulesParsingMixin
 from .datasheet_wargear_mixin import DatasheetWargearMixin
 from .damage_death_mixin import DamageDeathMixin
+from .attachment_runtime_mixin import AttachmentRuntimeMixin
 from .state_attachment_mixin import StateAttachmentMixin
 from .actions_movement_mixin import ActionsMovementMixin
 from .shooting_mixin import ShootingMixin
@@ -16,6 +17,7 @@ __all__ = [
     'RulesParsingMixin',
     'DatasheetWargearMixin',
     'DamageDeathMixin',
+    'AttachmentRuntimeMixin',
     'StateAttachmentMixin',
     'ActionsMovementMixin',
     'ShootingMixin',
