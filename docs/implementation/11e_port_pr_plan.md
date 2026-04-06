@@ -191,7 +191,7 @@ shows what is done versus what remains.
 | PR-008 | Completed | Pushed to `dev` on April 5, 2026 as commit `412032aa` (`Implement PR-008 optional attachment runtime and setup integration`). |
 | PR-009 | Completed | Pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`). |
 | PR-010 | Completed | Pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`). |
-| PR-011 | Pending | Not started. |
+| PR-011 | Completed | Pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`). |
 | PR-012 | Pending | Not started. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
@@ -761,7 +761,7 @@ Only after the runtime seams are stable should the data pipeline be updated to m
 
 ## PR-011 — Remove 10th-only assumptions, collapse temporary adapters, and update docs to 11th-first-ready
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`).
 
 ### Goal
 Delete transitional 10th-only architectural assumptions so the codebase does not carry long-lived migration debt, while keeping final rules exactness deferred to PR-012.
