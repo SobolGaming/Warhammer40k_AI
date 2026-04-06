@@ -2,7 +2,7 @@
 
 ## Overview
 
-In Warhammer 40,000 (10th Edition), keywords can exist at both the **model level** and the **unit level**. This document describes how the engine handles keyword storage and resolution.
+In Warhammer 40,000, keywords can exist at both the **model level** and the **unit level**. This document describes how the engine handles keyword storage and resolution.
 
 ## Model-Level Keywords
 

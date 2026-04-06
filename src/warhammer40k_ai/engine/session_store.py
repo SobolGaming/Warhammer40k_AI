@@ -68,6 +68,9 @@ def _player_stub(player: object) -> dict:
     score = score_fn() if callable(score_fn) else {}
     army = getattr(player, "army", None)
     get_detachment_types = getattr(army, "get_detachment_types", None) if army is not None else None
+    get_primary_detachment_type = (
+        getattr(army, "get_primary_detachment_type", None) if army is not None else None
+    )
     detachment_types = list(get_detachment_types() or []) if callable(get_detachment_types) else []
     return {
         "player_id": getattr(player, "id", None),
@@ -76,7 +79,9 @@ def _player_stub(player: object) -> dict:
         "agent_type": _infer_agent_type(player),
         "score": score,
         "faction": getattr(army, "faction", None) if army is not None else None,
-        "detachment_type": getattr(army, "detachment_type", None) if army is not None else None,
+        "primary_detachment_type": (
+            get_primary_detachment_type() if callable(get_primary_detachment_type) else None
+        ),
         "detachment_types": detachment_types,
     }
 

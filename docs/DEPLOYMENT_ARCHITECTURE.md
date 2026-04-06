@@ -1,7 +1,7 @@
 # Deployment Architecture
 
 ## Overview
-The deployment system follows the Chapter Approved 10th Edition setup sequence and supports both UI-driven
+The deployment system follows the current Chapter Approved setup sequence and supports both UI-driven
 manual placement and controller-driven automation.
 
 Key goals:

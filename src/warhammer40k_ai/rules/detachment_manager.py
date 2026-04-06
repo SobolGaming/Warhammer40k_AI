@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import re
-from types import SimpleNamespace
-
-
 class DetachmentManagerBase:
     faction_id: str = ""
 
@@ -20,7 +17,7 @@ class DetachmentManagerBase:
         get_primary = getattr(self.army, "get_primary_detachment_type", None)
         if callable(get_primary):
             return str(get_primary(self.faction_id or "") or "")
-        return str(getattr(self.army, "detachment_type", "") or "")
+        return ""
 
     def _get_detachment_instances(self) -> list:
         if self.army is None:
@@ -35,17 +32,7 @@ class DetachmentManagerBase:
             instances = list(get_all() or [])
             if instances:
                 return instances
-        detachment_type = str(getattr(self.army, "detachment_type", "") or "").strip()
-        if not detachment_type:
-            return []
-        faction_id = str(self.faction_id or getattr(self.army, "faction_id", "") or "").strip().upper()
-        return [
-            SimpleNamespace(
-                detachment_type=detachment_type,
-                faction_id=faction_id,
-                selection_id="legacy_detachment",
-            )
-        ]
+        return []
 
     def _detachment_name_matches(self, detachment_name: str, target_name: str) -> bool:
         det = self._norm(detachment_name)

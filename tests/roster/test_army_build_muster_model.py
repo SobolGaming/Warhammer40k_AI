@@ -132,10 +132,32 @@ def test_attachment_binding_round_trip_representation() -> None:
     assert loaded.support_entry_id == "unit_ancient"
 
 
-def test_legacy_request_adapter_maps_single_detachment_and_unit_selection() -> None:
+def test_muster_request_requires_explicit_detachments() -> None:
     request = ArmyMusterRequest(
         faction="Space Marines",
-        detachment_type="Gladius Task Force",
+        units=[
+            UnitSelection(
+                name="Captain",
+                count=1,
+                enhancements=["Honours of Battle"],
+                is_warlord=True,
+            )
+        ],
+    )
+
+    with pytest.raises(ArmyValidationError, match="must define at least one detachment"):
+        validate_army_muster_request(request)
+
+
+def test_validate_request_preserves_explicit_single_detachment_and_unit_selection() -> None:
+    request = ArmyMusterRequest(
+        faction="Space Marines",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Gladius Task Force",
+            )
+        ],
         units=[
             UnitSelection(
                 name="Captain",
@@ -148,7 +170,7 @@ def test_legacy_request_adapter_maps_single_detachment_and_unit_selection() -> N
 
     validated = validate_army_muster_request(request)
 
-    assert validated.legacy_single_detachment_adapter_used is True
+    assert validated.legacy_single_detachment_adapter_used is False
     assert validated.blueprint.primary_detachment_type == "Gladius Task Force"
     assert len(validated.blueprint.unit_entries) == 1
     assert validated.blueprint.unit_entries[0].name == "Captain"
@@ -161,12 +183,18 @@ def test_legacy_request_adapter_maps_single_detachment_and_unit_selection() -> N
 def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_muster() -> None:
     request = ArmyMusterRequest(
         faction="Space Marines",
-        detachment_type="Gladius Task Force",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Gladius Task Force",
+            )
+        ],
     )
 
     army = ArmyMusterer(WahaHelper()).muster_army(request.to_dict())
 
     assert army.detachment_type == "Gladius Task Force"
+    assert army.get_detachment_types() == ["Gladius Task Force"]
     assert army.army_blueprint.primary_detachment_type == "Gladius Task Force"
-    assert army.validated_muster.legacy_single_detachment_adapter_used is True
-    assert army.build_detachments[0].selection_id == "detachment_1"
+    assert army.validated_muster.legacy_single_detachment_adapter_used is False
+    assert army.build_detachments[0].selection_id == "detachment_alpha"

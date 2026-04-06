@@ -88,7 +88,7 @@ class TemplarVowsManager:
                 if callable(primary_detachment):
                     detachment = str(primary_detachment() or "").strip()
                 else:
-                    detachment = str(getattr(self.army, "detachment_type", "") or "").strip()
+                    detachment = ""
                 if not faction and not detachment:
                     try:
                         from .space_marines_detachments import CHAPTER_KEYWORD_MAP

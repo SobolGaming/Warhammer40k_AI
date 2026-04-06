@@ -8,7 +8,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
 ## Mission & Secondaries
 
-- `CHOOSE_MISSION` — Select mission combination/layout.
+- `CHOOSE_MISSION` — Select a mission-pack entry and terrain layout.
 - `DISCARD_SECONDARY` — Discard a secondary objective.
 
 ## Deployment & Pre-game

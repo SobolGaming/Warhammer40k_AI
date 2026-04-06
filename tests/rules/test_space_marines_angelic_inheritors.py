@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _MockDatasheet:
     def __init__(self, name: str, *, keywords=None, faction_keywords=None):
@@ -81,6 +83,7 @@ def _make_army(*, detachment_type: str, units):
         player=player,
         combat_doctrines=None,
     )
+    attach_detachment_helpers(army)
     mgr = SpaceMarinesDetachmentManager(army)
     army.space_marines_detachments = mgr
     for unit in list(units):

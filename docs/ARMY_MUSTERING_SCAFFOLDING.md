@@ -48,7 +48,7 @@ the only path that builds full runtime units today.
     - `enhancement_assignments`
     - `attachment_bindings`
     - `force_disposition` / `allowed_force_dispositions`
-  - Keeps a temporary `detachment_type` adapter for the legacy single-detachment shape.
+  - Requires explicit `detachments`; the temporary single-detachment request adapter has been removed.
 - `UnitSelection` (`src/warhammer40k_ai/roster/army_muster.py`)
   - Legacy request shape retained only as a migration adapter into `RosterEntry`.
 
@@ -86,7 +86,6 @@ the only path that builds full runtime units today.
 
 - `src/warhammer40k_ai/roster/army_validation.py`
   - normalizes raw muster requests into `ArmyBlueprint`
-  - applies the temporary single-detachment adapter
   - validates faction support
   - validates detachment-point budget spend
   - validates references from unit entries, enhancement assignments, and attachment bindings
@@ -96,8 +95,8 @@ the only path that builds full runtime units today.
 
 - Army list parsing in the network server (`army_submit`) still runs `Army.validate()` on the parsed list.
 - Runtime detachment-aware rule lookups now consume `army.detachments` through shared helpers in
-  `army.py` / `detachment_manager.py`, with `army.detachment_type` retained only as a narrow
-  compatibility adapter.
+  `army.py` / `detachment_manager.py`; `army.detachment_type` is now just a compatibility view over
+  the authoritative primary detachment instance, not a separate runtime source of truth.
 - The existing runtime/list validation in `Army` still includes:
   - Epic Hero duplicates
   - warlord eligibility restrictions
@@ -139,8 +138,7 @@ the only path that builds full runtime units today.
   multi-detachment request payloads, enhancement assignments, and attachment bindings have
   a stable serializable form.
 - Runtime `DetachmentInstance` values are also serializable through army snapshot state, and
-  session manifests now expose `detachment_types` alongside the legacy primary
-  `detachment_type`.
+  session manifests now expose `primary_detachment_type` plus `detachment_types`.
 - Runtime units can now carry `build_entry_id` linkage to their build-side entries so
   authored attachment bindings round-trip cleanly through setup/replay state.
 - This remains the placeholder path for future network-safe mustering inputs.
@@ -152,7 +150,7 @@ the only path that builds full runtime units today.
 - Attachment bindings can now optionally pre-seed runtime leader/support joins during
   `DECLARE_BATTLE_FORMATIONS` when the runtime army already has materialized units and
   matching `build_entry_id` values.
-- The current 10th-edition declaration flow is still supported and remains the fallback
+- The current live declaration flow is still supported and remains the fallback
   path for rosters that do not provide authored attachment bindings.
 - The deep runtime/list validation stack is still mostly housed in `Army.validate()`.
 - Mustering choices are not yet represented as decision requests in the engine

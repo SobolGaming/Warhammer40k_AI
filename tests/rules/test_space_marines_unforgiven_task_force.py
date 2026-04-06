@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _MockDatasheet:
     def __init__(
@@ -86,6 +88,7 @@ class TestSpaceMarinesUnforgivenTaskForce(unittest.TestCase):
             player=player,
             combat_doctrines=None,
         )
+        attach_detachment_helpers(army_sm)
         army_sm.space_marines_detachments = SpaceMarinesDetachmentManager(army_sm)
         unit = _make_unit(
             "Intercessors",

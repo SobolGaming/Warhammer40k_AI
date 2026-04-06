@@ -159,7 +159,7 @@ Future approach (UI mustering):
 
 - Server skips `MUSTER_ARMIES` (armies are already validated/loaded from lobby submission).
 - Server auto-runs setup phases up to `DECLARE_BATTLE_FORMATIONS`:
-  - Randomly selects a Chapter Approved mission combination + layout (deterministic dice).
+  - Randomly selects a Chapter Approved mission-pack entry + layout (deterministic dice).
   - Executes `SELECT_MISSION_OBJECTIVES`, `CREATE_BATTLEFIELD`, and `DETERMINE_ATTACKER_AND_DEFENDER`.
 - During `DECLARE_BATTLE_FORMATIONS`, the server queues formation decisions:
   - Attach Leaders, Assign Transports, Allocate Reserves.

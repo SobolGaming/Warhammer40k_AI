@@ -402,6 +402,18 @@ def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
     assert loaded_army.detachment_points_summary == {"budget": 4, "spent": 2, "remaining": 2}
 
 
+def test_snapshot_serializes_primary_detachment_type_surface() -> None:
+    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    player = Player("Player One", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+
+    snapshot = snapshot_game(game)
+    army_payload = snapshot["armies"][0]
+
+    assert army_payload["primary_detachment_type"] == "Gladius Task Force"
+    assert "detachment_type" not in army_payload
+
+
 def test_snapshot_roundtrip_preserves_authored_leader_attachment_runtime_state(waha_helper) -> None:
     captain_datasheet = waha_helper.get_full_datasheet_info_by_name("Captain", faction_id="SM")
     bodyguard_datasheet = waha_helper.get_full_datasheet_info_by_name("Bladeguard Veteran Squad", faction_id="SM")

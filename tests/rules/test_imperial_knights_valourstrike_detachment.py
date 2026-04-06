@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _DummyArmy:
     def __init__(self, *, faction_id="QI", detachment_type="Valourstrike Lance"):
@@ -9,6 +11,7 @@ class _DummyArmy:
         self.units = []
         self.player = SimpleNamespace(game=SimpleNamespace(turn=1))
         self.imperial_knights_detachments = None
+        attach_detachment_helpers(self)
 
 
 class _DummyUnit:

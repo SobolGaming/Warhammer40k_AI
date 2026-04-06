@@ -230,7 +230,7 @@ class MissionSelectionDialog(BaseDialog):
                         "option_id": option_id,
                     }
         
-        # Check mission combination clicks
+        # Check mission-pack entry clicks
         content_y = dialog_y + 80
         list_y = y - content_y + self.scroll_offset
         
@@ -273,7 +273,7 @@ class MissionSelectionDialog(BaseDialog):
         return list(range(len(self.combinations)))
     
     def pick_random_mission(self):
-        """Randomly select a mission combination and terrain layout."""
+        """Randomly select a mission-pack entry and terrain layout."""
         if not self.combinations:
             return
         rng = resolve_rng()
@@ -389,7 +389,7 @@ class MissionSelectionDialog(BaseDialog):
             surface.blit(header_surface, header_text_rect)
     
     def _draw_combinations(self, surface: pygame.Surface):
-        """Draw the mission combination rows."""
+        """Draw the mission-pack entry rows."""
         y = self.header_height
         
         for i, combo in enumerate(self.combinations):

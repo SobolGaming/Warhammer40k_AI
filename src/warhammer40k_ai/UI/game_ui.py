@@ -21757,8 +21757,17 @@ class GameView:
         if army is None:
             return False
         try:
+            get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
+            get_detachment_types = getattr(army, "get_detachment_types", None)
+            primary_detachment = (
+                get_primary_detachment_type() if callable(get_primary_detachment_type) else None
+            )
+            detachment_types = (
+                tuple(get_detachment_types() or []) if callable(get_detachment_types) else ()
+            )
             signature = (
-                getattr(army, "detachment_type", None),
+                primary_detachment,
+                detachment_types,
                 tuple(getattr(army, "faction_keyword", []) or []),
                 getattr(army, "faction", None),
             )
@@ -21782,7 +21791,12 @@ class GameView:
         army = player.get_army() if player else None
         if army is None:
             return None
-        det = (getattr(army, "detachment_type", "") or "").strip()
+        get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
+        det = (
+            str(get_primary_detachment_type() or "").strip()
+            if callable(get_primary_detachment_type)
+            else ""
+        )
         if not det:
             return None
         helper = self._get_waha_helper()

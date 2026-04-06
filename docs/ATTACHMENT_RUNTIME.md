@@ -3,7 +3,7 @@
 Status: Current implementation after PR-008 (April 2026)
 
 This document describes the current attachment build/runtime seam.
-The engine is still running the 10th-edition pregame flow, so build-authored
+The engine is still running the current live pregame flow, so build-authored
 attachment bindings are supported as an optional setup input, not a mandatory roster rule.
 
 ## Scope
@@ -44,7 +44,7 @@ At the start of `DECLARE_BATTLE_FORMATIONS`:
 3. `ATTACH_LEADER` and `ATTACH_SUPPORT_ARTILLERY` decisions are built only for units
    that are still unresolved.
 
-This means current 10th-edition lists keep working without any roster-format change,
+This means current live-format lists keep working without any roster-format change,
 while optional 11th-style pre-authored bindings can already pre-seed runtime state.
 
 ## Validation Rules

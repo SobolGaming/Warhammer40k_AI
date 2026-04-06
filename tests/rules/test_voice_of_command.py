@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _Ability:
     def __init__(self, name: str, description: str = "", ability_type: str = ""):
@@ -25,6 +27,7 @@ class _ArmyStub:
         self.detachment_type = detachment_type
         self.player = _PlayerStub()
         self.player.game = None
+        attach_detachment_helpers(self)
 
 
 class _UnitStub:

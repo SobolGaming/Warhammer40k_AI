@@ -99,6 +99,7 @@ _ARMY_STATE_EXCLUDE = {
     "warlord",
     "enhancements",
     "detachment_managers",
+    "_primary_detachment_tombstone",
 }
 
 _SNAPSHOT_OMIT = object()
@@ -1151,7 +1152,7 @@ def _serialize_army(army: Army) -> dict:
         "id": get_entity_id(army),
         "faction": str(getattr(army, "faction", "") or ""),
         "faction_id": getattr(army, "faction_id", None),
-        "detachment_type": str(getattr(army, "detachment_type", "") or ""),
+        "primary_detachment_type": str(getattr(army, "get_primary_detachment_type", lambda: "")() or ""),
         "points_limit": int(getattr(army, "points_limit", 0) or 0),
         "state": state,
         "units": [get_entity_id(u) for u in list(getattr(army, "units", []) or [])],
@@ -1536,7 +1537,7 @@ def load_game_snapshot(snapshot: dict) -> Game:
     for adata in list(snapshot.get("armies", []) or []):
         army = Army(
             faction=str(adata.get("faction", "") or ""),
-            detachment_type=str(adata.get("detachment_type", "") or ""),
+            detachment_type=str(adata.get("primary_detachment_type", "") or ""),
             points_limit=int(adata.get("points_limit", 0) or 0),
         )
         army._id = str(adata.get("id") or army._id)

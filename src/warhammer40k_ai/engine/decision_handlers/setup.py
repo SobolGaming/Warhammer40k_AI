@@ -26,16 +26,16 @@ def _validate_choose_mission(game: object, request: DecisionRequest, result: Dec
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     combo = payload.get("combination")
     if not isinstance(combo, dict):
-        return ("Mission selection requires combination dict in option payload.",)
+        return ("Mission selection requires a mission-pack entry dict in the option payload.",)
     required = {"id", "primary", "deployment", "layouts"}
     missing = required - set(combo.keys())
     if missing:
-        return (f"Mission combination missing keys: {sorted(missing)}",)
+        return (f"Mission-pack entry missing keys: {sorted(missing)}",)
     layout = result.payload.get("layout")
     if layout is None:
         return ("Mission selection requires layout in result payload.",)
     if layout not in list(combo.get("layouts", []) or []):
-        return ("Selected layout is not valid for this mission combination.",)
+        return ("Selected layout is not valid for this mission-pack entry.",)
     return ()
 
 

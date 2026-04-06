@@ -105,22 +105,8 @@ def build_army_blueprint_from_request(
     raw_bindings = get_value("attachment_bindings", [])
 
     detachments = _normalize_detachments(raw_detachments)
-    legacy_adapter_used = False
-    legacy_detachment_type = str(get_value("detachment_type", "") or "").strip()
     if not detachments:
-        if not legacy_detachment_type:
-            raise ArmyValidationError(
-                "Army mustering request must define detachments or a legacy detachment_type."
-            )
-        legacy_adapter_used = True
-        detachments = [
-            DetachmentSelection(
-                selection_id="detachment_1",
-                detachment_type=legacy_detachment_type,
-                detachment_points_cost=0,
-                metadata={"adapter_source": "legacy_detachment_type"},
-            )
-        ]
+        raise ArmyValidationError("Army mustering request must define at least one detachment.")
 
     entries = _normalize_roster_entries(raw_units)
     assignments = _normalize_enhancement_assignments(raw_assignments)
@@ -160,7 +146,7 @@ def build_army_blueprint_from_request(
         allowed_force_dispositions=list(get_value("allowed_force_dispositions", []) or []),
         metadata=dict(get_value("metadata", {}) or {}),
     )
-    return blueprint, legacy_adapter_used
+    return blueprint, False
 
 
 def validate_detachment_points_budget(blueprint: ArmyBlueprint) -> int:

@@ -19,6 +19,15 @@ class _DummyArmy:
         self.space_marines_detachments = None
         self.combat_doctrines = None
 
+    def get_primary_detachment_type(self, _faction_id=None):
+        return self.detachment_type
+
+    def has_detachment_type(self, *names, faction_id=None):
+        if faction_id and str(faction_id).strip().upper() != str(self.faction_id or "").strip().upper():
+            return False
+        detachment = " ".join(str(self.detachment_type or "").lower().split())
+        return detachment in {" ".join(str(name or "").lower().split()) for name in names}
+
 
 class _DummyUnit:
     def __init__(

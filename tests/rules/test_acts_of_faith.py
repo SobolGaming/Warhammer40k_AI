@@ -1,6 +1,8 @@
 ﻿import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class TestActsOfFaith(unittest.TestCase):
     def _make_army(self, faction_id: str, player, detachment_type: str = ""):
@@ -11,7 +13,7 @@ class TestActsOfFaith(unittest.TestCase):
             player=player,
             adepta_sororitas_detachments=None,
         )
-        return army
+        return attach_detachment_helpers(army)
 
     def _make_unit(self, name: str, army, *, acts: bool = True, litany: bool = False, enhancement=None):
         from warhammer40k_ai.units.model import Model

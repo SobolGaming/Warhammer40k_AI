@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _DummyPlayer:
     def __init__(self, name="Player"):
@@ -17,6 +19,7 @@ class _DummyArmy:
         self.units = []
         self.player = _DummyPlayer()
         self.aeldari_detachments = None
+        attach_detachment_helpers(self)
 
 
 class _DummyObjective:

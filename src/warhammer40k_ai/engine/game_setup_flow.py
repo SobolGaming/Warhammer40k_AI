@@ -75,7 +75,7 @@ _PREGAME_STEPS: tuple[PregameStepDefinition, ...] = (
         "Determine deployment",
         SetupPhase.SELECT_MISSION_OBJECTIVES,
         provisional=True,
-        notes="Derived from the currently selected mission combination until PR-006 rewrites mission compilation.",
+        notes="Derived from the currently selected mission-pack entry and deployment definition.",
     ),
     PregameStepDefinition(
         PregameStepId.OPTIONAL_TWIST,
@@ -196,7 +196,7 @@ def _derived_preview_steps_status(game, *, current_step_index: int) -> dict[Preg
         else:
             statuses[PregameStepId.DETERMINE_DEPLOYMENT] = (
                 "stubbed",
-                "No explicit deployment-definition selection is stored yet; current runtime derives it from the mission combination.",
+                "No explicit deployment-definition selection is stored yet; current runtime derives it from the selected mission-pack entry.",
             )
         if not has_selected_mission:
             statuses[PregameStepId.OPTIONAL_TWIST] = (

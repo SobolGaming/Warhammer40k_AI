@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _MockDatasheet:
     def __init__(self, name, *, keywords=None, faction_keywords=None):
@@ -49,6 +51,7 @@ def _make_army(*, units):
         units=list(units),
         player=player,
     )
+    attach_detachment_helpers(army)
     game = SimpleNamespace(turn=1, map=None, event_system=EventSystem())
     player.game = game
     mgr = DrukhariDetachmentManager(army)

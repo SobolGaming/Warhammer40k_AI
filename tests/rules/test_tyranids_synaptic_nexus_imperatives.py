@@ -7,6 +7,8 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _DummyPlayer:
     def __init__(self, name: str = "Player"):
@@ -24,6 +26,7 @@ class _DummyArmy:
         self.player = _DummyPlayer()
         self.synapse = None
         self.tyranids_detachments = None
+        attach_detachment_helpers(self)
 
 
 class _DummySynapse:

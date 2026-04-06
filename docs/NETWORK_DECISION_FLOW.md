@@ -107,7 +107,7 @@ own formation choices independently while the server waits for both to finish.
 If there are **no** formation decisions, the server executes and advances
 normally (broadcasting the commands/events).
 
-This preserves current 10th-edition parity:
+This preserves current live-format parity:
 - rosters without authored attachment bindings still resolve attachments through
   normal formation decisions
 - authored bindings only suppress the matching dialogs they have already resolved

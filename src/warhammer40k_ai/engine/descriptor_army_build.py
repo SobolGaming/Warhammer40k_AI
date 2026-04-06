@@ -198,7 +198,12 @@ def _fallback_blueprint(army: object) -> ArmyBlueprint | None:
     if not detachments:
         detachments = _detachment_selections(getattr(army, "detachments", []) or [])
     if not detachments:
-        detachment_type = str(getattr(army, "detachment_type", "") or "").strip()
+        get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
+        detachment_type = (
+            str(get_primary_detachment_type() or "").strip()
+            if callable(get_primary_detachment_type)
+            else ""
+        )
         if detachment_type:
             detachments = [
                 DetachmentSelection(
@@ -332,13 +337,10 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
             enhancement_assignments = list(fallback.enhancement_assignments or [])
             attachment_bindings = list(fallback.attachment_bindings or [])
 
+    get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
     primary_detachment_type = str(
-        (
-            blueprint.primary_detachment_type
-            if blueprint is not None
-            else getattr(army, "detachment_type", "")
-        )
-        or getattr(army, "detachment_type", "")
+        (blueprint.primary_detachment_type if blueprint is not None else "")
+        or (get_primary_detachment_type() if callable(get_primary_detachment_type) else "")
         or ""
     )
     build_metadata = dict(getattr(army, "build_metadata", {}) or {})

@@ -78,7 +78,6 @@ class ArmyMusterRequest:
     attachment_bindings: list[AttachmentBinding] = field(default_factory=list)
     force_disposition: str | None = None
     allowed_force_dispositions: list[str] = field(default_factory=list)
-    detachment_type: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -117,13 +116,10 @@ class ArmyMusterRequest:
             for value in list(self.allowed_force_dispositions or [])
             if str(value or "").strip()
         ]
-        self.detachment_type = str(self.detachment_type or "").strip() or None
         self.metadata = dict(self.metadata or {})
 
     @property
     def primary_detachment_type(self) -> str | None:
-        if self.detachment_type:
-            return self.detachment_type
         if not self.detachments:
             return None
         return self.detachments[0].detachment_type
@@ -150,7 +146,6 @@ class ArmyMusterRequest:
             ],
             "force_disposition": self.force_disposition,
             "allowed_force_dispositions": list(self.allowed_force_dispositions),
-            "detachment_type": self.detachment_type,
             "metadata": dict(self.metadata or {}),
         }
 
@@ -174,7 +169,6 @@ class ArmyMusterRequest:
             attachment_bindings=list(data.get("attachment_bindings", []) or []),
             force_disposition=data.get("force_disposition"),
             allowed_force_dispositions=list(data.get("allowed_force_dispositions", []) or []),
-            detachment_type=data.get("detachment_type"),
             metadata=dict(data.get("metadata", {}) or {}),
         )
 
@@ -195,7 +189,7 @@ class ArmyMusterer:
         validated_muster = self.validate_request(request)
         army = Army(
             faction=validated_muster.blueprint.faction,
-            detachment_type=validated_muster.primary_detachment_type or "Unknown Detachment",
+            detachment_type="",
             points_limit=validated_muster.blueprint.points_limit,
         )
         army.faction_id = validated_muster.faction_id

@@ -1,6 +1,6 @@
 # Warhammer 40,000 Rules Engine
 
-Interactive Warhammer 40k 10th Edition rules implementation with a graphical UI, official setup phases, and full deployment sequencing.
+Interactive Warhammer 40k rules engine with a graphical UI, official setup phases, and full deployment sequencing.
 
 The repository is now in an 11th-edition-first port-prep phase. Structural work is
 landing behind stable façades so release-day 11th rules ingestion can happen

@@ -54,7 +54,8 @@ def test_session_store_roundtrip(tmp_path):
     assert manifest["session_id"] == session_id
     assert manifest["battle_round"] == 1
     assert manifest["players"][0]["faction"] in ("Necrons", "Orks")
-    assert manifest["players"][0]["detachment_type"]
+    assert manifest["players"][0]["primary_detachment_type"]
+    assert "detachment_type" not in manifest["players"][0]
     assert manifest["players"][0]["control"] in ("LOCAL", "REMOTE")
     assert manifest["players"][0]["agent_type"] == "human"
 

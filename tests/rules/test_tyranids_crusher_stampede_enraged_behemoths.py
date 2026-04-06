@@ -12,6 +12,8 @@ from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 
+from tests.rules.detachment_stub_helpers import attach_detachment_helpers
+
 
 class _DummyPlayer:
     def __init__(self, name: str = "Player"):
@@ -28,6 +30,7 @@ class _DummyArmy:
         self.units = []
         self.player = _DummyPlayer()
         self.tyranids_detachments = None
+        attach_detachment_helpers(self)
 
 
 class _DummyModel:

@@ -95,8 +95,7 @@ class GenestealerCultsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return faction_id == "GC" and bool(has_detachment("Host of Ascension"))
-        detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
-        return faction_id == "GC" and detachment == "host of ascension"
+        return False
 
     def _is_brood_brother_auxilia_detachment(self) -> bool:
         mgr = self._gsc_detachment_mgr()
@@ -110,8 +109,7 @@ class GenestealerCultsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return faction_id == "GC" and bool(has_detachment("Brood Brother Auxilia"))
-        detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
-        return faction_id == "GC" and detachment == "brood brother auxilia"
+        return False
 
     @staticmethod
     def _gsc_is_alive(unit: Any) -> bool:

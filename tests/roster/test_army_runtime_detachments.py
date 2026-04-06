@@ -92,7 +92,7 @@ def _build_runtime_multi_detachment_army(waha_helper: WahaHelper) -> Army:
     validated = muster.validate_request(_build_multi_detachment_request())
     army = Army(
         faction=validated.blueprint.faction,
-        detachment_type=validated.primary_detachment_type or "Unknown Detachment",
+        detachment_type="",
         points_limit=validated.blueprint.points_limit,
     )
     army.faction_id = validated.faction_id
@@ -155,6 +155,20 @@ def test_runtime_detachment_dicts_are_normalized_back_to_instances() -> None:
     assert isinstance(detachment, DetachmentInstance)
     assert detachment.selection_id == "detachment_alpha"
     assert detachment.metadata["source"] == "snapshot"
+
+
+def test_primary_detachment_property_is_backed_by_runtime_detachment_instances() -> None:
+    army = Army("Space Marines", "Gladius Task Force")
+    army.faction_id = "SM"
+
+    assert army.get_detachment_types() == ["Gladius Task Force"]
+    assert army.get_primary_detachment_instance().faction_id == "SM"
+
+    army.detachment_type = "1st Company Task Force"
+
+    assert army.detachment_type == "1st Company Task Force"
+    assert army.get_detachment_types() == ["1st Company Task Force"]
+    assert army.get_primary_detachment_instance().detachment_type == "1st Company Task Force"
 
 
 def test_upgrade_tag_enhancement_can_target_eligible_non_character_unit() -> None:

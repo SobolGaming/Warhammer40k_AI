@@ -11983,7 +11983,7 @@ class Game(
             player_id = None
         request = DecisionRequest.create(
             DECISION_CHOOSE_MISSION,
-            "Select mission combination and terrain layout.",
+            "Select a mission-pack entry and terrain layout.",
             player_id=player_id,
             options=options,
         )

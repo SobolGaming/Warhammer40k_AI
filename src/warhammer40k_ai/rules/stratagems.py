@@ -1767,8 +1767,7 @@ class Stratagem:
             has_detachment = getattr(army, "has_detachment_type", None)
             if callable(has_detachment):
                 return bool(has_detachment(self.detachment, faction_id=stratagem_faction_id))
-            # Must match detachment name exactly (source data string)
-            return getattr(army, "detachment_type", "") == self.detachment
+            return False
         return True
 
     def can_use(self, player, game, **kwargs) -> bool:

@@ -40,10 +40,11 @@ class RulesContext:
                     detachment_values = []
                 detachment_types = tuple(detachment_values)
             try:
-                detachment_type = str(
-                    getattr(army, "get_primary_detachment_type", lambda: getattr(army, "detachment_type", ""))()
-                    or ""
-                )
+                get_primary_detachment_type = getattr(army, "get_primary_detachment_type", None)
+                if callable(get_primary_detachment_type):
+                    detachment_type = str(get_primary_detachment_type() or "")
+                else:
+                    detachment_type = ""
             except Exception:
                 detachment_type = ""
             if not detachment_types and detachment_type:

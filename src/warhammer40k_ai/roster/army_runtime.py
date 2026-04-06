@@ -143,8 +143,7 @@ def apply_validated_muster_to_army(army: Army, validated_muster: ValidatedMuster
     }
     army.force_disposition = blueprint.force_disposition
     army.allowed_force_dispositions = list(blueprint.allowed_force_dispositions or [])
-    if runtime_detachments:
-        army.detachment_type = runtime_detachments[0].detachment_type
+    army._primary_detachment_tombstone = str(blueprint.primary_detachment_type or "")
     army.build_metadata = {
         "legacy_single_detachment_adapter_used": bool(
             validated_muster.legacy_single_detachment_adapter_used

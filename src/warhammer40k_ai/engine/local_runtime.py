@@ -122,14 +122,14 @@ class LocalAuthoritativeRuntime:
     def _default_choose_random_mission(self, game: Game) -> tuple[dict, int]:
         combos = iter_random_mission_options(game)
         if not combos:
-            raise RuntimeError("No mission combinations available for random selection.")
+            raise RuntimeError("No mission-pack entries available for random selection.")
         with game_context(game), roll_context("mission_selection"):
             combo_index = max(1, int(get_dice_roll(len(combos)))) - 1
             combo_index = min(combo_index, len(combos) - 1)
             combo = combos[combo_index]
             layouts = list(combo.get("layouts", []) or [])
             if not layouts:
-                raise RuntimeError("Selected mission combination has no layouts.")
+                raise RuntimeError("Selected mission-pack entry has no layouts.")
             layout_index = max(1, int(get_dice_roll(len(layouts)))) - 1
             layout_index = min(layout_index, len(layouts) - 1)
             layout = layouts[layout_index]

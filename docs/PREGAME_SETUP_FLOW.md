@@ -5,7 +5,7 @@ Status: Current implementation after PR-006 (April 2026)
 This document describes the explicit pregame state model now exposed by the engine.
 It does not treat preview-era 11th-edition sequencing text as finalized rules content.
 Instead, it records the announced structure as explicit step data while keeping the
-current 10th-shaped runtime and network command flow stable.
+current live runtime and network command flow stable.
 
 ## Goals
 
@@ -68,7 +68,7 @@ Steps 8-12 are the legacy compatibility tail that still reflects the current run
   runtime units through `build_entry_id`, those bindings are applied first.
 - `ATTACH_LEADER` and `ATTACH_SUPPORT_ARTILLERY` decisions are then queued only for
   unresolved units.
-- This keeps the current 10th-edition flow intact for parsed lists and other rosters
+- This keeps the current live flow intact for parsed lists and other rosters
   that did not author attachments at list-build time, while allowing optional
   build-authored bindings to pre-seed runtime setup.
 

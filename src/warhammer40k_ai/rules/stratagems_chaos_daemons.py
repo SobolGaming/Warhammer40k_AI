@@ -72,8 +72,7 @@ class ChaosDaemonsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Scintillating Legion"))
-        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
-        return det == "scintillating legion"
+        return False
 
     def _is_blood_legion_detachment(self) -> bool:
         if self.player is None:
@@ -87,8 +86,7 @@ class ChaosDaemonsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Blood Legion"))
-        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
-        return det == "blood legion"
+        return False
 
     def _is_shadow_legion_detachment(self) -> bool:
         if self.player is None:
@@ -102,8 +100,7 @@ class ChaosDaemonsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Shadow Legion"))
-        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
-        return det == "shadow legion"
+        return False
 
     def _is_legion_of_excess_detachment(self) -> bool:
         if self.player is None:
@@ -117,8 +114,7 @@ class ChaosDaemonsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Legion of Excess"))
-        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
-        return det == "legion of excess"
+        return False
 
     def _is_plague_legion_detachment(self) -> bool:
         if self.player is None:
@@ -132,8 +128,7 @@ class ChaosDaemonsStratagemMixin:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Plague Legion"))
-        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
-        return det == "plague legion"
+        return False
 
     def _is_khorne_legiones_unit(self, unit: Any) -> bool:
         if unit is None:

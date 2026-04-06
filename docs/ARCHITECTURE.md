@@ -1,6 +1,6 @@
 # Architecture
 
-This repository implements a **Warhammer 40,000 (10th Edition) rules engine** with a **pygame UI**, **deterministic command/decision plumbing**, and **networked play** (server authoritative, client UI).
+This repository implements a **Warhammer 40,000 rules engine** with a **pygame UI**, **deterministic command/decision plumbing**, and **networked play** (server authoritative, client UI).
 
 This document is a *high-level* map of the codebase. Detailed designs live in `docs/` (notably networking/decisions, deployment, movement, terrain, etc.).
 

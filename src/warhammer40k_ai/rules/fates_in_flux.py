@@ -72,8 +72,7 @@ class FatesInFluxManager:
         has_detachment = getattr(army, "has_detachment_type", None)
         if callable(has_detachment):
             return bool(has_detachment("Scintillating Legion"))
-        det = self._normalize_detachment(getattr(army, "detachment_type", "") or "")
-        return det == self._normalize_detachment("Scintillating Legion")
+        return False
 
     def _opponent_has_fates_in_flux(self, game, player) -> bool:
         if game is None or player is None:
