@@ -222,3 +222,96 @@ def test_build_training_manifest_cli_filters_on_army_build_descriptor(tmp_path: 
     assert manifest["total_records"] == 1
     assert manifest["army_build_descriptor_ids"] == ["army_build_descriptor:keep"]
     assert manifest["slice_filters"]["army_build_descriptor_ids"] == ["army_build_descriptor:keep"]
+
+
+def test_build_training_manifest_cli_accepts_all_descriptor_filters_together(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    input_path = tmp_path / "records.json"
+    output_path = tmp_path / "manifest.json"
+
+    keep = _record("d1", "MOVE_UNIT")
+    keep["rules_bundle_id"] = "rules_bundle:keep"
+    keep["descriptor_bundle_id"] = "descriptor_bundle:keep"
+    keep["descriptor_ids"] = {
+        "mission_descriptor_id": "mission_descriptor:keep",
+        "objective_descriptor_ids": ["objective_descriptor:keep"],
+        "terrain_descriptor_ids": ["terrain_descriptor:keep"],
+        "deployment_descriptor_id": "deployment_descriptor:keep",
+        "army_build_descriptor_id": "army_build_descriptor:keep",
+        "tool_descriptor_ids": ["tool_descriptor:keep"],
+    }
+
+    drop = _record("d2", "DECLARE_SHOTS")
+    drop["rules_bundle_id"] = "rules_bundle:drop"
+    drop["descriptor_bundle_id"] = "descriptor_bundle:drop"
+    drop["descriptor_ids"] = {
+        "mission_descriptor_id": "mission_descriptor:drop",
+        "objective_descriptor_ids": ["objective_descriptor:drop"],
+        "terrain_descriptor_ids": ["terrain_descriptor:drop"],
+        "deployment_descriptor_id": "deployment_descriptor:drop",
+        "army_build_descriptor_id": "army_build_descriptor:drop",
+        "tool_descriptor_ids": ["tool_descriptor:drop"],
+    }
+
+    input_path.write_text(
+        json.dumps([keep, drop], indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    script_path = repo_root / "scripts" / "build_training_manifest.py"
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--input",
+        str(input_path),
+        "--output",
+        str(output_path),
+        "--source-tag",
+        "mixed",
+        "--min-tier3-records",
+        "1",
+        "--rules-bundle-id",
+        "rules_bundle:keep",
+        "--descriptor-bundle-id",
+        "descriptor_bundle:keep",
+        "--mission-descriptor-id",
+        "mission_descriptor:keep",
+        "--objective-descriptor-id",
+        "objective_descriptor:keep",
+        "--terrain-descriptor-id",
+        "terrain_descriptor:keep",
+        "--deployment-descriptor-id",
+        "deployment_descriptor:keep",
+        "--army-build-descriptor-id",
+        "army_build_descriptor:keep",
+        "--tool-descriptor-id",
+        "tool_descriptor:keep",
+    ]
+    completed = subprocess.run(
+        cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+    assert completed.returncode == 0
+    manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert manifest["total_records"] == 1
+    assert manifest["rules_bundle_ids"] == ["rules_bundle:keep"]
+    assert manifest["descriptor_bundle_ids"] == ["descriptor_bundle:keep"]
+    assert manifest["mission_descriptor_ids"] == ["mission_descriptor:keep"]
+    assert manifest["objective_descriptor_ids"] == ["objective_descriptor:keep"]
+    assert manifest["terrain_descriptor_ids"] == ["terrain_descriptor:keep"]
+    assert manifest["deployment_descriptor_ids"] == ["deployment_descriptor:keep"]
+    assert manifest["army_build_descriptor_ids"] == ["army_build_descriptor:keep"]
+    assert manifest["tool_descriptor_ids"] == ["tool_descriptor:keep"]
+    assert manifest["slice_filters"] == {
+        "rules_bundle_ids": ["rules_bundle:keep"],
+        "descriptor_bundle_ids": ["descriptor_bundle:keep"],
+        "mission_descriptor_ids": ["mission_descriptor:keep"],
+        "objective_descriptor_ids": ["objective_descriptor:keep"],
+        "terrain_descriptor_ids": ["terrain_descriptor:keep"],
+        "deployment_descriptor_ids": ["deployment_descriptor:keep"],
+        "army_build_descriptor_ids": ["army_build_descriptor:keep"],
+        "tool_descriptor_ids": ["tool_descriptor:keep"],
+    }

@@ -203,6 +203,9 @@
         },
         "detachment_pack_id": {
           "type": "string"
+        },
+        "rules_bundle_id": {
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -353,16 +356,433 @@
       },
       "additionalProperties": false
     },
-    "StateBlob": {
-      "description": "Canonicalized snapshot or replayable delta reference.",
-      "oneOf": [
-        {
+    "StateBlobPlayer": {
+      "type": "object",
+      "required": ["player_id", "name", "command_points", "score"],
+      "properties": {
+        "player_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command_points": {
+          "type": "integer"
+        },
+        "score": {
+          "type": "integer"
+        },
+        "active_secondary_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "discarded_secondary_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active_secondary_count": {
+          "type": "integer"
+        },
+        "discarded_secondary_count": {
+          "type": "integer"
+        },
+        "secondary_deck_count": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DetachmentSelectionState": {
+      "type": "object",
+      "properties": {
+        "selection_id": {
+          "type": "string"
+        },
+        "detachment_type": {
+          "type": "string"
+        },
+        "detachment_points_cost": {
+          "type": "integer"
+        },
+        "label": {
+          "type": ["string", "null"]
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "AttachmentBindingState": {
+      "type": "object",
+      "properties": {
+        "binding_id": {
+          "type": "string"
+        },
+        "bodyguard_entry_id": {
+          "type": "string"
+        },
+        "leader_entry_id": {
+          "type": ["string", "null"]
+        },
+        "support_entry_id": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "DetachmentPointsSummary": {
+      "type": "object",
+      "required": ["budget", "spent", "remaining"],
+      "properties": {
+        "budget": {
+          "type": ["integer", "null"]
+        },
+        "spent": {
+          "type": "integer"
+        },
+        "remaining": {
+          "type": ["integer", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ArmyBuildPlayerState": {
+      "type": "object",
+      "required": ["player_id", "player_name", "army_present"],
+      "properties": {
+        "player_id": {
+          "type": "string"
+        },
+        "player_name": {
+          "type": "string"
+        },
+        "army_present": {
+          "type": "boolean"
+        },
+        "army_id": {
+          "type": "string"
+        },
+        "faction": {
+          "type": "string"
+        },
+        "faction_id": {
+          "type": "string"
+        },
+        "points_limit": {
+          "type": "integer"
+        },
+        "battle_size": {
+          "type": "string"
+        },
+        "primary_detachment_type": {
+          "type": "string"
+        },
+        "detachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetachmentSelectionState"
+          }
+        },
+        "unit_entries": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "enhancement_assignments": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "attachment_bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttachmentBindingState"
+          }
+        },
+        "detachment_points_summary": {
+          "$ref": "#/$defs/DetachmentPointsSummary"
+        },
+        "force_disposition": {
+          "type": "string"
+        },
+        "allowed_force_dispositions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "build_metadata": {
           "type": "object"
         },
-        {
+        "blueprint_metadata": {
+          "type": "object"
+        },
+        "validated_muster": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ArmyBuildState": {
+      "type": "object",
+      "required": ["army_build_descriptor_id", "players"],
+      "properties": {
+        "army_build_descriptor_id": {
+          "type": "string"
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArmyBuildPlayerState"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ObjectiveGeometry": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "control_radius": {
+          "type": "number"
+        },
+        "footprint": {
+          "type": ["object", "null"]
+        },
+        "feature_key": {
+          "type": "string"
+        },
+        "feature_label": {
           "type": "string"
         }
-      ]
+      },
+      "additionalProperties": false
+    },
+    "ControlRegionState": {
+      "type": "object",
+      "required": ["region_id", "kind"],
+      "properties": {
+        "region_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "objective_id": {
+          "type": "string"
+        },
+        "objective_site_id": {
+          "type": "string"
+        },
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "radius": {
+          "type": "number"
+        },
+        "footprint": {
+          "type": ["object", "null"]
+        },
+        "feature_key": {
+          "type": "string"
+        },
+        "feature_label": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ScoreSourceState": {
+      "type": "object",
+      "required": ["score_source_id", "kind"],
+      "properties": {
+        "score_source_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "objective_id": {
+          "type": "string"
+        },
+        "objective_site_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "controller_player_id": {
+          "type": "string"
+        },
+        "points_value": {
+          "type": "integer"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ObjectiveStateEntry": {
+      "type": "object",
+      "required": [
+        "objective_id",
+        "objective_site_id",
+        "site_kind",
+        "geometry",
+        "control_region",
+        "score_sources"
+      ],
+      "properties": {
+        "objective_id": {
+          "type": "string"
+        },
+        "objective_site_id": {
+          "type": "string"
+        },
+        "site_kind": {
+          "type": "string"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "control_radius": {
+          "type": "number"
+        },
+        "controller_player_id": {
+          "type": "string"
+        },
+        "sticky_controller_player_id": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "boolean"
+        },
+        "geometry": {
+          "$ref": "#/$defs/ObjectiveGeometry"
+        },
+        "control_region": {
+          "$ref": "#/$defs/ControlRegionState"
+        },
+        "score_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoreSourceState"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "StateBlob": {
+      "description": "Canonicalized replay/telemetry state payload.",
+      "type": "object",
+      "required": [
+        "state_blob_version",
+        "rules_bundle",
+        "battle_round",
+        "phase",
+        "active_player_id",
+        "players",
+        "army_build_state",
+        "mission_state",
+        "deployment_state",
+        "objectives",
+        "scoring_surfaces",
+        "control_regions",
+        "terrain",
+        "units"
+      ],
+      "properties": {
+        "state_blob_version": {
+          "type": "string"
+        },
+        "rules_bundle": {
+          "$ref": "#/$defs/RulesBundle"
+        },
+        "battle_round": {
+          "type": "integer"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "active_player_id": {
+          "type": "string"
+        },
+        "viewer_player_id": {
+          "type": "string"
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StateBlobPlayer"
+          }
+        },
+        "army_build_state": {
+          "$ref": "#/$defs/ArmyBuildState"
+        },
+        "mission_state": {
+          "type": "object"
+        },
+        "deployment_state": {
+          "type": "object"
+        },
+        "objectives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ObjectiveStateEntry"
+          }
+        },
+        "scoring_surfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoreSourceState"
+          }
+        },
+        "control_regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ControlRegionState"
+          }
+        },
+        "terrain": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "Outcome": {
       "type": "object",

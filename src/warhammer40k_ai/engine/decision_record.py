@@ -14,6 +14,7 @@ from .decisions import CandidateAction, DecisionRequest, DecisionResult
 from .path_witness import build_model_path_witness_for_unit
 from .ruleset import RulesetBundle
 from .state_blob import all_player_obs_states, canonical_omniscient_state
+from .state_blob_validate import validate_player_obs_state_map, validate_state_blob
 from .version_adapter import build_version_adapter_boundary
 
 SCHEMA_VERSION = "1.1.0"
@@ -351,6 +352,8 @@ class DecisionRecordSchemaValidator:
                     "version_adapter_boundary missing required fields: "
                     + ", ".join(missing_boundary)
                 )
+        errors.extend(validate_state_blob(record.get("omniscient_state"), label="omniscient_state"))
+        errors.extend(validate_player_obs_state_map(record.get("player_obs_state"), label="player_obs_state"))
 
         valid_flag = record.get("valid", True)
         if valid_flag is False:

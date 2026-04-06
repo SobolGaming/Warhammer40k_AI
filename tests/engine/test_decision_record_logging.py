@@ -223,3 +223,156 @@ def test_decision_record_game_id_is_stable_within_a_single_game() -> None:
     game_ids = {str(record.get("game_id", "") or "") for record in records}
     assert len(game_ids) == 1
     assert all(str(game_id).startswith("game:") for game_id in game_ids)
+
+
+def test_decision_record_validator_rejects_missing_army_build_state_surface() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    game.request_decision(request)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+    broken = dict(record)
+    broken["omniscient_state"] = dict(record["omniscient_state"])
+    broken["omniscient_state"].pop("army_build_state", None)
+
+    errors = game.decision_record_store._validator.validate(broken)
+    assert any("omniscient_state missing required fields: army_build_state" in err for err in errors)
+
+
+def test_decision_record_validator_rejects_player_obs_state_viewer_mismatch() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    game.request_decision(request)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+    broken = dict(record)
+    broken["player_obs_state"] = {
+        key: dict(value)
+        for key, value in dict(record["player_obs_state"] or {}).items()
+    }
+    only_key = next(iter(broken["player_obs_state"]))
+    broken["player_obs_state"][only_key]["viewer_player_id"] = "different-player-id"
+
+    errors = game.decision_record_store._validator.validate(broken)
+    assert any("viewer_player_id must match player_obs_state key" in err for err in errors)
+
+
+def test_decision_record_validator_rejects_unbound_objective_surface_ids() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    game.request_decision(request)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value=None,
+        wall_clock_ms=1,
+    )
+    broken = dict(record)
+    broken["omniscient_state"] = dict(record["omniscient_state"])
+    broken["omniscient_state"]["objectives"] = [
+        {
+            "objective_id": "objective:test",
+            "objective_site_id": "objective_site:test",
+            "site_kind": "MARKER",
+            "geometry": {
+                "kind": "MARKER",
+                "position": [0.0, 0.0, 0.0],
+                "control_radius": 3.0,
+                "feature_key": "",
+                "feature_label": "",
+            },
+            "control_region": {
+                "region_id": "region:objective:test",
+                "kind": "OBJECTIVE_CONTROL_RADIUS",
+                "objective_id": "objective:test",
+                "objective_site_id": "objective_site:test",
+                "center": [0.0, 0.0, 0.0],
+                "radius": 3.0,
+                "metadata": {},
+            },
+            "score_sources": [
+                {
+                    "score_source_id": "score_source:objective:test",
+                    "kind": "OBJECTIVE_CONTROL",
+                    "objective_id": "objective:test",
+                    "objective_site_id": "objective_site:test",
+                    "label": "Objective",
+                    "controller_player_id": "",
+                    "points_value": 5,
+                    "metadata": {},
+                }
+            ],
+        }
+    ]
+    broken["omniscient_state"]["control_regions"] = [
+        {
+            "region_id": "region:unknown",
+            "kind": "OBJECTIVE_CONTROL_RADIUS",
+        }
+    ]
+    broken["omniscient_state"]["scoring_surfaces"] = [
+        {
+            "score_source_id": "score_source:unknown",
+            "kind": "OBJECTIVE_CONTROL",
+        }
+    ]
+
+    errors = game.decision_record_store._validator.validate(broken)
+    assert any("region_id is not declared by any objective.control_region" in err for err in errors)
+    assert any("score_source_id is not declared by any objective.score_sources" in err for err in errors)

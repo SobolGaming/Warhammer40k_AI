@@ -23,8 +23,9 @@ Locked invariants:
   - snapshot `game.ruleset` contains atomic ids and `rules_bundle_id`.
   - load preserves atomic ids and derived `rules_bundle_id`.
 - StateBlob:
-  - `canonical_omniscient_state(...)` and `player_obs_state(...)` include identical `rules_bundle` payloads.
-  - `canonical_omniscient_state(...)` preserves `army_build_state`, `objectives`, `scoring_surfaces`, and `control_regions` across snapshot/replay round-trips.
+- `canonical_omniscient_state(...)` and `player_obs_state(...)` include identical `rules_bundle` payloads.
+- `canonical_omniscient_state(...)` preserves `army_build_state`, `objectives`, `scoring_surfaces`, and `control_regions` across snapshot/replay round-trips.
+- `DecisionRecord` validation rejects replay payloads whose player-perspective snapshots lose their required replay surfaces or drift from their owning `viewer_player_id`.
 - Strict replay round-trip:
   - replayed DecisionRecord keeps identical atomic `rules_bundle` and `rules_bundle_id` under `strict=True`.
   - replayed DecisionRecord keeps the original `descriptor_bundle_id` / `version_adapter_boundary` provenance and preserves the same public army-build/objective-site state surface.

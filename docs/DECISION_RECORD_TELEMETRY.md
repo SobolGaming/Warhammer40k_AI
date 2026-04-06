@@ -33,6 +33,12 @@ Replay/relabel provenance surfaces inside `omniscient_state`:
 
 These surfaces are preserved so replay, relabeling, and manifest slicing can condition on the same 11th-oriented runtime state that produced the original decision.
 
+Validation guarantees:
+- `DecisionRecordStore` rejects records whose `omniscient_state` omits required replay surfaces.
+- `player_obs_state` entries are validated per-player, including `viewer_player_id` matching the owning player map key.
+- Objective-site replay surfaces are validated for internal consistency: top-level `control_regions` and `scoring_surfaces` must be declared by some objective entry.
+- `detachment_points_summary.spent` is always an integer; `budget` and `remaining` may be `null` until a detachment-point budget is authored for that army build.
+
 Determinism fields:
 - `global_seed`
 - `decision_seed`

@@ -273,10 +273,25 @@ def detachment_points_summary_for_army(
 ) -> dict[str, Any]:
     summary = getattr(army, "detachment_points_summary", None)
     if isinstance(summary, Mapping):
+        spent = summary.get("spent")
+        if spent in (None, ""):
+            spent = getattr(army, "detachment_points_spent", 0)
+        budget = summary.get("budget")
+        if budget in ("",):
+            budget = None
+        elif budget is not None:
+            budget = safe_int(budget, 0)
+        remaining = summary.get("remaining")
+        if remaining in ("",):
+            remaining = None
+        elif remaining is not None:
+            remaining = safe_int(remaining, 0)
+        elif budget is not None:
+            remaining = int(budget) - safe_int(spent, 0)
         return {
-            "budget": summary.get("budget"),
-            "spent": summary.get("spent"),
-            "remaining": summary.get("remaining"),
+            "budget": budget,
+            "spent": safe_int(spent, 0),
+            "remaining": remaining,
         }
     budget = getattr(army, "detachment_points_budget", None)
     spent = safe_int(getattr(army, "detachment_points_spent", 0), 0)

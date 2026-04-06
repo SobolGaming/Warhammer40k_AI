@@ -122,6 +122,22 @@ def test_descriptor_compiler_emits_army_build_descriptor_from_validated_muster()
     assert payload["players"][0]["validated_muster"]["faction_id"] == "SM"
 
 
+def test_descriptor_compiler_normalizes_empty_detachment_points_summary() -> None:
+    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army.faction_id = "SM"
+    player = Player("P1", army=army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+
+    bundle = compile_descriptor_bundle(game)
+    payload = bundle.army_build_descriptor.payload
+
+    assert payload["players"][0]["detachment_points_summary"] == {
+        "budget": None,
+        "spent": 0,
+        "remaining": None,
+    }
+
+
 def test_request_decision_injects_compiled_descriptor_ids() -> None:
     game, player = _build_game_with_army_build()
     request = DecisionRequest.create(
