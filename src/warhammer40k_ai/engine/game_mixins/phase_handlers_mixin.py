@@ -619,6 +619,7 @@ class GamePhaseHandlersMixin:
         unit_id = ""
         target_unit_ids: list[str] = []
         count_as_charged = bool(ctx.get("count_as_charged", True))
+        out_of_turn = bool(ctx.get("out_of_turn", False))
         if decision_type == DECISION_DECLARE_CHARGE:
             selected_option = find_option(request, getattr(result, "option_id", ""))
             option_payload = dict(getattr(selected_option, "payload", {}) or {}) if selected_option is not None else {}
@@ -629,15 +630,18 @@ class GamePhaseHandlersMixin:
                 if target_id:
                     target_unit_ids = [target_id]
             count_as_charged = bool(option_payload.get("count_as_charged", ctx.get("count_as_charged", True)))
+            out_of_turn = bool(option_payload.get("out_of_turn", ctx.get("out_of_turn", False)))
         elif decision_type == DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
             unit_id = str(ctx.get("unit_id", "") or "")
             target_unit_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
+            out_of_turn = bool(ctx.get("out_of_turn", False))
         elif decision_type == DECISION_REQUEST_DICE_ROLL:
             roll_spec = dict(ctx.get("roll_spec", {}) or {})
             if str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "")).strip().lower() != "charge":
                 return
             unit_id = str(roll_spec.get("unit_id", "") or "").strip()
             target_unit_ids = [str(value or "") for value in list(roll_spec.get("target_unit_ids", []) or []) if str(value or "")]
+            out_of_turn = bool(roll_spec.get("out_of_turn", ctx.get("out_of_turn", False)))
         else:
             return
 
@@ -661,6 +665,13 @@ class GamePhaseHandlersMixin:
             return
         if not target_unit_ids:
             target_unit_ids = [str(value or "") for value in list(getattr(getattr(unit, "round_state", None), "charge_modifier_choice_targets", []) or []) if str(value or "")]
+        bind_targets = getattr(self, "_bind_charge_move_targets", None)
+        if callable(bind_targets):
+            target_unit_ids = list(bind_targets(unit, target_unit_ids, out_of_turn=out_of_turn) or [])
+        if not target_unit_ids:
+            if not bool(out_of_turn):
+                self._queue_charge_phase_selection(player=self.get_current_player())
+            return
         self._queue_charge_phase_move_request(
             unit=unit,
             target_unit_ids=target_unit_ids,

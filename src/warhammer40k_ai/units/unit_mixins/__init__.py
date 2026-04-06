@@ -8,6 +8,7 @@ from .state_attachment_mixin import StateAttachmentMixin
 from .actions_movement_mixin import ActionsMovementMixin
 from .shooting_mixin import ShootingMixin
 from .positioning_mixin import PositioningMixin
+from .combat_runtime_mixin import CombatRuntimeMixin
 from .keywords_detachments_mixin import KeywordsDetachmentsMixin
 from .ability_specs_mixin import AbilitySpecsMixin
 from .selected_to_shoot_mixin import SelectedToShootMixin
@@ -22,6 +23,7 @@ __all__ = [
     'ActionsMovementMixin',
     'ShootingMixin',
     'PositioningMixin',
+    'CombatRuntimeMixin',
     'KeywordsDetachmentsMixin',
     'AbilitySpecsMixin',
     'SelectedToShootMixin',

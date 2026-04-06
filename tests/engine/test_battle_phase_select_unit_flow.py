@@ -165,6 +165,14 @@ class _FlowGame(GamePhaseHandlersMixin):
     def _resolve_unit_by_id(self, unit_id: str):
         return self.entity_registry.get(unit_id, kind="unit")
 
+    def _bind_charge_move_targets(self, unit, target_unit_ids, *, out_of_turn: bool = False):
+        from warhammer40k_ai.engine.combat_timing import bind_charge_move_targets
+
+        bound_targets = bind_charge_move_targets(self, unit, target_unit_ids, out_of_turn=out_of_turn)
+        bound_ids = [str(getattr(target, "id", "") or "") for target in list(bound_targets or []) if str(getattr(target, "id", "") or "")]
+        unit.round_state.charge_move_target_ids = set(bound_ids)
+        return bound_ids
+
     def get_charge_roll_modifiers(self, _unit, *, target_unit=None):
         del target_unit
         return []
@@ -322,6 +330,47 @@ def test_charge_followup_queues_charge_move_request_after_declaration() -> None:
     assert queued.decision_type == DECISION_MOVE_UNIT
     assert queued.context["movement_type"] == "charge"
     assert queued.context["target_unit_ids"] == [enemy.id]
+
+
+def test_charge_followup_binds_post_roll_targets_before_queueing_move() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    replacement_army = enemy.parent_army
+    replacement = _UnitStub("enemy-2", replacement_army)
+    replacement_army.units = [enemy, replacement]
+    unit._charge_targets = [enemy, replacement]
+    unit.round_state.charge_roll = 9
+    game = _FlowGame(phase_name="CHARGE_PHASE", unit=unit, enemy_units=[enemy, replacement])
+
+    unit._charge_targets = [replacement]
+    request = DecisionRequest.create(
+        "REQUEST_DICE_ROLL",
+        "Charge roll",
+        player_id="player-1",
+        options=[DecisionOption.create("Resolve", payload={})],
+        context={
+            "roll_type": "charge",
+            "roll_spec": {
+                "roll_type": "charge",
+                "unit_id": unit.id,
+                "target_unit_ids": [enemy.id, replacement.id],
+                "out_of_turn": False,
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    game._maybe_queue_charge_phase_followup(request, result)
+
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["target_unit_ids"] == [replacement.id]
+    assert unit.round_state.charge_move_target_ids == {replacement.id}
 
 
 def test_charge_move_followup_requeues_select_unit() -> None:

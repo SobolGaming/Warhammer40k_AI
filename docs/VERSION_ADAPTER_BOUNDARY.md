@@ -27,3 +27,8 @@ Purpose:
 - provide deterministic conditioning signatures for replay and training dataset slicing
 - stabilize adapter inputs before introducing ML framework dependencies
 - distinguish not just mission/deployment/terrain semantics, but also the army-construction semantics that produced the battle
+
+Edition-invariant consumers:
+- `src/warhammer40k_ai/engine/combat_timing.py` derives `CombatTimingProfile` from the active `rules_bundle_id` / version-adapter context.
+- Combat timing currently centralizes charge-target binding timing, fight-phase starting-player selection, pile-in/consolidate step enablement, and disembark charge policy selection behind that profile.
+- Preview-derived behavior remains provisional until PR-012, but the adapter boundary is now the stable seam the combat runtime reads when edition-level invariants differ.

@@ -9417,6 +9417,8 @@ class PositioningMixin:
         return True
 
     def _can_declare_charge_base(self, game: 'Game', *, out_of_turn: bool = False) -> bool:
+        from ...engine.combat_timing import disembark_charge_blocked
+
         if not self.is_alive():
             return False
         if bool(getattr(self, "is_aircraft", False)):
@@ -9425,9 +9427,7 @@ class PositioningMixin:
             return False
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():
             return False
-        if getattr(self.round_state, "disembarked_cannot_charge", False):
-            return False
-        if getattr(self.round_state, "disembarked_from_destroyed_transport", False):
+        if disembark_charge_blocked(self, game=game, out_of_turn=out_of_turn):
             return False
         if self.round_state.fell_back_this_round and not self.can_charge_after_fall_back():
             return False

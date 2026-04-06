@@ -14,7 +14,10 @@ Cross-links:
 - Fight-phase distance overrides: `Unit.get_fight_phase_move_distance_override(...)` in
   `src/warhammer40k_ai/units/unit.py`
 - Fight move planning/validation helpers: `src/warhammer40k_ai/engine/fight_move.py`
-- Fight-phase `MOVE_UNIT` sequencing: `src/warhammer40k_ai/engine/fight_phase_manager.py`
+- Fight-phase `MOVE_UNIT` sequencing facade: `src/warhammer40k_ai/engine/fight_phase_manager.py`
+- Fight ordering / engagement / resolution helpers: `src/warhammer40k_ai/engine/fight_order.py`,
+  `src/warhammer40k_ai/engine/fight_engagement.py`, `src/warhammer40k_ai/engine/fight_resolution.py`
+- Edition-aware fight timing profile: `src/warhammer40k_ai/engine/combat_timing.py`
 
 ## Pile-In rules enforced
 - Models already in base-to-base contact cannot pile in.
@@ -40,6 +43,13 @@ Pile-in/consolidate validation only considers enemies within:
 `ENGAGEMENT_RANGE_HORIZONTAL + move_distance` (pile-in or consolidate distance).
 
 This reduces the candidate set while keeping validation correct for pile-in legality.
+
+## Timing profile hook
+- Fight-stage starting-player selection and enabled move steps are read through
+  `engine/combat_timing.py`.
+- The current runtime keeps the standard non-active-player-first flow with both
+  pile-in and consolidate enabled, but that policy is now centralized behind the
+  combat timing profile rather than buried directly in `fight_phase_manager.py`.
 
 ## UI behavior
 - `IndividualModelMovementDialog` lists all models and disables those already in base

@@ -13622,6 +13622,7 @@ class Game(
         if not out_of_turn:
             charging_unit.round_state.attempted_charge_this_round = True
         charging_unit.round_state.charge_target_ids = {get_entity_id(t) for t in targets}
+        charging_unit.round_state.charge_move_target_ids = None
         for tgt in targets:
             tgt_id = get_entity_id(tgt)
             chargers = self.phase_charge_targets.get(tgt_id, set()) or set()
@@ -13753,6 +13754,7 @@ class Game(
             "roll_type": "charge",
             "unit_id": get_entity_id(charging_unit),
             "target_unit_ids": [get_entity_id(t) for t in targets],
+            "out_of_turn": bool(out_of_turn),
             "handler_key": "charge_roll",
             "charge_spec": {"dice_count": dice_count, "keep_highest": keep_highest},
             "show_sum": True,
@@ -13816,6 +13818,31 @@ class Game(
             except Exception:
                 pass
         return result
+
+    def _bind_charge_move_targets(
+        self,
+        charging_unit: 'Unit',
+        target_unit_ids: list[str],
+        *,
+        out_of_turn: bool = False,
+    ) -> list[str]:
+        from .combat_timing import bind_charge_move_targets
+
+        if charging_unit is None:
+            return []
+        bound_targets = bind_charge_move_targets(
+            self,
+            charging_unit,
+            target_unit_ids,
+            out_of_turn=out_of_turn,
+        )
+        bound_ids = [
+            str(get_entity_id(target) or "")
+            for target in list(bound_targets or [])
+            if str(get_entity_id(target) or "")
+        ]
+        charging_unit.round_state.charge_move_target_ids = set(bound_ids) if bound_ids else set()
+        return bound_ids
 
     def continue_charge_after_emergency_combat_embarkation(
         self,

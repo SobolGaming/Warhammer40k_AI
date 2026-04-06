@@ -81,6 +81,7 @@ def test_snapshot_roundtrip_core_state(waha_helper):
     unit_one.round_state.advanced_this_round = True
     unit_one.round_state.num_lost_models_this_round = 1
     unit_one.round_state.advance_roll = 5
+    unit_one.round_state.charge_move_target_ids = {"unit:enemy"}
 
     shock = BattleShockEffect(current_turn=game.turn)
     shock.turn = 3
@@ -214,6 +215,7 @@ def test_snapshot_roundtrip_core_state(waha_helper):
     assert loaded_unit_one.round_state.advanced_this_round is True
     assert loaded_unit_one.round_state.num_lost_models_this_round == 1
     assert loaded_unit_one.round_state.advance_roll == 5
+    assert loaded_unit_one.round_state.charge_move_target_ids == {"unit:enemy"}
 
     mods = loaded_unit_one._characteristic_modifiers["movement"]
     assert mods[0].op == ModifierOp.ADD

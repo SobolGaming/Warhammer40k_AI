@@ -214,6 +214,7 @@ Key responsibilities:
 - Headless setup/deployment and policy control (`deployment_headless.py`, `headless_policy_controller.py`)
 - Time-budgeted candidate generation and telemetry (`time_manager.py`, `tier2_orchestrator.py`, `movement_solver.py`, `decision_record.py`)
 - Shared movement/fight planning and authoritative movement validation (`movement_intent.py`, `fight_move.py`, `decision_handlers/movement.py`)
+- Edition-aware combat invariants and decomposed combat orchestration (`combat_timing.py`, `stratagem_ledger.py`, `attack_sequence.py`, `attack_reporting.py`, `fight_order.py`, `fight_engagement.py`, `fight_resolution.py`)
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
 - Persistence/replay (`snapshot.py`, `ref_codec.py`, `event_log.py`, `replay.py`, `replay_store.py`, `session_store.py`)
   - Snapshot/ref encoding preserves stable object references, including `WargearProfile` values via parent-wargear/profile-name reconstruction during load/resync.
@@ -250,6 +251,7 @@ Purpose: represent **things that act and can be acted upon** during the game.
 
 Responsibilities (typical):
 - `Unit`: composition (models), keywords, wounds/strength state, positional state, attachment relationships.
+  - `unit.py` stays the stable facade, with extracted combat-runtime helpers in `units/unit_mixins/combat_runtime_mixin.py`.
 - `Model`: per-model wounds/alive state, base/footprint, per-model wargear assignment.
 - `Wargear` / weapon profiles: the equipment a model/unit can use; metadata used by rules/attack resolution.
 - `Ability`: rules-facing descriptors/triggers that the rules layer can bind behavior to.

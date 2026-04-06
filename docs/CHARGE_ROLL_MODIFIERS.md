@@ -25,6 +25,12 @@ and non-additive dice mechanics (e.g., 3D6 drop lowest).
   the configured charge dice spec.
 - Re-roll prompts are handled by the reroll provider / unit abilities; the roll itself
   uses the configured charge dice spec.
+- Declared charge targets are now preserved separately from post-roll movement legality.
+  - `round_state.charge_target_ids` tracks the original declaration payload.
+  - `round_state.charge_move_target_ids` stores the post-roll legal target set chosen by
+    `engine/combat_timing.py::bind_charge_move_targets(...)`.
+  - Charge movement requests use the post-roll bound target ids so later legality checks can
+    vary by rules bundle without rewriting charge declaration flow.
 
 ## Charge Dice Spec (Non-Additive)
 Charge rolls read the following optional per-unit keys from `unit.special_rules`:

@@ -6,6 +6,7 @@ import re
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
+from ..engine.stratagem_ledger import StratagemApplicationLedger
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
 from .stratagems_adepta_sororitas import AdeptaSororitasStratagemMixin
@@ -3915,7 +3916,11 @@ class StratagemManager(
                 return True
         return False
 
+    def _stratagem_application_ledger(self) -> StratagemApplicationLedger:
+        return StratagemApplicationLedger(self)
+
     def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None, enemy_unit=None) -> bool:
+        ledger = self._stratagem_application_ledger()
         if target_unit is not None:
             if not (
                 self._unit_has_faultless_opportunist(target_unit)
@@ -3948,7 +3953,7 @@ class StratagemManager(
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
-            return bool(uid and uid not in self._heroic_intervention_units_this_phase)
+            return bool(uid and not ledger.target_already_used_this_phase("HEROIC INTERVENTION", uid))
         for cand in list(candidates or []):
             if not (
                 self._unit_has_faultless_opportunist(cand)
@@ -3981,16 +3986,17 @@ class StratagemManager(
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
-            if uid and uid not in self._heroic_intervention_units_this_phase:
+            if uid and not ledger.target_already_used_this_phase("HEROIC INTERVENTION", uid):
                 return True
         return False
 
     def _record_heroic_intervention_use(self, unit) -> None:
         uid = self._heroic_intervention_target_id(unit)
         if uid:
-            self._heroic_intervention_units_this_phase.add(uid)
+            self._stratagem_application_ledger().mark_target_used_this_phase("HEROIC INTERVENTION", uid)
 
     def _rapid_ingress_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        ledger = self._stratagem_application_ledger()
         if target_unit is not None:
             if not (
                 self._unit_can_use_grimnars_mark_stratagem_discount(
@@ -4012,7 +4018,7 @@ class StratagemManager(
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
-            return bool(uid and uid not in self._rapid_ingress_units_this_phase)
+            return bool(uid and not ledger.target_already_used_this_phase("RAPID INGRESS", uid))
         for cand in list(candidates or []):
             if not (
                 self._unit_can_use_grimnars_mark_stratagem_discount(
@@ -4034,14 +4040,14 @@ class StratagemManager(
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
-            if uid and uid not in self._rapid_ingress_units_this_phase:
+            if uid and not ledger.target_already_used_this_phase("RAPID INGRESS", uid):
                 return True
         return False
 
     def _record_rapid_ingress_use(self, unit) -> None:
         uid = self._heroic_intervention_target_id(unit)
         if uid:
-            self._rapid_ingress_units_this_phase.add(uid)
+            self._stratagem_application_ledger().mark_target_used_this_phase("RAPID INGRESS", uid)
 
     def _resolve_friendly_unit_root_by_id(self, unit_id: str):
         token = str(unit_id or "").strip()
@@ -4318,6 +4324,7 @@ class StratagemManager(
         root.special_rules = sr
 
     def _command_reroll_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        ledger = self._stratagem_application_ledger()
         can_use_mirror_fn = getattr(self.player, "_target_unit_can_use_mirror_of_fates_command_reroll", None)
         can_use_datasheet_fn = getattr(
             self.player,
@@ -4338,12 +4345,12 @@ class StratagemManager(
 
         if target_unit is not None:
             uid = self._heroic_intervention_target_id(target_unit)
-            if not uid or uid in self._command_reroll_units_this_phase:
+            if not uid or ledger.target_already_used_this_phase("COMMAND RE-ROLL", uid):
                 return False
             return _can_repeat(target_unit)
         for cand in list(candidates or []):
             uid = self._heroic_intervention_target_id(cand)
-            if not uid or uid in self._command_reroll_units_this_phase:
+            if not uid or ledger.target_already_used_this_phase("COMMAND RE-ROLL", uid):
                 continue
             if _can_repeat(cand):
                 return True
@@ -4352,9 +4359,10 @@ class StratagemManager(
     def _record_command_reroll_use(self, unit) -> None:
         uid = self._heroic_intervention_target_id(unit)
         if uid:
-            self._command_reroll_units_this_phase.add(uid)
+            self._stratagem_application_ledger().mark_target_used_this_phase("COMMAND RE-ROLL", uid)
 
     def _grenade_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        ledger = self._stratagem_application_ledger()
         if target_unit is not None:
             if not self._unit_can_use_primed_and_ready_grenade(
                 target_unit,
@@ -4362,7 +4370,7 @@ class StratagemManager(
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
-            return bool(uid and uid not in self._grenade_units_this_phase)
+            return bool(uid and not ledger.target_already_used_this_phase("GRENADE", uid))
         for cand in list(candidates or []):
             if not self._unit_can_use_primed_and_ready_grenade(
                 cand,
@@ -4370,14 +4378,14 @@ class StratagemManager(
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
-            if uid and uid not in self._grenade_units_this_phase:
+            if uid and not ledger.target_already_used_this_phase("GRENADE", uid):
                 return True
         return False
 
     def _record_grenade_use(self, unit) -> None:
         uid = self._heroic_intervention_target_id(unit)
         if uid:
-            self._grenade_units_this_phase.add(uid)
+            self._stratagem_application_ledger().mark_target_used_this_phase("GRENADE", uid)
 
     def _grenade_mortal_wound_threshold(self, target_unit) -> int:
         threshold = 4
@@ -4442,8 +4450,9 @@ class StratagemManager(
         result = {"available": False, "reason": None, "cp_cost": self._effective_cp_cost(stratagem, context)}
         name_u = (stratagem.name or "").strip().upper()
         phase_name = context.get("phase_name") or self._current_phase_name or ""
+        ledger = self._stratagem_application_ledger()
 
-        if name_u and name_u in self._used_stratagems_this_phase:
+        if name_u and ledger.already_used_this_phase(name_u):
             if name_u == "COMMAND RE-ROLL":
                 if self._command_reroll_repeat_allowed(
                     target_unit=context.get("target_unit") or context.get("unit"),
