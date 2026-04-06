@@ -190,7 +190,7 @@ shows what is done versus what remains.
 | PR-007 | Completed | Pushed to `dev` on April 5, 2026 as commit `f5f265c7` (`Implement PR-007 objective site runtime and map split`). |
 | PR-008 | Completed | Pushed to `dev` on April 5, 2026 as commit `412032aa` (`Implement PR-008 optional attachment runtime and setup integration`). |
 | PR-009 | Completed | Pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`). |
-| PR-010 | Pending | Not started. |
+| PR-010 | Completed | Pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`). |
 | PR-011 | Pending | Not started. |
 | PR-012 | Pending | Not started. |
 
@@ -700,7 +700,7 @@ These are rules-semantics changes that should live at engine level, not as incid
 
 ## PR-010 — Replay/telemetry/training-manifest updates and safe pre-11th AI scope
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`).
 
 ### Goal
 Update replay, telemetry, relabeling, and training-manifest systems so future models can survive the edition transition with descriptor- and bundle-aware conditioning.
