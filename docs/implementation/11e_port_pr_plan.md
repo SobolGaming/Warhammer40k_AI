@@ -188,7 +188,7 @@ shows what is done versus what remains.
 | PR-005 | Completed | Pushed to `dev` on April 5, 2026 as commit `27c56016` (`Implement PR-005 pregame flow and facade splits`). |
 | PR-006 | Completed | Pushed to `dev` on April 5, 2026 as commit `327328e8` (`Implement PR-006 mission pack compiler and deployment split`). |
 | PR-007 | Completed | Pushed to `dev` on April 5, 2026 as commit `f5f265c7` (`Implement PR-007 objective site runtime and map split`). |
-| PR-008 | Pending | Not started. |
+| PR-008 | Completed | Pushed to `dev` on April 5, 2026 as commit `412032aa` (`Implement PR-008 optional attachment runtime and setup integration`). |
 | PR-009 | Pending | Not started. |
 | PR-010 | Pending | Not started. |
 | PR-011 | Pending | Not started. |
@@ -591,7 +591,7 @@ This is the second major 11th-edition pressure point after army construction.
 
 ## PR-008 — Attachment model rewrite, Leader/Support semantics, and `unit.py` / `army.py` decomposition
 
-**Status:** Pending.
+**Status:** Completed and pushed to `dev` on April 5, 2026 as commit `412032aa` (`Implement PR-008 optional attachment runtime and setup integration`).
 
 ### Goal
 Move attachment semantics to the build/runtime seam and make leader/support/bodyguard behavior explicit and testable, while keeping preview-derived rule details provisional until the final 11th text is available.
@@ -600,7 +600,7 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 11th previewed changes make attachments a list-building concern, not just a pregame runtime choice.
 
 ### Main changes
-1. Make attachment bindings chosen during army construction authoritative for runtime setup.
+1. Make attachment bindings chosen during army construction optionally authoritative for runtime setup when those bindings are provided.
 2. Add explicit support for:
    - one Leader attachment slot
    - one Support attachment slot
@@ -623,7 +623,7 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 - Army build and objective/missions seams are stable.
 
 ### End condition
-- Attachment bindings are authored at list-build time and propagated into runtime setup.
+- Attachment bindings can be authored at list-build time and propagated into runtime setup when present, while unresolved armies can still use the current `DECLARE_BATTLE_FORMATIONS` attachment decisions.
 - Runtime unit attachment logic is explicit and decomposed.
 - Character/support/bodyguard semantics are no longer hidden inside broad unit logic.
 - Exact released attachment exceptions remain data/config work for PR-012.
@@ -635,11 +635,16 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
   - invalid support without bodyguard
   - bodyguard death with character retained
   - serialization of attachment bindings through setup/replay
-- `unit.py` and `army.py` are materially smaller after the move.
+- `unit.py` attachment runtime state and `army.py` attachment validation/orchestration are routed through focused modules.
 
 ### Non-goals
 - No stratagem stacking or charge-timing changes yet.
 - No final codex-specific leader/support exceptions unless already needed for current data.
+
+### Implementation notes
+- Build-authored attachment bindings are currently optional. When absent, the current 10th-edition `DECLARE_BATTLE_FORMATIONS` attachment decisions remain the active path.
+- `unit.py` stayed as the required facade; PR-008 extracted attachment runtime state into `unit_mixins/attachment_runtime_mixin.py` and army-side orchestration into `roster/army_attachment_runtime.py`.
+- Parsed list units now receive deterministic `build_entry_id` values so authored bindings can be applied and round-tripped through setup, snapshots, and replay.
 
 ---
 
