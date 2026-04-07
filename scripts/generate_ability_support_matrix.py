@@ -20095,6 +20095,12 @@ def _stratagem_support(
         "000008816005": "Your Shooting phase: selected T'AU EMPIRE BATTLESUIT unit that has not yet shot gains [SUSTAINED HITS 1] against targets with 6-10 models, or [SUSTAINED HITS 2] against targets with 11+ models, until end of phase.",
         "000008816006": "Your Shooting phase reaction after a friendly T'AU EMPIRE BATTLESUIT FLY unit resolves its attacks: if it is not within Engagement Range, it can make a reactive Normal move up to its Move and cannot declare a charge this turn.",
         "000008816007": "Opponent Charge phase reaction after an enemy unit declares a charge against your T'AU EMPIRE BATTLESUIT unit: that enemy must take a Battle-shock test, then you roll one D6 per model in that enemy unit and inflict 1 mortal wound for each 6.",
+        "000010309002": "Start of your Command phase: selected CHAOS KNIGHTS CHARACTER unit within range of a controlled objective chooses one such objective to remain under your control with Level of Control 5 unless higher, until your opponent's Level of Control is greater at the end of a phase.",
+        "000010309003": "Any phase reaction when a CHAOS KNIGHTS CHARACTER unit is destroyed: its Deadly Demise triggers on 4+ instead of 6 for that destruction.",
+        "000010309004": "Opponent Shooting phase or the Fight phase defensive reaction after an enemy unit selects targets: selected CHAOS KNIGHTS CHARACTER unit reduces the Damage characteristic of attacks allocated to it by 1 until end of phase.",
+        "000010309005": "Your Shooting phase or the Fight phase: selected CHAOS KNIGHTS CHARACTER unit that has not yet acted chooses one enemy MONSTER or VEHICLE unit; attacks that target it re-roll Hit rolls of 1 and Wound rolls of 1, or full Hit and Wound re-rolls if that enemy is TITANIC, until end of phase.",
+        "000010309006": "Fight phase reaction just before a CHAOS KNIGHTS CHARACTER unit consolidates: its Consolidation moves gain an additional 3\" this phase if it can end that move within Engagement Range of one or more enemy units.",
+        "000010309007": "Your Movement phase reaction after a CHAOS KNIGHTS CHARACTER unit ends a Normal move: select one enemy non-MONSTER/non-VEHICLE unit moved over, roll 6D6, and each 4+ inflicts 1 mortal wound; if any models are destroyed, that enemy must take a Battle-shock test.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20712,6 +20718,16 @@ def _stratagem_support(
         if stratagem_id in notes_by_id:
             return notes_by_id[stratagem_id]
         return notes.get(name_u, default)
+
+    if stratagem_id in {
+        "000010309002",
+        "000010309003",
+        "000010309004",
+        "000010309005",
+        "000010309006",
+        "000010309007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
 
     if stratagem_id in {
         "000008422002",

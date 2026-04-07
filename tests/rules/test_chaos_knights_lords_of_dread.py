@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.game import BattleRoundPhases
 from warhammer40k_ai.rules.enhancement import Enhancement
@@ -23,34 +24,52 @@ class _MockDatasheet:
         keywords=None,
         faction_keywords=None,
         objective_control: int = 1,
+        wounds: int = 12,
+        model_count: int = 1,
+        abilities=None,
+        base_size: str = "100mm",
     ):
         self.name = name
         self.faction_data = {"name": "Chaos Knights"}
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
-        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
-        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        count = max(1, int(model_count or 1))
+        wounds_value = max(1, int(wounds or 1))
+        self.datasheets_unit_composition = [
+            {"description": f"{count} Test Model" if count == 1 else f"{count} Test Models"}
+        ]
+        self.datasheets_models_cost = [{"description": f"{count} model" if count == 1 else f"{count} models", "cost": 100}]
         self.datasheets_models = [
             {
                 "M": "10",
                 "T": "10",
                 "Sv": "3",
-                "W": "12",
+                "W": str(wounds_value),
                 "Ld": "6",
                 "OC": str(int(objective_control)),
-                "base_size": "100mm",
+                "base_size": str(base_size),
                 "inv_sv": "5",
                 "inv_sv_descr": "none",
             }
         ]
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
-        self.datasheets_abilities = []
+        self.datasheets_abilities = list(abilities or [])
         self.loadout = "This model is equipped with: nothing"
         self.transport = ""
 
 
-def _make_unit(name, *, keywords=None, faction_keywords=None, objective_control: int = 1):
+def _make_unit(
+    name,
+    *,
+    keywords=None,
+    faction_keywords=None,
+    objective_control: int = 1,
+    wounds: int = 12,
+    model_count: int = 1,
+    abilities=None,
+    base_size: str = "100mm",
+):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
@@ -58,6 +77,10 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, objective_control:
         keywords=keywords,
         faction_keywords=faction_keywords,
         objective_control=objective_control,
+        wounds=wounds,
+        model_count=model_count,
+        abilities=abilities,
+        base_size=base_size,
     )
     unit = Unit(datasheet)
     unit._id = name
@@ -90,6 +113,14 @@ def _build_game(detachment_type: str = "Lords of Dread"):
 def _set_model_location(unit, x: float, y: float) -> None:
     model = unit.models[0]
     model.set_location(float(x), float(y), 0.0, 0.0)
+
+
+def _deploy_unit(game, unit, x: float, y: float, *, spacing: float = 0.5) -> None:
+    for idx, model in enumerate(list(unit.models or [])):
+        model.set_location(float(x + spacing * idx), float(y), 0.0, 0.0)
+    if unit not in list(game.map.units or []):
+        game.map.units.append(unit)
+    game.rebuild_entity_registry()
 
 
 def _apply_lords_enhancement(unit, *, enhancement_id: str, enhancement_name: str):
@@ -420,6 +451,322 @@ class TestChaosKnightsLordsOfDread(unittest.TestCase):
         preview_out = player.preview_targeted_stratagem_cp_increase(target_unit=enemy, current_cost=1)
         self.assertFalse(bool(preview_out.get("auto")))
         self.assertFalse(bool(preview_out.get("optional")))
+
+    def test_claimed_for_dark_gods_sets_sticky_minimum_control_and_breaks_only_above_five(self):
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+
+        game, player, ck_army, enemy_army = _build_game("Lords of Dread")
+        enemy_player = next(iter([p for p in list(game.players or []) if p is not player]), None)
+        self.assertIsNotNone(enemy_player)
+
+        character = _make_unit(
+            "Knight Desecrator",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+        )
+        enemy = _make_unit(
+            "Enemy Objective Holder",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            objective_control=4,
+            wounds=1,
+            base_size="32mm",
+        )
+        ck_army.add_unit(character)
+        enemy_army.add_unit(enemy)
+
+        objective_point = ObjectivePoint(x=10.0, y=10.0, z=0.0, control_radius=3.0)
+        objective_point.controlling_player = player
+        objective = Objective(
+            name="Central Objective",
+            category=ObjectiveCategory.PRIMARY,
+            points=5,
+            description="Hold the center",
+            conditions=lambda _game: True,
+            location=objective_point,
+        )
+        game.map.objectives = [objective]
+        game.objectives = [objective]
+
+        _deploy_unit(game, character, 10.0, 10.0)
+        _deploy_unit(game, enemy, 30.0, 30.0)
+        player.command_points = 5
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        ok = player.stratagems.use(
+            "CLAIMED FOR THE DARK GODS",
+            unit=character,
+            objective=objective,
+            phase_name="Command phase",
+        )
+        self.assertTrue(ok)
+        self.assertIs(objective_point.sticky_controller, player)
+        self.assertEqual(int(objective_point.sticky_minimum_control or 0), 5)
+
+        _set_model_location(character, 30.0, 30.0)
+        enemy_model = enemy.models[0]
+        enemy_model.objective_control = 4
+        _set_model_location(enemy, 10.0, 10.0)
+        objective_point.update_control(game)
+        self.assertIs(objective_point.controlling_player, player)
+        self.assertIs(objective_point.sticky_controller, player)
+        self.assertEqual(int(objective_point.sticky_minimum_control or 0), 5)
+
+        enemy_model.objective_control = 6
+        objective_point.update_control(game)
+        self.assertIs(objective_point.controlling_player, enemy_player)
+        self.assertIsNone(objective_point.sticky_controller)
+        self.assertEqual(int(objective_point.sticky_minimum_control or 0), 0)
+
+    def test_titanic_duel_grants_reroll_ones_or_full_against_selected_target(self):
+        game, player, ck_army, enemy_army = _build_game("Lords of Dread")
+        source = _make_unit(
+            "Knight Rampager",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+        )
+        selected_vehicle = _make_unit(
+            "Enemy Tank",
+            keywords=["VEHICLE"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+        )
+        other_vehicle = _make_unit(
+            "Enemy Walker",
+            keywords=["MONSTER"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+        )
+        ck_army.add_unit(source)
+        enemy_army.add_unit(selected_vehicle)
+        enemy_army.add_unit(other_vehicle)
+        _deploy_unit(game, source, 0.0, 0.0)
+        _deploy_unit(game, selected_vehicle, 8.0, 0.0)
+        _deploy_unit(game, other_vehicle, 16.0, 0.0)
+        player.command_points = 5
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        ok = player.stratagems.use(
+            "TITANIC DUEL",
+            unit=source,
+            enemy_unit=selected_vehicle,
+            phase_name="Shooting phase",
+        )
+        self.assertTrue(ok)
+
+        hit_mods = source.get_unit_hit_reroll_modifiers("ranged", target=selected_vehicle)
+        wound_mods = source.get_unit_wound_reroll_modifiers("ranged", target=selected_vehicle)
+        other_hit_mods = source.get_unit_hit_reroll_modifiers("ranged", target=other_vehicle)
+        other_wound_mods = source.get_unit_wound_reroll_modifiers("ranged", target=other_vehicle)
+
+        self.assertIn(1, tuple(hit_mods.get("reroll_hit_values", ()) or ()))
+        self.assertIn(1, tuple(wound_mods.get("reroll_wound_values", ()) or ()))
+        self.assertFalse(bool(other_hit_mods.get("reroll_hit_full", False)))
+        self.assertFalse(bool(other_wound_mods.get("reroll_wound_full", False)))
+        self.assertNotIn(1, tuple(other_hit_mods.get("reroll_hit_values", ()) or ()))
+        self.assertNotIn(1, tuple(other_wound_mods.get("reroll_wound_values", ()) or ()))
+
+        game2, player2, ck_army2, enemy_army2 = _build_game("Lords of Dread")
+        source2 = _make_unit(
+            "Knight Abominant",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+        )
+        selected_titanic = _make_unit(
+            "Enemy Titanic Engine",
+            keywords=["VEHICLE", "TITANIC"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+        )
+        other_target = _make_unit(
+            "Enemy Stalker",
+            keywords=["VEHICLE"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+        )
+        ck_army2.add_unit(source2)
+        enemy_army2.add_unit(selected_titanic)
+        enemy_army2.add_unit(other_target)
+        _deploy_unit(game2, source2, 0.0, 0.0)
+        _deploy_unit(game2, selected_titanic, 8.0, 0.0)
+        _deploy_unit(game2, other_target, 16.0, 0.0)
+        player2.command_points = 5
+        game2.phase = BattleRoundPhases.FIGHT_PHASE
+        game2.current_player_index = 0
+
+        ok = player2.stratagems.use(
+            "TITANIC DUEL",
+            unit=source2,
+            enemy_unit=selected_titanic,
+            phase_name="Fight phase",
+        )
+        self.assertTrue(ok)
+
+        hit_mods = source2.get_unit_hit_reroll_modifiers("melee", target=selected_titanic)
+        wound_mods = source2.get_unit_wound_reroll_modifiers("melee", target=selected_titanic)
+        other_hit_mods = source2.get_unit_hit_reroll_modifiers("melee", target=other_target)
+        other_wound_mods = source2.get_unit_wound_reroll_modifiers("melee", target=other_target)
+
+        self.assertTrue(bool(hit_mods.get("reroll_hit_full", False)))
+        self.assertTrue(bool(wound_mods.get("reroll_wound_full", False)))
+        self.assertFalse(bool(other_hit_mods.get("reroll_hit_full", False)))
+        self.assertFalse(bool(other_wound_mods.get("reroll_wound_full", False)))
+
+    def test_crushed_like_vermin_inflicts_mortal_wounds_and_triggers_battleshock_on_destroy(self):
+        game, player, ck_army, enemy_army = _build_game("Lords of Dread")
+        source = _make_unit(
+            "Knight Desecrator",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+        )
+        enemy = _make_unit(
+            "Enemy Screening Unit",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+            wounds=1,
+            model_count=2,
+            base_size="32mm",
+        )
+        ck_army.add_unit(source)
+        enemy_army.add_unit(enemy)
+        _deploy_unit(game, source, 8.0, 0.0)
+        _deploy_unit(game, enemy, 0.0, 0.0, spacing=0.8)
+        source.models[0].last_move_path = [(-8.0, 0.0, 0.0), (8.0, 0.0, 0.0)]
+        player.command_points = 5
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        candidates = list(player.stratagems._lords_of_dread_crushed_like_vermin_enemy_candidates(source) or [])
+        self.assertIn(enemy, candidates)
+
+        battle_shock_turns = []
+        enemy.take_battle_shock_test = lambda current_turn=1: battle_shock_turns.append(int(current_turn or 0))
+        destroyed_model = enemy.models[0]
+
+        def _apply_mortal_wounds(_target_unit, mortal_wound_amount, game_map=None):
+            del game_map
+            if int(mortal_wound_amount or 0) <= 0:
+                return 0
+            if destroyed_model in list(enemy.models or []):
+                enemy.models.remove(destroyed_model)
+                enemy.models_lost.append(destroyed_model)
+                destroyed_model.wounds = 0
+                return 1
+            return 0
+
+        source._apply_mortal_wounds_to_unit = _apply_mortal_wounds
+        with patch("warhammer40k_ai.rules.stratagems_chaos_knights.get_roll", side_effect=[4, 1, 1, 1, 1, 1]):
+            ok = player.stratagems.use(
+                "CRUSHED LIKE VERMIN",
+                unit=source,
+                enemy_unit=enemy,
+                enemy_candidates=candidates,
+                action="normal move",
+                phase_name="Movement phase",
+            )
+        self.assertTrue(ok)
+        self.assertEqual(int(len(list(enemy.models_lost or []))), 1)
+        self.assertEqual(battle_shock_turns, [1])
+
+    def test_spiteful_demise_allows_deadly_demise_on_four_plus(self):
+        game, player, ck_army, enemy_army = _build_game("Lords of Dread")
+        source = _make_unit(
+            "Exploding Knight",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+            wounds=10,
+            abilities=[
+                {
+                    "name": "Deadly Demise",
+                    "description": "Deadly Demise",
+                    "type": "Ability",
+                    "parameter": "D3",
+                }
+            ],
+        )
+        enemy = _make_unit(
+            "Enemy Victim",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+            wounds=1,
+            base_size="32mm",
+        )
+        ck_army.add_unit(source)
+        enemy_army.add_unit(enemy)
+        _deploy_unit(game, source, 0.0, 0.0)
+        _deploy_unit(game, enemy, 0.5, 0.0)
+        player.command_points = 5
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        destroyed_model = source.models[0]
+        source.models = []
+        source.models_lost.append(destroyed_model)
+        destroyed_model.wounds = 0
+
+        ok = player.stratagems.use(
+            "SPITEFUL DEMISE",
+            destroyed_unit=source,
+            destroyed_model=destroyed_model,
+            phase_name="Fight phase",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(getattr(destroyed_model, "_chaos_knights_spiteful_demise_trigger_threshold_once", 0) or 0), 4)
+
+        explosion_calls = []
+        with patch("warhammer40k_ai.units.unit_mixins.damage_death_mixin.get_roll", return_value=4), patch.object(
+            source,
+            "_apply_deadly_demise_explosion",
+            side_effect=lambda **kwargs: explosion_calls.append(dict(kwargs)),
+        ):
+            triggered = source._trigger_deadly_demise(destroyed_model, game.map)
+        self.assertFalse(triggered)
+        self.assertEqual(len(explosion_calls), 1)
+        self.assertIs(explosion_calls[0]["game_map"], game.map)
+        self.assertEqual(int(getattr(destroyed_model, "_chaos_knights_spiteful_demise_trigger_threshold_once", 0) or 0), 0)
+
+    def test_trophy_hunter_generic_parser_applies_six_inch_consolidate(self):
+        game, player, ck_army, enemy_army = _build_game("Lords of Dread")
+        hunter = _make_unit(
+            "Hunter Knight",
+            keywords=["CHAOS KNIGHTS", "CHARACTER"],
+            faction_keywords=["CHAOS KNIGHTS"],
+            objective_control=8,
+        )
+        enemy = _make_unit(
+            "Enemy Screen",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            objective_control=2,
+            base_size="32mm",
+        )
+        ck_army.add_unit(hunter)
+        enemy_army.add_unit(enemy)
+        _deploy_unit(game, hunter, 10.0, 10.0)
+        _deploy_unit(game, enemy, 16.5, 10.0)
+        player.command_points = 5
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        ok = player.stratagems.use(
+            "TROPHY HUNTER",
+            unit=hunter,
+            phase_name="Fight phase",
+        )
+        self.assertTrue(ok)
+        sr = dict(getattr(hunter, "special_rules", {}) or {})
+        self.assertEqual(float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0), 6.0)
+        self.assertTrue(bool(sr.get("stratagem_consolidate_requires_engagement", False)))
+        self.assertEqual(str(sr.get("stratagem_consolidate_source", "") or ""), "TROPHY HUNTER")
 
 
 if __name__ == "__main__":

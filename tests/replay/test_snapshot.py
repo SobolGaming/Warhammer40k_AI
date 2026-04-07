@@ -90,6 +90,9 @@ def test_snapshot_roundtrip_core_state(waha_helper):
 
     point = ObjectivePoint(x=10.5, y=20.25, z=0.0, control_radius=3.0)
     point.controlling_player = player_one
+    point.sticky_controller = player_one
+    point.sticky_source = "claimed_for_the_dark_gods"
+    point.sticky_minimum_control = 5
     objective = Objective(
         name="Test Objective",
         category=ObjectiveCategory.PRIMARY,
@@ -204,6 +207,8 @@ def test_snapshot_roundtrip_core_state(waha_helper):
     assert loaded_obj.location.x == pytest.approx(10.5)
     assert loaded_obj.location.y == pytest.approx(20.25)
     assert loaded_obj.location.controlling_player.id == player_one.id
+    assert loaded_obj.location.sticky_controller.id == player_one.id
+    assert loaded_obj.location.sticky_minimum_control == 5
 
     loaded_model = loaded_unit_one.models[0]
     assert loaded_model.model_base.x == pytest.approx(1.125)

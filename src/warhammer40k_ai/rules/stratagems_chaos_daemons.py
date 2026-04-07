@@ -2349,6 +2349,8 @@ class ChaosDaemonsStratagemMixin:
     def _use_chaos_daemons_shadow_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
         if name_u == "SPITEFUL DEMISE":
+            if not self._is_shadow_legion_detachment():
+                return None
             return self._use_shadow_legion_spiteful_demise(stratagem, **kwargs)
         if name_u == "SHADE PATH":
             return self._use_shadow_legion_shade_path(stratagem, **kwargs)

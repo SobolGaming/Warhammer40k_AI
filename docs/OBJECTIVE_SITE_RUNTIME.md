@@ -39,6 +39,7 @@ This lets the engine represent:
 - `ObjectivePoint` remains the stable import symbol and now aliases the richer `ObjectiveSite` runtime.
 - Existing Chapter Approved mission generation still creates marker-style sites.
 - Objective control/state flags such as sticky control, hazards, removed markers, terraform, cleanse, and worldblight tracking remain on the site object.
+- Sticky control can now carry a persisted minimum Level of Control floor for rules such as `Claimed for the Dark Gods`.
 
 ## Serialization
 
@@ -47,6 +48,7 @@ State blobs, descriptors, and snapshots now preserve:
 - site kind / geometry kind
 - primary control-region payload
 - score-source bindings
+- sticky-control minimum Level of Control floors
 - optional footprint geometry
 - optional keyed-feature references
 

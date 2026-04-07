@@ -662,8 +662,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "CLAIMED FOR THE DARK GODS",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
+    "CRUSHED LIKE VERMIN",
+    "TITANIC DUEL",
     "UNLEASH BALEFIRE",
     "WARP VISION",
     "CORRUPT REALSPACE",
@@ -882,6 +885,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BLAZING EARTH",
     "CALCULATED FEINT",
+    "CLAIMED FOR THE DARK GODS",
     "FOCUSED HATRED",
     "REINFORCED HIVE NODE",
     "THE SMOTHERING SHADOW",
@@ -891,6 +895,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
+    "CRUSHED LIKE VERMIN",
     "COORDINATED STRIKE",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
@@ -924,6 +929,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CYBERSPIRIT MACHINATIONS",
     "STRANDS OF TIME",
     "THROUGH THE VEIL",
+    "TITANIC DUEL",
     "WRATH OF THE DOOMED",
     "KALEIDOSCOPIC TEMPEST",
     "WARPFLAME GARGOYLES",
@@ -1653,16 +1659,30 @@ def parse_consolidate_move_stratagem(name: str, description: str) -> Optional[Di
         rest,
         flags=re.IGNORECASE,
     )
-    if not m:
-        return None
-    max_dist = int(m.group(2))
-    tail = rest[m.end() :].strip().rstrip(".")
+    if m:
+        max_dist = int(m.group(2))
+        tail = rest[m.end() :].strip().rstrip(".")
+    else:
+        m = re.match(
+            r'each time (?:your|that) unit consolidates, models? in it can move an additional (\d+)"',
+            rest,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            return None
+        max_dist = 3 + int(m.group(1))
+        tail = rest[m.end() :].strip().rstrip(".")
     if tail.startswith(","):
         tail = tail[1:].strip()
     requires_engagement = False
     if tail:
         if re.fullmatch(
             r"provided your unit ends that consolidation move within engagement range of one or more enemy units",
+            tail,
+        ):
+            requires_engagement = True
+        elif re.fullmatch(
+            r"as long as your unit can end that move within engagement range of one or more enemy units",
             tail,
         ):
             requires_engagement = True
@@ -2209,6 +2229,7 @@ class StratagemManager(
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
             "BOUNDLESS ZEAL",
+            "CRUSHED LIKE VERMIN",
             "CUNNING HUNTER",
             "HARRYING HOUNDS",
             "UNRESTRAINED RAGE",
@@ -7866,13 +7887,16 @@ class StratagemManager(
             "KRUNCHIN' DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "KRUNCHIN’ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
+            "CLAIMED FOR THE DARK GODS": "Target: CHAOS KNIGHTS CHARACTER within range of a controlled objective; select that objective to remain under your control with Level of Control 5 until broken",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
+            "CRUSHED LIKE VERMIN": "Target: CHAOS KNIGHTS CHARACTER that just ended a Normal move; select one enemy non-MONSTER/non-VEHICLE unit it moved over",
             "VOX-HOWL": "Target: WAR DOG CHARACTER unit from your army in your Shooting or Fight phase",
             "HUNGRY FOR COMBAT": "Target: two or more friendly WAR DOG units in Engagement Range of the same enemy unit",
             "CUNNING HUNTER": "Target: WAR DOG unit from your army that just Fell Back in your Movement phase",
             "ANIMALISTIC RAGE": "Target: just-destroyed WAR DOG model from your army in the Shooting or Fight phase",
             "HARRYING HOUNDS": "Target: WAR DOG unit within 9\" of an enemy unit that just ended a move in your opponent's Movement phase",
             "ENCIRCLING PACK": "Target: WAR DOG unit wholly within 12\" of a battlefield edge and not in Engagement Range at end of opponent's Fight phase",
+            "TITANIC DUEL": "Target: CHAOS KNIGHTS CHARACTER that has not yet shot/fought this phase; select one enemy MONSTER or VEHICLE unit for hit and wound re-rolls",
             "AVENGE THE MASTERS!": "Target: your CHAOS KNIGHTS unit that was just destroyed; mark the enemy unit that destroyed it until end of battle",
             "WRETCHED MASSES": "Target: your destroyed DAMNED unit (excluding Accursed Cultists); return an identical replacement unit to Strategic Reserves (once per battle)",
             "SOUL HUNGER": "Target: your CHAOS KNIGHTS unit that just fought and destroyed one or more models; regain D3 lost wounds, or D3+2 if any destroyed models were from Battle-shocked units",
@@ -8508,6 +8532,10 @@ class StratagemManager(
             raise
         try:
             self._queue_houndpack_lance_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_lords_of_dread_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -12003,6 +12031,7 @@ class StratagemManager(
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_vanguard_move_end_reactions(unit=unit, action=action)
         self._queue_houndpack_lance_move_end_reactions(unit=unit, action=action)
+        self._queue_lords_of_dread_move_end_reactions(unit=unit, action=action)
         self._queue_iconoclast_fiefdom_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
@@ -16997,6 +17026,10 @@ class StratagemManager(
             raise
         try:
             self._queue_pantheon_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_lords_of_dread_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
         try:

@@ -32,6 +32,7 @@ def objective_entries(game: object) -> list[dict[str, Any]]:
                 "control_radius": float(getattr(site, "control_radius", 0.0) or 0.0),
                 "controller_player_id": str(getattr(controller, "id", "") or ""),
                 "sticky_controller_player_id": str(getattr(getattr(site, "sticky_controller", None), "id", "") or ""),
+                "sticky_minimum_control": int(getattr(site, "sticky_minimum_control", 0) or 0),
                 "removed": bool(getattr(site, "removed", False)),
                 "geometry": {
                     "kind": "MARKER",

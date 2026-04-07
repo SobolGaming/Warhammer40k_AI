@@ -214,6 +214,83 @@ _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS.values()
 }
 
+_LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010309002": StratagemToolDescriptor(
+        stratagem_id="000010309002",
+        name="Claimed for the Dark Gods",
+        timing="command_phase_start",
+        target="chaos_knights_character_unit_on_controlled_objective",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective_with_minimum_control",
+        cp_cost=1,
+        effect_params={"minimum_control": 5},
+    ),
+    "000010309003": StratagemToolDescriptor(
+        stratagem_id="000010309003",
+        name="Spiteful Demise",
+        timing="any_phase_on_destroyed_model",
+        target="destroyed_chaos_knights_character_model_with_deadly_demise",
+        duration="immediate",
+        effect="deadly_demise_trigger_threshold_override",
+        cp_cost=1,
+        effect_params={"trigger_threshold": 4, "before_removal": True},
+    ),
+    "000010309004": StratagemToolDescriptor(
+        stratagem_id="000010309004",
+        name="Runes of Disdain",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="chaos_knights_character_unit_targeted",
+        duration="until_end_of_phase",
+        effect="damage_reduction",
+        cp_cost=1,
+        effect_params={"damage_reduction": 1},
+    ),
+    "000010309005": StratagemToolDescriptor(
+        stratagem_id="000010309005",
+        name="Titanic Duel",
+        timing="shooting_or_fight_phase_on_select",
+        target="chaos_knights_character_unit_not_yet_acted",
+        duration="until_end_of_phase",
+        effect="targeted_hit_and_wound_rerolls",
+        cp_cost=1,
+        effect_params={
+            "enemy_keywords_any": ["MONSTER", "VEHICLE"],
+            "reroll_mode": "ones",
+            "titanic_reroll_mode": "full",
+        },
+    ),
+    "000010309006": StratagemToolDescriptor(
+        stratagem_id="000010309006",
+        name="Trophy Hunter",
+        timing="fight_phase_before_consolidate",
+        target="chaos_knights_character_unit",
+        duration="until_end_of_phase",
+        effect="extend_consolidate_move",
+        cp_cost=1,
+        effect_params={"extra_distance": 3, "requires_end_engagement": True},
+    ),
+    "000010309007": StratagemToolDescriptor(
+        stratagem_id="000010309007",
+        name="Crushed Like Vermin",
+        timing="movement_phase_after_normal_move",
+        target="chaos_knights_character_unit_that_moved_over_enemy",
+        duration="immediate",
+        effect="move_over_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "rolls": 6,
+            "success_on": 4,
+            "mortal_wounds_per_success": 1,
+            "exclude_target_keywords_any": ["MONSTER", "VEHICLE"],
+            "battle_shock_on_destroy": True,
+        },
+    ),
+}
+
+_LORDS_OF_DREAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008437002": StratagemToolDescriptor(
         stratagem_id="000008437002",
@@ -11780,6 +11857,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12218,6 +12298,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SHAMBLEROT_VECTORIUM_STRATAGEM_BY_NAME.get(key)
         or _TALLYBAND_SUMMONERS_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _LORDS_OF_DREAD_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _GREEN_TIDE_STRATAGEM_BY_NAME.get(key)

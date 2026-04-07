@@ -6825,6 +6825,24 @@ class ActionsMovementMixin:
                 mods["reroll_hit_full"] = True
                 reroll_hit_full_reasons.append(f"{source_name}: re-roll Hit roll vs targets within objective range")
 
+        ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        titanic_duel_hit_fn = getattr(ck_mgr, "lords_of_dread_titanic_duel_reroll_mode", None) if ck_mgr is not None else None
+        if callable(titanic_duel_hit_fn) and target is not None:
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            reroll_mode, source = titanic_duel_hit_fn(
+                root,
+                target,
+                attack_type=atype,
+                game=game_local,
+            )
+            source_name = str(source or "TITANIC DUEL").strip() or "TITANIC DUEL"
+            if reroll_mode == "full":
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append(f"{source_name}: re-roll Hit roll against the selected target")
+            elif reroll_mode == "ones":
+                reroll_hit_values.add(1)
+                reroll_hit_reasons.append(f"{source_name}: re-roll Hit rolls of 1 against the selected target")
+
         # Hallowed Martyrs: RIGHTEOUS VENGEANCE (melee hit re-rolls this phase).
         try:
             if atype in ("any", "melee"):
@@ -8436,6 +8454,24 @@ class ActionsMovementMixin:
                     reroll_wound_reasons.append("Codex Discipline: re-roll Wound rolls of 1 vs auspex scanned units")
         except Exception:
             pass
+
+        ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        titanic_duel_wound_fn = getattr(ck_mgr, "lords_of_dread_titanic_duel_reroll_mode", None) if ck_mgr is not None else None
+        if callable(titanic_duel_wound_fn) and target is not None:
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            reroll_mode, source = titanic_duel_wound_fn(
+                root,
+                target,
+                attack_type=atype,
+                game=game_local,
+            )
+            source_name = str(source or "TITANIC DUEL").strip() or "TITANIC DUEL"
+            if reroll_mode == "full":
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append(f"{source_name}: re-roll Wound roll against the selected target")
+            elif reroll_mode == "ones":
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append(f"{source_name}: re-roll Wound rolls of 1 against the selected target")
 
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
         try:

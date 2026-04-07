@@ -120,6 +120,7 @@ class ObjectiveSite:
         self.removed = False
         self.sticky_controller = None
         self.sticky_source = None
+        self.sticky_minimum_control: int = 0
         self.space_marines_vanguard_deadly_prize_sources: dict[str, str] = {}
         self.worldblight_controller = None
         self.worldblight_source = None
@@ -274,9 +275,19 @@ class ObjectiveSite:
             ]
         return self.score_sources[0]
 
-    def set_sticky_control(self, player, source: str | None = None) -> None:
+    def set_sticky_control(
+        self,
+        player,
+        source: str | None = None,
+        *,
+        minimum_control: int | None = None,
+    ) -> None:
         self.sticky_controller = player
         self.sticky_source = source
+        if minimum_control is None:
+            self.sticky_minimum_control = 0
+        else:
+            self.sticky_minimum_control = max(0, int(minimum_control or 0))
         self.controlling_player = player
 
     def to_state_entry(self, *, objective_id: str) -> dict[str, Any]:
@@ -300,6 +311,7 @@ class ObjectiveSite:
             "control_radius": float(self.control_radius or 0.0),
             "controller_player_id": controller_player_id,
             "sticky_controller_player_id": str(getattr(self.sticky_controller, "id", "") or ""),
+            "sticky_minimum_control": int(self.sticky_minimum_control or 0),
             "removed": bool(self.removed),
             "geometry": geometry,
             "control_region": self.control_region.to_state_entry(
@@ -327,6 +339,7 @@ class ObjectiveSite:
             self.controlling_player = None
             self.sticky_controller = None
             self.sticky_source = None
+            self.sticky_minimum_control = 0
             self.space_marines_vanguard_deadly_prize_sources = {}
             self.worldblight_controller = None
             self.worldblight_source = None
@@ -343,7 +356,10 @@ class ObjectiveSite:
 
         sticky_owner = self.sticky_controller
         if sticky_owner is not None and sticky_owner in player_oc:
-            sticky_oc = int(player_oc.get(sticky_owner, 0) or 0)
+            sticky_oc = max(
+                int(player_oc.get(sticky_owner, 0) or 0),
+                int(self.sticky_minimum_control or 0),
+            )
             opponent_max = 0
             for player, oc in player_oc.items():
                 if player is sticky_owner:
@@ -355,6 +371,7 @@ class ObjectiveSite:
             if opponent_max > sticky_oc and allow_break:
                 self.sticky_controller = None
                 self.sticky_source = None
+                self.sticky_minimum_control = 0
             else:
                 self.controlling_player = sticky_owner
 

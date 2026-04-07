@@ -28,6 +28,7 @@ Design notes:
   - site geometry (`MARKER`, `POLYGON_FOOTPRINT`, or `KEYED_FEATURE`)
   - an explicit primary `control_region`
   - one or more explicit `score_sources`
+  - sticky-control metadata including any minimum Level of Control floor
 - `army_build_state` carries public army-construction semantics plus the active `army_build_descriptor_id`.
 - `army_build_state.players[*].detachment_points_summary.spent` is always present, while `budget` / `remaining` may be `null` until the roster has an authored detachment-point budget.
 - The state must preserve enough structure for descriptor recompilation and cross-version relabeling.
@@ -48,3 +49,4 @@ Derived deterministic feature examples:
 
 Version notes:
 - `1.2.0` adds explicit objective-site geometry/control/scoring payloads for terrain-footprint and keyed-feature objective support.
+- `1.3.0` adds persisted objective sticky-control minimum Level of Control support.

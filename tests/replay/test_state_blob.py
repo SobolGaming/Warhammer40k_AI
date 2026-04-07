@@ -117,7 +117,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
     observed = player_obs_state(game, player.id)
     army_build = dict(omniscient.get("army_build_state", {}) or {})
 
-    assert str(omniscient.get("state_blob_version", "") or "") == "1.2.0"
+    assert str(omniscient.get("state_blob_version", "") or "") == "1.3.0"
     assert army_build["army_build_descriptor_id"].startswith("army_build_descriptor:")
     assert army_build["players"][0]["primary_detachment_type"] == "Gladius Task Force"
     assert army_build["players"][0]["detachment_points_summary"] == {
@@ -147,10 +147,13 @@ def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> Non
     )
     game.map.objectives = [objective]
     game.objectives = [objective]
+    site.sticky_controller = player
+    site.sticky_minimum_control = 5
 
     state = canonical_omniscient_state(game)
 
-    assert str(state.get("state_blob_version", "") or "") == "1.2.0"
+    assert str(state.get("state_blob_version", "") or "") == "1.3.0"
     assert state["objectives"][0]["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert state["objectives"][0]["sticky_minimum_control"] == 5
     assert state["control_regions"][0]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
     assert state["scoring_surfaces"][0]["score_source_id"] == f"score_source:objective:{objective.id}"

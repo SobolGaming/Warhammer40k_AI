@@ -1033,6 +1033,58 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return
         self._lords_of_dread_claimed_for_dark_gods_used_round = battle_round
 
+    def lords_of_dread_titanic_duel_reroll_mode(
+        self,
+        attacker_unit,
+        target_unit,
+        *,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[str, str]:
+        if not self.is_lords_of_dread():
+            return "", ""
+        attacker_root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return "", ""
+        if not self._unit_belongs_to_army(attacker_root):
+            return "", ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("lords_of_dread_titanic_duel_active"):
+            return "", ""
+        target_id = str(sr.get("lords_of_dread_titanic_duel_target_id", "") or "")
+        if not target_id or target_id != self._unit_root_id(target_root):
+            return "", ""
+        owner_id = str(sr.get("lords_of_dread_titanic_duel_turn_owner", "") or "")
+        army_player = getattr(self.army, "player", None) if self.army is not None else None
+        if owner_id and owner_id != str(getattr(army_player, "id", "") or ""):
+            return "", ""
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(army_player, "game", None)
+        if game_obj is not None:
+            expires_phase = str(sr.get("lords_of_dread_titanic_duel_expires_phase", "") or "").strip().upper()
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if expires_phase and current_phase and expires_phase != current_phase:
+                return "", ""
+            try:
+                effect_turn = int(sr.get("lords_of_dread_titanic_duel_turn", 0) or 0)
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return "", ""
+        stored_attack_type = str(sr.get("lords_of_dread_titanic_duel_attack_type", "") or "").strip().lower()
+        requested_attack_type = str(attack_type or "").strip().lower()
+        if stored_attack_type and requested_attack_type and stored_attack_type not in {"any", requested_attack_type}:
+            return "", ""
+        mode = str(sr.get("lords_of_dread_titanic_duel_reroll_mode", "") or "").strip().lower()
+        if mode not in {"ones", "full"}:
+            return "", ""
+        source = str(sr.get("lords_of_dread_titanic_duel_source", "") or "TITANIC DUEL").strip() or "TITANIC DUEL"
+        return mode, source
+
     def can_queue_traitoris_paragons_bonus_choice(self, *, battle_round: int, game=None) -> bool:
         if not self.is_traitoris_lance():
             return False

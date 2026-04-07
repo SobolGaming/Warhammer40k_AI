@@ -1340,6 +1340,39 @@ class GameView:
             )
         self._request_corrupting_taint_objective = _request_corrupting_taint_objective
 
+        def _request_claimed_for_dark_gods_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker your unit controls.",
+                title="Claimed for the Dark Gods",
+                header="Select an objective marker to claim.",
+                subtitle="Objective remains under your control with Level of Control 5 until your opponent has greater control.",
+                context={"ability": "claimed_for_the_dark_gods"},
+                allow_skip=True,
+            )
+        self._request_claimed_for_dark_gods_objective = _request_claimed_for_dark_gods_objective
+
         def _request_no_retreat_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -18348,6 +18381,59 @@ class GameView:
                 )
             return
 
+        if name_u == "CLAIMED FOR THE DARK GODS" and "objective" not in context and "objective_marker" not in context:
+            if not callable(getattr(self, "_request_claimed_for_dark_gods_objective", None)):
+                return
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_claimed_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Claimed for the Dark Gods: no unit selected")
+                    return
+                try:
+                    objective_candidates = list(manager._corrupting_taint_objective_candidates(chosen_unit) or [])
+                except Exception:
+                    objective_candidates = []
+                self._request_claimed_for_dark_gods_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_claimed_for_the_dark_gods(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        objective,
+                    ),
+                )
+
+            if unit is not None:
+                _pick_claimed_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_lords_of_dread_claimed_for_dark_gods_candidates"):
+                    try:
+                        candidates = list(manager._lords_of_dread_claimed_for_dark_gods_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_claimed_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a CHAOS KNIGHTS CHARACTER within range of a controlled objective.",
+                    title="Claimed for the Dark Gods",
+                    subtitle="Choose a unit, then select one objective marker it controls.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u == "CORRUPT REALSPACE" and "objective" not in context and "objective_marker" not in context:
             if not callable(getattr(self, "_request_corrupt_realspace_objective", None)):
                 return
@@ -18404,6 +18490,112 @@ class GameView:
                 self.game,
                 obj_candidates,
                 lambda obj: self._finalize_corrupt_realspace(player, name, context, unit, obj),
+            )
+            return
+
+        if name_u == "CRUSHED LIKE VERMIN" and "enemy_unit" not in context and "target_enemy_unit" not in context:
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_crushed_enemy(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Crushed Like Vermin: no source unit selected")
+                    return
+                try:
+                    enemy_candidates = list(manager._lords_of_dread_crushed_like_vermin_enemy_candidates(chosen_unit) or [])
+                except Exception:
+                    enemy_candidates = list(context.get("enemy_candidates") or [])
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an enemy unit moved over by the selected Chaos Knight.",
+                    title="Crushed Like Vermin",
+                    subtitle="Enemy non-MONSTER, non-VEHICLE unit moved over during that Normal move.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _pick_crushed_enemy(preset_unit)
+                return
+
+            candidates = context.get("candidates") or []
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_pick_crushed_enemy,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select the Chaos Knights Character that just ended a Normal move.",
+                title="Crushed Like Vermin",
+                subtitle="Choose the Chaos Knights Character that moved over an enemy unit.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
+        if name_u == "TITANIC DUEL" and "enemy_unit" not in context and "target_enemy_unit" not in context:
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_titanic_enemy(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Titanic Duel: no source unit selected")
+                    return
+                try:
+                    enemy_candidates = list(manager._lords_of_dread_titanic_duel_enemy_candidates(chosen_unit) or [])
+                except Exception:
+                    enemy_candidates = list(context.get("enemy_candidates") or [])
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=enemy_candidates,
+                    on_chosen=lambda enemy: self._finalize_unit_and_enemy_stratagem(
+                        player,
+                        name,
+                        context,
+                        chosen_unit,
+                        enemy,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an enemy MONSTER or VEHICLE unit.",
+                    title="Titanic Duel",
+                    subtitle="Enemy MONSTER or VEHICLE unit for hit and wound re-rolls this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_unit is not None:
+                _pick_titanic_enemy(preset_unit)
+                return
+
+            candidates = context.get("candidates") or []
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_pick_titanic_enemy,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select a CHAOS KNIGHTS CHARACTER that has not yet shot or fought this phase.",
+                title="Titanic Duel",
+                subtitle="Choose a source unit, then select an enemy MONSTER or VEHICLE.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
             )
             return
 
@@ -20677,6 +20869,26 @@ class GameView:
             logger.info("Corrupting Taint: no objective selected")
             return
         ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_claimed_for_the_dark_gods(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Claimed for the Dark Gods: no unit selected")
+            return
+        if objective is None:
+            logger.info("Claimed for the Dark Gods: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:

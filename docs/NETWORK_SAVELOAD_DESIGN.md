@@ -396,7 +396,7 @@ Shooting:
 - repair_barge_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="repair_barge"`, `source_unit_id`, `model_id`, `range=3`, `allowed_target_unit_ids`, `turn_owner`, `turn`, `optional=true`)
 - post_shoot_crit_hit_threshold_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_crit_hit_threshold"`, `attacker_unit_id`, `model_id`, `keyword`, `threshold`)
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
-- overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
+- overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include `enemy_unit_id` and abilities such as `claimed_for_the_dark_gods`, `crushed_like_vermin`, or `titanic_duel`)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
 - dark_pacts_dialog: CHOOSE_DARK_PACT {choice, optional `empyric_wellspring_choice`, optional `invoke_contract` | skip} (context `unit_id`, `phase_name`, `trigger`; Cabal of Chaos requires `empyric_wellspring_choice`; Soulforged Warpack eligible DAEMON VEHICLE units may set `invoke_contract=true`)
 - dread_mob_try_dat_button_shooting_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="shooting"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
@@ -638,7 +638,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE {zone | skip} (context `ability="impossible_eclipse"`, `unit_id`, `ability_name`)
-- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"` | `ability="corrupting_taint"` | `ability="corrupt_realspace"` | `ability="extinction_order"` | `ability="eyestinger_storm"` | `ability="no_retreat"`)
+- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"` | `ability="claimed_for_the_dark_gods"` | `ability="corrupting_taint"` | `ability="corrupt_realspace"` | `ability="extinction_order"` | `ability="eyestinger_storm"` | `ability="no_retreat"`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - daemon_primarch_slaanesh_dialog: CHOOSE_DAEMON_PRIMARCH_SLAANESH {choice_id} (context `unit_id`, `opponent_player_id`, `battle_round`, `expires_round`)

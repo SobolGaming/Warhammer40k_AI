@@ -95,6 +95,11 @@ class ChaosKnightsStratagemMixin:
         checker = getattr(mgr, "is_iconoclast_fiefdom", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_lords_of_dread_detachment(self) -> bool:
+        mgr = self._chaos_knights_detachment_manager()
+        checker = getattr(mgr, "is_lords_of_dread", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _chaos_knights_current_turn_key(self) -> str:
         if self.game is None:
             return ""
@@ -260,6 +265,22 @@ class ChaosKnightsStratagemMixin:
             return int(cost)
         return int(cost)
 
+    def _chaos_knights_preview_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
+        cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        preview = getattr(self.player, "preview_stratagem_cp_cost", None)
+        if not callable(preview):
+            return int(cost)
+        try:
+            payload = preview(
+                stratagem,
+                target_unit=target_unit,
+                enemy_unit=enemy_unit,
+                assume_optional_discounts=True,
+            )
+        except Exception:
+            return int(cost)
+        return int(payload.get("cost", cost) or cost)
+
     def _chaos_knights_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         cost = self._chaos_knights_effective_cp_cost(stratagem, target_unit=target_unit)
         return bool(
@@ -378,6 +399,44 @@ class ChaosKnightsStratagemMixin:
                 return unit
         return None
 
+    @staticmethod
+    def _chaos_knights_has_keyword(unit: Any, keyword: str) -> bool:
+        root = ChaosKnightsStratagemMixin._chaos_knights_root(unit)
+        if root is None:
+            return False
+        key = ChaosKnightsStratagemMixin._chaos_knights_normalize_name(keyword)
+        if not key:
+            return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        if callable(has_any_kw):
+            try:
+                if bool(has_any_kw(key)):
+                    return True
+            except Exception:
+                pass
+        keywords = list(getattr(root, "keywords", []) or [])
+        faction_keywords = list(getattr(root, "faction_keywords", []) or [])
+        for value in list(keywords) + list(faction_keywords):
+            if ChaosKnightsStratagemMixin._chaos_knights_normalize_name(str(value or "")) == key:
+                return True
+        return False
+
+    def _chaos_knights_is_monster_or_vehicle_unit(self, unit: Any) -> bool:
+        return self._chaos_knights_has_keyword(unit, "MONSTER") or self._chaos_knights_has_keyword(unit, "VEHICLE")
+
+    def _chaos_knights_has_deadly_demise(self, unit: Any) -> bool:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "has_deadly_demise", None)
+        if not callable(checker):
+            return False
+        try:
+            has_deadly, _dice = checker()
+        except Exception:
+            return False
+        return bool(has_deadly)
+
     def _chaos_knights_unit_candidates(
         self,
         *,
@@ -387,6 +446,7 @@ class ChaosKnightsStratagemMixin:
         require_war_dog: bool = False,
         require_fell_back: bool = False,
         require_not_in_engagement: bool = False,
+        require_not_fought: bool = False,
     ) -> List[Any]:
         mgr = self._chaos_knights_detachment_manager()
         if require_not_empowered and mgr is None:
@@ -415,6 +475,8 @@ class ChaosKnightsStratagemMixin:
             if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
                 continue
             if require_fell_back and not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
                 continue
             if require_not_in_engagement and self._chaos_knights_in_engagement_range(root):
                 continue
@@ -1350,6 +1412,491 @@ class ChaosKnightsStratagemMixin:
         logger.info(
             "INFO: ENCIRCLING PACK: %s enters Strategic Reserves.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _lords_of_dread_claimed_for_dark_gods_candidates(self) -> List[Any]:
+        if not self._is_lords_of_dread_detachment():
+            return []
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates(require_character=True) or []):
+            if not self._corrupting_taint_objective_candidates(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _lords_of_dread_titanic_duel_candidates(self, *, phase_key: str) -> List[Any]:
+        if not self._is_lords_of_dread_detachment():
+            return []
+        normalized_phase = str(phase_key or "").strip().upper()
+        if normalized_phase == "SHOOTING_PHASE":
+            return self._chaos_knights_unit_candidates(require_character=True, require_not_shot=True)
+        if normalized_phase == "FIGHT_PHASE":
+            return self._chaos_knights_unit_candidates(require_character=True, require_not_fought=True)
+        return []
+
+    def _lords_of_dread_titanic_duel_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        del source_unit
+        if not self._is_lords_of_dread_detachment():
+            return []
+        candidates: List[Any] = []
+        for enemy_root in list(self._chaos_knights_enemy_roots() or []):
+            if not self._chaos_knights_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if not self._chaos_knights_is_monster_or_vehicle_unit(enemy_root):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _lords_of_dread_crushed_like_vermin_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return []
+        root = self._chaos_knights_root(source_unit)
+        game_map = getattr(self.game, "map", None)
+        if root is None or game_map is None:
+            return []
+        from ..utility.calcs import get_enemy_units_moved_over
+
+        candidates_by_id: dict[str, Any] = {}
+        for model in list(self._chaos_knights_alive_models(root) or []):
+            path = getattr(model, "last_move_path", None)
+            for enemy_root in list(
+                get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True) or []
+            ):
+                enemy_root = self._chaos_knights_root(enemy_root)
+                if enemy_root is None:
+                    continue
+                if self._chaos_knights_owned_by_player(enemy_root, self.player):
+                    continue
+                if self._chaos_knights_is_monster_or_vehicle_unit(enemy_root):
+                    continue
+                if not self._chaos_knights_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                enemy_id = self._chaos_knights_sort_key(enemy_root)
+                if enemy_id:
+                    candidates_by_id[enemy_id] = enemy_root
+        return [candidates_by_id[key] for key in sorted(candidates_by_id)]
+
+    def _queue_lords_of_dread_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return
+        if player is not self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        phase_name = self._chaos_knights_phase_label(phase_key)
+
+        if phase_key == "COMMAND_PHASE":
+            claimed = self.get_by_name("CLAIMED FOR THE DARK GODS")
+            if claimed is not None:
+                if (claimed.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                    candidates = list(self._lords_of_dread_claimed_for_dark_gods_candidates() or [])
+                    if candidates and not self._chaos_knights_reaction_exists("phase_start", claimed.name):
+                        preview_cost = self._chaos_knights_preview_cp_cost(
+                            claimed,
+                            target_unit=candidates[0],
+                        )
+                        if int(getattr(self.player, "command_points", 0) or 0) >= preview_cost:
+                            payload = {
+                                "event": "phase_start",
+                                "phase_name": phase_name,
+                                "stratagem": claimed.name,
+                                "cp_cost": claimed.cp_cost,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                                payload["objective_candidates"] = self._corrupting_taint_objective_candidates(candidates[0])
+                            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        titanic_duel = self.get_by_name("TITANIC DUEL")
+        if titanic_duel is None:
+            return
+        if (titanic_duel.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = list(self._lords_of_dread_titanic_duel_candidates(phase_key=phase_key) or [])
+        if not candidates or self._chaos_knights_reaction_exists("phase_start", titanic_duel.name):
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            titanic_duel,
+            target_unit=candidates[0],
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        payload = {
+            "event": "phase_start",
+            "phase_name": phase_name,
+            "stratagem": titanic_duel.name,
+            "cp_cost": titanic_duel.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+            payload["enemy_candidates"] = self._lords_of_dread_titanic_duel_enemy_candidates(candidates[0])
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_lords_of_dread_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move"}:
+            return
+        stratagem = self.get_by_name("CRUSHED LIKE VERMIN")
+        moving_root = self._chaos_knights_root(unit)
+        if stratagem is None or moving_root is None:
+            return
+        if not self._chaos_knights_owned_by_player(moving_root, self.player):
+            return
+        if moving_root not in list(self._chaos_knights_unit_candidates(require_character=True) or []):
+            return
+        if self._chaos_knights_reaction_exists("unit_move_ended", stratagem.name, unit=moving_root):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        enemy_candidates = list(self._lords_of_dread_crushed_like_vermin_enemy_candidates(moving_root) or [])
+        if not enemy_candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            stratagem,
+            target_unit=moving_root,
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": moving_root,
+            "target_unit": moving_root,
+            "enemy_candidates": enemy_candidates,
+            "action": action,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_lords_of_dread_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return
+        root = self._chaos_knights_root(unit)
+        if root is None or model is None:
+            return
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        if not self._is_chaos_knights_character_unit(root):
+            return
+        if not self._chaos_knights_has_deadly_demise(root):
+            return
+        if self._chaos_knights_alive_models(root):
+            return
+        stratagem = self.get_by_name("SPITEFUL DEMISE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        model_id = str(get_entity_id(model) or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                continue
+            if self._chaos_knights_normalize_name(reaction.get("stratagem", "")) != "SPITEFUL DEMISE":
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == model_id:
+                return
+        preview_cost = self._chaos_knights_preview_cp_cost(
+            stratagem,
+            target_unit=root,
+        )
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        phase_name = str(self._current_phase_name or "").strip() or self._chaos_knights_phase_label(
+            str(getattr(getattr(self.game, "phase", None), "name", "") or "")
+        )
+        self._queue_reaction(
+            {
+                "event": "model_destroyed_before_removal",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "destroyed_unit": root,
+                "destroyed_model": model,
+                "destroyed_model_id": model_id,
+                "unit": root,
+                "target_unit": root,
+            },
+            use_timer=False,
+        )
+
+    def _use_lords_of_dread_claimed_for_dark_gods(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_character_unit(root):
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: target must be a CHAOS KNIGHTS CHARACTER unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: only usable in your Command phase")
+            return False
+        objective = merged.get("objective") or merged.get("objective_marker")
+        objective_candidates = list(merged.get("objective_candidates", []) or [])
+        if not objective_candidates:
+            objective_candidates = list(self._corrupting_taint_objective_candidates(root) or [])
+        if root not in list(self._lords_of_dread_claimed_for_dark_gods_candidates() or []):
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: target unit is not within range of a controlled objective")
+            return False
+        if objective is None:
+            objective = objective_candidates[0] if objective_candidates else None
+        if objective is None:
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: no objective marker available")
+            return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: objective not in candidates")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            logger.error("ERROR: CLAIMED FOR THE DARK GODS: selected objective has no location")
+            return False
+        if hasattr(loc, "set_sticky_control"):
+            loc.set_sticky_control(
+                self.player,
+                source="claimed_for_the_dark_gods",
+                minimum_control=5,
+            )
+        else:
+            loc.sticky_controller = self.player
+            loc.sticky_source = "claimed_for_the_dark_gods"
+            loc.sticky_minimum_control = 5
+            loc.controlling_player = self.player
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: CLAIMED FOR THE DARK GODS: selected objective remains under your control with Level of Control 5 until broken.",
+        )
+        return True
+
+    def _use_lords_of_dread_crushed_like_vermin(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit") or merged.get("target_enemy_unit"))
+        if root is None:
+            logger.error("ERROR: CRUSHED LIKE VERMIN: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_character_unit(root):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: target must be a CHAOS KNIGHTS CHARACTER unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: CRUSHED LIKE VERMIN: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CRUSHED LIKE VERMIN: only usable in your Movement phase")
+            return False
+        action_key = str(merged.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move"}:
+            logger.error("ERROR: CRUSHED LIKE VERMIN: trigger requires a Normal move")
+            return False
+        enemy_candidates = list(merged.get("enemy_candidates", []) or [])
+        if not enemy_candidates:
+            enemy_candidates = list(self._lords_of_dread_crushed_like_vermin_enemy_candidates(root) or [])
+        if enemy_root is None:
+            enemy_root = self._chaos_knights_root(enemy_candidates[0]) if len(enemy_candidates) == 1 else None
+        if enemy_root is None:
+            logger.error("ERROR: CRUSHED LIKE VERMIN: no moved-over enemy unit selected")
+            return False
+        if enemy_candidates and enemy_root not in list(enemy_candidates or []):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: selected enemy unit was not moved over")
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: target must be an enemy unit")
+            return False
+        if self._chaos_knights_is_monster_or_vehicle_unit(enemy_root):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: MONSTER and VEHICLE units are excluded")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        mortal_wounds = 0
+        for _ in range(6):
+            if int(get_roll("D6") or 0) >= 4:
+                mortal_wounds += 1
+        apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortal_wounds):
+            logger.error("ERROR: CRUSHED LIKE VERMIN: mortal wound application helper unavailable")
+            return False
+        destroyed_models = int(
+            apply_mortal_wounds(
+                enemy_root,
+                int(mortal_wounds),
+                game_map=getattr(self.game, "map", None),
+            )
+            or 0
+        )
+        if destroyed_models > 0:
+            take_battle_shock = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_battle_shock):
+                take_battle_shock(int(getattr(self.game, "turn", 1) or 1))
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: CRUSHED LIKE VERMIN: %s suffers %d mortal wound(s)%s.",
+            getattr(enemy_root, "name", "Enemy Unit"),
+            int(mortal_wounds),
+            " and must take a Battle-shock test" if destroyed_models > 0 else "",
+        )
+        return True
+
+    def _use_lords_of_dread_spiteful_demise(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_lords_of_dread_detachment():
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(
+            merged.get("destroyed_unit") or merged.get("unit") or merged.get("target_unit")
+        )
+        destroyed_model = merged.get("destroyed_model")
+        if root is None or destroyed_model is None:
+            logger.error("ERROR: SPITEFUL DEMISE: destroyed unit or model missing")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: SPITEFUL DEMISE: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_character_unit(root):
+            logger.error("ERROR: SPITEFUL DEMISE: target must be a CHAOS KNIGHTS CHARACTER unit")
+            return False
+        if not self._chaos_knights_has_deadly_demise(root):
+            logger.error("ERROR: SPITEFUL DEMISE: target unit does not have Deadly Demise")
+            return False
+        if self._chaos_knights_alive_models(root):
+            logger.error("ERROR: SPITEFUL DEMISE: target unit was not destroyed")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        setattr(destroyed_model, "_chaos_knights_spiteful_demise_trigger_threshold_once", 4)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SPITEFUL DEMISE: %s triggers Deadly Demise on 4+ for this destruction.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_lords_of_dread_titanic_duel(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_lords_of_dread_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit") or merged.get("target_enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: TITANIC DUEL: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: TITANIC DUEL: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_character_unit(root):
+            logger.error("ERROR: TITANIC DUEL: target must be a CHAOS KNIGHTS CHARACTER unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        phase_key = ""
+        attack_type = ""
+        if phase_name == "shooting phase":
+            phase_key = "SHOOTING_PHASE"
+            attack_type = "ranged"
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                logger.error("ERROR: TITANIC DUEL: target unit has already shot this phase")
+                return False
+        elif phase_name == "fight phase":
+            phase_key = "FIGHT_PHASE"
+            attack_type = "melee"
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                logger.error("ERROR: TITANIC DUEL: target unit has already fought this phase")
+                return False
+        else:
+            logger.error("ERROR: TITANIC DUEL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: TITANIC DUEL: only usable in your phase")
+            return False
+        enemy_candidates = list(merged.get("enemy_candidates", []) or [])
+        if not enemy_candidates:
+            enemy_candidates = list(self._lords_of_dread_titanic_duel_enemy_candidates(root) or [])
+        if enemy_root is None:
+            enemy_root = self._chaos_knights_root(enemy_candidates[0]) if len(enemy_candidates) == 1 else None
+        if enemy_root is None:
+            logger.error("ERROR: TITANIC DUEL: no enemy MONSTER or VEHICLE selected")
+            return False
+        if enemy_candidates and enemy_root not in list(enemy_candidates or []):
+            logger.error("ERROR: TITANIC DUEL: selected enemy is not an eligible candidate")
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: TITANIC DUEL: target must be an enemy unit")
+            return False
+        if not self._chaos_knights_is_monster_or_vehicle_unit(enemy_root):
+            logger.error("ERROR: TITANIC DUEL: target must be an enemy MONSTER or VEHICLE unit")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        enemy_id = self._chaos_knights_sort_key(enemy_root)
+        reroll_mode = "full" if self._chaos_knights_has_keyword(enemy_root, "TITANIC") else "ones"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["lords_of_dread_titanic_duel_active"] = True
+        sr["lords_of_dread_titanic_duel_target_id"] = enemy_id
+        sr["lords_of_dread_titanic_duel_reroll_mode"] = reroll_mode
+        sr["lords_of_dread_titanic_duel_attack_type"] = attack_type
+        sr["lords_of_dread_titanic_duel_expires_phase"] = phase_key
+        sr["lords_of_dread_titanic_duel_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        sr["lords_of_dread_titanic_duel_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["lords_of_dread_titanic_duel_source"] = str(getattr(stratagem, "name", "") or "TITANIC DUEL")
+        root.special_rules = sr
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: TITANIC DUEL: %s re-rolls %s against %s this phase.",
+            getattr(root, "name", "Unit"),
+            "Hit and Wound rolls" if reroll_mode == "full" else "Hit and Wound rolls of 1",
+            getattr(enemy_root, "name", "Enemy Unit"),
         )
         return True
 
@@ -2303,6 +2850,16 @@ class ChaosKnightsStratagemMixin:
 
     def _use_chaos_knights_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_key = self._chaos_knights_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_key == "CLAIMED FOR THE DARK GODS":
+            return self._use_lords_of_dread_claimed_for_dark_gods(stratagem, **kwargs)
+        if name_key == "CRUSHED LIKE VERMIN":
+            return self._use_lords_of_dread_crushed_like_vermin(stratagem, **kwargs)
+        if name_key == "SPITEFUL DEMISE":
+            if self._is_lords_of_dread_detachment():
+                return self._use_lords_of_dread_spiteful_demise(stratagem, **kwargs)
+            return None
+        if name_key == "TITANIC DUEL":
+            return self._use_lords_of_dread_titanic_duel(stratagem, **kwargs)
         if name_key == "VOX-HOWL":
             return self._use_houndpack_vox_howl(stratagem, **kwargs)
         if name_key == "HUNGRY FOR COMBAT":
