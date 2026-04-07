@@ -438,7 +438,8 @@ class TestThousandSonsBatch2Abilities(unittest.TestCase):
 
     def test_umbralefic_crystal_confirmation_moves_unit_to_reserves_and_enables_turn1_arrival(self):
         game, army1, army2, p1, _p2 = _build_game()
-        army1.detachment_type = "Grand Coven"
+        army1.build_detachments[0].detachment_type = "Grand Coven"
+        army1.detachments[0].detachment_type = "Grand Coven"
         army1.configure_rule_managers()
 
         bearer_unit = _make_unit("Sorcerer", model_count=1, keywords=["THOUSAND SONS", "PSYKER"])
@@ -488,7 +489,8 @@ class TestThousandSonsBatch2Abilities(unittest.TestCase):
 
     def test_umbralefic_crystal_invalid_choice_is_rejected(self):
         game, army1, army2, p1, _p2 = _build_game()
-        army1.detachment_type = "Grand Coven"
+        army1.build_detachments[0].detachment_type = "Grand Coven"
+        army1.detachments[0].detachment_type = "Grand Coven"
         army1.configure_rule_managers()
 
         bearer_unit = _make_unit("Sorcerer", model_count=1, keywords=["THOUSAND SONS", "PSYKER"])

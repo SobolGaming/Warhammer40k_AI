@@ -170,7 +170,6 @@ def test_validate_request_preserves_explicit_single_detachment_and_unit_selectio
 
     validated = validate_army_muster_request(request)
 
-    assert validated.legacy_single_detachment_adapter_used is False
     assert validated.blueprint.primary_detachment_type == "Gladius Task Force"
     assert len(validated.blueprint.unit_entries) == 1
     assert validated.blueprint.unit_entries[0].name == "Captain"
@@ -178,6 +177,7 @@ def test_validate_request_preserves_explicit_single_detachment_and_unit_selectio
     assert [item.enhancement_name for item in validated.blueprint.enhancement_assignments] == [
         "Honours of Battle"
     ]
+    assert "legacy_single_detachment_adapter_used" not in validated.to_dict()
 
 
 def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_muster() -> None:
@@ -196,5 +196,5 @@ def test_muster_army_accepts_deserialized_request_dict_and_attaches_validated_mu
     assert army.detachment_type == "Gladius Task Force"
     assert army.get_detachment_types() == ["Gladius Task Force"]
     assert army.army_blueprint.primary_detachment_type == "Gladius Task Force"
-    assert army.validated_muster.legacy_single_detachment_adapter_used is False
+    assert "legacy_single_detachment_adapter_used" not in army.validated_muster.to_dict()
     assert army.build_detachments[0].selection_id == "detachment_alpha"

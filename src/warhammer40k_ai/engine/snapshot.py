@@ -99,7 +99,6 @@ _ARMY_STATE_EXCLUDE = {
     "warlord",
     "enhancements",
     "detachment_managers",
-    "_primary_detachment_tombstone",
 }
 
 _SNAPSHOT_OMIT = object()

@@ -98,7 +98,6 @@ def _build_game():
 
     shadow_army = Army("Chaos Daemons", "Shadow Legion")
     shadow_army.faction_id = "CD"
-    shadow_army.detachment_type = "Shadow Legion"
     enemy_army = Army("Enemy", "Other")
     enemy_army.faction_id = "EN"
 

@@ -112,7 +112,8 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         self.assertTrue(Unit.can_reroll_advance_roll(unit))
 
-        army.detachment_type = "Other"
+        army.build_detachments[0].detachment_type = "Other"
+        army.detachments[0].detachment_type = "Other"
         self.assertFalse(Unit.can_reroll_advance_roll(unit))
 
     def test_pact_points_reroll_hit_and_wound(self):

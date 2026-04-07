@@ -88,7 +88,6 @@ def _build_game():
 
     legion_army = Army("Chaos Daemons", "Legion of Excess")
     legion_army.faction_id = "CD"
-    legion_army.detachment_type = "Legion of Excess"
     enemy_army = Army("Enemy", "Other")
     enemy_army.faction_id = "EN"
 

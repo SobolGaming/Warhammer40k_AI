@@ -794,7 +794,7 @@ The project does not intend to keep supporting 10th after 11th launches.
 - The codebase is simpler than a compatibility-heavy dual-edition design.
 
 ### Acceptance checks
-- Search confirms removal of primary `army.detachment_type` dependency outside intentional compatibility tombstones or deleted code.
+- Search confirms removal of primary `army.detachment_type` dependency outside the read-only compatibility accessor or deleted code.
 - Search confirms the old hard-coded matched-play mission combination table is gone or marked dead.
 - README/docs are consistent with the new architecture.
 

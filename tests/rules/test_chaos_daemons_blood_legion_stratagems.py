@@ -90,7 +90,6 @@ def _build_game():
 
     daemon_army = Army("Chaos Daemons", "Blood Legion")
     daemon_army.faction_id = "CD"
-    daemon_army.detachment_type = "Blood Legion"
     enemy_army = Army("Enemy", "Other")
     enemy_army.faction_id = "EN"
 

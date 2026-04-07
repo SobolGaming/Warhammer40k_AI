@@ -263,9 +263,6 @@ def validated_muster_for_army(army: object, blueprint: ArmyBlueprint | None) -> 
         blueprint=blueprint,
         faction_id=faction_id,
         detachment_points_spent=safe_int(getattr(army, "detachment_points_spent", 0), 0),
-        legacy_single_detachment_adapter_used=bool(
-            build_metadata.get("legacy_single_detachment_adapter_used", False)
-        ),
         warnings=list(build_metadata.get("warnings", []) or []),
     )
 
@@ -345,10 +342,6 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
     )
     build_metadata = dict(getattr(army, "build_metadata", {}) or {})
     if validated_muster is not None:
-        build_metadata.setdefault(
-            "legacy_single_detachment_adapter_used",
-            bool(validated_muster.legacy_single_detachment_adapter_used),
-        )
         build_metadata.setdefault("warnings", list(validated_muster.warnings or []))
 
     player_payload.update(
@@ -387,9 +380,6 @@ def army_build_player_payload(player: object) -> dict[str, Any]:
         player_payload["validated_muster"] = {
             "faction_id": str(validated_muster.faction_id or ""),
             "detachment_points_spent": int(validated_muster.detachment_points_spent),
-            "legacy_single_detachment_adapter_used": bool(
-                validated_muster.legacy_single_detachment_adapter_used
-            ),
             "warnings": list(validated_muster.warnings or []),
         }
     return json_safe(player_payload)

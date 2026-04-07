@@ -234,15 +234,10 @@ def validate_army_blueprint(blueprint: ArmyBlueprint) -> tuple[str, int]:
 def validate_army_muster_request(request: object) -> ValidatedMuster:
     """Normalize and validate a muster request into a ValidatedMuster."""
 
-    blueprint, legacy_adapter_used = build_army_blueprint_from_request(request)
+    blueprint, _ = build_army_blueprint_from_request(request)
     faction_id, spent = validate_army_blueprint(blueprint)
-    warnings: list[str] = []
-    if legacy_adapter_used:
-        warnings.append("legacy_single_detachment_adapter")
     return ValidatedMuster(
         blueprint=blueprint,
         faction_id=faction_id,
         detachment_points_spent=spent,
-        legacy_single_detachment_adapter_used=legacy_adapter_used,
-        warnings=warnings,
     )

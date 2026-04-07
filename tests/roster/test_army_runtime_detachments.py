@@ -157,18 +157,21 @@ def test_runtime_detachment_dicts_are_normalized_back_to_instances() -> None:
     assert detachment.metadata["source"] == "snapshot"
 
 
-def test_primary_detachment_property_is_backed_by_runtime_detachment_instances() -> None:
+def test_primary_detachment_property_is_read_only_view_over_runtime_detachment_instances() -> None:
     army = Army("Space Marines", "Gladius Task Force")
     army.faction_id = "SM"
 
     assert army.get_detachment_types() == ["Gladius Task Force"]
     assert army.get_primary_detachment_instance().faction_id == "SM"
 
-    army.detachment_type = "1st Company Task Force"
+    army.build_detachments[0].detachment_type = "1st Company Task Force"
+    army.detachments[0].detachment_type = "1st Company Task Force"
 
     assert army.detachment_type == "1st Company Task Force"
     assert army.get_detachment_types() == ["1st Company Task Force"]
     assert army.get_primary_detachment_instance().detachment_type == "1st Company Task Force"
+    with pytest.raises(AttributeError):
+        army.detachment_type = "Gladius Task Force"
 
 
 def test_upgrade_tag_enhancement_can_target_eligible_non_character_unit() -> None:

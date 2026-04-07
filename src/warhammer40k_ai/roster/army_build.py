@@ -285,7 +285,6 @@ class ValidatedMuster:
     blueprint: ArmyBlueprint
     faction_id: str
     detachment_points_spent: int = 0
-    legacy_single_detachment_adapter_used: bool = False
     warnings: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -295,9 +294,6 @@ class ValidatedMuster:
             self.detachment_points_spent,
             field_name="detachment_points_spent",
         ) or 0
-        self.legacy_single_detachment_adapter_used = bool(
-            self.legacy_single_detachment_adapter_used
-        )
         self.warnings = _string_list(self.warnings)
 
     @property
@@ -309,7 +305,6 @@ class ValidatedMuster:
             "blueprint": self.blueprint.to_dict(),
             "faction_id": self.faction_id,
             "detachment_points_spent": self.detachment_points_spent,
-            "legacy_single_detachment_adapter_used": self.legacy_single_detachment_adapter_used,
             "warnings": list(self.warnings),
         }
 
@@ -326,9 +321,6 @@ class ValidatedMuster:
             blueprint=data.get("blueprint", {}),
             faction_id=str(data.get("faction_id", "") or ""),
             detachment_points_spent=data.get("detachment_points_spent", 0),
-            legacy_single_detachment_adapter_used=bool(
-                data.get("legacy_single_detachment_adapter_used", False)
-            ),
             warnings=list(data.get("warnings", []) or []),
         )
 

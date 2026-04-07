@@ -95,8 +95,8 @@ the only path that builds full runtime units today.
 
 - Army list parsing in the network server (`army_submit`) still runs `Army.validate()` on the parsed list.
 - Runtime detachment-aware rule lookups now consume `army.detachments` through shared helpers in
-  `army.py` / `detachment_manager.py`; `army.detachment_type` is now just a compatibility view over
-  the authoritative primary detachment instance, not a separate runtime source of truth.
+  `army.py` / `detachment_manager.py`; `army.detachment_type` is now a read-only compatibility view
+  over the authoritative primary detachment instance, not a separate runtime source of truth.
 - The existing runtime/list validation in `Army` still includes:
   - Epic Hero duplicates
   - warlord eligibility restrictions

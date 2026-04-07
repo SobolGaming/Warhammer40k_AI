@@ -101,7 +101,6 @@ def _build_game():
 
     plague_army = Army("Chaos Daemons", "Plague Legion")
     plague_army.faction_id = "CD"
-    plague_army.detachment_type = "Plague Legion"
     enemy_army = Army("Enemy", "Other")
     enemy_army.faction_id = "EN"
 

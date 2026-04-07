@@ -291,7 +291,6 @@ class Army:
         self.validated_muster = None
         self.detachments = []
         self.build_detachments = []
-        self._primary_detachment_tombstone = ""
         self.build_unit_entries = []
         self.build_enhancement_assignments = []
         self.build_attachment_bindings = []
@@ -306,7 +305,7 @@ class Army:
 
         self._rule_managers_configured = False
         self._reset_rule_managers()
-        self.detachment_type = detachment_type
+        self._seed_initial_detachment(detachment_type)
         if self.faction_id:
             self.configure_rule_managers(force=True)
 
@@ -316,14 +315,7 @@ class Army:
 
     @property
     def detachment_type(self) -> str:
-        detachment = self.get_primary_detachment_instance()
-        if detachment is not None:
-            return str(getattr(detachment, "detachment_type", "") or "")
-        return str(getattr(self, "_primary_detachment_tombstone", "") or "")
-
-    @detachment_type.setter
-    def detachment_type(self, value: str) -> None:
-        self._set_primary_detachment_type(value)
+        return self.get_primary_detachment_type()
 
     def __setattr__(self, name, value):
         previous_faction_id = None
@@ -350,53 +342,33 @@ class Army:
         self.build_detachments = normalized
         return normalized
 
-    def _set_primary_detachment_type(self, value: object) -> None:
+    def _seed_initial_detachment(self, value: object) -> None:
         from .army_build import DetachmentSelection
         from .army_runtime import DetachmentInstance
 
         detachment_type = self._normalize_detachment_seed(value)
-        self._primary_detachment_tombstone = detachment_type
-
-        build_detachments = self._normalized_build_detachments()
-        runtime_detachments = self.get_detachment_instances()
         faction_id = str(getattr(self, "faction_id", "") or "").strip().upper() or "UNKNOWN"
-
         if not detachment_type:
-            if len(build_detachments) <= 1 and len(runtime_detachments) <= 1:
-                self.build_detachments = []
-                self.detachments = []
             return
 
-        if build_detachments:
-            first_build = build_detachments[0]
-            first_build.detachment_type = detachment_type
-        else:
-            first_build = DetachmentSelection(
-                selection_id="detachment_1",
-                detachment_type=detachment_type,
-                detachment_points_cost=int(getattr(self, "detachment_points_spent", 0) or 0),
-                metadata={"source": "army.detachment_type"},
+        detachment_points_cost = int(getattr(self, "detachment_points_spent", 0) or 0)
+        selection = DetachmentSelection(
+            selection_id="detachment_1",
+            detachment_type=detachment_type,
+            detachment_points_cost=detachment_points_cost,
+            metadata={"source": "army.__init__"},
+        )
+        self.build_detachments = [selection]
+        self.detachments = [
+            DetachmentInstance(
+                instance_id="detachment_instance_1",
+                selection_id=selection.selection_id,
+                faction_id=faction_id,
+                detachment_type=selection.detachment_type,
+                detachment_points_cost=detachment_points_cost,
+                metadata={"source": "army.__init__"},
             )
-            build_detachments = [first_build]
-        self.build_detachments = build_detachments
-
-        if runtime_detachments:
-            runtime_detachments[0].detachment_type = detachment_type
-            current_faction_id = str(getattr(runtime_detachments[0], "faction_id", "") or "").strip().upper()
-            if current_faction_id in {"", "UNKNOWN"}:
-                runtime_detachments[0].faction_id = faction_id
-        else:
-            runtime_detachments = [
-                DetachmentInstance(
-                    instance_id="detachment_instance_1",
-                    selection_id=str(first_build.selection_id or "detachment_1"),
-                    faction_id=faction_id,
-                    detachment_type=detachment_type,
-                    detachment_points_cost=int(getattr(self, "detachment_points_spent", 0) or 0),
-                    metadata={"source": "army.detachment_type"},
-                )
-            ]
-        self.detachments = runtime_detachments
+        ]
 
     def _sync_detachment_faction_ids(self, *, previous_faction_id: object = None) -> None:
         target_faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
@@ -657,7 +629,10 @@ class Army:
         detachment = self.get_primary_detachment_instance(faction_id)
         if detachment is not None:
             return str(getattr(detachment, "detachment_type", "") or "")
-        return str(getattr(self, "_primary_detachment_tombstone", "") or "")
+        build_detachments = self._normalized_build_detachments()
+        if build_detachments:
+            return str(getattr(build_detachments[0], "detachment_type", "") or "")
+        return ""
 
     def has_detachment_type(self, *names: str, faction_id: str | None = None) -> bool:
         detachment_names = [

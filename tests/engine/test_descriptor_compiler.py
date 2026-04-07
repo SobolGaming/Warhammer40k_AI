@@ -120,6 +120,8 @@ def test_descriptor_compiler_emits_army_build_descriptor_from_validated_muster()
     }
     assert payload["players"][0]["attachment_bindings"][0]["binding_id"] == "binding_1"
     assert payload["players"][0]["validated_muster"]["faction_id"] == "SM"
+    assert "legacy_single_detachment_adapter_used" not in payload["players"][0]["validated_muster"]
+    assert "legacy_single_detachment_adapter_used" not in payload["players"][0]["build_metadata"]
 
 
 def test_descriptor_compiler_normalizes_empty_detachment_points_summary() -> None:
