@@ -291,6 +291,80 @@ _LORDS_OF_DREAD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_TRAITORIS_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008517002": StratagemToolDescriptor(
+        stratagem_id="000008517002",
+        name="Pterrorshades",
+        timing="any_phase_after_enemy_failed_battleshock",
+        target="chaos_knights_unit_within_12_of_failed_enemy",
+        duration="immediate",
+        effect="roll_six_d6_for_mortals_and_self_heal",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"rolls": 6, "success_on": 4, "mortal_wounds_per_success": 1, "heal_per_success": 1},
+    ),
+    "000008517003": StratagemToolDescriptor(
+        stratagem_id="000008517003",
+        name="Conquerors Without Mercy",
+        timing="fight_phase_start",
+        target="chaos_knights_unit_that_charged_and_has_not_fought",
+        duration="until_end_of_phase",
+        effect="melee_ap_bonus_with_post_fight_battleshock_aura",
+        cp_cost=1,
+        effect_params={"melee_ap_bonus": 1, "post_fight_battleshock_range": 6.0},
+    ),
+    "000008517004": StratagemToolDescriptor(
+        stratagem_id="000008517004",
+        name="Disdain for the Weak",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="chaos_knights_unit_targeted_in_melee",
+        duration="until_end_of_phase",
+        effect="conditional_feel_no_pain",
+        cp_cost=1,
+        effect_params={"base_fnp": 6, "battle_shocked_attacker_fnp": 5, "attack_type": "melee"},
+    ),
+    "000008517005": StratagemToolDescriptor(
+        stratagem_id="000008517005",
+        name="A Long Leash",
+        timing="command_phase_start",
+        target="one_abhorrent_and_up_to_two_war_dog_units",
+        duration="until_start_of_next_command_phase",
+        effect="war_dogs_count_within_source_auras",
+        cp_cost=1,
+        effect_params={"max_war_dog_targets": 2},
+    ),
+    "000008517006": StratagemToolDescriptor(
+        stratagem_id="000008517006",
+        name="Imperious Advance",
+        timing="movement_or_charge_phase_start",
+        target="up_to_two_war_dogs_or_one_titanic_chaos_knights_unit",
+        duration="until_end_of_phase",
+        effect="phase_move_passthrough_and_desperate_escape_auto_pass",
+        cp_cost=1,
+        effect_params={
+            "movement_types": ["move", "advance", "fall_back", "charge"],
+            "max_war_dog_targets": 2,
+            "max_titanic_targets": 1,
+            "auto_pass_desperate_escape": True,
+            "suspend_super_heavy_walker_titanic_block": True,
+        },
+    ),
+    "000008517007": StratagemToolDescriptor(
+        stratagem_id="000008517007",
+        name="Storm of Darkness",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="chaos_knights_unit_targeted_by_ranged_attacks",
+        duration="until_end_of_phase",
+        effect="stealth_and_benefit_of_cover",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "grants_stealth": True, "grants_benefit_of_cover": True},
+    ),
+}
+
+_TRAITORIS_LANCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TRAITORIS_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008437002": StratagemToolDescriptor(
         stratagem_id="000008437002",
@@ -11860,6 +11934,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _TRAITORIS_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12287,6 +12364,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)
+        or _TRAITORIS_LANCE_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)

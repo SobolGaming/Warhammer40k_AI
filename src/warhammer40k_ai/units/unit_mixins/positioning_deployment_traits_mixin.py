@@ -1274,6 +1274,8 @@ class PositioningDeploymentTraitsMixin:
         sr = getattr(self, "special_rules", None)
         if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
             return True
+        if isinstance(sr, dict) and sr.get("traitoris_storm_of_darkness_active") is True:
+            return True
         # Enhancement: Praesidius grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_stealth"):
             return True

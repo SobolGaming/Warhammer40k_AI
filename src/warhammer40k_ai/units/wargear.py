@@ -27668,7 +27668,8 @@ class WargearProfile:
             ):
                 val = int(entry.get("value", 0) or 0)
                 if val:
-                    fnp_abilities.append((val, None))
+                    condition = str(entry.get("condition", "") or "").strip() or None
+                    fnp_abilities.append((val, condition))
         except Exception:
             pass
         # World Eaters (Cult of Blood): In the Shadow of Brass Idols.

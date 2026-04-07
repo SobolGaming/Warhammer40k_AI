@@ -20101,6 +20101,12 @@ def _stratagem_support(
         "000010309005": "Your Shooting phase or the Fight phase: selected CHAOS KNIGHTS CHARACTER unit that has not yet acted chooses one enemy MONSTER or VEHICLE unit; attacks that target it re-roll Hit rolls of 1 and Wound rolls of 1, or full Hit and Wound re-rolls if that enemy is TITANIC, until end of phase.",
         "000010309006": "Fight phase reaction just before a CHAOS KNIGHTS CHARACTER unit consolidates: its Consolidation moves gain an additional 3\" this phase if it can end that move within Engagement Range of one or more enemy units.",
         "000010309007": "Your Movement phase reaction after a CHAOS KNIGHTS CHARACTER unit ends a Normal move: select one enemy non-MONSTER/non-VEHICLE unit moved over, roll 6D6, and each 4+ inflicts 1 mortal wound; if any models are destroyed, that enemy must take a Battle-shock test.",
+        "000008517002": "Any phase reaction after an enemy fails a Battle-shock test: selected CHAOS KNIGHTS unit within 12\" rolls six D6; each 4+ inflicts 1 mortal wound on that enemy and restores up to 1 lost wound to one model in the selected unit.",
+        "000008517003": "Fight phase: selected CHAOS KNIGHTS unit that charged this turn and has not fought improves melee AP by 1 until end of phase; after it finishes its attacks, if it destroyed one or more enemy units this phase, each enemy unit within 6\" takes a Battle-shock test.",
+        "000008517004": "Fight phase defensive reaction after enemy targets are selected: selected CHAOS KNIGHTS unit targeted in melee gains Feel No Pain 6+, improving to Feel No Pain 5+ against attacks made by Battle-shocked models, until end of phase.",
+        "000008517005": "Your Command phase: select one ABHORRENT unit and up to two friendly WAR DOG units; until your next Command phase, the selected WAR DOG units are treated as being within range of any Aura abilities that ABHORRENT unit has.",
+        "000008517006": "Your Movement or Charge phase: select up to two WAR DOG units or one TITANIC CHAOS KNIGHTS unit; until end of phase, the selected units can move through models and terrain, can move within Engagement Range while moving, cannot end non-Charge moves within Engagement Range, automatically pass Desperate Escape tests, and suspend Super-heavy Walker TITANIC blocking while the stratagem is active.",
+        "000008517007": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected CHAOS KNIGHTS unit targeted by that attack gains Stealth and Benefit of Cover against those ranged attacks until end of phase.",
     }
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -20726,6 +20732,15 @@ def _stratagem_support(
         "000010309005",
         "000010309006",
         "000010309007",
+    }:
+        return ("Implemented", _note("Implemented in engine."), name_u)
+    if stratagem_id in {
+        "000008517002",
+        "000008517003",
+        "000008517004",
+        "000008517005",
+        "000008517006",
+        "000008517007",
     }:
         return ("Implemented", _note("Implemented in engine."), name_u)
 

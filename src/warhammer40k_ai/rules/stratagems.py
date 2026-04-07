@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "A LONG LEASH",
     "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
     "AGGRESSIVE ONSLAUGHT",
@@ -63,6 +64,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
+    "CONQUERORS WITHOUT MERCY",
     "CORROSIVE VISCERA",
     "DIVINE GUIDANCE",
     "FOCUSED FIRE",
@@ -81,6 +83,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DELAYED MUTATIONS",
     "DETONATOR",
     "DIABOLIC REGENERATION",
+    "DISDAIN FOR THE WEAK",
     "DISTILLERS OF FEAR",
     "ARCANE FOCUS",
     "ASSASSIN BEASTS",
@@ -316,6 +319,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INESCAPABLE JUSTICE",
     "INTRACTABLE",
     "IMPETUOSITY",
+    "IMPERIOUS ADVANCE",
     "INSPIRING PRESENCE",
     "INSTANT OF GRACE",
     "KRAKEN ROUNDS",
@@ -335,6 +339,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
     "PREYTAKER’S EYE",
+    "PTERRORSHADES",
     "EYE OF THE PACK",
     "RELENTLESS ASSAULT",
     "RELICS OF THE DARK AGE",
@@ -344,6 +349,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHOCK BOMBARDMENT",
     "SITE-TO-SITE TELEPORTATION",
     "STALKING WOLVES",
+    "STORM OF DARKNESS",
     "STRIKE FROM THE SHADOWS",
     "STRIKE NOW FOR GLORY",
     "SURGICAL STRIKES",
@@ -8535,6 +8541,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_traitoris_lance_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_lords_of_dread_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -9747,6 +9757,10 @@ class StratagemManager(
             raise
         try:
             self._queue_houndpack_lance_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_traitoris_lance_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Queue NEW ORDERS at end of your Command phase
@@ -11815,6 +11829,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_traitoris_failed_battleshock_reactions(
+                enemy_unit=unit,
+                passed=passed,
+            )
+        except Exception:
+            raise
 
         # Unleash Balefire: apply aflame on failed Battle-shock.
         try:
@@ -13694,6 +13715,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_traitoris_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_cryptek_conclave_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -14510,6 +14538,13 @@ class StratagemManager(
             raise
         try:
             self._queue_pantheon_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_traitoris_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -15758,6 +15793,11 @@ class StratagemManager(
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
             self._queue_iconoclast_fiefdom_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
+            self._queue_traitoris_fight_attacks_resolved_reactions(
                 unit=unit,
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),

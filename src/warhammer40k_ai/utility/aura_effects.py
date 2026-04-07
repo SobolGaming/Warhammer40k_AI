@@ -448,6 +448,27 @@ def _aura_anchor_model_for_ability(source_unit, ability):
 
 def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, ability=None) -> bool:
     try:
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+    except Exception:
+        source_root = source_unit
+    try:
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+    except Exception:
+        target_root = target_unit
+    try:
+        target_sr = getattr(target_root, "special_rules", None)
+        target_source_id = str((target_sr or {}).get("traitoris_a_long_leash_source_unit_id", "") or "").strip()
+        source_id = str(get_entity_id(source_root) or "")
+        if (
+            isinstance(target_sr, dict)
+            and target_sr.get("traitoris_a_long_leash_active") is True
+            and source_id
+            and target_source_id == source_id
+        ):
+            return True
+    except Exception:
+        pass
+    try:
         rng = float(base_range)
     except Exception:
         return False

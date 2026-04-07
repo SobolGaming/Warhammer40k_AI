@@ -100,6 +100,11 @@ class ChaosKnightsStratagemMixin:
         checker = getattr(mgr, "is_lords_of_dread", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_traitoris_lance_detachment(self) -> bool:
+        mgr = self._chaos_knights_detachment_manager()
+        checker = getattr(mgr, "is_traitoris_lance", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _chaos_knights_current_turn_key(self) -> str:
         if self.game is None:
             return ""
@@ -436,6 +441,54 @@ class ChaosKnightsStratagemMixin:
         except Exception:
             return False
         return bool(has_deadly)
+
+    def _is_chaos_knights_titanic_unit(self, unit: Any) -> bool:
+        return self._chaos_knights_has_keyword(unit, "TITANIC")
+
+    def _is_chaos_knights_abhorrent_unit(self, unit: Any) -> bool:
+        if not self._is_chaos_knights_unit(unit):
+            return False
+        if self._is_chaos_knights_war_dog_unit(unit):
+            return False
+        if self._chaos_knights_has_keyword(unit, "ABHORRENT"):
+            return True
+        return self._is_chaos_knights_titanic_unit(unit)
+
+    @staticmethod
+    def _chaos_knights_merge_phase_move_types(
+        special_rules: Dict[str, Any],
+        rule_key: str,
+        added_key: str,
+        move_types: set[str],
+    ) -> None:
+        if not move_types:
+            special_rules.pop(added_key, None)
+            return
+        current = set(special_rules.get(rule_key) or [])
+        added = sorted([move_type for move_type in sorted(move_types) if move_type not in current])
+        merged = sorted(current.union(move_types))
+        if merged:
+            special_rules[rule_key] = merged
+        if added:
+            special_rules[added_key] = added
+        else:
+            special_rules.pop(added_key, None)
+
+    @staticmethod
+    def _chaos_knights_remove_phase_move_types(
+        special_rules: Dict[str, Any],
+        rule_key: str,
+        added_key: str,
+    ) -> None:
+        added = set(special_rules.get(added_key) or [])
+        if added:
+            current = list(special_rules.get(rule_key) or [])
+            kept = [item for item in current if item not in added]
+            if kept:
+                special_rules[rule_key] = kept
+            else:
+                special_rules.pop(rule_key, None)
+        special_rules.pop(added_key, None)
 
     def _chaos_knights_unit_candidates(
         self,
@@ -2848,6 +2901,1016 @@ class ChaosKnightsStratagemMixin:
         )
         return True
 
+    def _traitoris_resolve_selected_units(self, values: Any) -> List[Any]:
+        selected: List[Any] = []
+        seen: set[str] = set()
+        for value in list(values or []):
+            if value is None:
+                continue
+            root = value if not isinstance(value, str) else self._chaos_knights_resolve_unit(value)
+            root = self._chaos_knights_root(root)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            selected.append(root)
+        selected.sort(key=self._chaos_knights_sort_key)
+        return selected
+
+    def _traitoris_a_long_leash_source_candidates(self) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        candidates = [
+            root
+            for root in list(self._chaos_knights_unit_candidates() or [])
+            if self._is_chaos_knights_abhorrent_unit(root)
+        ]
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_a_long_leash_war_dog_candidates(self, source_unit: Any = None) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        source_root = self._chaos_knights_root(source_unit)
+        candidates = []
+        for root in list(self._chaos_knights_unit_candidates(require_war_dog=True) or []):
+            if source_root is not None and root is source_root:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_imperious_advance_war_dog_candidates(self, *, phase_name: str) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        candidates: List[Any] = []
+        for root in list(self._traitoris_a_long_leash_war_dog_candidates() or []):
+            round_state = getattr(root, "round_state", None)
+            if phase_key == "movement phase":
+                if bool(getattr(round_state, "moved_this_round", False)):
+                    continue
+                if bool(getattr(round_state, "advanced_this_round", False)):
+                    continue
+                if bool(getattr(round_state, "fell_back_this_round", False)):
+                    continue
+            elif phase_key == "charge phase":
+                if bool(getattr(round_state, "attempted_charge_this_round", False)):
+                    continue
+            else:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_imperious_advance_titanic_candidates(self, *, phase_name: str) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates() or []):
+            if not self._is_chaos_knights_titanic_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if phase_key == "movement phase":
+                if bool(getattr(round_state, "moved_this_round", False)):
+                    continue
+                if bool(getattr(round_state, "advanced_this_round", False)):
+                    continue
+                if bool(getattr(round_state, "fell_back_this_round", False)):
+                    continue
+            elif phase_key == "charge phase":
+                if bool(getattr(round_state, "attempted_charge_this_round", False)):
+                    continue
+            else:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_conquerors_without_mercy_candidates(self) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates(require_not_fought=True) or []):
+            if not self._is_chaos_knights_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if not bool(getattr(round_state, "charged_this_round", False)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_targeted_chaos_knights_candidates(self, target_units: Any) -> List[Any]:
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._chaos_knights_root(target)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if not self._chaos_knights_owned_by_player(root, self.player):
+                continue
+            if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_chaos_knights_unit(root):
+                continue
+            if root_id:
+                seen.add(root_id)
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _traitoris_pterrorshades_candidates(self, enemy_unit: Any) -> List[Any]:
+        if not self._is_traitoris_lance_detachment():
+            return []
+        enemy_root = self._chaos_knights_root(enemy_unit)
+        if enemy_root is None or self._chaos_knights_owned_by_player(enemy_root, self.player):
+            return []
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates() or []):
+            distance = self._chaos_knights_distance_between_units(root, enemy_root)
+            if distance is None or distance > 12.0 + 1e-6:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _clear_traitoris_a_long_leash_effects(self) -> None:
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            changed = False
+            for key in (
+                "traitoris_a_long_leash_active",
+                "traitoris_a_long_leash_source_unit_id",
+                "traitoris_a_long_leash_source",
+            ):
+                if key in special_rules:
+                    special_rules.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = special_rules
+
+    def _cleanup_traitoris_lance_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_traitoris_lance_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        army = self._chaos_knights_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_knights_root(unit)
+            if root is None:
+                continue
+            root_id = self._chaos_knights_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            changed = False
+
+            if phase_key in {"MOVEMENT_PHASE", "CHARGE_PHASE"}:
+                expires_phase = str(special_rules.get("traitoris_imperious_advance_expires_phase", "") or "").strip().upper()
+                if special_rules.get("traitoris_imperious_advance_active") is True and (
+                    not expires_phase or expires_phase == phase_key
+                ):
+                    for rule_key, added_key in (
+                        ("bearer_unit_phase_move_types", "traitoris_imperious_advance_added_phase_move_types"),
+                        (
+                            "bearer_unit_phase_move_engagement_types",
+                            "traitoris_imperious_advance_added_phase_move_engagement_types",
+                        ),
+                    ):
+                        self._chaos_knights_remove_phase_move_types(special_rules, rule_key, added_key)
+                    if bool(special_rules.get("traitoris_imperious_advance_added_auto_pass_desperate_escape", False)):
+                        special_rules.pop("bearer_unit_auto_pass_desperate_escape", None)
+                    if bool(special_rules.get("traitoris_imperious_advance_prev_titanic_block_present", False)):
+                        previous = list(
+                            special_rules.get("traitoris_imperious_advance_prev_titanic_block_value", []) or []
+                        )
+                        if previous:
+                            special_rules["titanic_phase_move_block_titanic_types"] = previous
+                        else:
+                            special_rules.pop("titanic_phase_move_block_titanic_types", None)
+                    for key in (
+                        "traitoris_imperious_advance_active",
+                        "traitoris_imperious_advance_expires_phase",
+                        "traitoris_imperious_advance_turn_owner",
+                        "traitoris_imperious_advance_turn",
+                        "traitoris_imperious_advance_source",
+                        "traitoris_imperious_advance_added_auto_pass_desperate_escape",
+                        "traitoris_imperious_advance_prev_titanic_block_present",
+                        "traitoris_imperious_advance_prev_titanic_block_value",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
+
+            if phase_key == "SHOOTING_PHASE" and special_rules.get("traitoris_storm_of_darkness_active") is True:
+                for key in (
+                    "traitoris_storm_of_darkness_active",
+                    "traitoris_storm_of_darkness_expires_phase",
+                    "traitoris_storm_of_darkness_source",
+                ):
+                    special_rules.pop(key, None)
+                changed = True
+
+            if phase_key == "FIGHT_PHASE" and special_rules.get("traitoris_conquerors_without_mercy_active") is True:
+                for key in (
+                    "traitoris_conquerors_without_mercy_active",
+                    "traitoris_conquerors_without_mercy_expires_phase",
+                    "traitoris_conquerors_without_mercy_source",
+                    "traitoris_conquerors_without_mercy_battle_shock_applied",
+                ):
+                    special_rules.pop(key, None)
+                changed = True
+
+            if changed:
+                root.special_rules = special_rules
+
+            if phase_key == "FIGHT_PHASE":
+                for model in list(getattr(root, "models", []) or []) + list(getattr(root, "models_lost", []) or []):
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        continue
+                    effects.pop("traitoris_conquerors_without_mercy_ap_boost", None)
+
+    def _queue_traitoris_lance_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        phase_name = self._chaos_knights_phase_label(phase_key)
+
+        if phase_key == "COMMAND_PHASE" and player is self.player:
+            self._clear_traitoris_a_long_leash_effects()
+            stratagem = self.get_by_name("A LONG LEASH")
+            if stratagem is not None and (stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                for source_root in list(self._traitoris_a_long_leash_source_candidates() or []):
+                    war_dog_candidates = list(self._traitoris_a_long_leash_war_dog_candidates(source_root) or [])
+                    if not war_dog_candidates:
+                        continue
+                    if self._chaos_knights_reaction_exists("phase_start", stratagem.name, unit=source_root):
+                        continue
+                    preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=source_root)
+                    if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+                        continue
+                    payload = {
+                        "event": "phase_start",
+                        "phase_name": phase_name,
+                        "stratagem": stratagem.name,
+                        "cp_cost": stratagem.cp_cost,
+                        "unit": source_root,
+                        "target_unit": source_root,
+                        "war_dog_candidates": war_dog_candidates,
+                        "war_dog_candidate_ids": [
+                            self._chaos_knights_sort_key(candidate) for candidate in list(war_dog_candidates or [])
+                        ],
+                    }
+                    self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key in {"MOVEMENT_PHASE", "CHARGE_PHASE"} and player is self.player:
+            stratagem = self.get_by_name("IMPERIOUS ADVANCE")
+            if stratagem is None:
+                return
+            if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._chaos_knights_reaction_exists("phase_start", stratagem.name):
+                return
+            phase_label = "Movement phase" if phase_key == "MOVEMENT_PHASE" else "Charge phase"
+            war_dog_candidates = list(self._traitoris_imperious_advance_war_dog_candidates(phase_name=phase_label) or [])
+            titanic_candidates = list(
+                self._traitoris_imperious_advance_titanic_candidates(phase_name=phase_label) or []
+            )
+            if not war_dog_candidates and not titanic_candidates:
+                return
+            preview_target = titanic_candidates[0] if titanic_candidates else war_dog_candidates[0]
+            preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=preview_target)
+            if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+                return
+            payload = {
+                "event": "phase_start",
+                "phase_name": phase_name,
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "war_dog_candidates": war_dog_candidates,
+                "war_dog_candidate_ids": [
+                    self._chaos_knights_sort_key(candidate) for candidate in list(war_dog_candidates or [])
+                ],
+                "titanic_candidates": titanic_candidates,
+                "titanic_candidate_ids": [
+                    self._chaos_knights_sort_key(candidate) for candidate in list(titanic_candidates or [])
+                ],
+            }
+            if len(titanic_candidates) == 1 and not war_dog_candidates:
+                payload["unit"] = titanic_candidates[0]
+                payload["target_unit"] = titanic_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("CONQUERORS WITHOUT MERCY")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        for root in list(self._traitoris_conquerors_without_mercy_candidates() or []):
+            if self._chaos_knights_reaction_exists("phase_start", stratagem.name, unit=root):
+                continue
+            preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=root)
+            if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+                continue
+            self._queue_reaction(
+                {
+                    "event": "phase_start",
+                    "phase_name": phase_name,
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "unit": root,
+                    "target_unit": root,
+                },
+                use_timer=False,
+            )
+
+    def _queue_traitoris_shooting_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return
+        stratagem = self.get_by_name("STORM OF DARKNESS")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacking_root = self._chaos_knights_root(attacking_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        candidates = self._traitoris_targeted_chaos_knights_candidates(target_units)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=candidates[0], enemy_unit=attacking_root)
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "shooting_targets_selected",
+            stratagem.name,
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_traitoris_fight_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return
+        stratagem = self.get_by_name("DISDAIN FOR THE WEAK")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        attacking_root = self._chaos_knights_root(attacking_unit)
+        if attacking_root is None or self._chaos_knights_owned_by_player(attacking_root, self.player):
+            return
+        candidates = self._traitoris_targeted_chaos_knights_candidates(target_units)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=candidates[0], enemy_unit=attacking_root)
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "fight_targets_selected",
+            stratagem.name,
+            enemy_unit=attacking_root,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_traitoris_failed_battleshock_reactions(self, *, enemy_unit: Any, passed: bool) -> None:
+        if passed or not self._is_traitoris_lance_detachment() or self.game is None:
+            return
+        enemy_root = self._chaos_knights_root(enemy_unit)
+        if enemy_root is None or self._chaos_knights_owned_by_player(enemy_root, self.player):
+            return
+        stratagem = self.get_by_name("PTERRORSHADES")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._traitoris_pterrorshades_candidates(enemy_root)
+        if not candidates:
+            return
+        preview_cost = self._chaos_knights_preview_cp_cost(stratagem, target_unit=candidates[0], enemy_unit=enemy_root)
+        if int(getattr(self.player, "command_points", 0) or 0) < preview_cost:
+            return
+        if self._chaos_knights_reaction_exists(
+            "battle_shock_test_resolved",
+            stratagem.name,
+            enemy_unit=enemy_root,
+        ):
+            return
+        payload = {
+            "event": "battle_shock_test_resolved",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "enemy_unit_id": self._chaos_knights_sort_key(enemy_root),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _traitoris_destroyed_enemy_units(self, killing_models_by_target: Any) -> List[Any]:
+        if not isinstance(killing_models_by_target, dict):
+            return []
+        destroyed: List[Any] = []
+        seen: set[str] = set()
+        for target, killed_models in list(killing_models_by_target.items()):
+            if not list(killed_models or []):
+                continue
+            target_root = self._chaos_knights_root(target)
+            if target_root is None or self._chaos_knights_owned_by_player(target_root, self.player):
+                continue
+            if self._chaos_knights_alive_models(target_root):
+                continue
+            target_id = self._chaos_knights_sort_key(target_root)
+            if target_id and target_id in seen:
+                continue
+            if target_id:
+                seen.add(target_id)
+            destroyed.append(target_root)
+        destroyed.sort(key=self._chaos_knights_sort_key)
+        return destroyed
+
+    def _queue_traitoris_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any,
+        killing_models_by_target: Any,
+    ) -> None:
+        del target_unit
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return
+        root = self._chaos_knights_root(unit)
+        if root is None or not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return
+        if special_rules.get("traitoris_conquerors_without_mercy_active") is not True:
+            return
+        if special_rules.get("traitoris_conquerors_without_mercy_battle_shock_applied") is True:
+            return
+        destroyed_units = self._traitoris_destroyed_enemy_units(killing_models_by_target)
+        if not destroyed_units:
+            return
+        destroyed_ids = {self._chaos_knights_sort_key(enemy_root) for enemy_root in list(destroyed_units or [])}
+        affected: List[Any] = []
+        for enemy_root in list(self._chaos_knights_enemy_roots() or []):
+            enemy_id = self._chaos_knights_sort_key(enemy_root)
+            if enemy_id and enemy_id in destroyed_ids:
+                continue
+            distance = self._chaos_knights_distance_between_units(root, enemy_root)
+            if distance is None or distance > 6.0 + 1e-6:
+                continue
+            affected.append(enemy_root)
+        turn = int(getattr(self.game, "turn", 1) or 1)
+        tested_names: List[str] = []
+        for enemy_root in list(affected or []):
+            take_battle_shock = getattr(enemy_root, "take_battle_shock_test", None)
+            if not callable(take_battle_shock):
+                continue
+            take_battle_shock(int(turn))
+            tested_names.append(str(getattr(enemy_root, "name", "Enemy Unit") or "Enemy Unit"))
+        special_rules["traitoris_conquerors_without_mercy_battle_shock_applied"] = True
+        root.special_rules = special_rules
+        logger.info(
+            "INFO: CONQUERORS WITHOUT MERCY: %s destroyed %d enemy unit(s); %d nearby enemy unit(s) test for Battle-shock%s.",
+            getattr(root, "name", "Unit"),
+            len(list(destroyed_units or [])),
+            len(list(tested_names or [])),
+            f" ({', '.join(tested_names)})" if tested_names else "",
+        )
+
+    def _use_traitoris_a_long_leash(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        source_root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if source_root is None:
+            logger.error("ERROR: A LONG LEASH: no ABHORRENT source unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(source_root, self.player):
+            logger.error("ERROR: A LONG LEASH: source unit is not yours")
+            return False
+        if not self._is_chaos_knights_abhorrent_unit(source_root):
+            logger.error("ERROR: A LONG LEASH: source unit must be an ABHORRENT unit")
+            return False
+        if not self._chaos_knights_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: A LONG LEASH: source unit must be an eligible battlefield unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: A LONG LEASH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: A LONG LEASH: only usable in your Command phase")
+            return False
+        candidate_roots = list(merged.get("war_dog_candidates", []) or [])
+        if not candidate_roots:
+            candidate_roots = list(self._traitoris_a_long_leash_war_dog_candidates(source_root) or [])
+        selected_roots = self._traitoris_resolve_selected_units(
+            merged.get("selected_units")
+            or merged.get("selected_unit_ids")
+            or merged.get("war_dog_units")
+            or merged.get("war_dog_unit_ids")
+        )
+        if not selected_roots and len(candidate_roots) <= 2:
+            selected_roots = list(candidate_roots)
+        if len(selected_roots) > 2:
+            logger.error("ERROR: A LONG LEASH: select up to two friendly WAR DOG units")
+            return False
+        candidate_ids = {self._chaos_knights_sort_key(root) for root in list(candidate_roots or [])}
+        for target_root in list(selected_roots or []):
+            if candidate_ids and self._chaos_knights_sort_key(target_root) not in candidate_ids:
+                logger.error("ERROR: A LONG LEASH: selected WAR DOG unit is not currently eligible")
+                return False
+            if not self._chaos_knights_owned_by_player(target_root, self.player):
+                logger.error("ERROR: A LONG LEASH: selected WAR DOG unit is not yours")
+                return False
+            if not self._is_chaos_knights_war_dog_unit(target_root):
+                logger.error("ERROR: A LONG LEASH: selected target must be a WAR DOG unit")
+                return False
+            if not self._chaos_knights_on_battlefield(target_root, require_targetable=True):
+                logger.error("ERROR: A LONG LEASH: selected WAR DOG unit is not an eligible battlefield unit")
+                return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=source_root):
+            return False
+
+        self._clear_traitoris_a_long_leash_effects()
+        source_id = self._chaos_knights_sort_key(source_root)
+        source_name = str(getattr(stratagem, "name", "") or "A LONG LEASH")
+        for target_root in list(selected_roots or []):
+            special_rules = getattr(target_root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            special_rules["traitoris_a_long_leash_active"] = True
+            special_rules["traitoris_a_long_leash_source_unit_id"] = source_id
+            special_rules["traitoris_a_long_leash_source"] = source_name
+            target_root.special_rules = special_rules
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: A LONG LEASH: %d WAR DOG unit(s) count as within %s's Aura abilities until your next Command phase.",
+            len(list(selected_roots or [])),
+            getattr(source_root, "name", "ABHORRENT unit"),
+        )
+        return True
+
+    def _use_traitoris_pterrorshades(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit") or merged.get("target_enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: PTERRORSHADES: no source unit provided")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: PTERRORSHADES: missing failed Battle-shock enemy unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: PTERRORSHADES: source unit is not yours")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PTERRORSHADES: source unit must be on the battlefield and targetable")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: PTERRORSHADES: source unit must be a CHAOS KNIGHTS unit")
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: PTERRORSHADES: selected enemy must be an enemy unit")
+            return False
+        if not self._chaos_knights_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: PTERRORSHADES: enemy unit must still be on the battlefield")
+            return False
+        distance = self._chaos_knights_distance_between_units(root, enemy_root)
+        if distance is None or distance > 12.0 + 1e-6:
+            logger.error("ERROR: PTERRORSHADES: enemy unit must be within 12\"")
+            return False
+        candidates = list(merged.get("candidates", []) or [])
+        eligible = candidates or self._traitoris_pterrorshades_candidates(enemy_root)
+        if eligible and root not in list(eligible or []):
+            logger.error("ERROR: PTERRORSHADES: selected source unit is not currently eligible")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+
+        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        mortal_wounds = sum(1 for roll in list(rolls or []) if int(roll or 0) >= 4)
+        if mortal_wounds > 0:
+            apply_mortals = getattr(root, "_apply_mortal_wounds_to_unit", None)
+            if not callable(apply_mortals):
+                logger.error("ERROR: PTERRORSHADES: mortal wound application helper unavailable")
+                return False
+            apply_mortals(
+                enemy_root,
+                int(mortal_wounds),
+                game_map=getattr(self.game, "map", None),
+            )
+        healed = self._chaos_knights_heal_lost_wounds(root, int(mortal_wounds))
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: PTERRORSHADES: %s rolls %s into %d mortal wound(s) on %s and restores %d wound(s).",
+            getattr(root, "name", "Unit"),
+            rolls,
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Enemy Unit"),
+            int(healed),
+        )
+        return True
+
+    def _use_traitoris_conquerors_without_mercy(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: target must be a CHAOS KNIGHTS unit")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: target must be on the battlefield and targetable")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: wrong phase")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "charged_this_round", False)):
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: target must have made a Charge move this turn")
+            return False
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: CONQUERORS WITHOUT MERCY: target has already fought this phase")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        for model in list(self._chaos_knights_alive_models(root) or []):
+            effects = getattr(model, "_temporary_effects", None)
+            if not isinstance(effects, dict):
+                effects = {}
+                model._temporary_effects = effects
+            effects["traitoris_conquerors_without_mercy_ap_boost"] = {
+                "expires_phase": "FIGHT_PHASE",
+                "melee_ap_bonus": 1,
+            }
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["traitoris_conquerors_without_mercy_active"] = True
+        special_rules["traitoris_conquerors_without_mercy_expires_phase"] = "FIGHT_PHASE"
+        special_rules["traitoris_conquerors_without_mercy_source"] = str(
+            getattr(stratagem, "name", "") or "CONQUERORS WITHOUT MERCY"
+        )
+        special_rules.pop("traitoris_conquerors_without_mercy_battle_shock_applied", None)
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: CONQUERORS WITHOUT MERCY: %s improves melee AP by 1 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_traitoris_disdain_for_the_weak(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        attacking_root = self._chaos_knights_root(merged.get("attacking_unit") or merged.get("enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: DISDAIN FOR THE WEAK: no target unit provided")
+            return False
+        if attacking_root is None:
+            logger.error("ERROR: DISDAIN FOR THE WEAK: missing attacking enemy unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: DISDAIN FOR THE WEAK: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: DISDAIN FOR THE WEAK: target must be a CHAOS KNIGHTS unit")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: DISDAIN FOR THE WEAK: target must be on the battlefield and targetable")
+            return False
+        if self._chaos_knights_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: DISDAIN FOR THE WEAK: attacking unit must be enemy")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DISDAIN FOR THE WEAK: wrong phase")
+            return False
+        candidates = list(merged.get("candidates", []) or [])
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: DISDAIN FOR THE WEAK: target unit was not selected as an enemy target")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        self._append_defensive_effect(
+            root,
+            "defensive_fnp_overrides",
+            {
+                "value": 6,
+                "attack_type": "melee",
+                "expires_phase": "FIGHT_PHASE",
+                "source": str(getattr(stratagem, "name", "") or "DISDAIN FOR THE WEAK"),
+            },
+        )
+        self._append_defensive_effect(
+            root,
+            "defensive_fnp_overrides",
+            {
+                "value": 5,
+                "attack_type": "melee",
+                "condition": "against attacks made by Battle-shocked models",
+                "expires_phase": "FIGHT_PHASE",
+                "source": str(getattr(stratagem, "name", "") or "DISDAIN FOR THE WEAK"),
+            },
+        )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: DISDAIN FOR THE WEAK: %s gains Feel No Pain 6+, improving to 5+ against Battle-shocked attackers, this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_traitoris_imperious_advance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: IMPERIOUS ADVANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: IMPERIOUS ADVANCE: only usable in your turn")
+            return False
+        selected_roots = self._traitoris_resolve_selected_units(
+            merged.get("selected_units") or merged.get("selected_unit_ids")
+        )
+        if not selected_roots:
+            root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+            if root is not None:
+                selected_roots = [root]
+        war_dog_candidates = list(merged.get("war_dog_candidates", []) or [])
+        titanic_candidates = list(merged.get("titanic_candidates", []) or [])
+        if not war_dog_candidates:
+            war_dog_candidates = list(self._traitoris_imperious_advance_war_dog_candidates(phase_name=phase_name) or [])
+        if not titanic_candidates:
+            titanic_candidates = list(
+                self._traitoris_imperious_advance_titanic_candidates(phase_name=phase_name) or []
+            )
+        if not selected_roots:
+            if len(titanic_candidates) == 1 and not war_dog_candidates:
+                selected_roots = [titanic_candidates[0]]
+            elif 0 < len(war_dog_candidates) <= 2 and not titanic_candidates:
+                selected_roots = list(war_dog_candidates)
+        if not selected_roots:
+            logger.error("ERROR: IMPERIOUS ADVANCE: no units selected")
+            return False
+        titanic_ids = {self._chaos_knights_sort_key(root) for root in list(titanic_candidates or [])}
+        war_dog_ids = {self._chaos_knights_sort_key(root) for root in list(war_dog_candidates or [])}
+        selected_ids = {self._chaos_knights_sort_key(root) for root in list(selected_roots or [])}
+        selecting_titanic = any(root_id in titanic_ids for root_id in list(selected_ids or []))
+        if selecting_titanic:
+            if len(selected_roots) != 1:
+                logger.error("ERROR: IMPERIOUS ADVANCE: select either up to two WAR DOG units or one TITANIC unit")
+                return False
+        elif len(selected_roots) > 2:
+            logger.error("ERROR: IMPERIOUS ADVANCE: select up to two WAR DOG units")
+            return False
+        for root in list(selected_roots or []):
+            root_id = self._chaos_knights_sort_key(root)
+            if selecting_titanic:
+                if root_id not in titanic_ids:
+                    logger.error("ERROR: IMPERIOUS ADVANCE: selected TITANIC unit is not currently eligible")
+                    return False
+                if not self._is_chaos_knights_titanic_unit(root):
+                    logger.error("ERROR: IMPERIOUS ADVANCE: TITANIC target is invalid")
+                    return False
+            else:
+                if root_id not in war_dog_ids:
+                    logger.error("ERROR: IMPERIOUS ADVANCE: selected WAR DOG unit is not currently eligible")
+                    return False
+                if not self._is_chaos_knights_war_dog_unit(root):
+                    logger.error("ERROR: IMPERIOUS ADVANCE: target must be a WAR DOG unit")
+                    return False
+            if not self._chaos_knights_owned_by_player(root, self.player):
+                logger.error("ERROR: IMPERIOUS ADVANCE: selected unit is not yours")
+                return False
+            if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: IMPERIOUS ADVANCE: selected unit must be on the battlefield and targetable")
+                return False
+            round_state = getattr(root, "round_state", None)
+            if phase_name == "movement phase":
+                if bool(getattr(round_state, "moved_this_round", False)):
+                    logger.error("ERROR: IMPERIOUS ADVANCE: selected unit has already moved this phase")
+                    return False
+                if bool(getattr(round_state, "advanced_this_round", False)):
+                    logger.error("ERROR: IMPERIOUS ADVANCE: selected unit has already moved this phase")
+                    return False
+                if bool(getattr(round_state, "fell_back_this_round", False)):
+                    logger.error("ERROR: IMPERIOUS ADVANCE: selected unit has already moved this phase")
+                    return False
+            if phase_name == "charge phase" and bool(getattr(round_state, "attempted_charge_this_round", False)):
+                logger.error("ERROR: IMPERIOUS ADVANCE: selected unit has already declared a charge this phase")
+                return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=selected_roots[0]):
+            return False
+        expires_phase = "MOVEMENT_PHASE" if phase_name == "movement phase" else "CHARGE_PHASE"
+        move_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else {"charge"}
+        engagement_types = {"move", "advance", "fall_back"} if phase_name == "movement phase" else set()
+        for root in list(selected_roots or []):
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            self._chaos_knights_merge_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_types",
+                "traitoris_imperious_advance_added_phase_move_types",
+                set(move_types),
+            )
+            self._chaos_knights_merge_phase_move_types(
+                special_rules,
+                "bearer_unit_phase_move_engagement_types",
+                "traitoris_imperious_advance_added_phase_move_engagement_types",
+                set(engagement_types),
+            )
+            if not bool(special_rules.get("bearer_unit_auto_pass_desperate_escape", False)):
+                special_rules["traitoris_imperious_advance_added_auto_pass_desperate_escape"] = True
+            special_rules["bearer_unit_auto_pass_desperate_escape"] = True
+            if "titanic_phase_move_block_titanic_types" in special_rules:
+                special_rules["traitoris_imperious_advance_prev_titanic_block_present"] = True
+                special_rules["traitoris_imperious_advance_prev_titanic_block_value"] = list(
+                    special_rules.get("titanic_phase_move_block_titanic_types", []) or []
+                )
+                special_rules.pop("titanic_phase_move_block_titanic_types", None)
+            special_rules["traitoris_imperious_advance_active"] = True
+            special_rules["traitoris_imperious_advance_expires_phase"] = expires_phase
+            special_rules["traitoris_imperious_advance_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            special_rules["traitoris_imperious_advance_turn"] = int(getattr(self.game, "turn", 0) or 0)
+            special_rules["traitoris_imperious_advance_source"] = str(
+                getattr(stratagem, "name", "") or "IMPERIOUS ADVANCE"
+            )
+            root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: IMPERIOUS ADVANCE: %d unit(s) can move through models and terrain this %s.",
+            len(list(selected_roots or [])),
+            phase_name,
+        )
+        return True
+
+    def _use_traitoris_storm_of_darkness(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_traitoris_lance_detachment() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        attacking_root = self._chaos_knights_root(merged.get("attacking_unit") or merged.get("enemy_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: STORM OF DARKNESS: no target unit provided")
+            return False
+        if attacking_root is None:
+            logger.error("ERROR: STORM OF DARKNESS: missing attacking enemy unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: STORM OF DARKNESS: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: STORM OF DARKNESS: target must be a CHAOS KNIGHTS unit")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: STORM OF DARKNESS: target must be on the battlefield and targetable")
+            return False
+        if self._chaos_knights_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: STORM OF DARKNESS: attacking unit must be enemy")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: STORM OF DARKNESS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: STORM OF DARKNESS: only usable in your opponent's Shooting phase")
+            return False
+        candidates = list(merged.get("candidates", []) or [])
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: STORM OF DARKNESS: target unit was not selected by the attacker")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        self._append_defensive_effect(
+            root,
+            "defensive_cover_bonuses",
+            {
+                "attack_type": "ranged",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": str(getattr(stratagem, "name", "") or "STORM OF DARKNESS"),
+            },
+        )
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["traitoris_storm_of_darkness_active"] = True
+        special_rules["traitoris_storm_of_darkness_expires_phase"] = "SHOOTING_PHASE"
+        special_rules["traitoris_storm_of_darkness_source"] = str(
+            getattr(stratagem, "name", "") or "STORM OF DARKNESS"
+        )
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: STORM OF DARKNESS: %s gains Stealth and Benefit of Cover this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_chaos_knights_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_key = self._chaos_knights_normalize_name(getattr(stratagem, "name", "") or "")
         if name_key == "CLAIMED FOR THE DARK GODS":
@@ -2882,4 +3945,16 @@ class ChaosKnightsStratagemMixin:
             return self._use_iconoclast_worthless_chattel(stratagem, **kwargs)
         if name_key == "PRESERVE THE IDOLS":
             return self._use_iconoclast_preserve_the_idols(stratagem, **kwargs)
+        if name_key == "A LONG LEASH":
+            return self._use_traitoris_a_long_leash(stratagem, **kwargs)
+        if name_key == "PTERRORSHADES":
+            return self._use_traitoris_pterrorshades(stratagem, **kwargs)
+        if name_key == "CONQUERORS WITHOUT MERCY":
+            return self._use_traitoris_conquerors_without_mercy(stratagem, **kwargs)
+        if name_key == "DISDAIN FOR THE WEAK":
+            return self._use_traitoris_disdain_for_the_weak(stratagem, **kwargs)
+        if name_key == "IMPERIOUS ADVANCE":
+            return self._use_traitoris_imperious_advance(stratagem, **kwargs)
+        if name_key == "STORM OF DARKNESS":
+            return self._use_traitoris_storm_of_darkness(stratagem, **kwargs)
         return None
