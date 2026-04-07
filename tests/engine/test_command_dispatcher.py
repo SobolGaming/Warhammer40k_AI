@@ -19,8 +19,8 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 
 def _make_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
-    army_one = Army("Chaos Daemons", "Test")
-    army_two = Army("Chaos Daemons", "Test")
+    army_one = Army.with_detachment("Chaos Daemons", "Test")
+    army_two = Army.with_detachment("Chaos Daemons", "Test")
     player_one = Player("P1", PlayerControl.LOCAL, army_one)
     player_two = Player("P2", PlayerControl.REMOTE, army_two)
     game = Game(bf, players=[player_one, player_two])

@@ -74,9 +74,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ik_army = Army("Imperial Knights", detachment_type="Spearhead-At-Arms")
+    ik_army = Army.with_detachment("Imperial Knights", detachment_type="Spearhead-At-Arms")
     ik_army.faction_id = "QI"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     ik_player = Player("IK", PlayerControl.REMOTE, army=ik_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

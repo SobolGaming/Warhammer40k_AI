@@ -88,7 +88,7 @@ def _make_unit(
 
 
 def _make_ork_army(detachment: str) -> Army:
-    army = Army("Orks", detachment)
+    army = Army.with_detachment("Orks", detachment)
     army.faction_id = "ORK"
     return army
 
@@ -244,7 +244,7 @@ def test_surly_as_a_squiggoth_applies_defensive_wound_penalty_when_strength_exce
     leader.attach_to_unit(bodyguard)
     _apply_enhancement(leader, "Surly as a Squiggoth")
 
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     enemy = _make_unit(
         "Enemy Unit",

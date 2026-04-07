@@ -101,9 +101,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    ia_army = Army("Imperial Agents", "Veiled Blade Elimination Force")
+    ia_army = Army.with_detachment("Imperial Agents", "Veiled Blade Elimination Force")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
@@ -156,7 +156,7 @@ def _ia_faction_keywords():
 
 
 def test_extremis_sanction_points_surcharge_applies_to_officio_assassinorum_units():
-    army = Army("Imperial Agents", "Veiled Blade Elimination Force")
+    army = Army.with_detachment("Imperial Agents", "Veiled Blade Elimination Force")
     army.faction_id = "AOI"
 
     expected_costs = {
@@ -228,7 +228,7 @@ def test_extremis_sanction_grants_extra_use_from_unit_level_assassin_ability_and
 
 
 def test_hammerhand_grants_lethal_hits_to_unit_melee_weapons_after_charge_move():
-    army = Army("Imperial Agents", "Other")
+    army = Army.with_detachment("Imperial Agents", "Other")
     army.faction_id = "AOI"
     hammerhand = Ability(
         "Hammerhand (Psychic)",

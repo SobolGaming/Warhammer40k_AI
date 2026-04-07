@@ -129,9 +129,9 @@ def _make_profile(*, melee: bool) -> WargearProfile:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Renegade Raiders")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Renegade Raiders")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -237,7 +237,7 @@ def test_dread_reaver_grants_melee_hit_and_wound_rerolls_when_bearer_is_within_e
 
 
 def test_mark_of_the_hound_grants_scouts_while_bearer_is_alive():
-    csm_army = Army("Chaos Space Marines", "Renegade Raiders")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Renegade Raiders")
     csm_army.faction_id = "CSM"
     source = _make_unit(
         "Chaos Lord",
@@ -259,7 +259,7 @@ def test_mark_of_the_hound_grants_scouts_while_bearer_is_alive():
 
 
 def test_tyrants_lash_grants_advance_reroll_and_shoot_after_fall_back():
-    csm_army = Army("Chaos Space Marines", "Renegade Raiders")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Renegade Raiders")
     csm_army.faction_id = "CSM"
     source = _make_unit(
         "Chaos Lord",

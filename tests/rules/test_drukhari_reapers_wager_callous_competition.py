@@ -51,12 +51,12 @@ def _make_unit(name, *, faction_name, keywords=None, faction_keywords=None):
 
 class TestDrukhariReapersWagerCallousCompetition(unittest.TestCase):
     def _setup_armies(self):
-        drukhari_army = Army("Drukhari", detachment_type="Reaper's Wager")
+        drukhari_army = Army.with_detachment("Drukhari", detachment_type="Reaper's Wager")
         drukhari_army.faction_id = "DRU"
         drukhari_player = Player("DRU", control=PlayerControl.REMOTE, army=drukhari_army)
         drukhari_army.player = drukhari_player
 
-        enemy_army = Army("Enemy", detachment_type="None")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="None")
         enemy_army.faction_id = "EN"
         enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
         enemy_army.player = enemy_player

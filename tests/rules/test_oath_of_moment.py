@@ -46,7 +46,7 @@ class TestOathOfMoment(unittest.TestCase):
         }
         for detachment_name, expected in expectations.items():
             with self.subTest(detachment=detachment_name):
-                army = Army("Space Marines", detachment_name)
+                army = Army.with_detachment("Space Marines", detachment_name)
                 army.faction_id = "SM"
                 army.configure_rule_managers(force=True)
                 mgr = getattr(army, "space_marines_detachments", None)
@@ -101,7 +101,7 @@ class TestOathOfMoment(unittest.TestCase):
             control=SimpleNamespace(name="REMOTE"), has_control=lambda: False,
             _choose_optional_value=lambda *_a, **_k: None,
         )
-        army = Army("Space Marines", "Gladius Task Force")
+        army = Army.with_detachment("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         player.get_army = lambda: army
         army.player = player
@@ -144,7 +144,7 @@ class TestOathOfMoment(unittest.TestCase):
         # Minimal game/player/army wiring for roll_made publish calls
         game = SimpleNamespace(event_system=EventSystem(), map=None)
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
-        army = Army("Space Marines", "Gladius Task Force")
+        army = Army.with_detachment("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         army.player = player
 
@@ -285,7 +285,7 @@ class TestOathOfMoment(unittest.TestCase):
         available = _Unit("AvailableUnit")
 
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, _choose_optional_value=lambda *_a, **_k: None)
-        army = Army("Space Marines", "Gladius Task Force")
+        army = Army.with_detachment("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         player.get_army = lambda: army
         army.player = player
@@ -354,7 +354,7 @@ class TestOathOfMoment(unittest.TestCase):
         backup = _Unit("Backup")
 
         player = SimpleNamespace(name="P1", id="P1")
-        army = Army("Space Marines", "Gladius Task Force")
+        army = Army.with_detachment("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         army.player = player
         player.get_army = lambda: army
@@ -423,7 +423,7 @@ class TestOathOfMoment(unittest.TestCase):
             has_control=lambda: False,
             _choose_optional_value=lambda *_a, **_k: None,
         )
-        army = Army("Space Marines", "1st Company Task Force")
+        army = Army.with_detachment("Space Marines", "1st Company Task Force")
         army.faction_id = "SM"
         player.get_army = lambda: army
         army.player = player
@@ -486,7 +486,7 @@ class TestOathOfMoment(unittest.TestCase):
             has_control=lambda: True,
             game=game,
         )
-        army = Army("Space Marines", "1st Company Task Force")
+        army = Army.with_detachment("Space Marines", "1st Company Task Force")
         army.faction_id = "SM"
         army.player = player
         player.get_army = lambda: army

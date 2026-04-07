@@ -91,9 +91,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    necron_army = Army("Necrons", "Other")
+    necron_army = Army.with_detachment("Necrons", "Other")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     necron_player = Player("Necrons", control=PlayerControl.REMOTE, army=necron_army)

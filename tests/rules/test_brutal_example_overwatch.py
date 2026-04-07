@@ -82,7 +82,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         return bodyguard, leader
 
     def test_brutal_example_rule_detected_and_usage(self):
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         bodyguard, _leader = self._setup_units_with_brutal_example(army)
 
@@ -99,7 +99,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         self.assertFalse(bodyguard.can_use_traitor_enforcer_overwatch(game))
 
     def test_apply_stratagem_cp_cost_brutal_example(self):
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         bodyguard, _leader = self._setup_units_with_brutal_example(army)
 
@@ -171,7 +171,7 @@ class TestBrutalExampleOverwatch(unittest.TestCase):
         self.assertEqual(len(stratagem_mgr._pending_reactions), 1)
 
     def test_brutal_example_bodyguard_loss_resolves_before_overwatch_shooting(self):
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         bodyguard, leader = self._setup_units_with_brutal_example(army)
         army.units = [bodyguard, leader]

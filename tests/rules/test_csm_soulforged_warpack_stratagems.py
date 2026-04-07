@@ -126,9 +126,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    soul_army = Army("Chaos Space Marines", "Soulforged Warpack")
+    soul_army = Army.with_detachment("Chaos Space Marines", "Soulforged Warpack")
     soul_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     soul_player = Player("Soulforged", control=PlayerControl.LOCAL, army=soul_army)

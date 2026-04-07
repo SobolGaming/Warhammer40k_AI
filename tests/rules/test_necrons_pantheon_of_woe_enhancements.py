@@ -94,9 +94,9 @@ def _make_unit(
 
 
 def _build_game():
-    necron_army = Army("Necrons", "Pantheon of Woe")
+    necron_army = Army.with_detachment("Necrons", "Pantheon of Woe")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     necron_player = Player("Necrons", control=PlayerControl.LOCAL, army=necron_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

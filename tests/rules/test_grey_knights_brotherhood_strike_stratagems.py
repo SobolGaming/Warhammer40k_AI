@@ -54,9 +54,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 2
 
-    army_gk = Army("Grey Knights", "Brotherhood Strike")
+    army_gk = Army.with_detachment("Grey Knights", "Brotherhood Strike")
     army_gk.faction_id = "GK"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("GK", control=PlayerControl.LOCAL, army=army_gk)
@@ -144,4 +144,4 @@ class TestGreyKnightsBrotherhoodStrikeStratagems(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

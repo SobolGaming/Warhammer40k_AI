@@ -64,9 +64,9 @@ def create_unit(
 def _make_game():
     battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    custodes_army = Army("Adeptus Custodes", "Null Maiden Vigil")
+    custodes_army = Army.with_detachment("Adeptus Custodes", "Null Maiden Vigil")
     custodes_army.faction_id = "AC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     custodes_player = Player("Custodes", PlayerControl.REMOTE, army=custodes_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

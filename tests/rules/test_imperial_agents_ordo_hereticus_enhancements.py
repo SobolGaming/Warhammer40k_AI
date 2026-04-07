@@ -84,9 +84,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Ordo Hereticus Purgation Force")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Hereticus Purgation Force")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

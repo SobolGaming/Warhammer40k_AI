@@ -62,10 +62,10 @@ class TestRageCursedOnslaught(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Space Marines", detachment_type="Rage-cursed Onslaught")
+        army = Army.with_detachment("Space Marines", detachment_type="Rage-cursed Onslaught")
         army.faction_id = "SM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])
@@ -191,4 +191,4 @@ class TestRageCursedOnslaught(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

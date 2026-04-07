@@ -106,7 +106,7 @@ class TestPsychicCommunion(unittest.TestCase):
             faction_keywords=["Aeldari"],
         )
 
-        army = Army("Aeldari", detachment_type="Test")
+        army = Army.with_detachment("Aeldari", detachment_type="Test")
         army.add_unit(warlocks)
         army.add_unit(psyker1)
         army.add_unit(psyker2)
@@ -162,7 +162,7 @@ class TestPsychicCommunion(unittest.TestCase):
             faction_keywords=["Aeldari"],
         )
 
-        army = Army("Aeldari", detachment_type="Test")
+        army = Army.with_detachment("Aeldari", detachment_type="Test")
         army.add_unit(warlock)
         army.add_unit(psyker)
 

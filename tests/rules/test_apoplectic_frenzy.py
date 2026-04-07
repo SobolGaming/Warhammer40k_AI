@@ -57,7 +57,7 @@ class TestApoplecticFrenzy(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("World Eaters", "Berzerker Warband")
+        army = Army.with_detachment("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         unit = _TestUnit()
         army.add_unit(unit)

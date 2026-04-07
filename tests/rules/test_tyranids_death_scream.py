@@ -61,9 +61,9 @@ class TestTyranidsDeathScream(unittest.TestCase):
         return model
 
     def test_death_scream_parses_and_queues_minus_one_battleshock(self):
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

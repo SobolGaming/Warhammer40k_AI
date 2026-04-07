@@ -1534,7 +1534,7 @@ def load_game_snapshot(snapshot: dict) -> Game:
     units_data = {u["id"]: u for u in list(snapshot.get("units", []) or [])}
 
     for adata in list(snapshot.get("armies", []) or []):
-        army = Army(
+        army = Army.with_detachment(
             faction=str(adata.get("faction", "") or ""),
             detachment_type=str(adata.get("primary_detachment_type", "") or ""),
             points_limit=int(adata.get("points_limit", 0) or 0),

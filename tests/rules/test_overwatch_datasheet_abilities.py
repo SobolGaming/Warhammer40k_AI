@@ -47,9 +47,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Inescapable Death", "NEC", ability_desc, "Datasheet", "")
 
-        army = Army("Necrons", detachment_type="Other")
+        army = Army.with_detachment("Necrons", detachment_type="Other")
         army.faction_id = "NEC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Necron", PlayerControl.REMOTE, army=army)
@@ -93,7 +93,7 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Inescapable Death", "NEC", ability_desc, "Datasheet", "")
 
-        army = Army("Necrons", detachment_type="Other")
+        army = Army.with_detachment("Necrons", detachment_type="Other")
         army.faction_id = "NEC"
         unit = self._make_unit("Hexmark Destroyer", army, abilities=[ability])
 
@@ -121,9 +121,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Defensive Stance", "TYR", ability_desc, "Datasheet", "")
 
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Tyranid", PlayerControl.REMOTE, army=army)
@@ -158,7 +158,7 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Hive Defences", "TYR", ability_desc, "Datasheet", "")
 
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
         unit = self._make_unit("Sporocyst", army, abilities=[ability])
 
@@ -194,7 +194,7 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Defensive Array", "SM", ability_desc, "Datasheet", "")
 
-        army = Army("Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Space Marines", detachment_type="Other")
         army.faction_id = "SM"
         unit = self._make_unit("Hammerfall Bunker", army, abilities=[ability])
 
@@ -222,9 +222,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Sentinel Protocols", "SM", ability_desc, "Datasheet", "")
 
-        army = Army("Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Space Marines", detachment_type="Other")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Astartes", PlayerControl.REMOTE, army=army)
@@ -251,9 +251,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         )
         ability = Ability("Sentinel Protocols", "TAU", ability_desc, "Datasheet", "")
 
-        army = Army("Tau Empire", detachment_type="Other")
+        army = Army.with_detachment("Tau Empire", detachment_type="Other")
         army.faction_id = "TAU"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Tau", PlayerControl.REMOTE, army=army)
@@ -277,9 +277,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
         ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
 
-        ork_army = Army("Orks", detachment_type="Other")
+        ork_army = Army.with_detachment("Orks", detachment_type="Other")
         ork_army.faction_id = "ORK"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         unit = self._make_unit("Kommandos", ork_army, abilities=[ability])
@@ -298,9 +298,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
         ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
 
-        moving_army = Army("Orks", detachment_type="Other")
+        moving_army = Army.with_detachment("Orks", detachment_type="Other")
         moving_army.faction_id = "ORK"
-        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army = Army.with_detachment("Enemy", detachment_type="Other")
         defending_army.faction_id = "EN"
 
         moving_player = SimpleNamespace(name="Mover", id="p-move")
@@ -361,9 +361,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
     def test_overwatch_queue_triggers_when_enemy_unit_is_set_up(self):
         from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 
-        moving_army = Army("Orks", detachment_type="Other")
+        moving_army = Army.with_detachment("Orks", detachment_type="Other")
         moving_army.faction_id = "ORK"
-        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army = Army.with_detachment("Enemy", detachment_type="Other")
         defending_army.faction_id = "EN"
 
         moving_player = SimpleNamespace(name="Mover", id="p-move")
@@ -427,9 +427,9 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
         ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
         ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
 
-        moving_army = Army("Orks", detachment_type="Other")
+        moving_army = Army.with_detachment("Orks", detachment_type="Other")
         moving_army.faction_id = "ORK"
-        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army = Army.with_detachment("Enemy", detachment_type="Other")
         defending_army.faction_id = "EN"
 
         moving_player = SimpleNamespace(name="Mover", id="p-move")

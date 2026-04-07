@@ -33,7 +33,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100, batt
 
 
 def setup_csm_army(points_limit=2000) -> Army:
-    army = Army("Chaos Space Marines", "Detachment", points_limit=points_limit)
+    army = Army.with_detachment("Chaos Space Marines", "Detachment", points_limit=points_limit)
     army.faction_id = "CSM"
     base = make_unit("CSM Unit", faction_keywords=["HERETIC ASTARTES"])
     army.add_unit(base)
@@ -112,7 +112,7 @@ def test_daemonic_pact_requires_base_keyword():
 
 
 def test_daemonic_pact_rejects_other_factions():
-    army = Army("Other", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Other", "Detachment", points_limit=2000)
     army.faction_id = "SM"
     base = make_unit("Base", faction_keywords=["ADEPTUS ASTARTES"])
     daemon = make_unit("Daemon", keywords=["LEGIONES DAEMONICA", "KHORNE"], battleline=True, cost=100)

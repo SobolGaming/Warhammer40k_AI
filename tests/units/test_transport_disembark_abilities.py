@@ -58,9 +58,9 @@ class TestTransportDisembarkAbilities(unittest.TestCase):
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        army1 = Army("Test", "Detachment")
+        army1 = Army.with_detachment("Test", "Detachment")
         army1.faction_id = "T1"
-        army2 = Army("Enemy", "Detachment")
+        army2 = Army.with_detachment("Enemy", "Detachment")
         army2.faction_id = "T2"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)

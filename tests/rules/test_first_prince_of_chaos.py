@@ -23,7 +23,7 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
     def test_khorne_shadow_legion_advances_and_charges(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         unit = self._make_unit(army, ["KHORNE"])
 
@@ -33,7 +33,7 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
     def test_shadow_legion_deep_strike_requires_undivided(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
 
         non_undivided = self._make_unit(army, ["HERETIC ASTARTES", "KHORNE"])

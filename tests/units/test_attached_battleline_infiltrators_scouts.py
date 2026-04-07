@@ -95,7 +95,7 @@ class TestAttachedBattlelineInfiltratorsScouts(unittest.TestCase):
             abilities=ability,
             attached_to=["BG1"],
         )
-        army = Army("Emperor's Children", detachment_type="Test")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Test")
         army.add_unit(bodyguard)
         army.add_unit(leader)
 

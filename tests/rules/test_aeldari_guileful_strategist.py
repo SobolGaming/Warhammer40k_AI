@@ -67,9 +67,9 @@ def _make_model(name, unit, *, x=0.0, y=0.0, wounds=6):
 
 class TestAeldariGuilefulStrategist(unittest.TestCase):
     def test_guileful_strategist_redeploy_flow(self):
-        army = Army("Aeldari", detachment_type="Armoured Warhost")
+        army = Army.with_detachment("Aeldari", detachment_type="Armoured Warhost")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

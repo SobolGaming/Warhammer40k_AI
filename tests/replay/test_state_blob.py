@@ -24,7 +24,7 @@ from warhammer40k_ai.roster.player import Player
 
 
 def _game_with_army_build_state() -> tuple[Game, Player]:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     apply_validated_muster_to_army(
         army,
@@ -130,7 +130,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
 
 
 def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> None:
-    player = Player("P1", army=Army("Chaos Daemons", "Test"))
+    player = Player("P1", army=Army.with_detachment("Chaos Daemons", "Test"))
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
     site = ObjectiveSite.terrain_footprint(
         footprint=Polygon([(10.0, 10.0), (16.0, 10.0), (16.0, 16.0), (10.0, 16.0)]),

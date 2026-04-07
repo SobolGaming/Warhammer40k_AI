@@ -89,9 +89,9 @@ def _make_unit(
 
 def _build_game() -> tuple[Game, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Fellhammer Siege-host")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Fellhammer Siege-host")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

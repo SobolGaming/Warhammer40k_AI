@@ -69,9 +69,9 @@ class TestDaemonicPatrons(unittest.TestCase):
         resolve_decision_command(game, request, option_id, player_id=player.id)
 
     def test_daemonic_patrons_prompt_and_apply(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
@@ -109,9 +109,9 @@ class TestDaemonicPatrons(unittest.TestCase):
         self.assertEqual(int(sr.get("daemonic_patrons_crit_wound_threshold", 0)), 3)
 
     def test_daemonic_patrons_end_phase_loss(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
@@ -154,9 +154,9 @@ class TestDaemonicPatrons(unittest.TestCase):
         self.assertTrue(died["called"])
 
     def test_daemonic_patrons_no_loss_when_kill_recorded(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)

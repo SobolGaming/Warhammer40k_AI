@@ -64,9 +64,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=Non
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army_gk = Army("Grey Knights", "Augurium Task Force")
+    army_gk = Army.with_detachment("Grey Knights", "Augurium Task Force")
     army_gk.faction_id = "GK"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("GK", control=PlayerControl.LOCAL, army=army_gk)

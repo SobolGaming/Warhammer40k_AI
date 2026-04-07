@@ -64,9 +64,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.auto_resolve_dice_rolls = False
-    army_tau = Army("T'au Empire", "Kauyon")
+    army_tau = Army.with_detachment("T'au Empire", "Kauyon")
     army_tau.faction_id = "TAU"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("Tau", control=PlayerControl.LOCAL, army=army_tau)

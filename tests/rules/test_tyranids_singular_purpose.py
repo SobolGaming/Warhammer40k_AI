@@ -115,9 +115,9 @@ class TestTyranidsSingularPurpose(unittest.TestCase):
         return Ability("Singular Purpose", "TYR", desc, "Datasheet", "")
 
     def test_singular_purpose_enemy_branch_queues_and_grants_hit_wound_rerolls(self):
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -206,9 +206,9 @@ class TestTyranidsSingularPurpose(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_singular_purpose_objective_branch_grants_source_model_fnp_and_oc(self):
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

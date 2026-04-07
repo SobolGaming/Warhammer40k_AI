@@ -29,7 +29,7 @@ def _build_game() -> tuple[Game, Player]:
 
 
 def _build_game_with_army_build() -> tuple[Game, Player]:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     validated_muster = ValidatedMuster(
         blueprint=ArmyBlueprint(
@@ -125,7 +125,7 @@ def test_descriptor_compiler_emits_army_build_descriptor_from_validated_muster()
 
 
 def test_descriptor_compiler_normalizes_empty_detachment_points_summary() -> None:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     player = Player("P1", army=army)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])

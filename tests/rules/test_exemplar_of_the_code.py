@@ -68,9 +68,9 @@ class TestExemplarOfTheCode(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army = Army("Imperial Knights", detachment_type="Other")
+        army = Army.with_detachment("Imperial Knights", detachment_type="Other")
         army.faction_id = "QI"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

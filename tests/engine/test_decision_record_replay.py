@@ -41,7 +41,7 @@ def _queue_confirmation(game: Game, player: Player) -> DecisionRequest:
 
 
 def _build_complex_replay_game() -> tuple[Game, Player]:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     apply_validated_muster_to_army(
         army,

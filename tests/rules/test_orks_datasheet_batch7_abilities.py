@@ -21,9 +21,9 @@ def _actual_unit(name: str) -> Unit:
 
 def _build_game() -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", "Other")
+    ork_army = Army.with_detachment("Orks", "Other")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ork_player = Player("Orks", control=PlayerControl.REMOTE, army=ork_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -106,7 +106,7 @@ def _attached_model_positions(root: Unit, start_x: float, start_y: float, *, spa
 
 
 def test_da_jump_specs_parse_for_attached_weirdboy_root():
-    ork_army = Army("Orks", "Other")
+    ork_army = Army.with_detachment("Orks", "Other")
     ork_army.faction_id = "ORK"
     boyz, weirdboy = _attach_weirdboy_to_boyz(ork_army)
 

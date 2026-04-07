@@ -57,9 +57,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tyr_army = Army("Tyranids", "Vanguard Onslaught")
+    tyr_army = Army.with_detachment("Tyranids", "Vanguard Onslaught")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tyr_player = Player("Tyr", control=PlayerControl.LOCAL, army=tyr_army)

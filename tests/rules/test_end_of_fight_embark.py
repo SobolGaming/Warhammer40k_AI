@@ -63,7 +63,7 @@ class TestEndOfFightEmbark(unittest.TestCase):
         return model
 
     def test_end_of_fight_embark(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         player = Player("Player", PlayerControl.REMOTE, army=army)
 

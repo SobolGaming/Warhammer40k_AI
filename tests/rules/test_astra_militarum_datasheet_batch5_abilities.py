@@ -111,8 +111,8 @@ def _make_unit(
 
 def _build_game() -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    am_army = Army("Astra Militarum", detachment_type="Combined Regiment")
-    enemy_army = Army("Enemy", detachment_type="Other")
+    am_army = Army.with_detachment("Astra Militarum", detachment_type="Combined Regiment")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     am_player = Player("AM", PlayerControl.REMOTE, army=am_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -387,8 +387,8 @@ def test_final_duty_grants_named_gunner_shoot_on_death_while_fire_coordinator_li
         faction_keywords=["ENEMY"],
         wounds=1,
     )
-    am_army = Army("Army A", "Detachment A")
-    enemy_army = Army("Army B", "Detachment B")
+    am_army = Army.with_detachment("Army A", "Detachment A")
+    enemy_army = Army.with_detachment("Army B", "Detachment B")
     am_army.add_unit(heavy_weapons)
     enemy_army.add_unit(target)
     game_map.units = [heavy_weapons, target]
@@ -465,8 +465,8 @@ def test_death_befitting_an_officer_shoots_on_death_after_any_destruction(monkey
         faction_keywords=["ENEMY"],
         wounds=1,
     )
-    am_army = Army("Army A", "Detachment A")
-    enemy_army = Army("Army B", "Detachment B")
+    am_army = Army.with_detachment("Army A", "Detachment A")
+    enemy_army = Army.with_detachment("Army B", "Detachment B")
     am_army.add_unit(commander)
     enemy_army.add_unit(target)
     game_map.units = [commander, target]

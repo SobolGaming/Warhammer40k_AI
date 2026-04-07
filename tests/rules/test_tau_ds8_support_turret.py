@@ -15,9 +15,9 @@ def _make_game() -> tuple[Game, Player, Player]:
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    tau_army = Army("T'au Empire", "Kauyon")
+    tau_army = Army.with_detachment("T'au Empire", "Kauyon")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tau_player = Player("TAU", control=PlayerControl.LOCAL, army=tau_army)

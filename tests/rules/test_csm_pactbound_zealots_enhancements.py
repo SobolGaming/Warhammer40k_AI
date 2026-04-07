@@ -118,9 +118,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str
 
 def _build_game(*, phase: BattleRoundPhases):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Pactbound Zealots")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

@@ -79,9 +79,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 2
 
-    lov_army = Army("Leagues of Votann", "Needgaard Oathband")
+    lov_army = Army.with_detachment("Leagues of Votann", "Needgaard Oathband")
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("Votann", control=PlayerControl.LOCAL, army=lov_army)

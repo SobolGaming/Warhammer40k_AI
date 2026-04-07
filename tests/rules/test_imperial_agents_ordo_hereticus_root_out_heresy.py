@@ -78,9 +78,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Ordo Hereticus Purgation Force")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Hereticus Purgation Force")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -258,4 +258,4 @@ def test_root_out_heresy_grants_sustained_hits_only_vs_chaos_units_with_five_or_
         allow_rerolls=False,
         log_roll=False,
     )
-    assert int(attack_vs_non_chaos_five.get("sustained_hit", 0) or 0) == 0
+    assert int(attack_vs_non_chaos_five.get("sustained_hit", 0) or 0) == 0

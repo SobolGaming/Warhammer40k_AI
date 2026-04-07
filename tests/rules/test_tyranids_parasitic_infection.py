@@ -84,9 +84,9 @@ def _build_game():
     game.turn = 1
     game.current_player_index = 0
 
-    tyr_army = Army("Tyranids", "Other")
+    tyr_army = Army.with_detachment("Tyranids", "Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tyr_player = Player("Tyranids", control=PlayerControl.LOCAL, army=tyr_army)

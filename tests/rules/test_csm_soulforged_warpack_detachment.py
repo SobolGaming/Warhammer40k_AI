@@ -101,9 +101,9 @@ def _make_profile(*, weapon_type: str, strength: str = "4", attacks: str = "1"):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Chaos Space Marines", "Soulforged Warpack")
+    army1 = Army.with_detachment("Chaos Space Marines", "Soulforged Warpack")
     army1.faction_id = "CSM"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

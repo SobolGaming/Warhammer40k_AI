@@ -101,12 +101,12 @@ def _make_unit(name, *, faction_name, keywords=None, faction_keywords=None):
 
 class TestDrukhariKabaliteCartelMurderousAgenda(unittest.TestCase):
     def _setup_players(self):
-        dru_army = Army("Drukhari", detachment_type="Kabalite Cartel")
+        dru_army = Army.with_detachment("Drukhari", detachment_type="Kabalite Cartel")
         dru_army.faction_id = "DRU"
         dru_player = Player("DRU", control=PlayerControl.REMOTE, army=dru_army)
         dru_army.player = dru_player
 
-        enemy_army = Army("Enemy", detachment_type="None")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="None")
         enemy_army.faction_id = "EN"
         enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
         enemy_army.player = enemy_player

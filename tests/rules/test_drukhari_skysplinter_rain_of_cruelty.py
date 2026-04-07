@@ -61,9 +61,9 @@ class TestDrukhariSkysplinterRainOfCruelty(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        drukhari_army = Army("Drukhari", "Skysplinter Assault")
+        drukhari_army = Army.with_detachment("Drukhari", "Skysplinter Assault")
         drukhari_army.faction_id = "DRU"
-        enemy_army = Army("Enemy", "Detachment")
+        enemy_army = Army.with_detachment("Enemy", "Detachment")
         enemy_army.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.REMOTE, army=drukhari_army)

@@ -80,9 +80,9 @@ def _make_unit(
 
 def _build_game(detachment: str = "Court of the Phoenician"):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ec_army = Army("Emperor's Children", detachment)
+    ec_army = Army.with_detachment("Emperor's Children", detachment)
     ec_army.faction_id = "EC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=ec_army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

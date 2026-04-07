@@ -87,9 +87,9 @@ def _make_objective(name: str, x: float, y: float) -> Objective:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    admech_army = Army("Adeptus Mechanicus", detachment_type="Explorator Maniple")
+    admech_army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Explorator Maniple")
     admech_army.faction_id = "ADM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     admech_player = Player("AdMech", PlayerControl.REMOTE, army=admech_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

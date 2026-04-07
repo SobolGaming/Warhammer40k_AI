@@ -98,9 +98,9 @@ def _make_profile(*, weapon_type: str, strength: str = "4"):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    target_army = Army("Enemy", "Other")
+    target_army = Army.with_detachment("Enemy", "Other")
     target_army.faction_id = "EN"
-    nightmare_army = Army("Chaos Space Marines", "Nightmare Hunt")
+    nightmare_army = Army.with_detachment("Chaos Space Marines", "Nightmare Hunt")
     nightmare_army.faction_id = "CSM"
     target_player = Player("Target", control=PlayerControl.REMOTE, army=target_army)
     nightmare_player = Player("Nightmare", control=PlayerControl.REMOTE, army=nightmare_army)

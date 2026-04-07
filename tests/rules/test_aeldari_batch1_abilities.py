@@ -82,9 +82,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         resolve_decision_command(game, request, option_id, player_id=player.id)
 
     def test_face_of_death_queues_battleshock_penalty(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -126,9 +126,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertEqual(payload.get("battle_shock_test_modifier"), -1)
 
     def test_fire_support_disembark_wound_reroll(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -180,9 +180,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertTrue(mods.get("reroll_wound_full"))
 
     def test_fleet_of_foot_fade_back_without_tokens(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -223,9 +223,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertIn(bf._unit_id(unit), bf._units_used_this_phase)
 
     def test_hand_of_asuryan_applies_weapon_bonuses(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -271,9 +271,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertTrue(attacker_model.has_used_once_per_battle("hand_of_asuryan"))
 
     def test_harvester_of_souls_marks_and_applies_mortals(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -343,9 +343,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertEqual({amt for _u, amt in applied}, {2})
 
     def test_herald_of_ynnead_selection_and_reroll(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -391,9 +391,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertTrue(mods.get("reroll_wound_ones"))
 
     def test_misfortune_applies_wound_penalty(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -441,9 +441,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertEqual(mods.get("wound"), -1)
 
     def test_monofilament_web_applies_pinned(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -489,9 +489,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertEqual(sr.get("pinned_charge_penalty"), -2)
 
     def test_piratical_raiders_quarry_and_keywords(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -534,9 +534,9 @@ class TestAeldariBatch1Abilities(unittest.TestCase):
         self.assertTrue(bonuses.get("precision"))
 
     def test_point_blank_devastation_rerolls_attacks(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

@@ -75,9 +75,9 @@ def _build_game(detachment_type: str = "Lords of Dread"):
     game = Game(battlefield)
     game.turn = 1
 
-    ck_army = Army("Chaos Knights", detachment_type)
+    ck_army = Army.with_detachment("Chaos Knights", detachment_type)
     ck_army.faction_id = "QT"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     ck_player = Player("CK", control=PlayerControl.LOCAL, army=ck_army)

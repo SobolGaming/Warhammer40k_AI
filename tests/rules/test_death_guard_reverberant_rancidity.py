@@ -91,9 +91,9 @@ def _deploy_unit(game: Game, unit: Unit, x: float, y: float) -> None:
 def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    dg_army = Army("Death Guard", "Tallyband Summoners")
+    dg_army = Army.with_detachment("Death Guard", "Tallyband Summoners")
     dg_army.faction_id = "DG"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     dg_player = Player("DG", control=PlayerControl.LOCAL, army=dg_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
@@ -184,7 +184,7 @@ def test_reverberant_rancidity_adds_three_contagion_range_to_nearby_death_guard_
 
 
 def test_tallyband_summoners_rejects_plague_legions_points_above_battle_size_cap():
-    army = Army("Death Guard", "Tallyband Summoners", points_limit=2000)
+    army = Army.with_detachment("Death Guard", "Tallyband Summoners", points_limit=2000)
     army.faction_id = "DG"
     army.add_unit(
         _make_unit(
@@ -210,7 +210,7 @@ def test_tallyband_summoners_rejects_plague_legions_points_above_battle_size_cap
 
 
 def test_tallyband_summoners_rejects_plague_legions_warlord():
-    army = Army("Death Guard", "Tallyband Summoners", points_limit=2000)
+    army = Army.with_detachment("Death Guard", "Tallyband Summoners", points_limit=2000)
     army.faction_id = "DG"
     warlord = _make_unit(
         "Great Unclean One",
@@ -228,7 +228,7 @@ def test_tallyband_summoners_rejects_plague_legions_warlord():
 
 
 def test_tallyband_summoners_allows_valid_plague_legions_allies():
-    army = Army("Death Guard", "Tallyband Summoners", points_limit=2000)
+    army = Army.with_detachment("Death Guard", "Tallyband Summoners", points_limit=2000)
     army.faction_id = "DG"
     ally = _make_unit(
         "Plaguebearers",

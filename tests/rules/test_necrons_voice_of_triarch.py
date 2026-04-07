@@ -88,9 +88,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    necrons = Army("Necrons", "Detachment")
+    necrons = Army.with_detachment("Necrons", "Detachment")
     necrons.faction_id = "NEC"
-    enemy = Army("Enemy", "Detachment")
+    enemy = Army.with_detachment("Enemy", "Detachment")
     enemy.faction_id = "EN"
 
     p1 = Player("Necron Player", control=PlayerControl.LOCAL, army=necrons)

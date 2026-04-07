@@ -145,9 +145,9 @@ def _build_simple_game(*, armies: list[Army], phase_name: str, current_player_in
 
 def _build_engine_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("P1", "Warpmeld Pact")
+    army1 = Army.with_detachment("P1", "Warpmeld Pact")
     army1.faction_id = "TS"
-    army2 = Army("P2", "Other")
+    army2 = Army.with_detachment("P2", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
@@ -176,7 +176,7 @@ def _option_with_choice(request, choice: bool):
 
 
 def _wire_same_army(*units: Unit) -> Army:
-    army = Army("Thousand Sons", "Warpmeld Pact")
+    army = Army.with_detachment("Thousand Sons", "Warpmeld Pact")
     army.faction_id = "TS"
     for unit in units:
         army.add_unit(unit)
@@ -189,7 +189,7 @@ def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
 
 
 def test_warpmeld_pact_validation_applies_tzaangors_battleline_keyword():
-    army = Army("Thousand Sons", "Warpmeld Pact")
+    army = Army.with_detachment("Thousand Sons", "Warpmeld Pact")
     army.faction_id = "TS"
     tzaangors = _make_unit(
         "Tzaangors",
@@ -205,7 +205,7 @@ def test_warpmeld_pact_validation_applies_tzaangors_battleline_keyword():
 
 
 def test_warpmeld_pact_tzaangor_oc_bonus_requires_not_battle_shocked():
-    army = Army("Thousand Sons", "Warpmeld Pact")
+    army = Army.with_detachment("Thousand Sons", "Warpmeld Pact")
     army.faction_id = "TS"
     tzaangors = _make_unit(
         "Tzaangors",
@@ -224,9 +224,9 @@ def test_warpmeld_pact_tzaangor_oc_bonus_requires_not_battle_shocked():
 
 
 def test_warpmeld_sacrifice_offense_adds_wound_bonus():
-    army = Army("Thousand Sons", "Warpmeld Pact")
+    army = Army.with_detachment("Thousand Sons", "Warpmeld Pact")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     attacker_unit = _make_unit(
         "Tzaangors",
@@ -263,9 +263,9 @@ def test_warpmeld_sacrifice_offense_adds_wound_bonus():
 
 
 def test_warpmeld_sacrifice_defense_subtracts_from_enemy_wound_roll():
-    defender_army = Army("Thousand Sons", "Warpmeld Pact")
+    defender_army = Army.with_detachment("Thousand Sons", "Warpmeld Pact")
     defender_army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     defender_unit = _make_unit(
         "Tzaangors",

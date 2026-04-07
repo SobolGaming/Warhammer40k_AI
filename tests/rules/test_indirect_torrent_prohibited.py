@@ -43,8 +43,8 @@ class DummyProfile:
 
 
 def _attach_armies(game_map: Map, a: Unit, b: Unit):
-    army_a = Army("Army A", "Detachment A")
-    army_b = Army("Army B", "Detachment B")
+    army_a = Army.with_detachment("Army A", "Detachment A")
+    army_b = Army.with_detachment("Army B", "Detachment B")
     army_a.add_unit(a)
     army_b.add_unit(b)
     game_map.units = [a, b]

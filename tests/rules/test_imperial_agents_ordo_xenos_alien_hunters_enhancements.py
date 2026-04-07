@@ -105,9 +105,9 @@ def _make_extra_model(name: str, parent_unit: Unit) -> Model:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Ordo Xenos Alien Hunters")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Xenos Alien Hunters")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

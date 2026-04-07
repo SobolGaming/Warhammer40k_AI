@@ -88,7 +88,7 @@ class TestDiscipleOfKhorneEnhancement(unittest.TestCase):
     def _make_army(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         army.player = _DummyPlayer()
         return army

@@ -101,9 +101,9 @@ def _make_ranged_profile(*, name: str, range_val: str = "24", keywords: str = ""
 
 
 def _build_game(*, army_detachment: str = "Spirit Conclave"):
-    army = Army("Aeldari", detachment_type=army_detachment)
+    army = Army.with_detachment("Aeldari", detachment_type=army_detachment)
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     player = Player("Aeldari", control=PlayerControl.REMOTE, army=army)
@@ -352,9 +352,9 @@ def test_rune_of_mists_grants_cover_only_when_attacker_is_beyond_threshold():
 
 
 def test_higher_duty_reactive_move_queues_fixed_six_inch_move():
-    moving_army = Army("Enemy", detachment_type="Other")
+    moving_army = Army.with_detachment("Enemy", detachment_type="Other")
     moving_army.faction_id = "SM"
-    reacting_army = Army("Aeldari", detachment_type="Spirit Conclave")
+    reacting_army = Army.with_detachment("Aeldari", detachment_type="Spirit Conclave")
     reacting_army.faction_id = "AE"
 
     moving_player = Player("Enemy", control=PlayerControl.REMOTE, army=moving_army)

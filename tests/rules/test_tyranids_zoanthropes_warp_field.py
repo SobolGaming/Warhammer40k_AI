@@ -57,13 +57,13 @@ def _make_unit(name: str, *, faction_name: str = "Tyranids", abilities=None, key
 
 
 def _build_tyr_army() -> Army:
-    army = Army("Tyranids", detachment_type="Other")
+    army = Army.with_detachment("Tyranids", detachment_type="Other")
     army.faction_id = "TYR"
     return army
 
 
 def _build_enemy_army() -> Army:
-    army = Army("Enemy", detachment_type="Other")
+    army = Army.with_detachment("Enemy", detachment_type="Other")
     army.faction_id = "EN"
     return army
 

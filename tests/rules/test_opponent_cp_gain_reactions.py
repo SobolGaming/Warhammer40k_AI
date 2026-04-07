@@ -43,8 +43,8 @@ class TestOpponentCpGainReactions(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army1 = Army("Army1", "Detachment1")
-        army2 = Army("Army2", "Detachment2")
+        army1 = Army.with_detachment("Army1", "Detachment1")
+        army2 = Army.with_detachment("Army2", "Detachment2")
         army1.units = [reaction_unit]
         army2.units = [enemy_unit]
         reaction_unit.set_parent_army(army1)

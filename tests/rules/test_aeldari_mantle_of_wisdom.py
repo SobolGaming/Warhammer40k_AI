@@ -27,10 +27,10 @@ class TestAeldariMantleOfWisdom(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Aeldari", detachment_type="Aspect Host")
+        army = Army.with_detachment("Aeldari", detachment_type="Aspect Host")
         army.faction_id = "AE"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = SimpleNamespace(name="SHOOTING_PHASE")
 

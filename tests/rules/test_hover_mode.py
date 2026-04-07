@@ -70,8 +70,8 @@ def test_hover_declaration_applied_in_battle_formations():
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
 
@@ -121,8 +121,8 @@ def test_hover_confirm_decision_applies_hover_mode():
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
 
@@ -162,8 +162,8 @@ def test_aircraft_forced_into_reserves_when_not_hover():
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
 

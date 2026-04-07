@@ -85,9 +85,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    sororitas_army = Army("Adepta Sororitas", "Penitent Host")
+    sororitas_army = Army.with_detachment("Adepta Sororitas", "Penitent Host")
     sororitas_army.faction_id = "AS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     sororitas_player = Player("Sororitas", control=PlayerControl.LOCAL, army=sororitas_army)

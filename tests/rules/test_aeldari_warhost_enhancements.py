@@ -46,7 +46,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
-        army = Army("Aeldari", "Warhost")
+        army = Army.with_detachment("Aeldari", "Warhost")
         army.faction_id = "AE"
         unit = SimpleNamespace(
             special_rules={},
@@ -116,7 +116,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         from warhammer40k_ai.rules.stratagems import Stratagem
 
         game = Game(Battlefield(width=44, height=30))
-        army = Army("Aeldari", "Warhost")
+        army = Army.with_detachment("Aeldari", "Warhost")
         army.faction_id = "AE"
         player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)
@@ -174,7 +174,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         unit.is_alive = lambda: True
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Aeldari", "Warhost")
+        army = Army.with_detachment("Aeldari", "Warhost")
         army.faction_id = "AE"
         army.units = [unit]
 
@@ -198,7 +198,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        army = Army("Aeldari", "Warhost")
+        army = Army.with_detachment("Aeldari", "Warhost")
         army.faction_id = "AE"
         player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)

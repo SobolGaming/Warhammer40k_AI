@@ -91,7 +91,7 @@ def _masters_of_the_maelstrom_ability() -> Ability:
 
 
 def _make_army(units):
-    army = Army(faction="CSM", detachment_type="Renegade Raiders", points_limit=2000)
+    army = Army.with_detachment(faction="CSM", detachment_type="Renegade Raiders", points_limit=2000)
     army.player = _DummyPlayer()
     army.units = list(units)
     for unit in army.units:

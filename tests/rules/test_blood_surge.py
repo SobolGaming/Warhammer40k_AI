@@ -56,9 +56,9 @@ class TestBloodSurge(unittest.TestCase):
         return model
 
     def _build_game(self, *, target_control=PlayerControl.REMOTE):
-        army1 = Army("World Eaters", detachment_type="Berzerker Warband")
+        army1 = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
         army1.faction_id = "WE"
-        army2 = Army("Other", detachment_type="Other")
+        army2 = Army.with_detachment("Other", detachment_type="Other")
         army2.faction_id = "OT"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army1)
@@ -71,9 +71,9 @@ class TestBloodSurge(unittest.TestCase):
         return game, p1, p2, army1, army2
 
     def test_blood_surge_prompt_published_on_casualties(self):
-        army1 = Army("World Eaters", detachment_type="Berzerker Warband")
+        army1 = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
         army1.faction_id = "WE"
-        army2 = Army("Other", detachment_type="Other")
+        army2 = Army.with_detachment("Other", detachment_type="Other")
         army2.faction_id = "OT"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army1)
@@ -159,9 +159,9 @@ class TestBloodSurge(unittest.TestCase):
     def test_blood_surge_validation_requires_closest_distance(self):
         game_map = Map(100, 100)
 
-        moving_army = Army("World Eaters", detachment_type="Berzerker Warband")
+        moving_army = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
         moving_army.faction_id = "WE"
-        enemy_army = Army("Other", detachment_type="Other")
+        enemy_army = Army.with_detachment("Other", detachment_type="Other")
         enemy_army.faction_id = "OT"
 
         mover = self._make_unit("Mover", moving_army, blood_surge=True, faction="A")
@@ -212,9 +212,9 @@ class TestBloodSurge(unittest.TestCase):
         self.assertIsNone(rules.get("closest_enemy_unit_reason"))
 
     def test_blood_surge_fixed_distance_overrides_roll(self):
-        army1 = Army("World Eaters", detachment_type="Berzerker Warband")
+        army1 = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
         army1.faction_id = "WE"
-        army2 = Army("Other", detachment_type="Other")
+        army2 = Army.with_detachment("Other", detachment_type="Other")
         army2.faction_id = "OT"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army1)
@@ -452,4 +452,4 @@ class TestBloodSurge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
+

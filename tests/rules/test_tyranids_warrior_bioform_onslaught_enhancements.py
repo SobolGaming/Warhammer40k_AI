@@ -76,7 +76,7 @@ def _make_unit(
 
 
 def _build_army(detachment: str = "Warrior Bioform Onslaught") -> Army:
-    army = Army("Tyranids", detachment)
+    army = Army.with_detachment("Tyranids", detachment)
     army.faction_id = "TYR"
     return army
 

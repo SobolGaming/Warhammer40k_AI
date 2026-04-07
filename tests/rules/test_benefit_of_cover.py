@@ -77,8 +77,8 @@ def create_unit(
 
 
 def attach_to_armies(game_map: Map, units_a: List[Unit], units_b: List[Unit]):
-    army_a = Army("Army A", "Detachment A")
-    army_b = Army("Army B", "Detachment B")
+    army_a = Army.with_detachment("Army A", "Detachment A")
+    army_b = Army.with_detachment("Army B", "Detachment B")
     for u in units_a:
         army_a.add_unit(u)
     for u in units_b:
@@ -250,8 +250,8 @@ class TestBenefitOfCover:
         }]
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army_a = Army("Army A", "Detachment A")
-        army_b = Army("Army B", "Detachment B")
+        army_a = Army.with_detachment("Army A", "Detachment A")
+        army_b = Army.with_detachment("Army B", "Detachment B")
         p1 = Player("P1", PlayerControl.LOCAL, army=army_a)
         p2 = Player("P2", PlayerControl.REMOTE, army=army_b)
         game.add_player(p1)

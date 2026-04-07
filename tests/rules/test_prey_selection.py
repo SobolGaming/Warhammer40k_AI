@@ -68,9 +68,9 @@ class TestPreySelection(unittest.TestCase):
         return model
 
     def test_prey_selection_queues_prey(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -116,9 +116,9 @@ class TestPreySelection(unittest.TestCase):
         self.assertFalse(bool(getattr(source_unit, "_prey_selection_reroll_hit", False)))
 
     def test_prey_selection_start_of_battle_reroll_hit_variant(self):
-        army = Army("Adeptus Mechanicus", detachment_type="Other")
+        army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Other")
         army.faction_id = "ADM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -167,9 +167,9 @@ class TestPreySelection(unittest.TestCase):
         self.assertFalse(bool(getattr(source_unit, "_prey_selection_melee_only", False)))
 
     def test_prey_selection_start_of_battle_keyword_variant_imperial_law(self):
-        army = Army("Imperial Agents", detachment_type="Other")
+        army = Army.with_detachment("Imperial Agents", detachment_type="Other")
         army.faction_id = "AOI"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -476,9 +476,9 @@ class TestPreySelection(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_prey_repick_on_destroyed(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -519,9 +519,9 @@ class TestPreySelection(unittest.TestCase):
         self.assertEqual(len(pending), 1)
 
     def test_prey_no_repick_without_text(self):
-        army = Army("Genestealer Cults", detachment_type="Other")
+        army = Army.with_detachment("Genestealer Cults", detachment_type="Other")
         army.faction_id = "GC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

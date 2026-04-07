@@ -112,12 +112,12 @@ def _set_unit_position(unit, x: float, y: float, z: float = 0.0):
 
 class TestChaosKnightsIconoclastFiefdom(unittest.TestCase):
     def _setup_players(self, *, points_limit=2000):
-        ck_army = Army("Chaos Knights", detachment_type="Iconoclast Fiefdom", points_limit=points_limit)
+        ck_army = Army.with_detachment("Chaos Knights", detachment_type="Iconoclast Fiefdom", points_limit=points_limit)
         ck_army.faction_id = "QT"
         ck_player = Player("CK", control=PlayerControl.REMOTE, army=ck_army)
         ck_army.player = ck_player
 
-        enemy_army = Army("Enemy", detachment_type="None")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="None")
         enemy_army.faction_id = "EN"
         enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
         enemy_army.player = enemy_player

@@ -119,7 +119,7 @@ def test_daemonic_allegiance_applies_keyword_and_wargear():
 
 def test_daemonic_allegiance_requires_selection():
     unit = _make_unit()
-    army = Army("Chaos Daemons", "Daemonic Incursion", points_limit=2000)
+    army = Army.with_detachment("Chaos Daemons", "Daemonic Incursion", points_limit=2000)
     army.faction_id = "CD"
     army.add_unit(unit)
     with pytest.raises(ArmyValidationError):

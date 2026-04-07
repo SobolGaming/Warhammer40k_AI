@@ -45,7 +45,7 @@ def _make_unit(name: str, *, keywords=None, abilities=None):
 class TestAuraStealthHasStealth(unittest.TestCase):
     def test_stealth_aura_grants_stealth(self):
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
-        p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+        p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
         game.add_player(p1)
 
         aura = Ability(
@@ -71,7 +71,7 @@ class TestAuraStealthHasStealth(unittest.TestCase):
 
     def test_foul_spores_stealth_aura_excludes_monsters(self):
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
-        p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+        p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
         game.add_player(p1)
 
         aura = Ability(
@@ -101,7 +101,7 @@ class TestAuraStealthHasStealth(unittest.TestCase):
 
     def test_foul_spores_attached_hive_tyrant_tyrant_guard_unit_has_no_stealth(self):
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
-        p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+        p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
         game.add_player(p1)
 
         aura = Ability(

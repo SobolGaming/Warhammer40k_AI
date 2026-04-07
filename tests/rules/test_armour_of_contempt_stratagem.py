@@ -65,7 +65,7 @@ class TestArmourOfContemptStratagem(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Space Marines", "Gladius Task Force")
+        army = Army.with_detachment("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         target = _make_unit(
             "Target",
@@ -74,7 +74,7 @@ class TestArmourOfContemptStratagem(unittest.TestCase):
         )
         army.add_unit(target)
 
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
         attacker = _make_unit("Attacker", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
         enemy_army.add_unit(attacker)

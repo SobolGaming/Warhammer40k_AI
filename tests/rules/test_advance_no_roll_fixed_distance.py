@@ -194,7 +194,7 @@ def test_hammer_of_the_emperor_iron_tread_squadron_advance_support():
         faction_keywords=["ASTRA MILITARUM"],
     )
 
-    army = Army(faction="Astra Militarum", detachment_type="Hammer of the Emperor", points_limit=2000)
+    army = Army.with_detachment(faction="Astra Militarum", detachment_type="Hammer of the Emperor", points_limit=2000)
     army.faction_id = "AM"
     army.player = _DummyPlayer()
     army.units = [squadron, non_squadron]
@@ -227,7 +227,7 @@ def test_leading_advance_ignore_vertical_distance():
     leader = Unit(_LeaderDatasheet())
     bodyguard = Unit(_BodyguardDatasheet())
 
-    army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+    army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
     army.player = _DummyPlayer()
     army.units = [leader, bodyguard]
     for u in army.units:

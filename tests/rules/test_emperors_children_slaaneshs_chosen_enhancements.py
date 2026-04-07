@@ -125,7 +125,7 @@ def _make_melee_profile():
 
 class TestEmperorsChildrenSlaaneshsChosenEnhancements(unittest.TestCase):
     def test_eager_to_prove_grants_charge_reroll_and_favoured_move_bonus(self):
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
 
         leader = _make_unit("Lord Exultant", keywords=["Character", "Infantry"], wounds=6)
@@ -159,9 +159,9 @@ class TestEmperorsChildrenSlaaneshsChosenEnhancements(unittest.TestCase):
         self.assertTrue(bodyguard.can_reroll_charge_roll(target_unit=target))
 
     def _setup_repulsed_by_weakness(self, *, favoured: bool):
-        ec_army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        ec_army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         ec_army.faction_id = "EC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         trapper = _make_unit("Trapper", keywords=["Character", "Infantry"], wounds=6)
@@ -230,9 +230,9 @@ class TestEmperorsChildrenSlaaneshsChosenEnhancements(unittest.TestCase):
 
     def test_proud_and_vainglorious_rerolls_leadership_and_battleshock_tests(self):
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
         player = Player("P1", control=PlayerControl.REMOTE, army=army)
         enemy_player = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)
@@ -263,7 +263,7 @@ class TestEmperorsChildrenSlaaneshsChosenEnhancements(unittest.TestCase):
         self.assertFalse(unit.is_battle_shocked())
 
     def test_proud_and_vainglorious_adds_oc_when_favoured_champions(self):
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
 
         leader = _make_unit("Lord Exultant", keywords=["Character", "Infantry"], wounds=6)
@@ -289,7 +289,7 @@ class TestEmperorsChildrenSlaaneshsChosenEnhancements(unittest.TestCase):
         self.assertEqual(int(bodyguard.get_effective_model_characteristic(bodyguard.models[0], "objective_control")), 2)
 
     def test_slayer_of_champions_grants_precision_and_character_target_strength_ap_bonus(self):
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
         attacker_unit = _make_unit("Lord Exultant", keywords=["Character", "Infantry"], wounds=6)
         army.add_unit(attacker_unit)

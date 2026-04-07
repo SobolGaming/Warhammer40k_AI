@@ -56,9 +56,9 @@ def _set_model_location(unit: Unit, *, x: float, y: float) -> None:
 
 
 def _build_game(*, size: BattlefieldSize = BattlefieldSize.STRIKE_FORCE):
-    am_army = Army("Astra Militarum", detachment_type="Siege Regiment")
+    am_army = Army.with_detachment("Astra Militarum", detachment_type="Siege Regiment")
     am_army.faction_id = "AM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     am_player = Player("AM", control=PlayerControl.REMOTE, army=am_army)

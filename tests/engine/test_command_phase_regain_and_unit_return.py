@@ -51,7 +51,7 @@ def _build_game_with_player(unit):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
-    army = Army("Test Faction", "Other")
+    army = Army.with_detachment("Test Faction", "Other")
     army.faction_id = "TF"
     army.add_unit(unit)
     player = Player("P1", control=PlayerControl.REMOTE, army=army)
@@ -64,7 +64,7 @@ def _build_game_with_units(units):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
-    army = Army("Test Faction", "Other")
+    army = Army.with_detachment("Test Faction", "Other")
     army.faction_id = "TF"
     for unit in list(units or []):
         army.add_unit(unit)
@@ -78,7 +78,7 @@ def _build_as_game_with_units(units):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
-    army = Army("Adepta Sororitas", "Hallowed Martyrs")
+    army = Army.with_detachment("Adepta Sororitas", "Hallowed Martyrs")
     army.faction_id = "AS"
     for unit in list(units or []):
         army.add_unit(unit)

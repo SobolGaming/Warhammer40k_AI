@@ -64,9 +64,9 @@ def _build_game(phase_name: str = "FIGHT_PHASE"):
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    as_army = Army("Adepta Sororitas", "Hallowed Martyrs")
+    as_army = Army.with_detachment("Adepta Sororitas", "Hallowed Martyrs")
     as_army.faction_id = "AS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("AS", control=PlayerControl.LOCAL, army=as_army)

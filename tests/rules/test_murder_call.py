@@ -71,12 +71,12 @@ class TestMurderCall(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _TestUnit("Blood Legions Unit", keywords=["Blood Legions"])
         army.add_unit(unit)
 
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
         enemy_unit = _TestUnit("Enemy Unit")
         enemy_army.add_unit(enemy_unit)

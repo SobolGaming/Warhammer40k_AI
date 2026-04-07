@@ -64,9 +64,9 @@ def _make_ranged_profile(weapon) -> WargearProfile:
 
 
 def _build_game(*, necron_units: list[Unit], enemy_units: list[Unit]):
-    necron_army = Army("Necrons", "Cryptek Conclave")
+    necron_army = Army.with_detachment("Necrons", "Cryptek Conclave")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(necron_units or []):

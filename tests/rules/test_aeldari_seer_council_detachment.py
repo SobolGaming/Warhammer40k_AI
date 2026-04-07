@@ -8,7 +8,7 @@ class TestAeldariSeerCouncilDetachment(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Aeldari", "Seer Council")
+        army = Army.with_detachment("Aeldari", "Seer Council")
         army.faction_id = "AE"
         player = Player("P1", PlayerControl.LOCAL, army=army)
         return player, army

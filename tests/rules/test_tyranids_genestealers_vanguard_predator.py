@@ -47,9 +47,9 @@ def _make_unit(name: str, *, abilities=None) -> Unit:
 
 
 def test_vanguard_predator_grants_hit_reroll_ones_and_objective_wound_reroll_ones():
-    tyr_army = Army("Tyranids", detachment_type="Other")
+    tyr_army = Army.with_detachment("Tyranids", detachment_type="Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     attacker = _make_unit(

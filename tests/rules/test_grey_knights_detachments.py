@@ -58,9 +58,9 @@ def _build_game(detachment_type: str = "Brotherhood Strike"):
     game = Game(bf)
     game.turn = 2
 
-    army_gk = Army("Grey Knights", detachment_type)
+    army_gk = Army.with_detachment("Grey Knights", detachment_type)
     army_gk.faction_id = "GK"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army_gk)
@@ -75,7 +75,7 @@ class TestGreyKnightsDetachments(unittest.TestCase):
     def test_duty_before_all_allows_fall_back_shoot_and_charge(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Grey Knights", "Hallowed Conclave")
+        army = Army.with_detachment("Grey Knights", "Hallowed Conclave")
         army.faction_id = "GK"
 
         terminators = _make_unit(

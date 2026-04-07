@@ -59,7 +59,7 @@ def _make_game_with_player(unit):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
-    army = Army("Genestealer Cults", "Other")
+    army = Army.with_detachment("Genestealer Cults", "Other")
     army.faction_id = "GSC"
     army.add_unit(unit)
     player = Player("P1", control=PlayerControl.REMOTE, army=army)

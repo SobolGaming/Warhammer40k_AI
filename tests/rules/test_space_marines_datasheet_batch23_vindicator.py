@@ -64,9 +64,9 @@ def test_vindicator_siege_shield_allows_demolisher_blast_into_own_engagement_onl
     target = _mock_unit("Enemy Unit", datasheet_id="enemy-target")
     other_friendly = _mock_unit("Friendly Squad", datasheet_id="friendly-other")
 
-    army = Army("Space Marines", detachment_type="Other")
+    army = Army.with_detachment("Space Marines", detachment_type="Other")
     army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     player = Player("Space Marines", PlayerControl.LOCAL, army=army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

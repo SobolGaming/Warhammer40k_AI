@@ -88,9 +88,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    sm_army = Army("Space Marines", "Bastion Task Force")
+    sm_army = Army.with_detachment("Space Marines", "Bastion Task Force")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("Space Marines", control=PlayerControl.LOCAL, army=sm_army)

@@ -88,9 +88,9 @@ def _mock_unit(
 
 def _build_game(*, detachment_type: str = "Other"):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", detachment_type=detachment_type)
+    sm_army = Army.with_detachment("Space Marines", detachment_type=detachment_type)
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     sm_player = Player("Space Marines", PlayerControl.LOCAL, army=sm_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

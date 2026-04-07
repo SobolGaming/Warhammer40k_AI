@@ -204,9 +204,9 @@ def _build_flow_game(
 
 
 def test_hexwarp_flow_of_magic_adds_wound_when_wholly_within_snapshot_zone():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     attacker_unit = _make_unit(
@@ -253,9 +253,9 @@ def test_hexwarp_flow_of_magic_adds_wound_when_wholly_within_snapshot_zone():
 
 
 def test_hexwarp_flow_of_magic_rerolls_wound_roll_of_one_outside_flow(monkeypatch):
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     attacker_unit = _make_unit(
@@ -302,9 +302,9 @@ def test_hexwarp_flow_of_magic_rerolls_wound_roll_of_one_outside_flow(monkeypatc
 
 
 def test_hexwarp_flow_of_magic_does_not_apply_to_non_psychic_attacks():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     attacker_unit = _make_unit(
@@ -335,9 +335,9 @@ def test_hexwarp_flow_of_magic_does_not_apply_to_non_psychic_attacks():
 
 
 def test_hexwarp_arcane_might_gives_plus_one_strength_outside_flow_to_bearer_unit_models():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     leader = _make_unit(
@@ -376,9 +376,9 @@ def test_hexwarp_arcane_might_gives_plus_one_strength_outside_flow_to_bearer_uni
 
 
 def test_hexwarp_arcane_might_gives_plus_two_strength_when_bearer_unit_wholly_within_flow():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     leader = _make_unit(
@@ -417,9 +417,9 @@ def test_hexwarp_arcane_might_gives_plus_two_strength_when_bearer_unit_wholly_wi
 
 
 def test_hexwarp_empowered_manifestation_extends_ritual_range_when_wholly_within_flow():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     caster = _make_unit(
@@ -451,9 +451,9 @@ def test_hexwarp_empowered_manifestation_extends_ritual_range_when_wholly_within
 
 
 def test_hexwarp_empowered_manifestation_adds_hazardous_reroll_rule():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     caster = _make_unit(
@@ -512,9 +512,9 @@ def test_hexwarp_empowered_manifestation_adds_hazardous_reroll_rule():
 
 
 def test_hexwarp_empyric_onslaught_adds_three_attacks_to_bearer_ranged_psychic_weapon():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     caster = _make_unit(
@@ -555,9 +555,9 @@ def test_hexwarp_empyric_onslaught_adds_three_attacks_to_bearer_ranged_psychic_w
 
 
 def test_hexwarp_noctilith_mantle_treats_unit_as_wholly_within_flow_outside_zone():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     caster = _make_unit(
@@ -589,9 +589,9 @@ def test_hexwarp_noctilith_mantle_treats_unit_as_wholly_within_flow_outside_zone
 
 
 def test_hexwarp_noctilith_mantle_prevents_models_in_unit_from_using_rituals():
-    army = Army("Thousand Sons", "Hexwarp Thrallband")
+    army = Army.with_detachment("Thousand Sons", "Hexwarp Thrallband")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     caster = _make_unit(

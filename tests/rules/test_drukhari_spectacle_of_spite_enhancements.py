@@ -73,9 +73,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    drukhari_army = Army("Drukhari", "Spectacle of Spite")
+    drukhari_army = Army.with_detachment("Drukhari", "Spectacle of Spite")
     drukhari_army.faction_id = "DRU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=drukhari_army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

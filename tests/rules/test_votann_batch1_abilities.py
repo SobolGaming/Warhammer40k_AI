@@ -60,9 +60,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army1 = Army("Leagues of Votann", detachment_type="Detachment1")
+    army1 = Army.with_detachment("Leagues of Votann", detachment_type="Detachment1")
     army1.faction_id = "LOV"
-    army2 = Army("Enemy", detachment_type="Detachment2")
+    army2 = Army.with_detachment("Enemy", detachment_type="Detachment2")
     army2.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)

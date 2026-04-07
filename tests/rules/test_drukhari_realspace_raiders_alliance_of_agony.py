@@ -51,7 +51,7 @@ def _make_unit(name, *, faction_name, keywords=None, faction_keywords=None):
 
 class TestDrukhariRealspaceRaidersAllianceOfAgony(unittest.TestCase):
     def _setup_realspace_army(self):
-        army = Army("Drukhari", detachment_type="Realspace Raiders")
+        army = Army.with_detachment("Drukhari", detachment_type="Realspace Raiders")
         army.faction_id = "DRU"
         player = Player("DRU", control=PlayerControl.REMOTE, army=army)
         army.player = player

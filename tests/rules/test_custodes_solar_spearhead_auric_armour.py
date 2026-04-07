@@ -105,9 +105,9 @@ def _aura_stub():
 
 def _make_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    custodes_army = Army("Adeptus Custodes", "Solar Spearhead")
+    custodes_army = Army.with_detachment("Adeptus Custodes", "Solar Spearhead")
     custodes_army.faction_id = "AC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     custodes_player = Player("Custodes", PlayerControl.REMOTE, army=custodes_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

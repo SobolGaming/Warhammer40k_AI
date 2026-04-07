@@ -112,10 +112,10 @@ def _set_unit_location(unit: Unit, *, x: float, y: float, spacing: float = 1.5) 
 
 
 def _build_game(*, detachment: str, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", detachment_type=detachment)
+    ork_army = Army.with_detachment("Orks", detachment_type=detachment)
     ork_army.faction_id = "ORK"
     ork_army.points_limit = 2000
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     enemy_army.points_limit = 2000
 
@@ -203,7 +203,7 @@ def test_orks_redeploy_enhancement_descriptors_and_runtime_specs_registered():
         assert str(getattr(descriptor, "effect", "") or "") == effect
         assert tuple((getattr(descriptor, "effect_params", {}) or {}).get("redeploy_filters", ()) or ()) == filters
 
-    razgit_army = Army("Orks", detachment_type="Freebooter Krew")
+    razgit_army = Army.with_detachment("Orks", detachment_type="Freebooter Krew")
     razgit_army.faction_id = "ORK"
     razgit_bearer = _make_unit(
         "Freebooter Boss",
@@ -225,7 +225,7 @@ def test_orks_redeploy_enhancement_descriptors_and_runtime_specs_registered():
     assert list(razgit_cache.get("redeploy_filters", []) or []) == ["ORKS", "INFANTRY"]
     assert bool(razgit_cache.get("redeploy_strategic_reserves_ignore_current_unit_count_limit", False))
 
-    mork_army = Army("Orks", detachment_type="Taktikal Brigade")
+    mork_army = Army.with_detachment("Orks", detachment_type="Taktikal Brigade")
     mork_army.faction_id = "ORK"
     mork_bearer = _make_unit(
         "Taktikal Boss",
@@ -253,7 +253,7 @@ def test_validate_redeploy_to_strategic_reserves_can_ignore_current_unit_cap_for
     reserve_two = _make_unit("Reserve Two", keywords=["INFANTRY"], faction_keywords=["ORKS"], cost=100)
     target = _make_unit("Target", keywords=["INFANTRY"], faction_keywords=["ORKS"], cost=100)
     deployed = _make_unit("Deployed", keywords=["INFANTRY"], faction_keywords=["ORKS"], cost=100)
-    army = Army("Orks", detachment_type="Freebooter Krew")
+    army = Army.with_detachment("Orks", detachment_type="Freebooter Krew")
     army.faction_id = "ORK"
     army.points_limit = 2000
     for unit in (reserve_one, reserve_two, target, deployed):

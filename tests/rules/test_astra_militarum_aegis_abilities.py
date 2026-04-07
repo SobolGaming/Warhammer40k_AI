@@ -100,8 +100,8 @@ def _make_unit(
 
 
 def _attach_armies(game_map: Map, friendly_units: list[Unit], enemy_units: list[Unit]) -> tuple[Army, Army]:
-    friendly_army = Army("Astra Militarum", "Combined Regiment")
-    enemy_army = Army("Enemy", "Other")
+    friendly_army = Army.with_detachment("Astra Militarum", "Combined Regiment")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     for unit in friendly_units:
         friendly_army.add_unit(unit)
     for unit in enemy_units:

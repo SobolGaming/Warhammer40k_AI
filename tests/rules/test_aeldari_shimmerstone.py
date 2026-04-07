@@ -37,7 +37,7 @@ class TestAeldariShimmerstone(unittest.TestCase):
     def test_shimmerstone_applies_wound_penalty(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Aeldari", detachment_type="Aspect Host")
+        army = Army.with_detachment("Aeldari", detachment_type="Aspect Host")
         army.faction_id = "AE"
 
         target = self._make_unit(army, name="Dire Avengers", keywords=["Aspect Warriors"])

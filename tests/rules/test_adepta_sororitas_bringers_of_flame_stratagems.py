@@ -86,9 +86,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    as_army = Army("Adepta Sororitas", "Bringers of Flame")
+    as_army = Army.with_detachment("Adepta Sororitas", "Bringers of Flame")
     as_army.faction_id = "AS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.LOCAL, army=as_army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

@@ -62,9 +62,9 @@ class TestFightPhaseSelectEngagementBattleshock(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Tyranids", PlayerControl.REMOTE, army=army)
@@ -97,7 +97,7 @@ class TestFightPhaseSelectEngagementBattleshock(unittest.TestCase):
         return None
 
     def test_parses_fight_phase_select_engagement_battleshock_spec(self):
-        unit = self._make_unit("Parasite", Army("Tyranids", detachment_type="Other"))
+        unit = self._make_unit("Parasite", Army.with_detachment("Tyranids", detachment_type="Other"))
         model = self._make_model("Parasite of Mortrex", unit)
         ability = Ability("Terror Aura", "TYR", self._mandatory_description(), "Datasheet", "")
         model.abilities = {"Terror Aura": ability}

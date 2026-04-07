@@ -75,7 +75,7 @@ def test_all_is_dust_applies_to_rubricae_armor_saves(monkeypatch):
 
     monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)
 
-    army = Army("Thousand Sons", "Rubricae Phalanx")
+    army = Army.with_detachment("Thousand Sons", "Rubricae Phalanx")
     army.faction_id = "TS"
 
     unit = create_unit("Rubric Marines", keywords=["RUBRICAE", "THOUSAND SONS"])
@@ -89,7 +89,7 @@ def test_all_is_dust_applies_to_rubricae_armor_saves(monkeypatch):
 
 
 def test_all_is_dust_requires_rubricae_and_detachment():
-    army = Army("Thousand Sons", "Rubricae Phalanx")
+    army = Army.with_detachment("Thousand Sons", "Rubricae Phalanx")
     army.faction_id = "TS"
 
     non_rubricae = create_unit("Sorcerer", keywords=["THOUSAND SONS", "CHARACTER"])
@@ -106,7 +106,7 @@ def test_all_is_dust_requires_rubricae_and_detachment():
     assert mod == 0
     assert not any("All is Dust" in eff for eff in (effects or []))
 
-    other_army = Army("Thousand Sons", "Other Detachment")
+    other_army = Army.with_detachment("Thousand Sons", "Other Detachment")
     other_army.faction_id = "TS"
 
     rubricae = create_unit("Rubric Marines", keywords=["RUBRICAE", "THOUSAND SONS"])

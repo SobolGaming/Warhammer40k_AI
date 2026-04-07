@@ -49,8 +49,8 @@ def _install_deterministic_rolls(monkeypatch, rolls):
 def _make_game():
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
     return game, p1, p2

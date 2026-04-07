@@ -40,7 +40,7 @@ class TestChaosDaemonsLegionOfExcessDetachment(unittest.TestCase):
     def test_beguiling_aura_allows_charge_after_fall_back(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Legion of Excess")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Legion of Excess")
         army.faction_id = "CD"
         unit = _make_unit(
             "Daemonettes",
@@ -54,7 +54,7 @@ class TestChaosDaemonsLegionOfExcessDetachment(unittest.TestCase):
     def test_beguiling_aura_requires_slaanesh_legiones_daemonica(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Legion of Excess")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Legion of Excess")
         army.faction_id = "CD"
         unit = _make_unit(
             "Bloodletters",

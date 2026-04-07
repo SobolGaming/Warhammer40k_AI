@@ -74,9 +74,9 @@ def _make_reverberating_profile():
 
 class TestReverberatingSummons(unittest.TestCase):
     def _build_game(self):
-        attacker_army = Army("Chaos Daemons", detachment_type="Test")
+        attacker_army = Army.with_detachment("Chaos Daemons", detachment_type="Test")
         attacker_army.faction_id = "CD"
-        defender_army = Army("Opponents", detachment_type="Test")
+        defender_army = Army.with_detachment("Opponents", detachment_type="Test")
         defender_army.faction_id = "OP"
 
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)

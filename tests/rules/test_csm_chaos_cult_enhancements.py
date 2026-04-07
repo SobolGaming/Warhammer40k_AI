@@ -126,9 +126,9 @@ def _apply_enhancement(unit: Unit, *, enh_id: str, name: str, description: str) 
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Chaos Space Marines", "Chaos Cult")
+    army1 = Army.with_detachment("Chaos Space Marines", "Chaos Cult")
     army1.faction_id = "CSM"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
@@ -164,7 +164,7 @@ def test_chaos_cult_enhancement_descriptors_registered():
 
 
 def test_cultists_brand_requires_other_models_to_be_damned_excluding_dark_disciples():
-    army = Army("Chaos Space Marines", detachment_type="Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Chaos Cult")
     army.faction_id = "CSM"
 
     bodyguard = _make_unit(
@@ -210,9 +210,9 @@ def test_cultists_brand_requires_other_models_to_be_damned_excluding_dark_discip
 
 
 def test_incendiary_goad_applies_to_damned_models_with_correct_thresholds():
-    army = Army("Chaos Space Marines", detachment_type="Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Chaos Cult")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     bodyguard = _make_unit(
@@ -304,7 +304,7 @@ def test_incendiary_goad_applies_to_damned_models_with_correct_thresholds():
 
 
 def test_warped_foresight_grants_scouts_while_bearer_leads_unit_with_scouts():
-    army = Army("Chaos Space Marines", detachment_type="Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Chaos Cult")
     army.faction_id = "CSM"
 
     bodyguard = _make_unit(

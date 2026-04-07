@@ -63,7 +63,7 @@ def _make_model(name, unit, *, x=0.0, y=0.0, wounds=6):
 
 class TestAeldariAspectHost(unittest.TestCase):
     def test_aspect_of_murder_precision_and_damage(self):
-        army = Army("Aeldari", detachment_type="Aspect Host")
+        army = Army.with_detachment("Aeldari", detachment_type="Aspect Host")
         army.faction_id = "AE"
 
         enhancer = Enhancement(

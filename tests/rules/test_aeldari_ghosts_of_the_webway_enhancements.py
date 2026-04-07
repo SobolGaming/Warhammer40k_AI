@@ -92,9 +92,9 @@ def test_ghosts_of_the_webway_enhancements_have_tool_descriptors():
 
 
 def test_cegorachs_coil_counts_only_engaged_models_for_rolls():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     bearer = _make_unit(
@@ -147,9 +147,9 @@ def test_cegorachs_coil_counts_only_engaged_models_for_rolls():
 
 
 def test_cegorachs_coil_caps_mortal_wounds_at_six():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     bearer = _make_unit(
@@ -197,9 +197,9 @@ def test_cegorachs_coil_caps_mortal_wounds_at_six():
 
 
 def test_mask_of_secrets_forces_desperate_escape_and_applies_battleshock_penalty():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     trapper = _make_unit(
@@ -248,9 +248,9 @@ def test_mask_of_secrets_forces_desperate_escape_and_applies_battleshock_penalty
 
 
 def test_mask_of_secrets_excludes_vehicle_units():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     trapper = _make_unit(
@@ -296,9 +296,9 @@ def test_mask_of_secrets_excludes_vehicle_units():
 
 
 def test_murders_jest_turns_successful_hits_into_critical_hits_vs_below_half_strength_targets():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     attacker = _make_unit(
@@ -383,7 +383,7 @@ def test_murders_jest_turns_successful_hits_into_critical_hits_vs_below_half_str
 
 
 def test_mistweave_grants_infiltrators_while_bearer_is_leading():
-    army = Army("Aeldari", detachment_type="Ghosts of the Webway")
+    army = Army.with_detachment("Aeldari", detachment_type="Ghosts of the Webway")
     army.faction_id = "AE"
 
     leader = _make_unit(

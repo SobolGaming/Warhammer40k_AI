@@ -42,7 +42,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Test", "Test")
+        army = Army.with_detachment("Test", "Test")
         if not isinstance(units, (list, tuple)):
             units = [units]
         army.units = list(units)

@@ -71,7 +71,7 @@ class _TestUnit(Unit):
 
 class TestSupportArtilleryAttachment(unittest.TestCase):
     def _make_army(self, units):
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = list(units)
         for u in army.units:

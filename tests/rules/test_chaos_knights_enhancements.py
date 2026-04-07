@@ -14,7 +14,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 
 class TestChaosKnightsEnhancements(unittest.TestCase):
     def _setup_game(self, phase_name: str = "COMMAND_PHASE", detachment_type: str = "Infernal Lance"):
-        army = Army("Chaos Knights", detachment_type=detachment_type)
+        army = Army.with_detachment("Chaos Knights", detachment_type=detachment_type)
         army.faction_id = "QT"
         player = Player("CK", PlayerControl.REMOTE, army=army)
         phase = SimpleNamespace(name=phase_name)

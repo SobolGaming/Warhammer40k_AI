@@ -131,8 +131,8 @@ class _AegisDatasheet:
 
 
 def test_single_model_deployment_enforces_aegis_compound_legality():
-    army = Army("Astra Militarum", "Combined Regiment")
-    enemy_army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Astra Militarum", "Combined Regiment")
+    enemy_army = Army.with_detachment("Space Marines", "Gladius Task Force")
 
     player = Player("AM", PlayerControl.LOCAL, army=army)
     enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)
@@ -163,8 +163,8 @@ def test_single_model_deployment_enforces_aegis_compound_legality():
 
 
 def test_unit_deployment_position_enforces_aegis_compound_legality():
-    army = Army("Astra Militarum", "Combined Regiment")
-    enemy_army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Astra Militarum", "Combined Regiment")
+    enemy_army = Army.with_detachment("Space Marines", "Gladius Task Force")
 
     player = Player("AM", PlayerControl.LOCAL, army=army)
     enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)

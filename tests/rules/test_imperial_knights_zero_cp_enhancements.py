@@ -58,9 +58,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
 def _build_game(detachment_type: str):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
-    army_ik = Army("Imperial Knights", detachment_type)
+    army_ik = Army.with_detachment("Imperial Knights", detachment_type)
     army_ik.faction_id = "QI"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
     ik_player = Player("IK", control=PlayerControl.LOCAL, army=army_ik)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=army_enemy)

@@ -96,9 +96,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
 
     def _make_game(self):
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
-        gk_army = Army("Grey Knights", detachment_type="Other")
+        gk_army = Army.with_detachment("Grey Knights", detachment_type="Other")
         gk_army.faction_id = "GK"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
         gk_player = Player("GK", PlayerControl.REMOTE, army=gk_army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -251,9 +251,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
-        enemy = Army("Enemy", detachment_type="Other")
+        enemy = Army.with_detachment("Enemy", detachment_type="Other")
         enemy.faction_id = "EN"
 
         attacker_unit = self._make_unit("Terminator Squad", army, abilities=[ability], faction_keywords=["GREY KNIGHTS"])
@@ -407,9 +407,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
-        enemy = Army("Enemy", detachment_type="Other")
+        enemy = Army.with_detachment("Enemy", detachment_type="Other")
         enemy.faction_id = "EN"
 
         paladin_unit = self._make_unit(
@@ -521,9 +521,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
-        enemy = Army("Enemy", detachment_type="Other")
+        enemy = Army.with_detachment("Enemy", detachment_type="Other")
         enemy.faction_id = "EN"
 
         attacker = self._make_unit("Purifier Squad", army, abilities=[ability], faction_keywords=["GREY KNIGHTS"])
@@ -544,9 +544,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
-        enemy = Army("Enemy", detachment_type="Other")
+        enemy = Army.with_detachment("Enemy", detachment_type="Other")
         enemy.faction_id = "EN"
         unit = self._make_unit("Brother-captain", army, abilities=[ability], faction_keywords=["GREY KNIGHTS"])
         model = self._make_model("Captain", unit)
@@ -566,7 +566,7 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
         unit = self._make_unit("Paladin Squad", army, abilities=[ability], faction_keywords=["GREY KNIGHTS"])
         spec = unit.get_command_phase_unit_return_ability()
@@ -631,9 +631,9 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
-        enemy = Army("Enemy", detachment_type="Other")
+        enemy = Army.with_detachment("Enemy", detachment_type="Other")
         enemy.faction_id = "EN"
 
         leader = self._make_unit("Castellan Crowe", army, abilities=[ability], faction_keywords=["GREY KNIGHTS"])
@@ -867,7 +867,7 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
 
         rhino = self._make_unit("Rhino", army, abilities=[aura], faction_keywords=["GREY KNIGHTS"])
@@ -901,7 +901,7 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Faction",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
 
         servitors = self._make_unit("Servitors", army, abilities=[retinue], faction_keywords=["GREY KNIGHTS"])
@@ -936,7 +936,7 @@ class TestGreyKnightsBatch1Abilities(unittest.TestCase):
             "Datasheet",
             "",
         )
-        army = Army("Grey Knights", detachment_type="Other")
+        army = Army.with_detachment("Grey Knights", detachment_type="Other")
         army.faction_id = "GK"
 
         draigo = self._make_unit("Kaldor Draigo", army, abilities=[purity], faction_keywords=["GREY KNIGHTS"])

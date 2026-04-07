@@ -73,9 +73,9 @@ def _make_unit(
 
 def _build_game(*, battle_size: BattlefieldSize):
     game = Game(Battlefield(battle_size))
-    csm_army = Army("Chaos Space Marines", "Deceptors")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Deceptors")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

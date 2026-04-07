@@ -83,13 +83,13 @@ def _make_unit(
 
 
 def _make_more_dakka_army() -> Army:
-    army = Army("Orks", "More Dakka!")
+    army = Army.with_detachment("Orks", "More Dakka!")
     army.faction_id = "ORK"
     return army
 
 
 def _make_enemy_army() -> Army:
-    army = Army("Enemy", "Other")
+    army = Army.with_detachment("Enemy", "Other")
     army.faction_id = "ENEMY"
     return army
 

@@ -111,9 +111,9 @@ def _configure_deployment_zones(game: Game, p1: Player, p2: Player) -> None:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    necron_army = Army("Necrons", "Canoptek Court")
+    necron_army = Army.with_detachment("Necrons", "Canoptek Court")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     necron_player = Player("Necrons", control=PlayerControl.REMOTE, army=necron_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

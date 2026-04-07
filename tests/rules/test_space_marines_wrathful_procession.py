@@ -68,9 +68,9 @@ def _build_game(detachment_type: str = "Wrathful Procession"):
     game.turn = 1
     game.phase = BattleRoundPhases.SHOOTING_PHASE
 
-    army_sm = Army("Space Marines", detachment_type)
+    army_sm = Army.with_detachment("Space Marines", detachment_type)
     army_sm.faction_id = "SM"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     sm_player = Player("Space Marines", control=PlayerControl.LOCAL, army=army_sm)

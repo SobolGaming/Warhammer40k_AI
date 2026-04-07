@@ -55,9 +55,9 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
 
 def _build_game(detachment: str) -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    lov_army = Army("Leagues of Votann", detachment)
+    lov_army = Army.with_detachment("Leagues of Votann", detachment)
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("Votann", control=PlayerControl.REMOTE, army=lov_army)
     p2 = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

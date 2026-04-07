@@ -72,9 +72,9 @@ def _make_profile(*, is_ranged: bool = True, description: str = "") -> WargearPr
 
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", "Dread Mob")
+    ork_army = Army.with_detachment("Orks", "Dread Mob")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(ork_units or []):
@@ -252,7 +252,7 @@ def test_dread_mob_critical_wound_ap_bonus_applies_in_save_resolution():
 
 
 def test_dread_mob_gretchin_gain_battleline_keyword_on_add_unit():
-    army = Army("Orks", "Dread Mob")
+    army = Army.with_detachment("Orks", "Dread Mob")
     army.faction_id = "ORK"
     gretchin = _create_unit("Gretchin", keywords=["INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
     army.add_unit(gretchin)

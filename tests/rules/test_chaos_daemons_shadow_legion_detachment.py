@@ -45,7 +45,7 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, cost=100):
 
 class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
     def test_shadow_legion_applies_thralls_keywords_on_add(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
 
         daemon_unit = _make_unit("Bloodletters", keywords=["LEGIONES DAEMONICA"])
@@ -63,7 +63,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
         self.assertTrue(belakor.has_any_keyword("UNDIVIDED"))
 
     def test_shadow_legion_thralls_enable_deep_strike_and_dark_pacts_for_heretic_astartes(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         heretic_astartes_unit = _make_unit("Chaos Lord", keywords=["HERETIC ASTARTES"])
         army.add_unit(heretic_astartes_unit)
@@ -73,7 +73,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
         self.assertTrue(heretic_astartes_unit.can_use_dark_pacts())
 
     def test_shadow_legion_rejects_non_belakor_epic_hero(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         army.add_unit(_make_unit("Skarbrand", keywords=["LEGIONES DAEMONICA", "Epic Hero"]))
 
@@ -81,7 +81,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_shadow_legion_rejects_daemon_prince_units(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         army.add_unit(_make_unit("Daemon Prince of Chaos", keywords=["LEGIONES DAEMONICA", "MONSTER"]))
 
@@ -89,7 +89,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_shadow_legion_rejects_disallowed_heretic_astartes_unit_name(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
         army.add_unit(_make_unit("Chaos Bikers", keywords=["HERETIC ASTARTES"]))
 
@@ -97,7 +97,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_shadow_legion_enforces_heretic_astartes_points_cap(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion", points_limit=2000)
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion", points_limit=2000)
         army.faction_id = "CD"
         army.add_unit(_make_unit("Chaos Lord", keywords=["HERETIC ASTARTES"], cost=600))
         army.add_unit(_make_unit("Legionaries", keywords=["HERETIC ASTARTES"], cost=600))
@@ -106,7 +106,7 @@ class TestChaosDaemonsShadowLegionDetachment(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_shadow_legion_allows_valid_thralls_selection_within_cap(self):
-        army = Army("Chaos Daemons", detachment_type="Shadow Legion", points_limit=2000)
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion", points_limit=2000)
         army.faction_id = "CD"
         army.add_unit(_make_unit("Be'lakor", keywords=["LEGIONES DAEMONICA", "Epic Hero"], cost=325))
         army.add_unit(_make_unit("Chaos Lord", keywords=["HERETIC ASTARTES"], cost=300))

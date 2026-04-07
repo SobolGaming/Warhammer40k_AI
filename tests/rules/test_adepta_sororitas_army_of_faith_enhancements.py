@@ -80,9 +80,9 @@ def _create_unit(
 
 
 def _build_game(*, sororitas_units: list[Unit], enemy_units: list[Unit]):
-    sororitas_army = Army("Adepta Sororitas", "Army of Faith")
+    sororitas_army = Army.with_detachment("Adepta Sororitas", "Army of Faith")
     sororitas_army.faction_id = "AS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(sororitas_units or []):

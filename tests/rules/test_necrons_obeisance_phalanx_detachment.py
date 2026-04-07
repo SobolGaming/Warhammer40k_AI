@@ -67,9 +67,9 @@ def _make_ranged_profile(weapon) -> WargearProfile:
 
 
 def _build_game():
-    necron_army = Army("Necrons", "Obeisance Phalanx")
+    necron_army = Army.with_detachment("Necrons", "Obeisance Phalanx")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     necron_player = Player("Necrons", control=PlayerControl.REMOTE, army=necron_army)

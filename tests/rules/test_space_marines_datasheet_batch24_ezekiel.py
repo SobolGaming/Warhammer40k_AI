@@ -27,9 +27,9 @@ def _actual_unit(name: str, *, datasheet_id: str | None = None, faction_id: str 
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Other")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     sm_player = Player("Space Marines", PlayerControl.REMOTE, army=sm_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -98,9 +98,9 @@ def test_ezekiel_engulfing_fear_queues_and_applies_battleshock_in_shooting_phase
 
 
 def test_ezekiel_book_of_salvation_adds_one_melee_attack_while_leading():
-    army = Army("Space Marines", detachment_type="Other")
+    army = Army.with_detachment("Space Marines", detachment_type="Other")
     army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     ezekiel = _actual_unit("Ezekiel", datasheet_id="000000226")

@@ -115,9 +115,9 @@ def _make_profile(*, weapon_type: str):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Huron's Marauders")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Huron's Marauders")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

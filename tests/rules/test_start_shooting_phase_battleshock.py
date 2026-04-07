@@ -62,9 +62,9 @@ class TestStartShootingPhaseBattleshock(unittest.TestCase):
         return model
 
     def test_start_shooting_phase_visible_battleshock_queues_and_applies(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

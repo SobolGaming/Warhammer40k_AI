@@ -51,8 +51,8 @@ def test_model_destroyed_event_carries_attacker_and_allows_cp_gain(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -114,8 +114,8 @@ def test_unit_destroyed_character_model_without_enemy_keyword_grants_cp(monkeypa
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -171,8 +171,8 @@ def test_the_great_wolf_gains_cp_on_destroying_enemy_unit(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -225,8 +225,8 @@ def test_feared_interrogator_cp_requires_melee_kill(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -303,8 +303,8 @@ def test_champion_slayer_heals_on_destroying_character_or_monster_unit(monkeypat
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -359,8 +359,8 @@ def test_on_kill_battleshock_triggers_for_units_within_range(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army.with_detachment("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 

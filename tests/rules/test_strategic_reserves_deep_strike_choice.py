@@ -36,8 +36,8 @@ def test_strategic_reserves_unit_with_deep_strike_can_arrive_anywhere_like_deep_
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
 

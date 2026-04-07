@@ -100,9 +100,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    nightmare_army = Army("Chaos Space Marines", "Nightmare Hunt")
+    nightmare_army = Army.with_detachment("Chaos Space Marines", "Nightmare Hunt")
     nightmare_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     nightmare_player = Player("Nightmare", control=PlayerControl.REMOTE, army=nightmare_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

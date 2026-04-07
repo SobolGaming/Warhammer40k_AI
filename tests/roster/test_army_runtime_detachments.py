@@ -92,7 +92,6 @@ def _build_runtime_multi_detachment_army(waha_helper: WahaHelper) -> Army:
     validated = muster.validate_request(_build_multi_detachment_request())
     army = Army(
         faction=validated.blueprint.faction,
-        detachment_type="",
         points_limit=validated.blueprint.points_limit,
     )
     army.faction_id = validated.faction_id
@@ -137,7 +136,7 @@ def test_detachment_rule_lookup_uses_runtime_detachment_instances(waha_helper: W
 
 
 def test_runtime_detachment_dicts_are_normalized_back_to_instances() -> None:
-    army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Space Marines", "Gladius Task Force")
     army.faction_id = "SM"
     army.detachments = [
         {
@@ -158,7 +157,7 @@ def test_runtime_detachment_dicts_are_normalized_back_to_instances() -> None:
 
 
 def test_primary_detachment_property_is_read_only_view_over_runtime_detachment_instances() -> None:
-    army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Space Marines", "Gladius Task Force")
     army.faction_id = "SM"
 
     assert army.get_detachment_types() == ["Gladius Task Force"]
@@ -174,8 +173,24 @@ def test_primary_detachment_property_is_read_only_view_over_runtime_detachment_i
         army.detachment_type = "Gladius Task Force"
 
 
+def test_constructor_starts_detachment_free_until_runtime_state_is_attached() -> None:
+    army = Army("Space Marines")
+
+    assert army.detachment_type == ""
+    assert army.get_detachment_types() == []
+    assert army.get_primary_detachment_instance() is None
+
+
+def test_with_detachment_seeds_primary_detachment_for_single_detachment_flows() -> None:
+    army = Army.with_detachment("Space Marines", "Gladius Task Force")
+
+    assert army.detachment_type == "Gladius Task Force"
+    assert army.get_detachment_types() == ["Gladius Task Force"]
+    assert army.get_primary_detachment_instance() is not None
+
+
 def test_upgrade_tag_enhancement_can_target_eligible_non_character_unit() -> None:
-    army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Space Marines", "Gladius Task Force")
     army.faction_id = "SM"
     unit = _DummyUnit(
         "Sternguard Veterans",
@@ -204,7 +219,7 @@ def test_upgrade_tag_enhancement_can_target_eligible_non_character_unit() -> Non
 
 
 def test_upgrade_tag_enhancement_rejects_non_matching_non_character_unit() -> None:
-    army = Army("Space Marines", "Gladius Task Force")
+    army = Army.with_detachment("Space Marines", "Gladius Task Force")
     army.faction_id = "SM"
     unit = _DummyUnit(
         "Sternguard Veterans",

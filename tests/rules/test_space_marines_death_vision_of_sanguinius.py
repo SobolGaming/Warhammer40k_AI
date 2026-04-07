@@ -59,9 +59,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    blood_angels = Army("Blood Angels", detachment_type="Liberator Assault Group")
+    blood_angels = Army.with_detachment("Blood Angels", detachment_type="Liberator Assault Group")
     blood_angels.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     blood_player = Player("Blood", control=PlayerControl.LOCAL, army=blood_angels)

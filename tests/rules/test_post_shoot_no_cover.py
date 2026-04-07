@@ -63,9 +63,9 @@ class TestPostShootNoCover(unittest.TestCase):
         return model
 
     def test_post_shoot_no_cover_marks_target(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -145,9 +145,9 @@ class TestPostShootNoCover(unittest.TestCase):
         self.assertTrue(attack_instance.get("ignores_cover", False))
 
     def test_post_shoot_no_cover_model_any_weapon_marks_target(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

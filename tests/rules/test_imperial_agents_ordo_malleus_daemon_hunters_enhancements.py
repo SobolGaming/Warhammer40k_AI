@@ -74,9 +74,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 2
 
-    ia_army = Army("Imperial Agents", "Ordo Malleus Daemon Hunters")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Malleus Daemon Hunters")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
@@ -412,7 +412,7 @@ class TestImperialAgentsOrdoMalleusEnhancements(unittest.TestCase):
         self.assertEqual(_find_battleshock_clear_requests(game), [])
 
     def test_grimoire_of_true_names_aura_applies_leadership_hit_and_wound_penalties(self):
-        army = Army("Imperial Agents", "Ordo Malleus Daemon Hunters")
+        army = Army.with_detachment("Imperial Agents", "Ordo Malleus Daemon Hunters")
         army.faction_id = "AOI"
         source = _make_unit(
             "Ordo Malleus Inquisitor",

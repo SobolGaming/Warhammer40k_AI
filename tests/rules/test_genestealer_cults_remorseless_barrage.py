@@ -81,9 +81,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    gsc_army = Army("Genestealer Cults", detachment_type="Brood Brother Auxilia")
+    gsc_army = Army.with_detachment("Genestealer Cults", detachment_type="Brood Brother Auxilia")
     gsc_army.faction_id = "GC"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     gsc_player = Player("GSC", PlayerControl.REMOTE, army=gsc_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

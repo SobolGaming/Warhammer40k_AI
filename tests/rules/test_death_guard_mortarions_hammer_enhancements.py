@@ -107,9 +107,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    dg_army = Army("Death Guard", "Mortarion's Hammer")
+    dg_army = Army.with_detachment("Death Guard", "Mortarion's Hammer")
     dg_army.faction_id = "DG"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     dg_player = Player("DG", control=PlayerControl.REMOTE, army=dg_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)

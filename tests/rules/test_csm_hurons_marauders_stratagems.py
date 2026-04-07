@@ -115,9 +115,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    csm_army = Army("Chaos Space Marines", "Huron's Marauders")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Huron's Marauders")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     csm_player = Player("CSM", control=PlayerControl.LOCAL, army=csm_army)

@@ -57,10 +57,10 @@ class TestRelentlessRage(unittest.TestCase):
         from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.units import wargear as wargear_mod
 
-        army = Army("World Eaters", detachment_type="berzerker warband")
+        army = Army.with_detachment("World Eaters", detachment_type="berzerker warband")
         army.faction_id = "WE"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])
@@ -81,7 +81,7 @@ class TestRelentlessRage(unittest.TestCase):
         attacker_model.parent_unit = unit
         unit.models = [attacker_model]
 
-        target_army = Army("Other", "Other")
+        target_army = Army.with_detachment("Other", "Other")
         target = self._make_unit(target_army, world_eaters=False, name="Target")
         target.toughness = 4
         target_model = Model(
@@ -154,10 +154,10 @@ class TestRelentlessRage(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("World Eaters", detachment_type="Other Detachment")
+        army = Army.with_detachment("World Eaters", detachment_type="Other Detachment")
         army.faction_id = "WE"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])

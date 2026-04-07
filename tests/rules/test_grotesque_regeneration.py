@@ -37,9 +37,9 @@ def _setup_game():
     p2 = Player("P2", PlayerControl.REMOTE, None)
     game.add_player(p1)
     game.add_player(p2)
-    a1 = Army("Chaos Daemons", "Daemonic Incursion")
+    a1 = Army.with_detachment("Chaos Daemons", "Daemonic Incursion")
     a1.faction_id = "CD"
-    a2 = Army("Opponents", "Other")
+    a2 = Army.with_detachment("Opponents", "Other")
     p1.set_army(a1)
     p2.set_army(a2)
     return game, a1, a2

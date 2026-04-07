@@ -126,9 +126,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    ts_army = Army("Thousand Sons", "Warpforged Cabal")
+    ts_army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     ts_army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     ts_player = Player("TS", control=PlayerControl.LOCAL, army=ts_army)

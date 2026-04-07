@@ -128,7 +128,7 @@ def _melee_profile(*, description: str = "") -> WargearProfile:
 
 
 def _make_war_horde_army() -> Army:
-    army = Army("Orks", "War Horde")
+    army = Army.with_detachment("Orks", "War Horde")
     army.faction_id = "ORK"
     return army
 
@@ -197,7 +197,7 @@ def test_kunnin_but_brutal_allows_fallback_shoot_and_charge_while_leading():
 
 def test_headwoppas_killchoppa_grants_devastating_wounds_to_bearer():
     army = _make_war_horde_army()
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     leader = _make_unit(
         "Boss",

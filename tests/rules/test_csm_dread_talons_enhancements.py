@@ -103,9 +103,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, enhancement_name: str
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Dread Talons")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Dread Talons")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -144,7 +144,7 @@ def test_dread_talons_enhancement_descriptors_registered():
 
 
 def test_nights_shroud_grants_stealth_to_bearer_unit():
-    csm_army = Army("Chaos Space Marines", "Dread Talons")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Dread Talons")
     csm_army.faction_id = "CSM"
     source = _make_unit(
         "Chaos Lord",

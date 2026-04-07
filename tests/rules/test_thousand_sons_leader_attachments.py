@@ -23,7 +23,7 @@ def _make_unit(name: str, datasheet_id: str) -> Unit:
 
 
 def _wire_same_army(*units: Unit) -> Army:
-    army = Army(faction="Thousand Sons", detachment_type="Grand Coven", points_limit=2000)
+    army = Army.with_detachment(faction="Thousand Sons", detachment_type="Grand Coven", points_limit=2000)
     army.player = _DummyPlayer()
     army.units = list(units)
     for unit in units:

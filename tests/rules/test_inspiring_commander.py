@@ -74,7 +74,7 @@ def test_inspiring_commander_sets_named_unit_objective_control():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     source = make_unit("Kayvaan Shrike", abilities=[ability], keywords=["CHARACTER"])
     target = make_unit("Assault Intercessors with Jump Packs", objective_control=1, model_count=2)
     army.add_unit(source)
@@ -95,7 +95,7 @@ def test_inspiring_commander_supports_multiple_named_target_units():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     source = make_unit("Darnath Lysander", abilities=[ability], keywords=["CHARACTER"])
     assault = make_unit("Terminator Assault Squad", objective_control=1)
     regular = make_unit("Terminator Squad", objective_control=1)
@@ -119,7 +119,7 @@ def test_inspiring_commander_does_not_apply_to_character_models():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     source = make_unit("Pedro Kantor", abilities=[ability], keywords=["CHARACTER"])
     target = make_unit("Sternguard Veteran Squad", keywords=["CHARACTER"], objective_control=1)
     army.add_unit(source)
@@ -139,7 +139,7 @@ def test_inspiring_commander_stops_when_target_is_battle_shocked():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     source = make_unit("Kor'sarro Khan", abilities=[ability], keywords=["CHARACTER"])
     target = make_unit("Outrider Squad", objective_control=1)
     army.add_unit(source)

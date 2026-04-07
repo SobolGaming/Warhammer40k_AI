@@ -80,8 +80,8 @@ def _make_game_with_imperial_agents_army():
     game.add_player(player_one)
     game.add_player(player_two)
 
-    army_one = Army("Imperial Agents", "Imperialis Fleet")
-    army_two = Army("Space Marines", "Gladius")
+    army_one = Army.with_detachment("Imperial Agents", "Imperialis Fleet")
+    army_two = Army.with_detachment("Space Marines", "Gladius")
     army_one.faction_id = "AOI"
     army_two.faction_id = "SM"
     player_one.set_army(army_one)
@@ -235,4 +235,4 @@ def test_shadow_assignment_rewrites_pending_unit_ids_after_replacement():
     payload_after = dict(getattr(pending.options[0], "payload", {}) or {})
     assert str(payload_after.get("unit_id", "") or "") == rewritten_id
     nested_ids = list(dict(payload_after.get("nested", {}) or {}).get("unit_ids", []) or [])
-    assert nested_ids and str(nested_ids[0]) == rewritten_id
+    assert nested_ids and str(nested_ids[0]) == rewritten_id

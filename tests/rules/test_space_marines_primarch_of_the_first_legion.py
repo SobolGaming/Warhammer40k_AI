@@ -114,9 +114,9 @@ def _lion_abilities() -> list[dict]:
 def _build_game() -> tuple[Game, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
-    sm_army = Army("Space Marines", "Detachment")
+    sm_army = Army.with_detachment("Space Marines", "Detachment")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Detachment")
+    enemy_army = Army.with_detachment("Enemy", "Detachment")
     enemy_army.faction_id = "EN"
     sm_player = Player("Space Marines", control=PlayerControl.REMOTE, army=sm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

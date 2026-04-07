@@ -9,9 +9,9 @@ from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 def _build_game() -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    lov_army = Army("Leagues of Votann", "Mercenary Oathband")
+    lov_army = Army.with_detachment("Leagues of Votann", "Mercenary Oathband")
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("Votann", control=PlayerControl.REMOTE, army=lov_army)
     p2 = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

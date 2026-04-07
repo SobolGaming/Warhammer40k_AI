@@ -78,7 +78,7 @@ class _TestUnit(Unit):
 
 class TestAstraMilitarumGrizzledCompanyEnhancements(unittest.TestCase):
     def _make_army(self):
-        army = Army("Astra Militarum", "Grizzled Company")
+        army = Army.with_detachment("Astra Militarum", "Grizzled Company")
         army.faction_id = "AM"
         army.player = _DummyPlayer()
         return army

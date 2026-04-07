@@ -82,9 +82,9 @@ def _make_profile(*, name: str, keywords: str):
 
 
 def _build_game():
-    army = Army("Aeldari", detachment_type="Windrider Host")
+    army = Army.with_detachment("Aeldari", detachment_type="Windrider Host")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     player = Player("Aeldari", PlayerControl.REMOTE, army=army)
@@ -110,7 +110,7 @@ def test_windrider_host_enhancements_have_tool_descriptors():
 
 
 def test_firstdrawn_blade_grants_scouts_nine():
-    army = Army("Aeldari", detachment_type="Windrider Host")
+    army = Army.with_detachment("Aeldari", detachment_type="Windrider Host")
     army.faction_id = "AE"
     bearer = _make_unit(
         "Farseer Skyrunner",
@@ -134,7 +134,7 @@ def test_firstdrawn_blade_grants_scouts_nine():
 
 
 def test_mirage_field_applies_unit_target_hit_penalty():
-    army = Army("Aeldari", detachment_type="Windrider Host")
+    army = Army.with_detachment("Aeldari", detachment_type="Windrider Host")
     army.faction_id = "AE"
     bearer = _make_unit(
         "Warlock Skyrunner",
@@ -158,7 +158,7 @@ def test_mirage_field_applies_unit_target_hit_penalty():
 
 
 def test_seersight_strike_grants_anti_only_to_bearer_psychic_weapons():
-    army = Army("Aeldari", detachment_type="Windrider Host")
+    army = Army.with_detachment("Aeldari", detachment_type="Windrider Host")
     army.faction_id = "AE"
     bearer = _make_unit(
         "Farseer Skyrunner",

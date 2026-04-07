@@ -51,7 +51,7 @@ def _attack_result(profile_name="Test Weapon"):
 
 
 def _make_cd_army(detachment: str):
-    army = Army("Chaos Daemons", detachment)
+    army = Army.with_detachment("Chaos Daemons", detachment)
     army.faction_id = "CD"
     return army
 
@@ -59,7 +59,7 @@ def _make_cd_army(detachment: str):
 def test_inescapable_eye_grants_extra_flux_token():
     game = Game(Battlefield(width=44, height=30))
     army = _make_cd_army("Scintillating Legion")
-    opponent = Army("Opponents", "Other")
+    opponent = Army.with_detachment("Opponents", "Other")
 
     p1 = Player("P1", PlayerControl.LOCAL, army)
     p2 = Player("P2", PlayerControl.REMOTE, opponent)

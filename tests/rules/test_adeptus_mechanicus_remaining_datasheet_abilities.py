@@ -80,9 +80,9 @@ def _make_unit(
 
 
 def _build_game():
-    army_adm = Army("Adeptus Mechanicus", detachment_type="Other")
+    army_adm = Army.with_detachment("Adeptus Mechanicus", detachment_type="Other")
     army_adm.faction_id = "ADM"
-    army_enemy = Army("Enemy", detachment_type="Other")
+    army_enemy = Army.with_detachment("Enemy", detachment_type="Other")
     army_enemy.faction_id = "EN"
 
     adm_player = Player("AdMech", PlayerControl.REMOTE, army=army_adm)

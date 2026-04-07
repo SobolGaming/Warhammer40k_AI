@@ -51,7 +51,7 @@ class TestReturnOnDeathAbility(unittest.TestCase):
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        army = Army("Test", "Test")
+        army = Army.with_detachment("Test", "Test")
         player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)
 

@@ -68,9 +68,9 @@ class TestMethodicalDestruction(unittest.TestCase):
         return model
 
     def test_methodical_destruction_queues_victim_selection(self):
-        army = Army("Chaos Knights", detachment_type="Other")
+        army = Army.with_detachment("Chaos Knights", detachment_type="Other")
         army.faction_id = "QT"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -113,9 +113,9 @@ class TestMethodicalDestruction(unittest.TestCase):
         self.assertIn(target_unit._id, victim_ids)
 
     def test_methodical_destruction_rejects_invalid_choice(self):
-        army = Army("Chaos Knights", detachment_type="Other")
+        army = Army.with_detachment("Chaos Knights", detachment_type="Other")
         army.faction_id = "QT"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -254,9 +254,9 @@ class TestMethodicalDestruction(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_methodical_destruction_repick_on_victim_destroyed(self):
-        army = Army("Chaos Knights", detachment_type="Other")
+        army = Army.with_detachment("Chaos Knights", detachment_type="Other")
         army.faction_id = "QT"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

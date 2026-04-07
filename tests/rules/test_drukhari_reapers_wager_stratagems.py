@@ -82,9 +82,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    drukhari_army = Army("Drukhari", "Reaper's Wager")
+    drukhari_army = Army.with_detachment("Drukhari", "Reaper's Wager")
     drukhari_army.faction_id = "DRU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("Drukhari", control=PlayerControl.LOCAL, army=drukhari_army)

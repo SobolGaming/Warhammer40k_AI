@@ -72,9 +72,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army1 = Army("A1", "Detachment1")
+    army1 = Army.with_detachment("A1", "Detachment1")
     army1.faction_id = "A1"
-    army2 = Army("A2", "Detachment2")
+    army2 = Army.with_detachment("A2", "Detachment2")
     army2.faction_id = "A2"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)

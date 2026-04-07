@@ -30,7 +30,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
 
 
 def setup_reapers_wager_army(points_limit=2000) -> Army:
-    army = Army("Drukhari", "Reaper's Wager", points_limit=points_limit)
+    army = Army.with_detachment("Drukhari", "Reaper's Wager", points_limit=points_limit)
     army.faction_id = "DRU"
     base = make_unit("Kabalites", faction_keywords=["DRUKHARI"])
     army.add_unit(base)

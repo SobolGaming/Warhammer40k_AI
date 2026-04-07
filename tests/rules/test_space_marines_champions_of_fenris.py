@@ -59,9 +59,9 @@ def _build_game(detachment_type: str = "Champions of Fenris"):
     game = Game(bf)
     game.turn = 1
 
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
-    sm_army = Army("Space Marines", detachment_type)
+    sm_army = Army.with_detachment("Space Marines", detachment_type)
     sm_army.faction_id = "SM"
 
     enemy_player = Player("Enemy", control=PlayerControl.LOCAL, army=enemy_army)

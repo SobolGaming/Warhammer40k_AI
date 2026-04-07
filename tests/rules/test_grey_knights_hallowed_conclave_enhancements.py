@@ -69,9 +69,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
     game.phase = BattleRoundPhases.MOVEMENT_PHASE
-    gk_army = Army("Grey Knights", "Hallowed Conclave")
+    gk_army = Army.with_detachment("Grey Knights", "Hallowed Conclave")
     gk_army.faction_id = "GK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     gk_player = Player("GK", control=PlayerControl.REMOTE, army=gk_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

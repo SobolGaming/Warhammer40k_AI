@@ -40,7 +40,7 @@ class _MockDatasheet:
 
 
 def _build_army(detachment: str) -> Army:
-    army = Army("Leagues of Votann", detachment)
+    army = Army.with_detachment("Leagues of Votann", detachment)
     army.faction_id = "LOV"
     return army
 

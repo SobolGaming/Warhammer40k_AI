@@ -38,10 +38,10 @@ class TestSeductiveGambit(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Legion of Excess")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Legion of Excess")
         army.faction_id = "CD"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         unit = self._make_unit(army)
         army.units = [unit]
@@ -67,7 +67,7 @@ class TestSeductiveGambit(unittest.TestCase):
         unit.special_rules = {"seductive_gambit_active": True}
         unit.round_state = SimpleNamespace(charged_this_round=True)
         unit.has_fight_first = lambda: True
-        army = Army("Chaos Daemons", detachment_type="Legion of Excess")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Legion of Excess")
         army.faction_id = "CD"
         unit.get_parent_army = lambda: army
         self.assertFalse(Unit.should_fight_first(unit))

@@ -76,7 +76,7 @@ def _make_unit(
 
 
 def _build_aeldari_army(detachment: str) -> Army:
-    army = Army("Aeldari", detachment)
+    army = Army.with_detachment("Aeldari", detachment)
     army.faction_id = "AE"
     return army
 

@@ -58,9 +58,9 @@ class TestStartOfBattleKeywordRerollOnes(unittest.TestCase):
         return model
 
     def test_start_of_battle_keyword_reroll_ones(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

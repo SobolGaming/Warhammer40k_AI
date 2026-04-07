@@ -11,8 +11,8 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 
 def _build_game() -> Game:
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
-    player_one = Player("Player One", control=PlayerControl.LOCAL, army=Army("Chaos Daemons", "Test"))
-    player_two = Player("Player Two", control=PlayerControl.LOCAL, army=Army("Chaos Daemons", "Test"))
+    player_one = Player("Player One", control=PlayerControl.LOCAL, army=Army.with_detachment("Chaos Daemons", "Test"))
+    player_two = Player("Player Two", control=PlayerControl.LOCAL, army=Army.with_detachment("Chaos Daemons", "Test"))
     game = Game(battlefield, players=[player_one, player_two])
     game.is_authoritative = True
     return game

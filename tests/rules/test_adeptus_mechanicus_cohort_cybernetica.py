@@ -48,7 +48,7 @@ def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
 
 
 def test_cyber_psalm_programming_grants_legio_cybernetica_move_and_oc():
-    army = Army("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
     army.faction_id = "ADM"
     legio_unit = _make_unit(
         "Kastelan Robots",
@@ -63,7 +63,7 @@ def test_cyber_psalm_programming_grants_legio_cybernetica_move_and_oc():
 
 
 def test_cyber_psalm_programming_does_not_apply_to_non_legio_units():
-    army = Army("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
     army.faction_id = "ADM"
     skitarii = _make_unit(
         "Skitarii Rangers",
@@ -78,7 +78,7 @@ def test_cyber_psalm_programming_does_not_apply_to_non_legio_units():
 
 
 def test_cyber_psalm_programming_oc_bonus_is_disabled_while_battle_shocked():
-    army = Army("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
     army.faction_id = "ADM"
     legio_unit = _make_unit(
         "Kastelan Robots",
@@ -101,7 +101,7 @@ def test_cyber_psalm_programming_oc_bonus_is_disabled_while_battle_shocked():
 
 
 def test_cyber_psalm_programming_uses_attached_root_for_leader_models():
-    army = Army("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
     army.faction_id = "ADM"
     legio_bodyguard = _make_unit(
         "Kastelan Robots",

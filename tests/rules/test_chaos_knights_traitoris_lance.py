@@ -118,12 +118,12 @@ def _make_unit(name, *, faction_name="Chaos Knights", keywords=None, faction_key
 
 class TestChaosKnightsTraitorisLance(unittest.TestCase):
     def _setup_armies(self, *, detachment_type: str):
-        ck_army = Army("Chaos Knights", detachment_type=detachment_type)
+        ck_army = Army.with_detachment("Chaos Knights", detachment_type=detachment_type)
         ck_army.faction_id = "QT"
         ck_player = Player("CK", control=PlayerControl.REMOTE, army=ck_army)
         ck_army.player = ck_player
 
-        enemy_army = Army("Enemy", detachment_type="None")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="None")
         enemy_army.faction_id = "EN"
         enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
         enemy_army.player = enemy_player

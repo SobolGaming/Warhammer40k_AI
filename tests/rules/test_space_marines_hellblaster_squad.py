@@ -92,8 +92,8 @@ def _make_unit(
 
 def _build_game() -> tuple[Game, Army, Army]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", detachment_type="Gladius Task Force")
-    enemy_army = Army("Enemy", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Gladius Task Force")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     sm_army.faction_id = "SM"
     enemy_army.faction_id = "EN"
     sm_player = Player("SM", PlayerControl.REMOTE, army=sm_army)

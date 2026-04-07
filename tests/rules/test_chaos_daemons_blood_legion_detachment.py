@@ -68,9 +68,9 @@ def _make_model(name, unit, *, x: float, y: float, objective_control: int = 1):
 
 
 def _build_game():
-    daemon_army = Army("Chaos Daemons", detachment_type="Blood Legion")
+    daemon_army = Army.with_detachment("Chaos Daemons", detachment_type="Blood Legion")
     daemon_army.faction_id = "CD"
-    enemy_army = Army("Enemies", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     daemon_player = Player("Daemon", PlayerControl.REMOTE, army=daemon_army)

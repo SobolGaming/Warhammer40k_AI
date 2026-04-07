@@ -96,9 +96,9 @@ def _nuncio_description() -> str:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Other")
+    ia_army = Army.with_detachment("Imperial Agents", "Other")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ia_player = Player("IA", control=PlayerControl.REMOTE, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

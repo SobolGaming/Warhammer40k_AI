@@ -63,9 +63,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None, model_count: 
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", "Green Tide")
+    ork_army = Army.with_detachment("Orks", "Green Tide")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     ork_player = Player("Orks", control=PlayerControl.LOCAL, army=ork_army)

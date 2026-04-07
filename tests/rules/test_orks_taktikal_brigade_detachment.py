@@ -86,9 +86,9 @@ def _apply_enhancement(unit: Unit, enhancement_name: str) -> None:
 
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", "Taktikal Brigade")
+    ork_army = Army.with_detachment("Orks", "Taktikal Brigade")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(ork_units or []):
@@ -149,7 +149,7 @@ def _find_option(request, *, action: str = "", taktik: str = "", target_unit: Un
 
 
 def test_taktikal_brigade_stormboyz_gain_battleline_on_add_unit():
-    army = Army("Orks", "Taktikal Brigade")
+    army = Army.with_detachment("Orks", "Taktikal Brigade")
     army.faction_id = "ORK"
     stormboyz = _create_unit("Stormboyz", keywords=["INFANTRY", "STORMBOYZ"], faction_keywords=["ORKS"])
     army.add_unit(stormboyz)

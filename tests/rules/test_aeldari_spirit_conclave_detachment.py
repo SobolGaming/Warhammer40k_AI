@@ -62,9 +62,9 @@ def _set_unit_location(unit: Unit, *, x: float, y: float) -> None:
 
 
 def _build_game():
-    spirit_army = Army("Aeldari", "Spirit Conclave")
+    spirit_army = Army.with_detachment("Aeldari", "Spirit Conclave")
     spirit_army.faction_id = "AE"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
     spirit_player = Player("Aeldari", control=PlayerControl.REMOTE, army=spirit_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

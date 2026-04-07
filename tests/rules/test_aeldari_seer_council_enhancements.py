@@ -81,9 +81,9 @@ def test_seer_council_enhancements_have_tool_descriptors():
 
 
 def test_lucid_eye_queues_and_applies_fate_die_adjustment():
-    army = Army("Aeldari", detachment_type="Seer Council")
+    army = Army.with_detachment("Aeldari", detachment_type="Seer Council")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -130,7 +130,7 @@ def test_lucid_eye_queues_and_applies_fate_die_adjustment():
 
 
 def test_lucid_eye_rejects_invalid_adjustment_payload():
-    army = Army("Aeldari", detachment_type="Seer Council")
+    army = Army.with_detachment("Aeldari", detachment_type="Seer Council")
     army.faction_id = "AE"
     player = Player("Player", PlayerControl.REMOTE, army=army)
     game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player])
@@ -182,7 +182,7 @@ def test_lucid_eye_rejects_invalid_adjustment_payload():
 
 
 def test_stone_of_eldritch_fury_applies_only_to_bearer_ranged_psychic_weapons():
-    army = Army("Aeldari", detachment_type="Seer Council")
+    army = Army.with_detachment("Aeldari", detachment_type="Seer Council")
     army.faction_id = "AE"
 
     bearer = _make_unit(
@@ -217,7 +217,7 @@ def test_stone_of_eldritch_fury_applies_only_to_bearer_ranged_psychic_weapons():
 
 
 def test_runes_of_warding_applies_fnp_conditions():
-    army = Army("Aeldari", detachment_type="Seer Council")
+    army = Army.with_detachment("Aeldari", detachment_type="Seer Council")
     army.faction_id = "AE"
 
     bearer = _make_unit(

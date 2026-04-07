@@ -212,9 +212,9 @@ class TestChargeRerollAbilities(unittest.TestCase):
         }
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army1 = Army("Test", "Det")
+        army1 = Army.with_detachment("Test", "Det")
         army1.faction_id = "TST"
-        army2 = Army("Enemy", "Det")
+        army2 = Army.with_detachment("Enemy", "Det")
         army2.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
@@ -285,9 +285,9 @@ class TestChargeRerollAbilities(unittest.TestCase):
         }
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army1 = Army("Test", "Det")
+        army1 = Army.with_detachment("Test", "Det")
         army1.faction_id = "EC"
-        army2 = Army("Enemy", "Det")
+        army2 = Army.with_detachment("Enemy", "Det")
         army2.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)

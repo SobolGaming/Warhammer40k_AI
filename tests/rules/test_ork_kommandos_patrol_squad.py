@@ -76,8 +76,8 @@ class _KommandosDatasheet:
 
 
 def _build_game_with_kommandos(quantity: int = 10) -> tuple[Game, Player, Army, Unit]:
-    ork_army = Army("Orks", "War Horde")
-    enemy_army = Army("Space Marines", "Gladius Task Force")
+    ork_army = Army.with_detachment("Orks", "War Horde")
+    enemy_army = Army.with_detachment("Space Marines", "Gladius Task Force")
     ork_player = Player("Orks", PlayerControl.LOCAL, army=ork_army)
     enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)
     ork_army.set_player(ork_player)

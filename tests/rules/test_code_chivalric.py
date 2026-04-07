@@ -57,7 +57,7 @@ class TestCodeChivalric(unittest.TestCase):
             faction_keywords=["IMPERIUM"],
             abilities=["Code Chivalric"],
         )
-        army = Army("Imperial Knights", "Detachment", points_limit=2000)
+        army = Army.with_detachment("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"
         army.add_unit(unit)
         army.player = _PlayerStub()
@@ -80,7 +80,7 @@ class TestCodeChivalric(unittest.TestCase):
         from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
-        army = Army("Imperial Knights", "Detachment", points_limit=2000)
+        army = Army.with_detachment("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"
         game = SimpleNamespace(event_system=EventSystem(), map=None, turn=1)
         player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
@@ -185,7 +185,7 @@ class TestCodeChivalric(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.rules.code_chivalric import CodeChivalricManager, DEED_TALLY
 
-        army = Army("Imperial Knights", "Detachment", points_limit=2000)
+        army = Army.with_detachment("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"
         army.player = _PlayerStub()
 

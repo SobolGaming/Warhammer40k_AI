@@ -265,9 +265,9 @@ def _seed_support_maps():
 
 
 def _build_game(*, tyr_control=PlayerControl.REMOTE, enemy_control=PlayerControl.REMOTE):
-    tyr_army = Army("Tyranids", "Crusher Stampede")
+    tyr_army = Army.with_detachment("Tyranids", "Crusher Stampede")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tyr_player = Player("Tyranids", tyr_control, army=tyr_army)
@@ -441,7 +441,7 @@ class TestCrusherStampedeEnragedBehemoths(unittest.TestCase):
 
 
 def test_enraged_behemoths_objective_control_bonus_at_starting_strength():
-    army = Army("Tyranids", "Crusher Stampede")
+    army = Army.with_detachment("Tyranids", "Crusher Stampede")
     army.faction_id = "TYR"
 
     monster = _make_real_unit(
@@ -492,7 +492,7 @@ def test_crusher_stampede_enhancement_descriptors_registered():
 
 
 def test_ominous_presence_adds_bearer_objective_control():
-    army = Army("Tyranids", "Crusher Stampede")
+    army = Army.with_detachment("Tyranids", "Crusher Stampede")
     army.faction_id = "TYR"
     bearer_unit = _make_real_unit(
         "Hive Tyrant",
@@ -516,9 +516,9 @@ def test_ominous_presence_adds_bearer_objective_control():
 
 
 def test_monstrous_nemesis_adds_melee_wound_bonus_only_against_monsters_and_vehicles():
-    tyr_army = Army("Tyranids", "Crusher Stampede")
+    tyr_army = Army.with_detachment("Tyranids", "Crusher Stampede")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     bearer_unit = _make_real_unit(
@@ -572,7 +572,7 @@ def test_monstrous_nemesis_adds_melee_wound_bonus_only_against_monsters_and_vehi
 
 
 def test_enraged_reserves_grants_bearer_fight_on_death_rule():
-    army = Army("Tyranids", "Crusher Stampede")
+    army = Army.with_detachment("Tyranids", "Crusher Stampede")
     army.faction_id = "TYR"
     bearer_unit = _make_real_unit(
         "Screamer-Killer",
@@ -593,7 +593,7 @@ def test_enraged_reserves_grants_bearer_fight_on_death_rule():
 
 
 def test_null_nodules_is_not_a_static_fnp_before_activation():
-    army = Army("Tyranids", "Crusher Stampede")
+    army = Army.with_detachment("Tyranids", "Crusher Stampede")
     army.faction_id = "TYR"
     bearer_unit = _make_real_unit(
         "Neurotyrant",

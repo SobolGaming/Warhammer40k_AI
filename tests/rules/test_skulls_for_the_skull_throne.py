@@ -57,14 +57,14 @@ class TestSkullsForTheSkullThrone(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("World Eaters", "Berzerker Warband")
+        army = Army.with_detachment("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         we_unit = _TestUnit("WE Unit", keywords=["Khorne"], faction_keywords=["World Eaters"])
         we_unit2 = _TestUnit("WE Unit 2", keywords=["Khorne"], faction_keywords=["World Eaters"])
         army.add_unit(we_unit)
         army.add_unit(we_unit2)
 
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
         enemy_unit = _TestUnit("Enemy Character", keywords=["Character"], faction_keywords=["Enemy"])
         enemy_army.add_unit(enemy_unit)

@@ -89,9 +89,9 @@ def _find_model(unit: Unit, required: str, *, excluded: str = ""):
 
 def _attach_to_game(unit: Unit) -> None:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army = Army("Adepta Sororitas", "Champions of Faith")
+    army = Army.with_detachment("Adepta Sororitas", "Champions of Faith")
     army.faction_id = "AS"
-    enemy = Army("Enemy", "Other")
+    enemy = Army.with_detachment("Enemy", "Other")
     enemy.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy)

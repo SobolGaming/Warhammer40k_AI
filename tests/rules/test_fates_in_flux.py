@@ -40,9 +40,9 @@ def _setup_game(
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Chaos Daemons", detachment_p1)
+    a1 = Army.with_detachment("Chaos Daemons", detachment_p1)
     a1.faction_id = "CD"
-    a2 = Army(p2_faction, detachment_p2)
+    a2 = Army.with_detachment(p2_faction, detachment_p2)
     if p2_faction == "Chaos Daemons":
         a2.faction_id = "CD"
 

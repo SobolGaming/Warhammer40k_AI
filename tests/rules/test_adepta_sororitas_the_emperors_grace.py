@@ -80,9 +80,9 @@ class TestAdeptaSororitasTheEmperorsGrace(unittest.TestCase):
     def _make_game(self):
         battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield)
-        sororitas_army = Army("Adepta Sororitas", detachment_type="Other")
+        sororitas_army = Army.with_detachment("Adepta Sororitas", detachment_type="Other")
         sororitas_army.faction_id = "AS"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
         sororitas_player = Player("Sororitas", PlayerControl.REMOTE, army=sororitas_army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

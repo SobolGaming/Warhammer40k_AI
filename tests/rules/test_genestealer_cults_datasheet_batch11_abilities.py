@@ -18,9 +18,9 @@ def _actual_unit(name: str, *, faction_id: str) -> Unit:
 
 
 def _build_game() -> tuple[Game, Player, Player, Army, Army]:
-    gsc_army = Army("Genestealer Cults", "Other")
+    gsc_army = Army.with_detachment("Genestealer Cults", "Other")
     gsc_army.faction_id = "GC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ORK"
 
     gsc_player = Player("GSC", control=PlayerControl.REMOTE, army=gsc_army)

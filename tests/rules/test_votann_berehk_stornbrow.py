@@ -78,9 +78,9 @@ def _aura_stub():
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    lov_army = Army("Leagues of Votann", "Detachment")
+    lov_army = Army.with_detachment("Leagues of Votann", "Detachment")
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Detachment")
+    enemy_army = Army.with_detachment("Enemy", "Detachment")
     enemy_army.faction_id = "EN"
     lov_player = Player("LOV", control=PlayerControl.LOCAL, army=lov_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)

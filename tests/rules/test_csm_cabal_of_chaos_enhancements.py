@@ -123,7 +123,7 @@ def _bearer_and_other_models(unit: Unit):
 
 
 def test_touched_by_the_warp_adds_psyker_to_bearer_model_only():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
     unit = _make_unit(
         "Chaos Lord",
@@ -149,7 +149,7 @@ def test_touched_by_the_warp_adds_psyker_to_bearer_model_only():
 
 
 def test_eyes_of_zdesh_grants_scouts_6():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
     unit = _make_unit(
         "Chaos Lord",
@@ -171,9 +171,9 @@ def test_eyes_of_zdesh_grants_scouts_6():
 
 
 def test_mind_blade_grants_lance_to_non_bearer_model_in_unit():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     attacker = _make_unit(
@@ -228,9 +228,9 @@ def test_mind_blade_grants_lance_to_non_bearer_model_in_unit():
 
 
 def test_infernal_avatar_buffs_only_bearer_melee_profile():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     unit = _make_unit(
@@ -289,7 +289,7 @@ def test_infernal_avatar_buffs_only_bearer_melee_profile():
 
 
 def test_cabal_enhancement_effects_do_not_apply_outside_cabal_detachment():
-    army = Army("Chaos Space Marines", detachment_type="Renegade Raiders")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Renegade Raiders")
     army.faction_id = "CSM"
     unit = _make_unit(
         "Chaos Lord",

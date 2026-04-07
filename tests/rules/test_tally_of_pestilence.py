@@ -33,8 +33,8 @@ class MockDatasheet:
 def _make_game():
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
-    p1 = Player("Nurgle", PlayerControl.LOCAL, Army("Chaos", "Detachment"))
-    p2 = Player("Enemy", PlayerControl.REMOTE, Army("Enemy", "Detachment"))
+    p1 = Player("Nurgle", PlayerControl.LOCAL, Army.with_detachment("Chaos", "Detachment"))
+    p2 = Player("Enemy", PlayerControl.REMOTE, Army.with_detachment("Enemy", "Detachment"))
     p1.army.faction_id = "CD"
     p2.army.faction_id = "SM"
     game.add_player(p1)

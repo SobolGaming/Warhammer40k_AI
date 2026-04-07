@@ -25,7 +25,7 @@ class TestWarlordAndPactRestrictions(unittest.TestCase):
                 )
             return u
 
-        army = Army("World Eaters", detachment_type="Some Detachment")
+        army = Army.with_detachment("World Eaters", detachment_type="Some Detachment")
         army.faction_id = "WE"
         sc = _unit("The Silent King", supreme=True, warlord=False)
         other = _unit("Other", supreme=False, warlord=True)
@@ -42,7 +42,7 @@ class TestWarlordAndPactRestrictions(unittest.TestCase):
     def test_pact_of_blood_disallows_blood_legions_army_faction(self):
         from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
-        army = Army("Blood Legions", detachment_type="Some Detachment")
+        army = Army.with_detachment("Blood Legions", detachment_type="Some Detachment")
         army.faction_id = "WE"
         with self.assertRaises(ArmyValidationError):
             army.validate_detachment_rules()
@@ -50,7 +50,7 @@ class TestWarlordAndPactRestrictions(unittest.TestCase):
     def test_pact_of_sorcery_disallows_scintillating_legions_army_faction(self):
         from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
-        army = Army("Scintillating Legions", detachment_type="Some Detachment")
+        army = Army.with_detachment("Scintillating Legions", detachment_type="Some Detachment")
         army.faction_id = "TS"
         with self.assertRaises(ArmyValidationError):
             army.validate_detachment_rules()

@@ -76,9 +76,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Aeldari", detachment_type="Guardian Battlehost")
+    army1 = Army.with_detachment("Aeldari", detachment_type="Guardian Battlehost")
     army1.faction_id = "AE"
-    army2 = Army("Enemy", detachment_type="Other")
+    army2 = Army.with_detachment("Enemy", detachment_type="Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

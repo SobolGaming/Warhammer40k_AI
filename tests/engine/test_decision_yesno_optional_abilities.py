@@ -80,9 +80,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         resolve_decision_command(game, request, option_id, player_id=player.id)
 
     def test_shadow_in_the_warp_queues_and_applies(self):
-        tyr_army = Army("Tyranids", detachment_type="Other")
+        tyr_army = Army.with_detachment("Tyranids", detachment_type="Other")
         tyr_army.faction_id = "TYR"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         tyr_player = Player("Tyr", PlayerControl.REMOTE, army=tyr_army)
@@ -115,9 +115,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(tyr_army.shadow_in_the_warp.used_this_battle)
 
     def test_waaagh_queues_and_applies(self):
-        ork_army = Army("Orks", detachment_type="Other")
+        ork_army = Army.with_detachment("Orks", detachment_type="Other")
         ork_army.faction_id = "ORK"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         ork_player = Player("Ork", PlayerControl.REMOTE, army=ork_army)
@@ -148,10 +148,10 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertIs(mgr.called_player, ork_player)
 
     def test_possessed_lord_queues_and_applies(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
-        other_army = Army("Enemies", detachment_type="Other")
+        other_army = Army.with_detachment("Enemies", detachment_type="Other")
         other_player = Player("Enemy", PlayerControl.REMOTE, army=other_army)
 
         battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
@@ -184,9 +184,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(model.has_used_once_per_battle("possessed_lord"))
 
     def test_fight_phase_melee_ap_boost_queues_and_applies(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -224,9 +224,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(int(model.get_temporary_melee_ap_bonus()), 1)
 
     def test_space_marines_finest_hour_queues_and_applies(self):
-        army = Army("Space Marines", detachment_type="Gladius Task Force")
+        army = Army.with_detachment("Space Marines", detachment_type="Gladius Task Force")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -273,9 +273,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
             self.assertTrue(model.has_used_once_per_battle(buff_key))
 
     def test_the_lion_helm_queues_start_of_phase_mortal_fnp_prompt(self):
-        army = Army("Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Space Marines", detachment_type="Other")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -320,9 +320,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit.has_used_unit_once_per_battle("watcher_in_the_dark:the_lion_helm"))
 
     def test_chance_for_glory_queues_and_applies(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
@@ -362,9 +362,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(int(model.get_temporary_melee_damage_bonus()[0]), 1)
 
     def test_malefic_destruction_queues_and_applies(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
@@ -401,9 +401,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(int(bonus), 3)
 
     def test_movement_phase_normal_move_weapon_attacks_bonus_queues_and_applies(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -447,9 +447,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
             self.assertTrue(model.has_used_once_per_battle(buff_key))
 
     def test_flickerjump_queues_and_applies(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -498,9 +498,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(len(alive), 0)
 
     def test_advance_redeploy_queues_and_creates_placement_decision(self):
-        army = Army("Necrons", detachment_type="Other")
+        army = Army.with_detachment("Necrons", detachment_type="Other")
         army.faction_id = "NEC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Necron", PlayerControl.REMOTE, army=army)
@@ -573,9 +573,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(bool(getattr(unit.round_state, "moved_this_round", False)))
 
     def test_advance_redeploy_skip_calls_prepare_advance(self):
-        army = Army("Orks", detachment_type="Other")
+        army = Army.with_detachment("Orks", detachment_type="Other")
         army.faction_id = "ORK"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Ork", PlayerControl.REMOTE, army=army)
@@ -616,9 +616,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(called["prepare_advance"], 1)
 
     def test_power_from_pain_command_phase_queues_and_applies(self):
-        army = Army("Drukhari", detachment_type="Other")
+        army = Army.with_detachment("Drukhari", detachment_type="Other")
         army.faction_id = "DRU"
-        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Drukhari", PlayerControl.REMOTE, army=army)
@@ -652,9 +652,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(mgr._resolved)
 
     def test_enhancement_fight_first_queues_and_applies(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "CSM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -686,9 +686,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit._activated)
 
     def test_opponent_turn_strategic_reserves_queues_and_applies(self):
-        army = Army("Owner", detachment_type="Other")
+        army = Army.with_detachment("Owner", detachment_type="Other")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "CSM"
 
         owner = Player("Owner", PlayerControl.REMOTE, army=army)
@@ -726,9 +726,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit._entered)
 
     def test_seductive_gambit_queues_and_applies(self):
-        army = Army("Daemons", detachment_type="Other")
+        army = Army.with_detachment("Daemons", detachment_type="Other")
         army.faction_id = "DAE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Daemons", PlayerControl.REMOTE, army=army)
@@ -757,9 +757,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("seductive_gambit_active"))
 
     def test_sensational_performance_queues_and_applies(self):
-        army = Army("Emperors Children", detachment_type="Other")
+        army = Army.with_detachment("Emperors Children", detachment_type="Other")
         army.faction_id = "EC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("EC", PlayerControl.REMOTE, army=army)
@@ -789,9 +789,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("sensational_performance_active"))
 
     def test_cult_ambush_queues_and_applies(self):
-        army = Army("GSC", detachment_type="Other")
+        army = Army.with_detachment("GSC", detachment_type="Other")
         army.faction_id = "GC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("GSC", PlayerControl.REMOTE, army=army)
@@ -827,9 +827,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit._ambush_used)
 
     def test_battle_focus_sudden_strike_queues_and_applies(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Aeldari", PlayerControl.REMOTE, army=army)
@@ -865,9 +865,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("battle_focus_sudden_strike_expires_phase"), "FIGHT_PHASE")
 
     def test_dark_ritual_queues_and_applies(self):
-        army = Army("Chaos Cult", detachment_type="Other")
+        army = Army.with_detachment("Chaos Cult", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)
@@ -909,9 +909,9 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertTrue(unit.can_charge_after_advance())
 
     def test_dark_ritual_rejects_if_demagogue_missing(self):
-        army = Army("Chaos Cult", detachment_type="Other")
+        army = Army.with_detachment("Chaos Cult", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Chaos", PlayerControl.REMOTE, army=army)

@@ -221,9 +221,9 @@ class TestAdeptusCustodesBatch3Abilities(unittest.TestCase):
     def _make_game(self):
         battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield)
-        custodes_army = Army("Adeptus Custodes", detachment_type="Other")
+        custodes_army = Army.with_detachment("Adeptus Custodes", detachment_type="Other")
         custodes_army.faction_id = "AC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
         custodes_player = Player("Custodes", PlayerControl.REMOTE, army=custodes_army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

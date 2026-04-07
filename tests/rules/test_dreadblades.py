@@ -30,7 +30,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
 
 
 def setup_csm_army() -> Army:
-    army = Army("Chaos Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Chaos Space Marines", "Detachment", points_limit=2000)
     army.faction_id = "CSM"
     base = make_unit("CSM Unit", keywords=["CHAOS"], faction_keywords=["HERETIC ASTARTES"])
     army.add_unit(base)

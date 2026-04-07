@@ -51,7 +51,7 @@ def _make_unit(name, *, abilities=None, keywords=None, transport=""):
 
 def test_disembark_decision_applies_manual_positions():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
-    army = Army("Test", "Detachment")
+    army = Army.with_detachment("Test", "Detachment")
     player = Player("P1", PlayerControl.LOCAL, army)
     game = Game(bf, players=[player])
 

@@ -116,7 +116,7 @@ class TestTyranidsArmyRules(unittest.TestCase):
     def test_synapse_battleshock_uses_3d6(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
 
         synapse_unit = self._mk_unit(
@@ -151,7 +151,7 @@ class TestTyranidsArmyRules(unittest.TestCase):
         from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.units import wargear as wargear_mod
 
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
 
         synapse_unit = self._mk_unit(

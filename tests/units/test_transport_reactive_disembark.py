@@ -58,9 +58,9 @@ class TestTransportReactiveDisembark(unittest.TestCase):
         return model
 
     def test_transport_reactive_disembark_remote_queues_decisions(self):
-        army_move = Army("Attackers", detachment_type="Other")
+        army_move = Army.with_detachment("Attackers", detachment_type="Other")
         army_move.faction_id = "ATK"
-        army_react = Army("Defenders", detachment_type="Other")
+        army_react = Army.with_detachment("Defenders", detachment_type="Other")
         army_react.faction_id = "DEF"
 
         moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)
@@ -111,9 +111,9 @@ class TestTransportReactiveDisembark(unittest.TestCase):
             self.assertEqual(ctx.get("reactive_disembark_enemy_unit_id"), get_entity_id(enemy))
 
     def test_transport_reactive_disembark_does_not_auto_resolve_with_decision_hook(self):
-        army_move = Army("Attackers", detachment_type="Other")
+        army_move = Army.with_detachment("Attackers", detachment_type="Other")
         army_move.faction_id = "ATK"
-        army_react = Army("Defenders", detachment_type="Other")
+        army_react = Army.with_detachment("Defenders", detachment_type="Other")
         army_react.faction_id = "DEF"
 
         moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)

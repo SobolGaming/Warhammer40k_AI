@@ -30,7 +30,7 @@ class TestDirectTheSlaughter(unittest.TestCase):
                 return str(kw).strip().lower() == "world eaters"
 
         # Build player/game wiring
-        army = Army("World Eaters", "Berzerker Warband")
+        army = Army.with_detachment("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         dts_unit = _Unit(has_dts=True)
         army.units = [dts_unit]

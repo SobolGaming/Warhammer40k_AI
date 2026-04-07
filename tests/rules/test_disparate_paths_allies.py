@@ -34,7 +34,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
 
 
 def setup_army(*, faction: str = "Drukhari", faction_id: str = "DRU", points_limit: int = 2000) -> Army:
-    army = Army(faction, "Detachment", points_limit=points_limit)
+    army = Army.with_detachment(faction, "Detachment", points_limit=points_limit)
     army.faction_id = faction_id
     return army
 

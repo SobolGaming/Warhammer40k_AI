@@ -84,7 +84,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Test Faction", detachment)
+        army = Army.with_detachment("Test Faction", detachment)
         army.faction_id = faction_id
         target = _make_unit(
             "Target",
@@ -95,7 +95,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         )
         army.add_unit(target)
 
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
         attacker = _make_unit("Attacker", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
         enemy_army.add_unit(attacker)

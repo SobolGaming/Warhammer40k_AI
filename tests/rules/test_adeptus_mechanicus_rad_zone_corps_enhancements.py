@@ -96,9 +96,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, name: str, descriptio
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    admech_army = Army("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
+    admech_army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
     admech_army.faction_id = "ADM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
     p1 = Player("P1", PlayerControl.REMOTE, army=admech_army)
     p2 = Player("P2", PlayerControl.REMOTE, army=enemy_army)
@@ -205,7 +205,7 @@ def test_radial_suffusion_requires_an_active_bearer_on_the_battlefield():
 
 
 def test_malphonic_susurrus_grants_stealth_while_bearer_is_leading():
-    army = Army("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
     army.faction_id = "ADM"
 
     bodyguard = _make_unit("Skitarii Rangers", keywords=["INFANTRY"])
@@ -225,7 +225,7 @@ def test_malphonic_susurrus_grants_stealth_while_bearer_is_leading():
 
 
 def test_peerless_eradicator_grants_sustained_hits_one_to_unit_ranged_attacks_while_leading():
-    army = Army("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
     army.faction_id = "ADM"
 
     bodyguard = _make_unit("Skitarii Vanguard", keywords=["INFANTRY"])
@@ -264,7 +264,7 @@ def test_peerless_eradicator_grants_sustained_hits_one_to_unit_ranged_attacks_wh
 
 
 def test_autoclavic_denunciation_grants_ranged_anti_keywords_to_bearer_only():
-    army = Army("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Rad-Zone Corps")
     army.faction_id = "ADM"
 
     leader = _make_unit("Sydonian Skatros", keywords=["INFANTRY", "CHARACTER"])
@@ -309,4 +309,4 @@ def test_autoclavic_denunciation_grants_ranged_anti_keywords_to_bearer_only():
         model=non_bearer_model,
         weapon_name="Transuranic Arquebus",
     )
-    assert list(non_bearer_ranged.get("anti_specs") or []) == []
+    assert list(non_bearer_ranged.get("anti_specs") or []) == []

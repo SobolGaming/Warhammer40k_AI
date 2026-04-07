@@ -38,7 +38,7 @@ class ShadowStub:
 
 
 def _make_daemonic_army(within_shadow: bool):
-    army = Army("Chaos Daemons", "Daemonic Incursion")
+    army = Army.with_detachment("Chaos Daemons", "Daemonic Incursion")
     army.faction_id = "CD"
     army.shadow_of_chaos = ShadowStub(within_shadow)
     player = Player("P1", PlayerControl.LOCAL, army)
@@ -193,12 +193,12 @@ def test_soulstealer_heals_on_melee_kill_with_shadow_bonus(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army = Army("Chaos Daemons", "Daemonic Incursion")
+    army = Army.with_detachment("Chaos Daemons", "Daemonic Incursion")
     army.faction_id = "CD"
     army.shadow_of_chaos = ShadowStub(True)
     p1 = Player("P1", PlayerControl.LOCAL, army)
 
-    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army.with_detachment("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 

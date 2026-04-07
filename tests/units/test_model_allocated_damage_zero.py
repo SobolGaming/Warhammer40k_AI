@@ -70,9 +70,9 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         target_unit = _make_unit("Sorcerer", abilities=[ability], wounds=3)
         attacker_unit = _make_unit("Attacker", wounds=3)
 
-        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
         attacker_army.faction_id = "ATK"
-        defender_army = Army("Defender", detachment_type="Other")
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
         defender_army.faction_id = "DEF"
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
         defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
@@ -125,9 +125,9 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         target_unit.models[0].name = "Fabius Bile"
         attacker_unit = _make_unit("Attacker", wounds=3)
 
-        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
         attacker_army.faction_id = "ATK"
-        defender_army = Army("Defender", detachment_type="Other")
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
         defender_army.faction_id = "CSM"
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
         defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
@@ -167,9 +167,9 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         target_unit = _make_unit("Rogal Dorn", abilities=[ability], wounds=3)
         attacker_unit = _make_unit("Attacker", wounds=3)
 
-        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
         attacker_army.faction_id = "ATK"
-        defender_army = Army("Defender", detachment_type="Other")
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
         defender_army.faction_id = "AM"
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
         defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
@@ -209,9 +209,9 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         target_unit = _make_unit("Transport", abilities=[ability], wounds=5)
         attacker_unit = _make_unit("Attacker", wounds=3)
 
-        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
         attacker_army.faction_id = "ATK"
-        defender_army = Army("Defender", detachment_type="Other")
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
         defender_army.faction_id = "TAU"
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
         defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)

@@ -121,9 +121,9 @@ def _set_model_location(unit: Unit, *, x: float, y: float) -> None:
 
 
 def _build_corsair_game():
-    aeldari_army = Army("Aeldari", "Corsair Coterie")
+    aeldari_army = Army.with_detachment("Aeldari", "Corsair Coterie")
     aeldari_army.faction_id = "AE"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     aeldari_player = Player("Aeldari", control=PlayerControl.LOCAL, army=aeldari_army)
@@ -175,7 +175,7 @@ def _make_test_ranged_profile(
 
 class TestAeldariCorsairCoterieEnhancements(unittest.TestCase):
     def test_veterans_of_the_void_allows_non_character_anhrathe_enhancement(self):
-        army = Army("Aeldari", "Corsair Coterie")
+        army = Army.with_detachment("Aeldari", "Corsair Coterie")
         army.faction_id = "AE"
         unit = _DummyUnit(
             "Corsair Voidreavers",
@@ -188,7 +188,7 @@ class TestAeldariCorsairCoterieEnhancements(unittest.TestCase):
         self.assertIs(unit.enhancement, enhancement)
 
     def test_non_veterans_detachment_keeps_character_requirement(self):
-        army = Army("Aeldari", "Warhost")
+        army = Army.with_detachment("Aeldari", "Warhost")
         army.faction_id = "AE"
         unit = _DummyUnit(
             "Corsair Voidreavers",
@@ -201,7 +201,7 @@ class TestAeldariCorsairCoterieEnhancements(unittest.TestCase):
             army.add_enhancement(enhancement, unit)
 
     def test_veterans_of_the_void_replaces_three_enhancement_cap(self):
-        army = Army("Aeldari", "Corsair Coterie")
+        army = Army.with_detachment("Aeldari", "Corsair Coterie")
         army.faction_id = "AE"
 
         units = [
@@ -268,7 +268,7 @@ class TestAeldariCorsairCoterieEnhancementEffects(unittest.TestCase):
         self.assertEqual(int(enemy_oc_two.models[0].objective_control), 1)
 
     def test_voidstone_grants_5_plus_invulnerable_save_to_bearer_unit(self):
-        army = Army("Aeldari", "Corsair Coterie")
+        army = Army.with_detachment("Aeldari", "Corsair Coterie")
         army.faction_id = "AE"
         unit = _make_unit(
             "Corsair Voidreavers",

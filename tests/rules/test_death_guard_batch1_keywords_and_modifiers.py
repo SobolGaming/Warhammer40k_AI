@@ -57,9 +57,9 @@ class TestDeathGuardBatch1KeywordsAndModifiers(unittest.TestCase):
         bodyguard.attached_leaders = [leader]
 
     def test_foul_infusion_grants_lethal_hits_and_crit_5_plus(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         foul_text = (
@@ -85,9 +85,9 @@ class TestDeathGuardBatch1KeywordsAndModifiers(unittest.TestCase):
         self.assertEqual(mods.get("crit_hit_threshold"), 5)
 
     def test_vector_of_disease_grants_sustained_hits_and_lance(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         vector_text = (
@@ -110,9 +110,9 @@ class TestDeathGuardBatch1KeywordsAndModifiers(unittest.TestCase):
         self.assertTrue(bool(bonuses.get("lance")))
 
     def test_gift_of_contagion_targets_afflicted_units(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         gift_text = (
@@ -139,7 +139,7 @@ class TestDeathGuardBatch1KeywordsAndModifiers(unittest.TestCase):
         self.assertEqual(int(clean_bonuses.get("sustained_hits_value") or 0), 0)
 
     def test_malicious_calculations_detects_ignore_modifier_rule(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
         ability_desc = (
             "While this model is leading a unit, each time a model in that unit makes an attack, you can ignore any or all modifiers "

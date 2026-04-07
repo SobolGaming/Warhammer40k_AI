@@ -120,9 +120,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    am_army = Army("Astra Militarum", detachment_type="Combined Regiment")
+    am_army = Army.with_detachment("Astra Militarum", detachment_type="Combined Regiment")
     am_army.faction_id = "AM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     am_player = Player("AM", PlayerControl.REMOTE, army=am_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -136,8 +136,8 @@ def _build_game():
 
 def _attach_simple_map(units_a: list[Unit], units_b: list[Unit]) -> Map:
     game_map = Map(width=48, height=72)
-    army_a = Army("Army A", "Detachment A")
-    army_b = Army("Army B", "Detachment B")
+    army_a = Army.with_detachment("Army A", "Detachment A")
+    army_b = Army.with_detachment("Army B", "Detachment B")
     for unit in list(units_a or []):
         army_a.add_unit(unit)
     for unit in list(units_b or []):

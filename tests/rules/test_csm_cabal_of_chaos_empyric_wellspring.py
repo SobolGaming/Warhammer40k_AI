@@ -75,11 +75,11 @@ def _make_profile(*, melee: bool, strength: int = 4, ap: int = 0) -> WargearProf
 
 
 def test_empyric_wellspring_leaping_warpflame_adds_ranged_strength_within_9():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
     _set_phase(army, "SHOOTING_PHASE")
 
-    enemy_army = Army("Other", detachment_type="Other")
+    enemy_army = Army.with_detachment("Other", detachment_type="Other")
 
     attacker = _make_unit("Legionaries", army, keywords=["HERETIC ASTARTES"], faction_keywords=["HERETIC ASTARTES"])
     psyker = _make_unit("Sorcerer", army, keywords=["HERETIC ASTARTES", "PSYKER"], faction_keywords=["HERETIC ASTARTES"])
@@ -109,11 +109,11 @@ def test_empyric_wellspring_leaping_warpflame_adds_ranged_strength_within_9():
 
 
 def test_empyric_wellspring_monstrous_manifestation_adds_melee_ap_within_9():
-    army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
     army.faction_id = "CSM"
     _set_phase(army, "FIGHT_PHASE")
 
-    enemy_army = Army("Other", detachment_type="Other")
+    enemy_army = Army.with_detachment("Other", detachment_type="Other")
 
     attacker = _make_unit("Legionaries", army, keywords=["HERETIC ASTARTES"], faction_keywords=["HERETIC ASTARTES"])
     daemon_prince = _make_unit(

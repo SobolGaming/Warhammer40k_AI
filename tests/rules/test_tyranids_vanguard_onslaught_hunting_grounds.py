@@ -61,9 +61,9 @@ def _make_model(name, unit, x=0.0, y=0.0):
 
 class TestTyranidsVanguardOnslaughtHuntingGrounds(unittest.TestCase):
     def _build_game(self):
-        tyr_army = Army("Tyranids", detachment_type="Vanguard Onslaught")
+        tyr_army = Army.with_detachment("Tyranids", detachment_type="Vanguard Onslaught")
         tyr_army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         tyr_player = Player("Tyr", PlayerControl.REMOTE, army=tyr_army)

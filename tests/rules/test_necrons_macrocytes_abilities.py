@@ -82,9 +82,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    necron_army = Army("Necrons", detachment_type="Other")
+    necron_army = Army.with_detachment("Necrons", detachment_type="Other")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", PlayerControl.REMOTE, army=necron_army)
     p2 = Player("P2", PlayerControl.REMOTE, army=enemy_army)

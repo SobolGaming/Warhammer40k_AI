@@ -174,8 +174,8 @@ def test_phase_b_dynamic_overlay_uses_army_identity() -> None:
     ally = _make_unit("Ally", x=13.0, y=10.0)
     enemy_same_faction = _make_unit("EnemyMirror", x=16.0, y=10.0)
 
-    army_a = Army("MirrorFaction", "Detachment A")
-    army_b = Army("MirrorFaction", "Detachment B")
+    army_a = Army.with_detachment("MirrorFaction", "Detachment A")
+    army_b = Army.with_detachment("MirrorFaction", "Detachment B")
     moving.set_parent_army(army_a)
     ally.set_parent_army(army_a)
     enemy_same_faction.set_parent_army(army_b)

@@ -151,9 +151,9 @@ def _build_game(*, army: Army, enemy_army: Army, phase_name: str = "SHOOTING_PHA
 
 
 def _build_real_game():
-    army = Army("Thousand Sons", "Warpforged Cabal")
+    army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     player = Player("Player", PlayerControl.REMOTE, army=army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -197,9 +197,9 @@ def _attach_leader(bodyguard: Unit, leader: Unit) -> None:
 
 
 def test_warpfire_infusion_nearby_psyker_grants_one_hit_wound_and_damage_reroll():
-    army = Army("Thousand Sons", "Warpforged Cabal")
+    army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     vehicle = _make_unit(
@@ -235,9 +235,9 @@ def test_warpfire_infusion_nearby_psyker_grants_one_hit_wound_and_damage_reroll(
 
 
 def test_warpfire_infusion_without_nearby_psyker_allows_only_one_total_reroll():
-    army = Army("Thousand Sons", "Warpforged Cabal")
+    army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     vehicle = _make_unit(
@@ -265,9 +265,9 @@ def test_warpfire_infusion_without_nearby_psyker_allows_only_one_total_reroll():
 
 
 def test_warpfire_infusion_rerolls_hit_wound_and_damage_in_attack_resolution(monkeypatch):
-    army = Army("Thousand Sons", "Warpforged Cabal")
+    army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     vehicle = _make_unit(
@@ -345,9 +345,9 @@ def test_warpfire_infusion_rerolls_hit_wound_and_damage_in_attack_resolution(mon
 
 
 def test_warpfire_infusion_deadly_demise_triggers_on_five_when_near_psyker(monkeypatch):
-    army = Army("Thousand Sons", "Warpforged Cabal")
+    army = Army.with_detachment("Thousand Sons", "Warpforged Cabal")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     vehicle = _make_unit(

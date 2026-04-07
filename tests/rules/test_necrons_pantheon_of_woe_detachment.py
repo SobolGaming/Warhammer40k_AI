@@ -72,9 +72,9 @@ def _make_ranged_profile(weapon, *, ap: int = 0) -> WargearProfile:
 
 
 def _build_game():
-    necron_army = Army("Necrons", "Pantheon of Woe")
+    necron_army = Army.with_detachment("Necrons", "Pantheon of Woe")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     necron_player = Player("Necrons", control=PlayerControl.REMOTE, army=necron_army)
@@ -171,7 +171,7 @@ class TestNecronsPantheonOfWoeDetachment(unittest.TestCase):
         self.assertEqual(surged_ap, -1)
 
     def test_pantheon_of_woe_applies_mandatory_necrodermal_binding_surcharges(self):
-        army = Army("Necrons", "Pantheon of Woe")
+        army = Army.with_detachment("Necrons", "Pantheon of Woe")
         army.faction_id = "NEC"
 
         expected_costs = {
@@ -190,7 +190,7 @@ class TestNecronsPantheonOfWoeDetachment(unittest.TestCase):
         self.assertEqual(int(warriors.get_unit_cost()), 100)
 
     def test_necrodermal_binding_surcharge_counts_toward_points_limit(self):
-        army = Army("Necrons", "Pantheon of Woe", points_limit=130)
+        army = Army.with_detachment("Necrons", "Pantheon of Woe", points_limit=130)
         army.faction_id = "NEC"
         deceiver = _make_unit("C'tan Shard of the Deceiver", keywords=["MONSTER"], faction_keywords=["NECRONS"], cost=100)
         army.add_unit(deceiver)

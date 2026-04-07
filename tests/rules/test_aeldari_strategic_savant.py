@@ -23,7 +23,7 @@ class TestAeldariStrategicSavant(unittest.TestCase):
     def test_strategic_savant_adds_objective_control(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Aeldari", detachment_type="Aspect Host")
+        army = Army.with_detachment("Aeldari", detachment_type="Aspect Host")
         army.faction_id = "AE"
 
         bodyguard = self._make_unit(army, name="Dire Avengers", keywords=["Aspect Warriors"])

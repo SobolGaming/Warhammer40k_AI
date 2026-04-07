@@ -107,9 +107,9 @@ def _add_objective(game: Game, *, x: float, y: float, objective_id: str = "obj-1
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    necron_army = Army("Necrons", "Cryptek Conclave")
+    necron_army = Army.with_detachment("Necrons", "Cryptek Conclave")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     necron_player = Player("Necrons", control=PlayerControl.LOCAL, army=necron_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

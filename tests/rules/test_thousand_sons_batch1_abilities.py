@@ -54,9 +54,9 @@ def _build_game():
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("P1", "Det")
+    army1 = Army.with_detachment("P1", "Det")
     army1.faction_id = "TST"
-    army2 = Army("P2", "Det")
+    army2 = Army.with_detachment("P2", "Det")
     army2.faction_id = "TST"
 
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
@@ -204,7 +204,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         unit.models[0].wounds = 1
         unit.models[1].wounds = 1
 
-        army = Army("Thousand Sons", "Det")
+        army = Army.with_detachment("Thousand Sons", "Det")
         army.faction_id = "TS"
         army.add_unit(unit)
         player = Player("TS", control=PlayerControl.REMOTE, army=army)
@@ -233,7 +233,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         model = unit.models[0]
         model.wounds = 1
 
-        army = Army("Thousand Sons", "Det")
+        army = Army.with_detachment("Thousand Sons", "Det")
         army.faction_id = "TS"
         army.add_unit(unit)
         player = Player("TS", control=PlayerControl.REMOTE, army=army)

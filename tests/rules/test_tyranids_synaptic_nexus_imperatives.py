@@ -175,9 +175,9 @@ class TestSynapticNexusImperatives(unittest.TestCase):
         return None
 
     def test_synaptic_imperatives_queue_and_resolve_once_per_round(self):
-        army = Army("Tyranids", detachment_type="Synaptic Nexus")
+        army = Army.with_detachment("Tyranids", detachment_type="Synaptic Nexus")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

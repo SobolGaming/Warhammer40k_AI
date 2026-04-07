@@ -118,9 +118,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    pactbound_army = Army("Chaos Space Marines", "Pactbound Zealots")
+    pactbound_army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     pactbound_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     pactbound_player = Player("Pactbound", control=PlayerControl.REMOTE, army=pactbound_army)

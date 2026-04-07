@@ -111,9 +111,9 @@ def _mock_unit(name: str, *, abilities: list[dict], keywords: list[str] | None =
 
 def _build_game() -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", "Other")
+    ork_army = Army.with_detachment("Orks", "Other")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ork_player = Player("Orks", control=PlayerControl.REMOTE, army=ork_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

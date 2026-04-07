@@ -60,9 +60,9 @@ def _make_unit(name: str, *, abilities=None, keywords=None, faction_keywords=Non
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    admech_army = Army("Adeptus Mechanicus", detachment_type="Other")
+    admech_army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Other")
     admech_army.faction_id = "ADM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     admech_player = Player("P1", PlayerControl.REMOTE, army=admech_army)
     enemy_player = Player("P2", PlayerControl.REMOTE, army=enemy_army)

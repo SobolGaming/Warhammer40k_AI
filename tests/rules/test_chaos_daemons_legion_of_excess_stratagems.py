@@ -86,9 +86,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    legion_army = Army("Chaos Daemons", "Legion of Excess")
+    legion_army = Army.with_detachment("Chaos Daemons", "Legion of Excess")
     legion_army.faction_id = "CD"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     legion_player = Player("P1", control=PlayerControl.LOCAL, army=legion_army)

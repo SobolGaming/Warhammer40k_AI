@@ -87,9 +87,9 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]) -> tuple[Game, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", "Da Big Hunt")
+    ork_army = Army.with_detachment("Orks", "Da Big Hunt")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ork_player = Player("Orks", control=PlayerControl.REMOTE, army=ork_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

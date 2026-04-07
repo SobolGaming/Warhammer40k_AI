@@ -66,9 +66,9 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         return model
 
     def test_swift_demise_closest_target_rule(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         ability_desc = (
@@ -118,7 +118,7 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertFalse(unit.is_target_closest_eligible(model, weapon_profile, far_enemy, dummy_map))
 
     def test_overlord_leading_wound_reroll_full_below_starting(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
 
         ability_desc = (
@@ -150,9 +150,9 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertFalse(mods.get("reroll_wound_full"))
 
     def test_empowered_by_death_fight_first_activation(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -189,7 +189,7 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertFalse(unit_full.has_fight_first())
 
     def test_lithe_embarkation_specs(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         ability_desc = (
             "At the end of the Fight phase, if there are no models currently embarked within this TRANSPORT, "
@@ -207,7 +207,7 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertEqual(specs[0].get("range"), 6)
 
     def test_no_escape_flags_selected_to_fall_back(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         ability_desc = (
             "Each time an enemy unit (excluding MONSTERS and VEHICLES) within Engagement Range of one or more units from your army with this ability "
@@ -224,7 +224,7 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertEqual(sr.get("enemy_fallback_desperate_escape_bs_penalty"), 1)
 
     def test_titanic_agility_move_through_flags(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         ability_desc = (
             "Each time this model makes a Normal, Advance or Fall Back move, it can move through models and terrain features. "
@@ -246,7 +246,7 @@ class TestAeldariBatch2Abilities(unittest.TestCase):
         self.assertTrue(rules.get("cannot_end_in_engagement_range"))
 
     def test_titanic_strides_block_titanic(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         ability_desc = (
             "Each time this model makes a Normal, Advance or Fall Back move, it can move through models (excluding TITANIC models) and sections of terrain features "

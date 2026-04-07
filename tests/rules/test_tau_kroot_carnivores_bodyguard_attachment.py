@@ -98,7 +98,7 @@ def _kroot_carnivores_bodyguard_ability() -> Ability:
 
 
 def _build_army(units):
-    army = Army(faction="T'au Empire", detachment_type="Kroot Hunting Pack", points_limit=2000)
+    army = Army.with_detachment(faction="T'au Empire", detachment_type="Kroot Hunting Pack", points_limit=2000)
     army.player = _DummyPlayer()
     army.units = list(units)
     for unit in list(army.units):

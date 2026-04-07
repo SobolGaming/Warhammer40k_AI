@@ -44,8 +44,8 @@ def _build_game(waha_helper):
     unit_one = Unit(datasheet_one)
     unit_two = Unit(datasheet_two)
 
-    army_one = Army(faction=unit_one.faction, detachment_type="")
-    army_two = Army(faction=unit_two.faction, detachment_type="")
+    army_one = Army(faction=unit_one.faction)
+    army_two = Army(faction=unit_two.faction)
     unit_one.parent_army = army_one
     unit_two.parent_army = army_two
     army_one.units.append(unit_one)
@@ -263,7 +263,11 @@ def test_snapshot_fixed_point_coordinates(waha_helper):
 
 
 def test_snapshot_roundtrip_preserves_polygon_objective_site() -> None:
-    player = Player("Player One", control=PlayerControl.LOCAL, army=Army("Chaos Daemons", "Test"))
+    player = Player(
+        "Player One",
+        control=PlayerControl.LOCAL,
+        army=Army.with_detachment("Chaos Daemons", "Test"),
+    )
     game = Game(Battlefield(width=60, height=44), players=[player])
     site = ObjectiveSite.terrain_footprint(
         footprint=ShapelyPolygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
@@ -337,7 +341,7 @@ def test_snapshot_roundtrip_preserves_wargear_profile_references(waha_helper):
 
 
 def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     apply_validated_muster_to_army(
         army,
@@ -403,7 +407,7 @@ def test_snapshot_roundtrip_preserves_army_build_descriptor_context() -> None:
 
 
 def test_snapshot_serializes_primary_detachment_type_surface() -> None:
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     player = Player("Player One", control=PlayerControl.LOCAL, army=army)
     game = Game(Battlefield(width=60, height=44), players=[player])
 
@@ -423,7 +427,7 @@ def test_snapshot_roundtrip_preserves_authored_leader_attachment_runtime_state(w
     captain = Unit(captain_datasheet)
     bodyguard = Unit(bodyguard_datasheet)
 
-    army = Army("Space Marines", "Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     army.add_unit(captain)
     army.add_unit(bodyguard)

@@ -10,10 +10,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 
@@ -59,10 +59,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "SUSTAINED HITS 1"}
 
@@ -114,10 +114,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 
@@ -149,10 +149,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 
@@ -184,10 +184,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
         from warhammer40k_ai.engine.decisions import DecisionResult
 
-        army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = SimpleNamespace(name="SHOOTING_PHASE")
 
@@ -240,10 +240,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.utility.entity_ids import get_entity_id
 
-        army = Army("Chaos Space Marines", detachment_type="Cabal of Chaos")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Cabal of Chaos")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = SimpleNamespace(name="SHOOTING_PHASE")
 
@@ -294,10 +294,10 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
-        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army.with_detachment("Other", "Other"))
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = SimpleNamespace(name="SHOOTING_PHASE")
 
@@ -331,9 +331,9 @@ class TestDarkPacts(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Other", "Other")
+        enemy_army = Army.with_detachment("Other", "Other")
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
         p2 = Player("P2", PlayerControl.REMOTE, army=enemy_army)
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])

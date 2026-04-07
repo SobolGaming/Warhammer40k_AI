@@ -107,9 +107,9 @@ def _set_unit_location(unit: Unit, *, x: float, y: float, z: float = 0.0) -> Non
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Chaos Space Marines", detachment_type="Other")
+    army1 = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
     army1.faction_id = "CSM"
-    army2 = Army("Enemy", detachment_type="Other")
+    army2 = Army.with_detachment("Enemy", detachment_type="Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

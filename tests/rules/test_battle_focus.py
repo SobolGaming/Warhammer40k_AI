@@ -23,7 +23,8 @@ class _DummyPlayer:
 
 class _DummyArmy(Army):
     def __init__(self, units, *, faction_id="AE", faction="Aeldari", points_limit=2000, detachment_type="Other Detachment"):
-        super().__init__(faction, detachment_type, points_limit)
+        super().__init__(faction, points_limit)
+        self._seed_initial_detachment(detachment_type)
         self.faction_id = faction_id
         self.units = list(units or [])
         self.player = _DummyPlayer()
@@ -298,9 +299,9 @@ class TestBattleFocusRemoteDecisions(unittest.TestCase):
         return model
 
     def _build_game(self, *, reacting_control=PlayerControl.REMOTE):
-        army_move = Army("Moving Army", detachment_type="Other")
+        army_move = Army.with_detachment("Moving Army", detachment_type="Other")
         army_move.faction_id = "OT"
-        army_react = Army("Aeldari", detachment_type="Other")
+        army_react = Army.with_detachment("Aeldari", detachment_type="Other")
         army_react.faction_id = "AE"
 
         moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)

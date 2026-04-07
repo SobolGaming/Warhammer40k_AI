@@ -44,9 +44,9 @@ def _build_game():
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    enemy_army = Army("Enemy", "Det")
+    enemy_army = Army.with_detachment("Enemy", "Det")
     enemy_army.faction_id = "SM"
-    owner_army = Army("Owner", "Det")
+    owner_army = Army.with_detachment("Owner", "Det")
     owner_army.faction_id = "AE"
 
     enemy = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

@@ -80,9 +80,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army1 = Army("Necrons", "Det")
+    army1 = Army.with_detachment("Necrons", "Det")
     army1.faction_id = "NEC"
-    army2 = Army("Enemy", "Det")
+    army2 = Army.with_detachment("Enemy", "Det")
     army2.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)

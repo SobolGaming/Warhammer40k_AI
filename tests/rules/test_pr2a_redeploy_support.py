@@ -74,9 +74,9 @@ def _make_unit(name, army, *, keywords=None, faction_keywords=None, x=0.0, y=0.0
 
 
 def _build_game(*, faction_id: str):
-    army = Army("Primary", detachment_type="Test")
+    army = Army.with_detachment("Primary", detachment_type="Test")
     army.faction_id = faction_id
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     player = Player("Player", PlayerControl.REMOTE, army=army)

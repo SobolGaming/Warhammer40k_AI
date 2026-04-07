@@ -96,9 +96,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    shadow_army = Army("Chaos Daemons", "Shadow Legion")
+    shadow_army = Army.with_detachment("Chaos Daemons", "Shadow Legion")
     shadow_army.faction_id = "CD"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     shadow_player = Player("P1", control=PlayerControl.LOCAL, army=shadow_army)

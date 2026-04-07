@@ -91,9 +91,9 @@ def _set_model_location(unit: Unit, x: float, y: float) -> None:
 
 def _build_game(detachment: str = "Dêlve Assault Shift"):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    lov_army = Army("Leagues of Votann", detachment)
+    lov_army = Army.with_detachment("Leagues of Votann", detachment)
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     player = Player("P1", control=PlayerControl.REMOTE, army=lov_army)
     enemy_player = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

@@ -78,8 +78,8 @@ def test_chirurgeon_returns_model_and_reattaches_to_bodyguard():
 
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    army = Army("CSM", "Chaos")
-    enemy_army = Army("Enemy", "Enemy")
+    army = Army.with_detachment("CSM", "Chaos")
+    enemy_army = Army.with_detachment("Enemy", "Enemy")
     player = Player("P1", PlayerControl.LOCAL, army)
     enemy = Player("P2", PlayerControl.LOCAL, enemy_army)
     game.add_player(player)

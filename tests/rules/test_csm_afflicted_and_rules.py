@@ -74,9 +74,9 @@ def _make_model(name, unit, x, y):
 
 
 def _build_game():
-    army_a = Army("Army A", detachment_type="Other")
+    army_a = Army.with_detachment("Army A", detachment_type="Other")
     army_a.faction_id = "CSM"
-    army_b = Army("Army B", detachment_type="Other")
+    army_b = Army.with_detachment("Army B", detachment_type="Other")
     army_b.faction_id = "ENEMY"
 
     player_a = Player("Player A", PlayerControl.LOCAL, army=army_a)
@@ -211,7 +211,7 @@ def test_csm_infused_with_blessings_has_no_effect_when_disabled():
 
 
 def test_csm_hamadrya_knowledge_parses_once_per_battle_round_reactive_move():
-    army = Army("CSM", detachment_type="Other")
+    army = Army.with_detachment("CSM", detachment_type="Other")
     unit = _make_unit(
         "Huron Blackheart",
         army,
@@ -229,7 +229,7 @@ def test_csm_hamadrya_knowledge_parses_once_per_battle_round_reactive_move():
 
 
 def test_csm_malign_cover_fortification_rule_parses():
-    army = Army("CSM", detachment_type="Other")
+    army = Army.with_detachment("CSM", detachment_type="Other")
     unit = _make_unit(
         "Noctilith Crown",
         army,
@@ -241,4 +241,4 @@ def test_csm_malign_cover_fortification_rule_parses():
 
     rule = unit.get_fortification_cover_rule()
     assert isinstance(rule, dict)
-    assert str(rule.get("source", "")) == "Malign Cover"
+    assert str(rule.get("source", "")) == "Malign Cover"

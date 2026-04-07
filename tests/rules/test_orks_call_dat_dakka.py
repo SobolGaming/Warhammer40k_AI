@@ -89,9 +89,9 @@ def _normalize_name(value: str) -> str:
 
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", "More Dakka!")
+    ork_army = Army.with_detachment("Orks", "More Dakka!")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(ork_units or []):

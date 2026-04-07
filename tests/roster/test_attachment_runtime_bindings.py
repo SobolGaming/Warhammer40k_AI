@@ -92,7 +92,7 @@ class _TestUnit(Unit):
 
 
 def _make_army(units: list[Unit]) -> Army:
-    army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+    army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
     army.player = _DummyPlayer()
     for unit in units:
         army.add_unit(unit)

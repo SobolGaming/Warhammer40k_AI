@@ -74,9 +74,9 @@ class TestNecronsHyperspaceHunters(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army_move = Army("Moving Army", detachment_type="Other")
+        army_move = Army.with_detachment("Moving Army", detachment_type="Other")
         army_move.faction_id = "MOVE"
-        army_react = Army("Necrons", detachment_type="Other")
+        army_react = Army.with_detachment("Necrons", detachment_type="Other")
         army_react.faction_id = "NEC"
 
         moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)

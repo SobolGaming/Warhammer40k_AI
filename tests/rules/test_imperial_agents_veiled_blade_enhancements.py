@@ -111,9 +111,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    ia_army = Army("Imperial Agents", "Veiled Blade Elimination Force")
+    ia_army = Army.with_detachment("Imperial Agents", "Veiled Blade Elimination Force")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
@@ -196,7 +196,7 @@ def test_veiled_blade_enhancement_descriptors_registered():
 
 
 def test_micromelta_rounds_grants_anti_keywords_to_bearer_exitus_rifle_only():
-    army = Army("Imperial Agents", "Veiled Blade Elimination Force")
+    army = Army.with_detachment("Imperial Agents", "Veiled Blade Elimination Force")
     army.faction_id = "AOI"
 
     vindicare = _make_unit(

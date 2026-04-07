@@ -88,9 +88,9 @@ def _make_profile(*, name: str, weapon_type: str, strength: str):
 
 class TestDrukhariCoveniteCoterieStitchfleshAbominations(unittest.TestCase):
     def test_stitchflesh_applies_to_haemonculus_covens_when_strength_gt_toughness(self):
-        coterie_army = Army("Drukhari", "Covenite Coterie")
+        coterie_army = Army.with_detachment("Drukhari", "Covenite Coterie")
         coterie_army.faction_id = "DRU"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         covens_defender = _make_unit(
@@ -161,9 +161,9 @@ class TestDrukhariCoveniteCoterieStitchfleshAbominations(unittest.TestCase):
         self.assertFalse(any("Stitchflesh Abominations" in m for m in list(non_covens_result.get("modifiers", []) or [])))
 
     def test_stitchflesh_does_not_apply_outside_covenite_coterie(self):
-        non_coterie_army = Army("Drukhari", "Realspace Raiders")
+        non_coterie_army = Army.with_detachment("Drukhari", "Realspace Raiders")
         non_coterie_army.faction_id = "DRU"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         covens_defender = _make_unit(

@@ -76,9 +76,9 @@ def _make_unit(
 
 def _build_game(detachment_type: str = "Assimilation Swarm"):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tyr_army = Army("Tyranids", detachment_type)
+    tyr_army = Army.with_detachment("Tyranids", detachment_type)
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tyr_player = Player("Tyr", control=PlayerControl.LOCAL, army=tyr_army)

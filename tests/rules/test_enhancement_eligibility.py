@@ -44,7 +44,7 @@ def _load_enhancement(name: str) -> Enhancement:
 
 
 def test_disciple_of_khorne_eligibility_enforced():
-    army = Army("World Eaters", "Khorne Daemonkin")
+    army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
     army.faction_id = "WE"
     enhancement = _load_enhancement("Disciple of Khorne")
 
@@ -67,7 +67,7 @@ def test_disciple_of_khorne_eligibility_enforced():
 
 
 def test_dread_majesty_eligibility_enforced():
-    army = Army("Necrons", "Starshatter Arsenal")
+    army = Army.with_detachment("Necrons", "Starshatter Arsenal")
     army.faction_id = "NEC"
     enhancement = _load_enhancement("Dread Majesty (Aura)")
 
@@ -90,7 +90,7 @@ def test_dread_majesty_eligibility_enforced():
 
 
 def test_rise_to_the_challenge_requires_infantry():
-    army = Army("Emperor's Children", "Peerless Bladesmen")
+    army = Army.with_detachment("Emperor's Children", "Peerless Bladesmen")
     army.faction_id = "EC"
     enhancement = _load_enhancement("Rise to the Challenge")
 

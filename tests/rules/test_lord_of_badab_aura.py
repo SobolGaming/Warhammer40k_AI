@@ -55,9 +55,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=Non
 
 def test_lord_of_badab_aura_adds_oc_for_eligible_units_only():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army = Army("CSM", "Renegade Raiders")
+    army = Army.with_detachment("CSM", "Renegade Raiders")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

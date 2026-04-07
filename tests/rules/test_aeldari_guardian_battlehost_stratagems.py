@@ -83,9 +83,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 2
 
-    aeldari_army = Army("Aeldari", "Guardian Battlehost")
+    aeldari_army = Army.with_detachment("Aeldari", "Guardian Battlehost")
     aeldari_army.faction_id = "AE"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("Aeldari", control=PlayerControl.LOCAL, army=aeldari_army)

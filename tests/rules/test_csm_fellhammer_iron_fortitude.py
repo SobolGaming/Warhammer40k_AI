@@ -88,9 +88,9 @@ def _make_profile(*, name: str, weapon_type: str, strength: str):
 
 class TestCsmFellhammerIronFortitude(unittest.TestCase):
     def test_iron_fortitude_applies_only_to_eligible_ranged_strength_gt_toughness_attacks(self):
-        fellhammer_army = Army("Chaos Space Marines", "Fellhammer Siege-host")
+        fellhammer_army = Army.with_detachment("Chaos Space Marines", "Fellhammer Siege-host")
         fellhammer_army.faction_id = "CSM"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         defender = _make_unit(
@@ -161,9 +161,9 @@ class TestCsmFellhammerIronFortitude(unittest.TestCase):
         self.assertFalse(any("Iron Fortitude" in m for m in list(damned_result.get("modifiers", []) or [])))
 
     def test_iron_fortitude_does_not_apply_outside_fellhammer(self):
-        non_fellhammer_army = Army("Chaos Space Marines", "Renegade Raiders")
+        non_fellhammer_army = Army.with_detachment("Chaos Space Marines", "Renegade Raiders")
         non_fellhammer_army.faction_id = "CSM"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         defender = _make_unit(

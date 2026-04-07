@@ -90,9 +90,9 @@ def _mark_deployed(*units: Unit) -> None:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Imperialis Fleet")
+    ia_army = Army.with_detachment("Imperial Agents", "Imperialis Fleet")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ia_player = Player("Imperial Agents", control=PlayerControl.REMOTE, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

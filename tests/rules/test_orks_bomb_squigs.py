@@ -109,9 +109,9 @@ class TestOrksBombSquigs(unittest.TestCase):
         return model
 
     def _setup_game(self):
-        ork_army = Army("Orks", detachment_type="Other")
+        ork_army = Army.with_detachment("Orks", detachment_type="Other")
         ork_army.faction_id = "ORK"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         ork_player = Player("Ork", PlayerControl.REMOTE, army=ork_army)

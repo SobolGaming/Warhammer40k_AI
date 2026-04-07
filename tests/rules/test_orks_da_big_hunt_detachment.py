@@ -67,9 +67,9 @@ def _make_profile(*, range_val: str = "24", is_ranged: bool = True) -> WargearPr
 
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", "Da Big Hunt")
+    ork_army = Army.with_detachment("Orks", "Da Big Hunt")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(ork_units or []):

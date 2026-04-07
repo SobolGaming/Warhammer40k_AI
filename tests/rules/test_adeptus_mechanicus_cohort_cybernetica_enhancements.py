@@ -110,9 +110,9 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    admech_army = Army("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
+    admech_army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Cohort Cybernetica")
     admech_army.faction_id = "ADM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     admech_player = Player("AdMech", PlayerControl.REMOTE, army=admech_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

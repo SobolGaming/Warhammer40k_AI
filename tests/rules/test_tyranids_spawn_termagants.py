@@ -133,8 +133,8 @@ def test_spawn_termagants_queues_target_and_bodyguard_return():
 
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    army_one = Army("Tyranids", detachment_type="Test")
-    army_two = Army("Enemy", detachment_type="Test")
+    army_one = Army.with_detachment("Tyranids", detachment_type="Test")
+    army_two = Army.with_detachment("Enemy", detachment_type="Test")
     player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
     player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
     game.add_player(player_one)

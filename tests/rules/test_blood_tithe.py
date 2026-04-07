@@ -61,9 +61,9 @@ class TestBloodTithe(unittest.TestCase):
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        we_army = Army("World Eaters", "Khorne Daemonkin")
+        we_army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         we_army.faction_id = "WE"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)
@@ -110,7 +110,7 @@ class TestBloodTithe(unittest.TestCase):
     def test_blood_tithe_enraged_abjuration_adds_fnp(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Bloodletters",
@@ -129,7 +129,7 @@ class TestBloodTithe(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.units.wargear import WargearProfile
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Bloodletters",
@@ -173,7 +173,7 @@ class TestBloodTithe(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.units.wargear import WargearProfile
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Bloodletters",
@@ -208,7 +208,7 @@ class TestBloodTithe(unittest.TestCase):
     def test_blood_tithe_might_of_khorne_grants_blessings(self):
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Bloodletters",
@@ -257,7 +257,7 @@ class TestBloodTithe(unittest.TestCase):
     def test_khorne_daemonkin_points_cap_enforced(self):
         from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
-        army = Army("World Eaters", "Khorne Daemonkin", points_limit=2000)
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin", points_limit=2000)
         army.faction_id = "WE"
         unit1 = _make_unit(
             "Bloodletters 1",
@@ -280,7 +280,7 @@ class TestBloodTithe(unittest.TestCase):
     def test_blood_legions_cannot_be_warlord(self):
         from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Bloodletters",
@@ -298,7 +298,7 @@ class TestBloodTithe(unittest.TestCase):
     def test_disciple_of_khorne_cannot_be_warlord(self):
         from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         unit = _make_unit(
             "Champion",

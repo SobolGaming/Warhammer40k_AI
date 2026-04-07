@@ -82,9 +82,9 @@ def _make_unit(
 
 def _build_game(*, phase_name: str):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Pactbound Zealots")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -117,7 +117,7 @@ def _make_profile(*, weapon_type: str):
 
 
 def test_marks_of_chaos_assigns_default_chaos_undivided_during_validation():
-    army = Army("Chaos Space Marines", "Pactbound Zealots")
+    army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     army.faction_id = "CSM"
     legionaries = _make_unit(
         "Legionaries",
@@ -135,7 +135,7 @@ def test_marks_of_chaos_assigns_default_chaos_undivided_during_validation():
 
 
 def test_marks_of_chaos_rejects_khorne_psyker_units():
-    army = Army("Chaos Space Marines", "Pactbound Zealots")
+    army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     army.faction_id = "CSM"
     sorcerer = _make_unit(
         "Sorcerer",
@@ -149,7 +149,7 @@ def test_marks_of_chaos_rejects_khorne_psyker_units():
 
 
 def test_character_attachment_requires_shared_mark():
-    army = Army("Chaos Space Marines", "Pactbound Zealots")
+    army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     army.faction_id = "CSM"
     bodyguard = _make_unit(
         "Legionaries",
@@ -175,7 +175,7 @@ def test_character_attachment_requires_shared_mark():
 
 
 def test_transport_embark_requires_shared_mark():
-    army = Army("Chaos Space Marines", "Pactbound Zealots")
+    army = Army.with_detachment("Chaos Space Marines", "Pactbound Zealots")
     army.faction_id = "CSM"
     rhino = _make_unit(
         "Chaos Rhino",

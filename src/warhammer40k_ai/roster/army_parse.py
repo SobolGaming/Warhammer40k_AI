@@ -170,7 +170,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         points_limit,
     )
 
-    army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
+    army = Army.with_detachment(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
     faction_id = get_faction_id_from_name(faction_keyword)
     _assert_supported_faction(faction_keyword, faction_id)
     if faction_id:

@@ -147,9 +147,9 @@ class _GameStub:
 
 class TestImperialKnightsValourstrikeStratagems(unittest.TestCase):
     def _setup_env(self, *, phase_name: str, active_is_player: bool):
-        ik_army = Army("Imperial Knights", detachment_type="Valourstrike Lance")
+        ik_army = Army.with_detachment("Imperial Knights", detachment_type="Valourstrike Lance")
         ik_army.faction_id = "QI"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         ik_player = Player("IK", control=PlayerControl.LOCAL, army=ik_army)

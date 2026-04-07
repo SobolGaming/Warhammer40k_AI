@@ -76,7 +76,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         return bodyguard, leader, ability
 
     def test_beast_handler_heroic_intervention_discount_once(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "While this model is leading a unit, you can re-roll Charge rolls made for that unit. "
@@ -107,7 +107,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertFalse(bodyguard.can_use_beast_handler_heroic_intervention())
 
     def test_skullmasters_fury_grants_devastating_wounds(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "While this model is leading a unit, each time that unit ends a Charge move, until the end of the turn, "
@@ -132,7 +132,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertIn("DEVASTATING WOUNDS", keywords)
 
     def test_deluge_of_nurgle_aura_penalties(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "While an enemy unit is within 6\" of this model, subtract 2 from the Move characteristic and subtract 1 "
@@ -153,7 +153,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertEqual(oc_pen, -1)
 
     def test_virulent_blessing_death_guard_wording_grants_damage_bonus(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
         ability_desc = (
             "At the start of the Fight phase, you can select one enemy unit within 24\" and visible to this model. "
@@ -195,7 +195,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertEqual(int(bonuses.get("damage_bonus", 0) or 0), 1)
 
     def test_nurgles_rot_selection_applies_toughness_penalty_and_cleanup(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "At the end of your Movement phase, you can select one enemy unit within 12\" of this model. "
@@ -252,7 +252,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertFalse(target.special_rules.get("nurgles_rot_active", False))
 
     def test_nurgles_rot_death_guard_wording_parses(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
         ability_desc = (
             "At the end of your Movement phase, you can select one enemy unit within 12\" of this model. "
@@ -270,7 +270,7 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertEqual(int(specs[0].get("penalty", 0) or 0), -1)
 
     def test_seed_the_garden_marks_terrain(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "At the end of your Movement phase, if this model is within one Area Terrain feature, until the end of the battle, "

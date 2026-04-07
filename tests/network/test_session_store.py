@@ -28,8 +28,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 def _build_game() -> Game:
-    army_one = Army("Necrons", "Awakened Dynasty")
-    army_two = Army("Orks", "Waaagh!")
+    army_one = Army.with_detachment("Necrons", "Awakened Dynasty")
+    army_two = Army.with_detachment("Orks", "Waaagh!")
     player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
     player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
     game = Game(Battlefield(width=60, height=44), players=[player_one, player_two])

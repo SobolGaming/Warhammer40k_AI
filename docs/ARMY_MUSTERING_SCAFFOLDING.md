@@ -56,7 +56,7 @@ the only path that builds full runtime units today.
 
 - `ArmyMusterer.muster_army()` (`src/warhammer40k_ai/roster/army_muster.py`)
   - Normalizes and validates requests through `ValidatedMuster`.
-  - Builds a runtime `Army` façade and attaches:
+  - Builds a runtime `Army` façade without pre-seeding a detachment and attaches:
     - `army.army_blueprint`
     - `army.validated_muster`
     - `army.detachments`
@@ -68,6 +68,8 @@ the only path that builds full runtime units today.
   - Keeps the explicit runtime boundary that unit entries are representable but not yet
     materialized from in-engine requests; if `unit_entries` are present,
     `NotImplementedError` is raised.
+  - Single-detachment parse/snapshot helpers that still begin from a known primary detachment now
+    use `Army.with_detachment(...)` instead of constructor seeding.
 
 - `Game.execute_muster_armies_phase()` (`src/warhammer40k_ai/engine/game.py`)
   - Runs during setup phase `MUSTER_ARMIES`.

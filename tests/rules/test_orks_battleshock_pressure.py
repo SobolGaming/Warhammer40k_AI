@@ -92,9 +92,9 @@ def _make_unit(
 
 
 def _build_game(*, detachment: str, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", detachment)
+    ork_army = Army.with_detachment("Orks", detachment)
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     for unit in list(ork_units or []):

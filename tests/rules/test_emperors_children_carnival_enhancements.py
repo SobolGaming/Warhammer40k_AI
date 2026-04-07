@@ -78,9 +78,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ec_army = Army("Emperor's Children", "Carnival of Excess")
+    ec_army = Army.with_detachment("Emperor's Children", "Carnival of Excess")
     ec_army.faction_id = "EC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     player = Player("P1", control=PlayerControl.REMOTE, army=ec_army)
     enemy_player = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

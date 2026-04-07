@@ -47,7 +47,7 @@ def _mock_unit(name: str, *, abilities=None, keywords=None, faction_keywords=Non
 
 
 def _make_player(*units: Unit) -> tuple[Player, Army]:
-    army = Army("Space Marines", detachment_type="Other")
+    army = Army.with_detachment("Space Marines", detachment_type="Other")
     army.faction_id = "SM"
     army.units = list(units)
     for unit in units:

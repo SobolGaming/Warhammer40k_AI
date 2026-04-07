@@ -99,9 +99,9 @@ def _apply_enhancement(unit: Unit, *, enhancement_id: str, name: str, descriptio
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    csm_army = Army("Chaos Space Marines", "Deceptors")
+    csm_army = Army.with_detachment("Chaos Space Marines", "Deceptors")
     csm_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     csm_player = Player("CSM", control=PlayerControl.REMOTE, army=csm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -146,7 +146,7 @@ def test_deceptors_enhancement_descriptors_registered():
 
 
 def test_cursed_fang_and_shroud_apply_bearer_only_combat_flags():
-    army = Army("Chaos Space Marines", detachment_type="Deceptors")
+    army = Army.with_detachment("Chaos Space Marines", detachment_type="Deceptors")
     army.faction_id = "CSM"
     source = _make_unit(
         "Chaos Lord",

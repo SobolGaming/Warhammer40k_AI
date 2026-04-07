@@ -69,9 +69,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ts_army = Army("Thousand Sons", "Changehost of Deceit")
+    ts_army = Army.with_detachment("Thousand Sons", "Changehost of Deceit")
     ts_army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     ts_player = Player("TS", control=PlayerControl.LOCAL, army=ts_army)

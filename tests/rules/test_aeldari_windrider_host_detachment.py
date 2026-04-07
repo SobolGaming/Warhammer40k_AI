@@ -56,9 +56,9 @@ def _set_model_location(unit: Unit, *, x: float, y: float) -> None:
 
 
 def _build_game(*, size: BattlefieldSize = BattlefieldSize.STRIKE_FORCE):
-    aeldari_army = Army("Aeldari", "Windrider Host")
+    aeldari_army = Army.with_detachment("Aeldari", "Windrider Host")
     aeldari_army.faction_id = "AE"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     aeldari_player = Player("Aeldari", control=PlayerControl.REMOTE, army=aeldari_army)

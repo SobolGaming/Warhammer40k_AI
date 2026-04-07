@@ -91,11 +91,11 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, abilities=None):
 
 class TestAstraMilitarumGrizzledCompanyStratagems(unittest.TestCase):
     def _setup_env(self, phase_name: str, *, control=PlayerControl.REMOTE):
-        army = Army("Astra Militarum", detachment_type="Grizzled Company")
+        army = Army.with_detachment("Astra Militarum", detachment_type="Grizzled Company")
         army.faction_id = "AM"
         player = Player("AM", control=control, army=army)
 
-        enemy_army = Army("Enemy", detachment_type="None")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="None")
         enemy_army.faction_id = "EN"
         enemy = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
 
@@ -297,4 +297,4 @@ class TestAstraMilitarumGrizzledCompanyStratagems(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

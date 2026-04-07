@@ -71,9 +71,9 @@ def _mock_target_unit(name: str = "Enemy Unit") -> Unit:
 
 
 def _build_game() -> tuple[Game, Army, Army]:
-    sm_army = Army("Space Marines", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Other")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("Space Marines", PlayerControl.REMOTE, army=sm_army)

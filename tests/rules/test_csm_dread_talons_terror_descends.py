@@ -76,9 +76,9 @@ def _place(unit: Unit, x: float, y: float) -> None:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    target_army = Army("Enemy", "Other")
+    target_army = Army.with_detachment("Enemy", "Other")
     target_army.faction_id = "EN"
-    dread_talons_army = Army("Chaos Space Marines", "Dread Talons")
+    dread_talons_army = Army.with_detachment("Chaos Space Marines", "Dread Talons")
     dread_talons_army.faction_id = "CSM"
     target_player = Player("Target", control=PlayerControl.REMOTE, army=target_army)
     dread_talons_player = Player("DreadTalons", control=PlayerControl.REMOTE, army=dread_talons_army)

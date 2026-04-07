@@ -81,9 +81,9 @@ def _make_game(
     gsc_control: PlayerControl = PlayerControl.LOCAL,
     enemy_control: PlayerControl = PlayerControl.LOCAL,
 ) -> tuple[Game, Player, Player, Unit]:
-    gsc_army = Army("Genestealer Cults", detachment_type)
+    gsc_army = Army.with_detachment("Genestealer Cults", detachment_type)
     gsc_army.faction_id = "GC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
 
     gsc_player = Player("GSC", gsc_control, army=gsc_army)

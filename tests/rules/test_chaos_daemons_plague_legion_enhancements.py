@@ -56,9 +56,9 @@ class _Wargear:
 
 def _setup_game():
     game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
-    plague_army = Army("Chaos Daemons", detachment_type="Plague Legion")
+    plague_army = Army.with_detachment("Chaos Daemons", detachment_type="Plague Legion")
     plague_army.faction_id = "CD"
-    enemy_army = Army("Enemies", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     plague_player = Player("Plague", PlayerControl.REMOTE, plague_army)

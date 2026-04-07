@@ -62,9 +62,9 @@ class TestStartSelectedPhasesBattleshock(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army = Army("Necrons", detachment_type="Other")
+        army = Army.with_detachment("Necrons", detachment_type="Other")
         army.faction_id = "NEC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Necrons", PlayerControl.REMOTE, army=army)
@@ -80,7 +80,7 @@ class TestStartSelectedPhasesBattleshock(unittest.TestCase):
         )
 
     def test_parses_start_selected_phases_enemy_range_battleshock_spec(self):
-        unit = self._make_unit("Psychomancer", Army("Necrons", detachment_type="Other"))
+        unit = self._make_unit("Psychomancer", Army.with_detachment("Necrons", detachment_type="Other"))
         model = self._make_model("Psychomancer", unit)
         ability = Ability("Harbinger of Despair", "NEC", self._harbinger_description(), "Datasheet", "")
         model.abilities = {"Harbinger of Despair": ability}

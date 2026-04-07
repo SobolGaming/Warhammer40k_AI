@@ -63,7 +63,7 @@ def _make_ranged_profile() -> WargearProfile:
 
 
 def _build_army_with_unit(*, detachment: str, unit: Unit) -> Army:
-    army = Army("Orks", detachment)
+    army = Army.with_detachment("Orks", detachment)
     army.faction_id = "ORK"
     army.add_unit(unit)
     Player("Ork Player", control=PlayerControl.LOCAL, army=army)

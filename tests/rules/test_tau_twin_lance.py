@@ -88,9 +88,9 @@ def _first_option(request, predicate):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tau_army = Army("T'au Empire", "Detachment")
+    tau_army = Army.with_detachment("T'au Empire", "Detachment")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Detachment")
+    enemy_army = Army.with_detachment("Enemy", "Detachment")
     enemy_army.faction_id = "EN"
     tau_player = Player("TAU", control=PlayerControl.REMOTE, army=tau_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)

@@ -88,9 +88,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    am_army = Army("Astra Militarum", "Recon Element")
+    am_army = Army.with_detachment("Astra Militarum", "Recon Element")
     am_army.faction_id = "AM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     am_player = Player("Astra Militarum", control=PlayerControl.REMOTE, army=am_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

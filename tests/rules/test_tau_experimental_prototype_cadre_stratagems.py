@@ -61,9 +61,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None, wounds: str =
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tau_army = Army("T'au Empire", "Experimental Prototype Cadre")
+    tau_army = Army.with_detachment("T'au Empire", "Experimental Prototype Cadre")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tau_player = Player("Tau", control=PlayerControl.LOCAL, army=tau_army)

@@ -29,9 +29,9 @@ def _actual_unit(name: str, *, datasheet_id: str) -> Unit:
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.auto_resolve_dice_rolls = False
-    charging_army = Army("Chargers", detachment_type="Other")
+    charging_army = Army.with_detachment("Chargers", detachment_type="Other")
     charging_army.faction_id = "EN"
-    space_marines_army = Army("Space Marines", detachment_type="Other")
+    space_marines_army = Army.with_detachment("Space Marines", detachment_type="Other")
     space_marines_army.faction_id = "SM"
     charging_player = Player("Chargers", control=PlayerControl.LOCAL, army=charging_army)
     space_marines_player = Player("Space Marines", control=PlayerControl.LOCAL, army=space_marines_army)
@@ -234,9 +234,9 @@ def test_repulsor_stabilised_disembarkation_queues_after_targeted_shooting_and_a
     game.phase = BattleRoundPhases.SHOOTING_PHASE
     game.turn = 1
 
-    attacking_army = Army("Attackers", detachment_type="Other")
+    attacking_army = Army.with_detachment("Attackers", detachment_type="Other")
     attacking_army.faction_id = "EN"
-    space_marines_army = Army("Space Marines", detachment_type="Other")
+    space_marines_army = Army.with_detachment("Space Marines", detachment_type="Other")
     space_marines_army.faction_id = "SM"
     attacking_player = Player("Attackers", control=PlayerControl.LOCAL, army=attacking_army)
     space_marines_player = Player("Space Marines", control=PlayerControl.LOCAL, army=space_marines_army)

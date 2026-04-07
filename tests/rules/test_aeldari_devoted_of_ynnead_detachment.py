@@ -113,9 +113,9 @@ def _find_request(game: Game, *, decision_type: str, ability: str | None = None)
 
 class TestAeldariDevotedOfYnneadDetachment(unittest.TestCase):
     def _build_game(self):
-        aeldari_army = Army("Aeldari", detachment_type="Devoted of Ynnead")
+        aeldari_army = Army.with_detachment("Aeldari", detachment_type="Devoted of Ynnead")
         aeldari_army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
         aeldari_player = Player("Aeldari", PlayerControl.REMOTE, army=aeldari_army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -137,7 +137,7 @@ class TestAeldariDevotedOfYnneadDetachment(unittest.TestCase):
         return yvraine
 
     def test_servants_of_the_whispering_god_requires_yvraine_or_yncarne_warlord(self):
-        army = Army("Aeldari", detachment_type="Devoted of Ynnead")
+        army = Army.with_detachment("Aeldari", detachment_type="Devoted of Ynnead")
         army.faction_id = "AE"
 
         non_named = _make_unit(
@@ -154,7 +154,7 @@ class TestAeldariDevotedOfYnneadDetachment(unittest.TestCase):
         with self.assertRaises(ArmyValidationError):
             army.validate_detachment_rules()
 
-        army_valid = Army("Aeldari", detachment_type="Devoted of Ynnead")
+        army_valid = Army.with_detachment("Aeldari", detachment_type="Devoted of Ynnead")
         army_valid.faction_id = "AE"
         self._make_yvraine_warlord(army_valid)
         try:

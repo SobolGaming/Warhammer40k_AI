@@ -84,9 +84,9 @@ def _make_unit(
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
-    tau_army = Army("T'au Empire", "Auxiliary Cadre")
+    tau_army = Army.with_detachment("T'au Empire", "Auxiliary Cadre")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     tau_player = Player("Tau", control=PlayerControl.REMOTE, army=tau_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

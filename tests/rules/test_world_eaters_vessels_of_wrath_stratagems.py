@@ -60,9 +60,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army1 = Army("World Eaters", "Vessels of Wrath")
+    army1 = Army.with_detachment("World Eaters", "Vessels of Wrath")
     army1.faction_id = "WE"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
@@ -385,4 +385,4 @@ class TestWorldEatersVesselsOfWrathStratagems(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

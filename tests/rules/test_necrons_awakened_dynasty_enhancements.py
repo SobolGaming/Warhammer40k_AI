@@ -107,9 +107,9 @@ def _make_profile(*, melee: bool = False, skill: str = "3+"):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    necron_army = Army("Necrons", "Awakened Dynasty")
+    necron_army = Army.with_detachment("Necrons", "Awakened Dynasty")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     necron_player = Player("Necrons", control=PlayerControl.REMOTE, army=necron_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -302,7 +302,7 @@ def test_veil_of_darkness_does_not_prompt_when_bearer_destroyed():
 
 
 def test_nether_realm_casket_grants_stealth_while_bearer_is_leading_and_alive():
-    necron_army = Army("Necrons", "Awakened Dynasty")
+    necron_army = Army.with_detachment("Necrons", "Awakened Dynasty")
     necron_army.faction_id = "NEC"
 
     bodyguard = _make_unit(

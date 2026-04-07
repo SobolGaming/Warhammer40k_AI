@@ -156,9 +156,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    rw_army = Army("Chaos Space Marines", "Renegade Warband")
+    rw_army = Army.with_detachment("Chaos Space Marines", "Renegade Warband")
     rw_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     rw_player = Player("Renegades", control=PlayerControl.LOCAL, army=rw_army)

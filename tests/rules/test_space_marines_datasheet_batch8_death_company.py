@@ -121,9 +121,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
-    sm_army = Army("Space Marines", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Other")
     sm_army.faction_id = "SM"
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
     sm_player = Player("Space Marines", PlayerControl.REMOTE, army=sm_army)

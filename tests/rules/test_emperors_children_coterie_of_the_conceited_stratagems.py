@@ -77,9 +77,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ec_army = Army("Emperor's Children", "Coterie of the Conceited")
+    ec_army = Army.with_detachment("Emperor's Children", "Coterie of the Conceited")
     ec_army.faction_id = "EC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=ec_army)

@@ -84,7 +84,7 @@ class TestLeaderAttachments(unittest.TestCase):
         bg2 = _TestUnit(bg2_ds)
 
         # Fake army wiring for same-army constraint
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bg1, bg2]
         for u in army.units:
@@ -109,7 +109,7 @@ class TestLeaderAttachments(unittest.TestCase):
         leader = _TestUnit(leader_ds)
         bg = _TestUnit(bg_ds)
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bg]
         for u in army.units:
@@ -134,7 +134,7 @@ class TestLeaderAttachments(unittest.TestCase):
         for m in bg.models:
             m.leadership = 7
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bg]
         for u in army.units:
@@ -151,7 +151,7 @@ class TestLeaderAttachments(unittest.TestCase):
         leader = _TestUnit(leader_ds)         # 1 model
         bg = _TestUnit(bg_ds, quantity=5)     # 5 models
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bg]
         for u in army.units:
@@ -175,7 +175,7 @@ class TestLeaderAttachments(unittest.TestCase):
         leader = _TestUnit(leader_ds)
         bg = _TestUnit(bg_ds, quantity=3)
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bg]
         for u in army.units:
@@ -212,7 +212,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard]
         for u in army.units:
@@ -241,7 +241,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard]
         for u in army.units:
@@ -276,7 +276,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, base, bodyguard]
         for u in army.units:
@@ -317,7 +317,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, base, bodyguard]
         for u in army.units:
@@ -357,7 +357,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, battle_sisters, sanctifiers]
         for u in army.units:
@@ -400,7 +400,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, base, bodyguard_one, bodyguard_two]
         for u in army.units:
@@ -433,7 +433,7 @@ class TestLeaderAttachments(unittest.TestCase):
             )
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard]
         for u in army.units:
@@ -471,7 +471,7 @@ class TestLeaderAttachments(unittest.TestCase):
             ),
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard]
         for u in army.units:
@@ -509,7 +509,7 @@ class TestLeaderAttachments(unittest.TestCase):
             ),
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard]
         for u in army.units:
@@ -549,7 +549,7 @@ class TestLeaderAttachments(unittest.TestCase):
             ),
         ]
 
-        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
         army.player = _DummyPlayer()
         army.units = [leader, bodyguard_one, bodyguard_two]
         for u in army.units:

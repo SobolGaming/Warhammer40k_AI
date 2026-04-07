@@ -36,9 +36,9 @@ def _actual_unit(name: str, *, faction_id: str = "SM", quantity: int | None = No
 
 
 def _build_game() -> tuple[Game, Player, Player, Army, Army]:
-    sm_army = Army("Space Marines", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Other")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("Space Marines", PlayerControl.REMOTE, army=sm_army)

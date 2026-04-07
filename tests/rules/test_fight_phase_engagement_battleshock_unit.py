@@ -56,9 +56,9 @@ class TestFightPhaseEngagementBattleshockUnit(unittest.TestCase):
         return model
 
     def test_unit_engagement_battleshock_applies(self):
-        army_a = Army("Army A", detachment_type="Other")
+        army_a = Army.with_detachment("Army A", detachment_type="Other")
         army_a.faction_id = "A"
-        army_b = Army("Army B", detachment_type="Other")
+        army_b = Army.with_detachment("Army B", detachment_type="Other")
         army_b.faction_id = "B"
 
         player_a = Player("Player A", PlayerControl.LOCAL, army=army_a)

@@ -65,9 +65,9 @@ def _make_unit(name, *, faction_name="Imperial Agents", keywords=None, faction_k
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Veiled Blade Elimination Force")
+    ia_army = Army.with_detachment("Imperial Agents", "Veiled Blade Elimination Force")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
 
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)

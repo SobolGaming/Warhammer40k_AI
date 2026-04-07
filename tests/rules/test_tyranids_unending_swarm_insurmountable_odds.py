@@ -49,9 +49,9 @@ class TestTyranidsUnendingSwarmInsurmountableOdds(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army_attacker = Army("Enemy", detachment_type="Other")
+        army_attacker = Army.with_detachment("Enemy", detachment_type="Other")
         army_attacker.faction_id = "SM"
-        army_target = Army("Tyranids", detachment_type="Unending Swarm")
+        army_target = Army.with_detachment("Tyranids", detachment_type="Unending Swarm")
         army_target.faction_id = "TYR"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army_attacker)

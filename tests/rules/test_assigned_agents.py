@@ -30,7 +30,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
 
 
 def setup_sm_army(points_limit=2000) -> Army:
-    army = Army("Space Marines", "Detachment", points_limit=points_limit)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=points_limit)
     army.faction_id = "SM"
     base = make_unit("Intercessors", faction_keywords=["IMPERIUM", "ADEPTUS ASTARTES"])
     army.add_unit(base)

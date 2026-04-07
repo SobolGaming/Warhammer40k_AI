@@ -106,9 +106,9 @@ def _build_simple_game(*, armies: list[Army], phase_name: str, current_player_in
 
 def _build_engine_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Chaos Space Marines", "Chaos Cult")
+    army1 = Army.with_detachment("Chaos Space Marines", "Chaos Cult")
     army1.faction_id = "CSM"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
@@ -142,7 +142,7 @@ def _option_with_choice(request, choice: bool):
 
 
 def test_chaos_cult_traitor_guardsmen_gain_battleline_keyword():
-    army = Army("Chaos Space Marines", "Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", "Chaos Cult")
     army.faction_id = "CSM"
     guardsmen = _make_unit(
         "Traitor Guardsmen Squad",
@@ -157,9 +157,9 @@ def test_chaos_cult_traitor_guardsmen_gain_battleline_keyword():
 
 
 def test_desperate_devotion_activation_applies_bonuses_and_failed_leadership_mortals(monkeypatch):
-    army = Army("Chaos Space Marines", "Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", "Chaos Cult")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     unit = _make_unit(
         "Accursed Cultists",
@@ -196,9 +196,9 @@ def test_desperate_devotion_activation_applies_bonuses_and_failed_leadership_mor
 
 
 def test_desperate_devotion_ignores_units_arrived_from_reserves_this_turn():
-    army = Army("Chaos Space Marines", "Chaos Cult")
+    army = Army.with_detachment("Chaos Space Marines", "Chaos Cult")
     army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     unit = _make_unit(
         "Accursed Cultists",

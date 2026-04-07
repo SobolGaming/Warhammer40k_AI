@@ -69,9 +69,9 @@ def _make_unit(name: str, *, keywords=None, faction_keywords=None) -> Unit:
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.auto_resolve_dice_rolls = False
-    tyr_army = Army("Tyranids", "Other")
+    tyr_army = Army.with_detachment("Tyranids", "Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     tyr_player = Player("Tyr", control=PlayerControl.LOCAL, army=tyr_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

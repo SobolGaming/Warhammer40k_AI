@@ -68,9 +68,9 @@ class TestAdeptaSororitasVirtueOfIntolerance(unittest.TestCase):
         return model
 
     def _build_game(self):
-        army = Army("Adepta Sororitas", detachment_type="Other")
+        army = Army.with_detachment("Adepta Sororitas", detachment_type="Other")
         army.faction_id = "AS"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

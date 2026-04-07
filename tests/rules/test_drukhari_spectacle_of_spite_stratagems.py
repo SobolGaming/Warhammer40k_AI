@@ -62,9 +62,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    drukhari_army = Army("Drukhari", "Spectacle of Spite")
+    drukhari_army = Army.with_detachment("Drukhari", "Spectacle of Spite")
     drukhari_army.faction_id = "DRU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=drukhari_army)

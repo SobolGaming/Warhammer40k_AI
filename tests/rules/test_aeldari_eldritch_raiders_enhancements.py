@@ -99,7 +99,7 @@ def test_eldritch_raiders_enhancements_have_tool_descriptors():
 
 
 def test_pirate_prince_refunds_battle_focus_tokens_on_successful_roll():
-    army = Army("Aeldari", detachment_type="Eldritch Raiders")
+    army = Army.with_detachment("Aeldari", detachment_type="Eldritch Raiders")
     army.faction_id = "AE"
     battle_focus = Ability("Battle Focus", "AE", "", "Datasheet", "")
 
@@ -158,7 +158,7 @@ def test_pirate_prince_refunds_battle_focus_tokens_on_successful_roll():
 
 
 def test_alacritous_assault_grants_lance_to_bearer_unit_melee_weapons():
-    army = Army("Aeldari", detachment_type="Eldritch Raiders")
+    army = Army.with_detachment("Aeldari", detachment_type="Eldritch Raiders")
     army.faction_id = "AE"
     unit = _make_unit(
         "Corsair Voidscarred",
@@ -187,7 +187,7 @@ def test_alacritous_assault_grants_lance_to_bearer_unit_melee_weapons():
 
 
 def test_exotic_munitions_grants_anti_monster_and_anti_vehicle_to_ranged_weapons():
-    army = Army("Aeldari", detachment_type="Eldritch Raiders")
+    army = Army.with_detachment("Aeldari", detachment_type="Eldritch Raiders")
     army.faction_id = "AE"
     unit = _make_unit(
         "Corsair Voidscarred",
@@ -228,7 +228,7 @@ def test_exotic_munitions_grants_anti_monster_and_anti_vehicle_to_ranged_weapons
 
 
 def test_adrenal_infusions_grants_fade_back_without_token_and_without_phase_cap_consumption():
-    army = Army("Aeldari", detachment_type="Eldritch Raiders")
+    army = Army.with_detachment("Aeldari", detachment_type="Eldritch Raiders")
     army.faction_id = "AE"
     battle_focus = Ability("Battle Focus", "AE", "", "Datasheet", "")
     unit = _make_unit(

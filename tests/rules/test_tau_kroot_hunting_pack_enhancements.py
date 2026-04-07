@@ -91,7 +91,7 @@ def _make_profile(*, range_val: str, is_ranged: bool) -> WargearProfile:
 
 
 def _build_tau_army(detachment_type: str) -> Army:
-    army = Army("T'au Empire", detachment_type)
+    army = Army.with_detachment("T'au Empire", detachment_type)
     army.faction_id = "TAU"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
     return army
@@ -99,9 +99,9 @@ def _build_tau_army(detachment_type: str) -> Army:
 
 def _build_game() -> tuple[Game, Army, Army]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tau_army = Army("T'au Empire", "Kroot Hunting Pack")
+    tau_army = Army.with_detachment("T'au Empire", "Kroot Hunting Pack")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     tau_player = Player("Tau", control=PlayerControl.REMOTE, army=tau_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

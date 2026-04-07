@@ -130,7 +130,7 @@ def _lone_operative_ability() -> Ability:
 
 
 def _make_army(units):
-    army = Army(faction="Space Marines", detachment_type="Gladius Task Force", points_limit=2000)
+    army = Army.with_detachment(faction="Space Marines", detachment_type="Gladius Task Force", points_limit=2000)
     army.faction_id = "SM"
     army.player = _DummyPlayer()
     army.units = list(units)

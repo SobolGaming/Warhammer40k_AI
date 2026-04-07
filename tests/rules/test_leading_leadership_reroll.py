@@ -45,7 +45,7 @@ def test_leading_leadership_reroll_applies_to_attached_unit(monkeypatch):
     bodyguard = Unit(bodyguard_ds)
     leader = Unit(leader_ds)
 
-    army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+    army = Army.with_detachment(faction="Test", detachment_type="Test", points_limit=2000)
     army.player = types.SimpleNamespace(name="P1", game=None)
     army.add_unit(bodyguard)
     army.add_unit(leader)

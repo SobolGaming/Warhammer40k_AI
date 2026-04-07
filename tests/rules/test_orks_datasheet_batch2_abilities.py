@@ -137,9 +137,9 @@ def _make_profile(*, weapon_name: str, range_val: str, is_ranged: bool, attacks:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", "Other")
+    ork_army = Army.with_detachment("Orks", "Other")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ork_player = Player("Orks", control=PlayerControl.LOCAL, army=ork_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -234,9 +234,9 @@ def test_kustom_force_field_applies_only_against_ranged_attacks():
     _attach_leader(bodyguard, leader)
     bodyguard._refresh_bearer_unit_common_modifiers()
 
-    ork_army = Army("Orks", "Other")
+    ork_army = Army.with_detachment("Orks", "Other")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     ork_army.add_unit(leader)
     ork_army.add_unit(bodyguard)

@@ -160,8 +160,8 @@ class TestCollisionDetection:
         # Create test players and armies
         self.player1 = Player("Player1", PlayerControl.LOCAL)
         self.player2 = Player("Player2", PlayerControl.LOCAL)
-        self.army1 = Army("Test Faction 1", "Test Detachment 1")
-        self.army2 = Army("Test Faction 2", "Test Detachment 2")
+        self.army1 = Army.with_detachment("Test Faction 1", "Test Detachment 1")
+        self.army2 = Army.with_detachment("Test Faction 2", "Test Detachment 2")
         self.player1.set_army(self.army1)
         self.player2.set_army(self.army2)
     

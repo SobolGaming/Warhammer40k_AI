@@ -239,7 +239,7 @@ def _strike_swiftly_enhancement() -> Enhancement:
 
 
 def _build_tau_army(detachment_type: str) -> Army:
-    army = Army("T'au Empire", detachment_type)
+    army = Army.with_detachment("T'au Empire", detachment_type)
     army.faction_id = "TAU"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
     return army

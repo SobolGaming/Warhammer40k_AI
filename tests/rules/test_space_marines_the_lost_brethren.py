@@ -62,9 +62,9 @@ def _build_game(detachment_type: str = "The Lost Brethren"):
     game = Game(bf)
     game.turn = 1
 
-    army_sm = Army("Space Marines", detachment_type)
+    army_sm = Army.with_detachment("Space Marines", detachment_type)
     army_sm.faction_id = "SM"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army_sm)

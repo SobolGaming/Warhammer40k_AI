@@ -103,9 +103,9 @@ def _make_unit(
 
 
 def _build_game(*, detachment: str, ork_units: list[Unit], enemy_units: list[Unit]):
-    ork_army = Army("Orks", detachment)
+    ork_army = Army.with_detachment("Orks", detachment)
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     for unit in list(ork_units or []):
@@ -156,7 +156,7 @@ def _apply_kult_of_speed_enhancement(unit: Unit, *, enhancement_id: str, enhance
     get_parent_army = getattr(unit, "get_parent_army", None)
     parent_army = get_parent_army() if callable(get_parent_army) else None
     if parent_army is None:
-        parent_army = Army("Orks", "Kult of Speed")
+        parent_army = Army.with_detachment("Orks", "Kult of Speed")
         parent_army.faction_id = "ORK"
         parent_army.add_unit(unit)
     enhancement = Enhancement(

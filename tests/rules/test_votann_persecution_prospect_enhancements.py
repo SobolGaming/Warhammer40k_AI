@@ -61,9 +61,9 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, toughness: int = 4
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army = Army("Leagues of Votann", "Persecution Prospect")
+    army = Army.with_detachment("Leagues of Votann", "Persecution Prospect")
     army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     player = Player("P1", control=PlayerControl.REMOTE, army=army)
     enemy_player = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

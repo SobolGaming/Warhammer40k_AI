@@ -46,7 +46,7 @@ class TestMaleficSurge(unittest.TestCase):
         return model
 
     def _setup_game(self):
-        army = Army("Chaos Knights", detachment_type="Infernal Lance")
+        army = Army.with_detachment("Chaos Knights", detachment_type="Infernal Lance")
         army.faction_id = "QT"
         player = Player("CK", PlayerControl.REMOTE, army=army)
         game = SimpleNamespace(turn=1, get_current_player=lambda: player, map=None, is_authoritative=True)

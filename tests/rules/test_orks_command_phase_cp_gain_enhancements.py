@@ -82,9 +82,9 @@ def _set_positions(unit: Unit, x: float, y: float, *, spacing: float = 1.0) -> N
 
 def _build_game(*, detachment: str, ork_units: list[Unit], enemy_units: list[Unit]):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ork_army = Army("Orks", detachment_type=detachment)
+    ork_army = Army.with_detachment("Orks", detachment_type=detachment)
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     ork_player = Player("Ork", PlayerControl.LOCAL, army=ork_army)

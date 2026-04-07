@@ -87,9 +87,9 @@ def _make_enemy_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", detachment_type="Other")
+    sm_army = Army.with_detachment("Space Marines", detachment_type="Other")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
     sm_player = Player("Space Marines", PlayerControl.REMOTE, army=sm_army)
@@ -196,9 +196,9 @@ def test_wulfen_dreadnought_bestial_rage_triggers_on_wound_loss_even_while_battl
 
 def test_wulfen_dreadnought_bestial_rage_validation_uses_closest_non_aircraft_enemy() -> None:
     game_map = Map(100, 100)
-    moving_army = Army("Space Marines", detachment_type="Other")
+    moving_army = Army.with_detachment("Space Marines", detachment_type="Other")
     moving_army.faction_id = "SM"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     mover = _actual_unit("Wulfen Dreadnought")

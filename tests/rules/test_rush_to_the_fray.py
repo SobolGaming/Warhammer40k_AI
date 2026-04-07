@@ -58,9 +58,9 @@ class TestRushToTheFray(unittest.TestCase):
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        we_army = Army("World Eaters", "Goretrack Onslaught")
+        we_army = Army.with_detachment("World Eaters", "Goretrack Onslaught")
         we_army.faction_id = "WE"
-        enemy_army = Army("Enemy", "Detachment")
+        enemy_army = Army.with_detachment("Enemy", "Detachment")
         enemy_army.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)

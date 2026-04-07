@@ -77,9 +77,9 @@ def _make_model(name, unit, *, x=0.0, y=0.0, wounds=6):
 
 class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
     def test_alien_cunning_redeploy_filters_to_tyranids_units(self):
-        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army = Army.with_detachment("Tyranids", detachment_type="Invasion Fleet")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -163,7 +163,7 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertTrue(bool(desc.effect_params.get("allow_strategic_reserves", False)))
 
     def test_synaptic_linchpin_grants_synapse_within_nine_of_bearer(self):
-        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army = Army.with_detachment("Tyranids", detachment_type="Invasion Fleet")
         army.faction_id = "TYR"
 
         bearer = _make_unit("Neurotyrant", army, keywords=["CHARACTER"], faction_keywords=["TYRANIDS"])
@@ -225,9 +225,9 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertTrue(bool(desc.effect_params.get("shared_pool", False)))
 
     def test_perfectly_adapted_shared_once_per_turn_pool(self):
-        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army = Army.with_detachment("Tyranids", detachment_type="Invasion Fleet")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -271,9 +271,9 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertEqual(int(hit_rule_next_turn.get("max_select", 0) or 0), 1)
 
     def test_perfectly_adapted_hit_reroll_positions_only_include_bearer_attacks(self):
-        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army = Army.with_detachment("Tyranids", detachment_type="Invasion Fleet")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -345,9 +345,9 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertEqual(list(pa_rule.get("eligible_positions", []) or []), [0, 2])
 
     def test_perfectly_adapted_reroll_action_consumes_usage(self):
-        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army = Army.with_detachment("Tyranids", detachment_type="Invasion Fleet")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

@@ -59,9 +59,9 @@ def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None, mo
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Leagues of Votann", "Hearthband")
+    army1 = Army.with_detachment("Leagues of Votann", "Hearthband")
     army1.faction_id = "LOV"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

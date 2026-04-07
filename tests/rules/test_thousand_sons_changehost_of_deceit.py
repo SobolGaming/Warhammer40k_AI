@@ -107,9 +107,9 @@ def _set_location(unit: Unit, x: float, y: float) -> None:
 
 
 def _build_game():
-    army = Army("Thousand Sons", "Changehost of Deceit")
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit")
     army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "SM"
     player = Player("Player", PlayerControl.REMOTE, army=army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -129,7 +129,7 @@ def _apply_changehost_enhancement(unit: Unit, *, enh_id: str, name: str) -> None
 
 
 def test_changehost_daemonic_illusions_grants_4_invuln_vs_ranged():
-    army = Army("Thousand Sons", "Changehost of Deceit")
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit")
     army.faction_id = "TS"
     target = _make_unit(
         "Rubric Marines",
@@ -153,7 +153,7 @@ def test_changehost_daemonic_illusions_grants_4_invuln_vs_ranged():
 
 
 def test_changehost_daemonic_illusions_does_not_apply_to_melee():
-    army = Army("Thousand Sons", "Changehost of Deceit")
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit")
     army.faction_id = "TS"
     target = _make_unit(
         "Rubric Marines",
@@ -177,7 +177,7 @@ def test_changehost_daemonic_illusions_does_not_apply_to_melee():
 
 
 def test_changehost_mortal_sorcery_grants_cabal_to_nearby_scintillating_legions_psyker():
-    army = Army("Thousand Sons", "Changehost of Deceit")
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit")
     army.faction_id = "TS"
     ts_source = _make_unit(
         "Exalted Sorcerer",
@@ -202,7 +202,7 @@ def test_changehost_mortal_sorcery_grants_cabal_to_nearby_scintillating_legions_
 
 
 def test_changehost_restriction_enforces_scintillating_legions_points_cap():
-    army = Army("Thousand Sons", "Changehost of Deceit", points_limit=2000)
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit", points_limit=2000)
     army.faction_id = "TS"
     sl_1 = _make_unit(
         "Pink Horrors A",
@@ -224,7 +224,7 @@ def test_changehost_restriction_enforces_scintillating_legions_points_cap():
 
 
 def test_changehost_restriction_disallows_scintillating_legions_warlord():
-    army = Army("Thousand Sons", "Changehost of Deceit", points_limit=2000)
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit", points_limit=2000)
     army.faction_id = "TS"
     warlord = _make_unit(
         "Pink Horrors",
@@ -241,7 +241,7 @@ def test_changehost_restriction_disallows_scintillating_legions_warlord():
 
 
 def test_changehost_restriction_valid_case_passes():
-    army = Army("Thousand Sons", "Changehost of Deceit", points_limit=1000)
+    army = Army.with_detachment("Thousand Sons", "Changehost of Deceit", points_limit=1000)
     army.faction_id = "TS"
     ts_unit = _make_unit(
         "Rubric Marines",

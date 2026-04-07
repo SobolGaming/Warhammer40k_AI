@@ -80,7 +80,7 @@ class TestRageCursedOnslaughtEnhancements(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army = Army("Space Marines", detachment_type="Rage-cursed Onslaught")
+        army = Army.with_detachment("Space Marines", detachment_type="Rage-cursed Onslaught")
         army.faction_id = "SM"
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game.add_player(player)

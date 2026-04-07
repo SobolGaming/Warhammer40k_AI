@@ -98,8 +98,8 @@ def test_enhanced_warriors_bodyguard_toughness_and_melee_strength():
     bodyguard = _make_unit(bodyguard_ds)
     target = _make_unit(target_ds)
 
-    army = Army("CSM", "Chaos")
-    enemy_army = Army("Enemy", "Enemy")
+    army = Army.with_detachment("CSM", "Chaos")
+    enemy_army = Army.with_detachment("Enemy", "Enemy")
     leader.set_parent_army(army)
     bodyguard.set_parent_army(army)
     target.set_parent_army(enemy_army)
@@ -197,7 +197,7 @@ def test_enhanced_warriors_applies_while_fabius_starts_embarked_in_transport():
     bodyguard = _make_unit(bodyguard_ds)
     transport = _make_unit(transport_ds)
 
-    army = Army("CSM", "Chaos")
+    army = Army.with_detachment("CSM", "Chaos")
     leader.set_parent_army(army)
     bodyguard.set_parent_army(army)
     transport.set_parent_army(army)

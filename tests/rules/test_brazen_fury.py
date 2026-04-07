@@ -49,9 +49,9 @@ class TestBrazenFury(unittest.TestCase):
         return model
 
     def _build_game(self, *, target_control=PlayerControl.REMOTE):
-        army_attacker = Army("Other", detachment_type="Other")
+        army_attacker = Army.with_detachment("Other", detachment_type="Other")
         army_attacker.faction_id = "OT"
-        army_target = Army("World Eaters", detachment_type="Possessed Slaughterband")
+        army_target = Army.with_detachment("World Eaters", detachment_type="Possessed Slaughterband")
         army_target.faction_id = "WE"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army_attacker)

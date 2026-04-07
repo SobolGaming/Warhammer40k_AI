@@ -53,7 +53,7 @@ class TestWarlordRestriction(unittest.TestCase):
             }
         ]
         unit = _make_unit("Restricted", abilities=abilities)
-        army = Army("Test", "Detachment")
+        army = Army.with_detachment("Test", "Detachment")
         army.faction_id = "TS"
         army.add_unit(unit)
 
@@ -65,7 +65,7 @@ class TestWarlordRestriction(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
 
         unit = _make_unit("Allowed")
-        army = Army("Test", "Detachment")
+        army = Army.with_detachment("Test", "Detachment")
         army.faction_id = "TS"
         army.add_unit(unit)
 
@@ -84,7 +84,7 @@ class TestWarlordRestriction(unittest.TestCase):
             }
         ]
         unit = _make_unit("Protector", abilities=abilities)
-        army = Army("Test", "Detachment")
+        army = Army.with_detachment("Test", "Detachment")
         army.faction_id = "TS"
         army.add_unit(unit)
 

@@ -74,9 +74,9 @@ class TestAdeptaSororitasMiraculousSaviour(unittest.TestCase):
         return model
 
     def _build_game(self):
-        enemy_army = Army("Enemy Army", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy Army", detachment_type="Other")
         enemy_army.faction_id = "EN"
-        sororitas_army = Army("Adepta Sororitas", detachment_type="Other")
+        sororitas_army = Army.with_detachment("Adepta Sororitas", detachment_type="Other")
         sororitas_army.faction_id = "AS"
 
         enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)

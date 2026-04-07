@@ -4,7 +4,10 @@ from warhammer40k_ai.roster.army import ArmyValidationError
 from warhammer40k_ai.roster.army_attachments import AttachmentBinding
 from warhammer40k_ai.roster.army_build import DetachmentSelection, EnhancementAssignment, RosterEntry
 from warhammer40k_ai.roster.army_muster import ArmyMusterRequest, ArmyMusterer, UnitSelection
-from warhammer40k_ai.roster.army_validation import validate_army_muster_request
+from warhammer40k_ai.roster.army_validation import (
+    build_army_blueprint_from_request,
+    validate_army_muster_request,
+)
 from warhammer40k_ai.waha_helper import WahaHelper
 
 
@@ -96,6 +99,23 @@ def test_validate_detachment_points_budget_rejects_overspend() -> None:
 
     with pytest.raises(ArmyValidationError, match="Detachment-point budget exceeded"):
         validate_army_muster_request(request)
+
+
+def test_build_army_blueprint_from_request_returns_blueprint_only() -> None:
+    request = ArmyMusterRequest(
+        faction="Space Marines",
+        detachments=[
+            DetachmentSelection(
+                selection_id="detachment_alpha",
+                detachment_type="Gladius Task Force",
+            )
+        ],
+    )
+
+    blueprint = build_army_blueprint_from_request(request)
+
+    assert blueprint.faction == "Space Marines"
+    assert blueprint.primary_detachment_type == "Gladius Task Force"
 
 
 def test_enhancement_assignment_round_trip_representation() -> None:

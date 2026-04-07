@@ -10,8 +10,8 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    army1 = Army("Aeldari", "Warhost")
-    army2 = Army("Enemy", "Other")
+    army1 = Army.with_detachment("Aeldari", "Warhost")
+    army2 = Army.with_detachment("Enemy", "Other")
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

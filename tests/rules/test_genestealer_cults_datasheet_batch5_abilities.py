@@ -25,9 +25,9 @@ def _build_game() -> tuple[Game, Player, Player, Army, Army]:
     game.turn = 1
     game.phase = BattleRoundPhases.SHOOTING_PHASE
 
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ORK"
-    gsc_army = Army("Genestealer Cults", "Other")
+    gsc_army = Army.with_detachment("Genestealer Cults", "Other")
     gsc_army.faction_id = "GC"
 
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

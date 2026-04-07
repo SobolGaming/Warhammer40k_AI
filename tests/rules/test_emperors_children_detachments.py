@@ -1,112 +1,112 @@
-import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
-
-
-class _StubUnit:
-    def __init__(self, name, army, *, toughness=5, keywords=None, faction_keywords=None, is_transport=False, is_character=False):
-        self.name = name
-        self._id = name
-        self.toughness = toughness
-        self.models = []
-        self.special_rules = {}
-        self.round_state = SimpleNamespace(
-            remained_stationary_this_round=False,
-            charged_this_round=False,
-            disembarked_this_round=False,
-            engaged_enemies_at_turn_start=set(),
-        )
-        self.parent_army = army
-        self.is_transport = is_transport
-        self.is_character = is_character
-        self.keywords = list(keywords or [])
-        self.faction_keywords = list(faction_keywords or [])
-
-    def get_parent_army(self):
-        return self.parent_army
-
-    def get_attached_unit_root(self):
-        return self
-
-    def get_attached_unit_members(self):
-        return [self]
-
-    def get_models_for_wound_allocation(self):
-        return list(self.models)
-
-    def is_alive(self):
-        return True
-
-    def has_any_keyword(self, keyword: str) -> bool:
-        kw = (keyword or "").strip().lower()
-        if not kw:
-            return False
-        for k in (self.keywords or []) + (self.faction_keywords or []):
-            if kw == str(k).strip().lower():
-                return True
-        return False
-
-
-class _MockDatasheet:
-    def __init__(self, name, *, keywords=None, faction_keywords=None, model_count=1, base_size="32mm"):
-        self.name = name
-        self.faction_data = {"name": "Test"}
-        self.keywords = list(keywords or [])
-        self.faction_keywords = list(faction_keywords or [])
-        self.datasheets_unit_composition = [{"description": f"{model_count} Test Models"}]
-        self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
-        self.datasheets_models = [{
-            "M": "6", "T": "4", "Sv": "3", "W": "2",
-            "Ld": "7", "OC": "1",
-            "base_size": base_size, "inv_sv": "7", "inv_sv_descr": "none",
-        }]
-        self.datasheets_wargear = []
-        self.datasheets_options = [{"description": "none"}]
-        self.datasheets_abilities = []
-        self.loadout = "This model is equipped with: nothing"
-        self.transport = ""
-
-
-def _make_unit(name, *, keywords=None, faction_keywords=None, model_count=1):
-    from warhammer40k_ai.units.unit import Unit
-    datasheet = _MockDatasheet(name, keywords=keywords, faction_keywords=faction_keywords, model_count=model_count)
-    return Unit(datasheet)
-
-
-def _make_game(turn: int = 1, phase_name: str = "FIGHT_PHASE"):
-    from warhammer40k_ai.engine.event.system import EventSystem
-    return SimpleNamespace(
-        turn=turn,
-        phase=SimpleNamespace(name=phase_name),
-        event_system=EventSystem(),
-        map=None,
-    )
-
-
-def _make_melee_profile():
-    from warhammer40k_ai.units.wargear import WargearProfile
-    parent = SimpleNamespace(name="Blade", is_melee=lambda: True, is_ranged=lambda: False)
-    return WargearProfile(
-        profile_name="Melee",
-        wargear_data={
-            "range": "Melee",
-            "A": "1",
-            "BS_WS": "4+",
-            "S": "4",
-            "AP": "0",
-            "D": "1",
-            "description": "",
-        },
-        parent_wargear=parent,
-    )
-
-
-class TestEmperorsChildrenDetachments(unittest.TestCase):
-    def test_quicksilver_grace_allows_advance_reroll(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.unit import Unit
-
-        army = Army("Emperor's Children", detachment_type="Mercurial Host")
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+
+class _StubUnit:
+    def __init__(self, name, army, *, toughness=5, keywords=None, faction_keywords=None, is_transport=False, is_character=False):
+        self.name = name
+        self._id = name
+        self.toughness = toughness
+        self.models = []
+        self.special_rules = {}
+        self.round_state = SimpleNamespace(
+            remained_stationary_this_round=False,
+            charged_this_round=False,
+            disembarked_this_round=False,
+            engaged_enemies_at_turn_start=set(),
+        )
+        self.parent_army = army
+        self.is_transport = is_transport
+        self.is_character = is_character
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
+
+    def get_parent_army(self):
+        return self.parent_army
+
+    def get_attached_unit_root(self):
+        return self
+
+    def get_attached_unit_members(self):
+        return [self]
+
+    def get_models_for_wound_allocation(self):
+        return list(self.models)
+
+    def is_alive(self):
+        return True
+
+    def has_any_keyword(self, keyword: str) -> bool:
+        kw = (keyword or "").strip().lower()
+        if not kw:
+            return False
+        for k in (self.keywords or []) + (self.faction_keywords or []):
+            if kw == str(k).strip().lower():
+                return True
+        return False
+
+
+class _MockDatasheet:
+    def __init__(self, name, *, keywords=None, faction_keywords=None, model_count=1, base_size="32mm"):
+        self.name = name
+        self.faction_data = {"name": "Test"}
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
+        self.datasheets_unit_composition = [{"description": f"{model_count} Test Models"}]
+        self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
+        self.datasheets_models = [{
+            "M": "6", "T": "4", "Sv": "3", "W": "2",
+            "Ld": "7", "OC": "1",
+            "base_size": base_size, "inv_sv": "7", "inv_sv_descr": "none",
+        }]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = []
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+
+
+def _make_unit(name, *, keywords=None, faction_keywords=None, model_count=1):
+    from warhammer40k_ai.units.unit import Unit
+    datasheet = _MockDatasheet(name, keywords=keywords, faction_keywords=faction_keywords, model_count=model_count)
+    return Unit(datasheet)
+
+
+def _make_game(turn: int = 1, phase_name: str = "FIGHT_PHASE"):
+    from warhammer40k_ai.engine.event.system import EventSystem
+    return SimpleNamespace(
+        turn=turn,
+        phase=SimpleNamespace(name=phase_name),
+        event_system=EventSystem(),
+        map=None,
+    )
+
+
+def _make_melee_profile():
+    from warhammer40k_ai.units.wargear import WargearProfile
+    parent = SimpleNamespace(name="Blade", is_melee=lambda: True, is_ranged=lambda: False)
+    return WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+
+class TestEmperorsChildrenDetachments(unittest.TestCase):
+    def test_quicksilver_grace_allows_advance_reroll(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.unit import Unit
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Mercurial Host")
         army.faction_id = "EC"
         unit = _StubUnit("EC Unit", army, faction_keywords=["EMPEROR'S CHILDREN"])
 
@@ -115,388 +115,388 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         army.build_detachments[0].detachment_type = "Other"
         army.detachments[0].detachment_type = "Other"
         self.assertFalse(Unit.can_reroll_advance_roll(unit))
-
-    def test_pact_points_reroll_hit_and_wound(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.units import wargear as wargear_mod
-
-        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
-        army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
-        army.emperors_children.pact_points = 3
-
-        attacker_unit = _StubUnit("Attacker", army)
-        target_unit = _StubUnit("Target", army, toughness=4)
-
-        attacker_model = Model(
-            name="Attacker",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=3,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        attacker_model.parent_unit = attacker_unit
-        attacker_unit.models = [attacker_model]
-
-        target_model = Model(
-            name="Target",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=2,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        target_model.parent_unit = target_unit
-        target_unit.models = [target_model]
-
-        profile = _make_melee_profile()
-        aura_stub = SimpleNamespace(
-            hit=0,
-            wound=0,
-            reroll_hit_ones=False,
-            reroll_wound_ones=False,
-            reroll_hit_reasons=(),
-            reroll_wound_reasons=(),
-            target_toughness_delta=0,
-            target_toughness_reasons=(),
-        )
-
-        seq = iter([1, 4, 1, 5])
-        old_get_roll = wargear_mod.get_roll
-        wargear_mod.get_roll = lambda _s: next(seq)
-        try:
-            attack_instance = {"_aura_attack_mods": aura_stub}
-            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertEqual(int(hit_res["roll"]), 4)
-            self.assertTrue(any("Pledges to the Dark Prince" in x for x in hit_res.get("special_effects", [])))
-
-            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertEqual(int(wound_res["roll"]), 5)
-            self.assertTrue(any("Pledges to the Dark Prince" in x for x in wound_res.get("special_effects", [])))
-        finally:
-            wargear_mod.get_roll = old_get_roll
-
-    def test_pact_points_critical_on_five(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.units import wargear as wargear_mod
-
-        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
-        army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
-        army.emperors_children.pact_points = 7
-
-        attacker_unit = _StubUnit("Attacker", army)
-        target_unit = _StubUnit("Target", army, toughness=4)
-
-        attacker_model = Model(
-            name="Attacker",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=3,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        attacker_model.parent_unit = attacker_unit
-
-        profile = _make_melee_profile()
-        aura_stub = SimpleNamespace(
-            hit=0,
-            wound=0,
-            reroll_hit_ones=False,
-            reroll_wound_ones=False,
-            reroll_hit_reasons=(),
-            reroll_wound_reasons=(),
-            target_toughness_delta=0,
-            target_toughness_reasons=(),
-        )
-
-        old_get_roll = wargear_mod.get_roll
-        wargear_mod.get_roll = lambda _s: 5
-        try:
-            attack_instance = {"_aura_attack_mods": aura_stub}
-            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertTrue(attack_instance.get("crit_hit", False))
-            self.assertTrue(any("Critical hit (5+)" in x for x in hit_res.get("special_effects", [])))
-        finally:
-            wargear_mod.get_roll = old_get_roll
-
-    def test_faultless_opportunist_heroic_intervention_free_and_repeatable(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.roster.player import Player, PlayerControl
-        from warhammer40k_ai.rules.enhancement import Enhancement
-        from warhammer40k_ai.rules.stratagems import StratagemManager, Stratagem
-
-        army = Army("Test Faction", detachment_type="Peerless Bladesmen")
-        army.faction_id = "TEST"
-        bearer = _StubUnit("Bearer", army)
-        bearer.deployed = True
-        bearer.reserve_status = "deployed"
-        bearer.is_embarked = False
-        bearer.embarked_in = None
-
-        Enhancement(
-            id="000010002002",
-            name="Faultless Opportunist",
-            faction_id="TEST",
-            detachment="Peerless Bladesmen",
-            points=15,
-            description="",
-        ).apply_to_unit(bearer)
-
-        other = _StubUnit("Other", army)
-        other.deployed = True
-        other.reserve_status = "deployed"
-        other.is_embarked = False
-        other.embarked_in = None
-
-        army.units = [bearer, other]
-
-        player = Player("P1", PlayerControl.LOCAL, army)
-        player.command_points = 0
-        player.set_game(SimpleNamespace(turn=1))
-
-        strat = Stratagem(
-            id="core-hi",
-            name="Heroic Intervention",
-            type="Core",
-            description="",
-            cp_cost=1,
-            turn="Opponent's turn",
-            phase="Charge phase",
-            detachment="",
-            faction_id="",
-        )
-
-        preview = player.preview_stratagem_cp_cost(strat, target_unit=bearer)
-        self.assertEqual(int(preview["cost"]), 0)
-
-        manager = StratagemManager(player)
-        manager._used_stratagems_this_phase.add("HEROIC INTERVENTION")
-        manager._record_heroic_intervention_use(other)
-
-        self.assertTrue(manager._heroic_intervention_repeat_allowed(target_unit=bearer))
-        self.assertFalse(manager._heroic_intervention_repeat_allowed(target_unit=other))
-
-    def test_rise_to_challenge_candidates_and_usage(self):
-        from warhammer40k_ai.engine.game import Game, Battlefield
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.roster.player import Player, PlayerControl
-        from warhammer40k_ai.rules.enhancement import Enhancement
-
-        game = Game(Battlefield(width=44, height=30))
-        army = Army("Emperor's Children", detachment_type="Peerless Bladesmen")
-        army.faction_id = "EC"
-        player = Player("P1", PlayerControl.LOCAL, army)
-        army.player = player
-
-        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
-        bearer.deployed = True
-        bearer.reserve_status = "deployed"
-        bearer.set_parent_army(army)
-        Enhancement(
-            id="000010002005",
-            name="Rise to the Challenge",
-            faction_id="EC",
-            detachment="Peerless Bladesmen",
-            points=30,
-            description="",
-        ).apply_to_unit(bearer)
-
-        enemy_army = Army("Opponent", detachment_type="Other")
-        enemy = _make_unit("Enemy", keywords=["INFANTRY"], model_count=3)
-        enemy.deployed = True
-        enemy.reserve_status = "deployed"
-        enemy.set_parent_army(enemy_army)
-
-        army.units = [bearer]
-        enemy_army.units = [enemy]
-        enemy_army.player = Player("P2", PlayerControl.LOCAL, enemy_army)
-
-        bearer.models[0].model_base.set_position(0.0, 0.0, 0.0)
-        enemy.models[0].model_base.set_position(0.5, 0.0, 0.0)
-        enemy.models[1].model_base.set_position(0.6, 0.3, 0.0)
-        enemy.models[2].model_base.set_position(0.8, -0.2, 0.0)
-        game.map.units = [bearer, enemy]
-
-        candidates = game._rise_to_challenge_candidates(player)
-        self.assertIn(bearer, candidates)
-
-        bearer.special_rules["enhancement_rise_to_challenge_used"] = True
-        candidates_after = game._rise_to_challenge_candidates(player)
-        self.assertNotIn(bearer, candidates_after)
-
-    def test_rise_to_challenge_decision_handler(self):
-        from warhammer40k_ai.engine.game import Game, Battlefield
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.roster.player import Player, PlayerControl
-        from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_RISE_TO_CHALLENGE
-        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
-        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
-        from warhammer40k_ai.utility.entity_ids import get_entity_id
-
-        game = Game(Battlefield(width=44, height=30))
-        army = Army("Emperor's Children", detachment_type="Peerless Bladesmen")
-        army.faction_id = "EC"
-        player = Player("P1", PlayerControl.REMOTE, army)
-        army.player = player
-
-        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
-        bearer.set_parent_army(army)
-        army.units = [bearer]
-
-        game.players = [player]
-        game.rebuild_entity_registry()
-
-        unit_id = get_entity_id(bearer)
-        choose_opt = DecisionOption.create("Bearer", payload={"unit_id": unit_id})
-        skip_opt = DecisionOption.create("Skip", payload={"action": "skip"})
-        req = DecisionRequest.create(
-            DECISION_SELECT_RISE_TO_CHALLENGE,
-            "Select Rise to the Challenge unit.",
-            player_id=getattr(player, "id", None),
-            options=[choose_opt, skip_opt],
-        )
-
-        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=choose_opt.option_id)
-        applied = dispatch_decision(game, req, result)
-        self.assertTrue(applied.ok)
-        self.assertIs(applied.value, bearer)
-
-        skip_result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=skip_opt.option_id)
-        skipped = dispatch_decision(game, req, skip_result)
-        self.assertTrue(skipped.ok)
-        self.assertIsNone(skipped.value)
-
-    def test_pact_points_melee_lethal_and_sustained(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.units import wargear as wargear_mod
-
-        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
-        army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
-        army.emperors_children.pact_points = 5
-
-        attacker_unit = _StubUnit("Attacker", army)
-        target_unit = _StubUnit("Target", army, toughness=4)
-
-        attacker_model = Model(
-            name="Attacker",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=3,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        attacker_model.parent_unit = attacker_unit
-
-        profile = _make_melee_profile()
-        aura_stub = SimpleNamespace(
-            hit=0,
-            wound=0,
-            reroll_hit_ones=False,
-            reroll_wound_ones=False,
-            reroll_hit_reasons=(),
-            reroll_wound_reasons=(),
-            target_toughness_delta=0,
-            target_toughness_reasons=(),
-        )
-
-        old_get_roll = wargear_mod.get_roll
-        wargear_mod.get_roll = lambda _s: 6
-        try:
-            attack_instance = {"_aura_attack_mods": aura_stub}
-            profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertTrue(attack_instance.get("lethal_hit", False))
-            self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 1)
-        finally:
-            wargear_mod.get_roll = old_get_roll
-
-    def test_mechanised_murder_rerolls(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.units import wargear as wargear_mod
-
-        army = Army("Emperor's Children", detachment_type="Rapid Evisceration")
-        army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
-        army.emperors_children.pact_points = 0
-
-        attacker_unit = _StubUnit("Attacker", army, is_transport=True)
-        target_unit = _StubUnit("Target", army, toughness=4)
-
-        attacker_model = Model(
-            name="Attacker",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=3,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        attacker_model.parent_unit = attacker_unit
-        attacker_unit.models = [attacker_model]
-
-        target_model = Model(
-            name="Target",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=2,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        target_model.parent_unit = target_unit
-        target_unit.models = [target_model]
-
-        profile = _make_melee_profile()
-        aura_stub = SimpleNamespace(
-            hit=0,
-            wound=0,
-            reroll_hit_ones=False,
-            reroll_wound_ones=False,
-            reroll_hit_reasons=(),
-            reroll_wound_reasons=(),
-            target_toughness_delta=0,
-            target_toughness_reasons=(),
-        )
-
-        seq = iter([1, 5, 1, 4])
-        old_get_roll = wargear_mod.get_roll
-        wargear_mod.get_roll = lambda _s: next(seq)
-        try:
-            attack_instance = {"_aura_attack_mods": aura_stub}
-            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertTrue(any("Mechanised Murder" in x for x in hit_res.get("special_effects", [])))
-
-            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
-            self.assertTrue(any("Mechanised Murder" in x for x in wound_res.get("special_effects", [])))
-        finally:
-            wargear_mod.get_roll = old_get_roll
-
+
+    def test_pact_points_reroll_hit_and_wound(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
+        army.emperors_children.pact_points = 3
+
+        attacker_unit = _StubUnit("Attacker", army)
+        target_unit = _StubUnit("Target", army, toughness=4)
+
+        attacker_model = Model(
+            name="Attacker",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=3,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+        attacker_unit.models = [attacker_model]
+
+        target_model = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model.parent_unit = target_unit
+        target_unit.models = [target_model]
+
+        profile = _make_melee_profile()
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        seq = iter([1, 4, 1, 5])
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: next(seq)
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertEqual(int(hit_res["roll"]), 4)
+            self.assertTrue(any("Pledges to the Dark Prince" in x for x in hit_res.get("special_effects", [])))
+
+            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertEqual(int(wound_res["roll"]), 5)
+            self.assertTrue(any("Pledges to the Dark Prince" in x for x in wound_res.get("special_effects", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
+    def test_pact_points_critical_on_five(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
+        army.emperors_children.pact_points = 7
+
+        attacker_unit = _StubUnit("Attacker", army)
+        target_unit = _StubUnit("Target", army, toughness=4)
+
+        attacker_model = Model(
+            name="Attacker",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=3,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+
+        profile = _make_melee_profile()
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: 5
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(attack_instance.get("crit_hit", False))
+            self.assertTrue(any("Critical hit (5+)" in x for x in hit_res.get("special_effects", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
+    def test_faultless_opportunist_heroic_intervention_free_and_repeatable(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.rules.stratagems import StratagemManager, Stratagem
+
+        army = Army.with_detachment("Test Faction", detachment_type="Peerless Bladesmen")
+        army.faction_id = "TEST"
+        bearer = _StubUnit("Bearer", army)
+        bearer.deployed = True
+        bearer.reserve_status = "deployed"
+        bearer.is_embarked = False
+        bearer.embarked_in = None
+
+        Enhancement(
+            id="000010002002",
+            name="Faultless Opportunist",
+            faction_id="TEST",
+            detachment="Peerless Bladesmen",
+            points=15,
+            description="",
+        ).apply_to_unit(bearer)
+
+        other = _StubUnit("Other", army)
+        other.deployed = True
+        other.reserve_status = "deployed"
+        other.is_embarked = False
+        other.embarked_in = None
+
+        army.units = [bearer, other]
+
+        player = Player("P1", PlayerControl.LOCAL, army)
+        player.command_points = 0
+        player.set_game(SimpleNamespace(turn=1))
+
+        strat = Stratagem(
+            id="core-hi",
+            name="Heroic Intervention",
+            type="Core",
+            description="",
+            cp_cost=1,
+            turn="Opponent's turn",
+            phase="Charge phase",
+            detachment="",
+            faction_id="",
+        )
+
+        preview = player.preview_stratagem_cp_cost(strat, target_unit=bearer)
+        self.assertEqual(int(preview["cost"]), 0)
+
+        manager = StratagemManager(player)
+        manager._used_stratagems_this_phase.add("HEROIC INTERVENTION")
+        manager._record_heroic_intervention_use(other)
+
+        self.assertTrue(manager._heroic_intervention_repeat_allowed(target_unit=bearer))
+        self.assertFalse(manager._heroic_intervention_repeat_allowed(target_unit=other))
+
+    def test_rise_to_challenge_candidates_and_usage(self):
+        from warhammer40k_ai.engine.game import Game, Battlefield
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        game = Game(Battlefield(width=44, height=30))
+        army = Army.with_detachment("Emperor's Children", detachment_type="Peerless Bladesmen")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.LOCAL, army)
+        army.player = player
+
+        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
+        bearer.deployed = True
+        bearer.reserve_status = "deployed"
+        bearer.set_parent_army(army)
+        Enhancement(
+            id="000010002005",
+            name="Rise to the Challenge",
+            faction_id="EC",
+            detachment="Peerless Bladesmen",
+            points=30,
+            description="",
+        ).apply_to_unit(bearer)
+
+        enemy_army = Army.with_detachment("Opponent", detachment_type="Other")
+        enemy = _make_unit("Enemy", keywords=["INFANTRY"], model_count=3)
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+        enemy.set_parent_army(enemy_army)
+
+        army.units = [bearer]
+        enemy_army.units = [enemy]
+        enemy_army.player = Player("P2", PlayerControl.LOCAL, enemy_army)
+
+        bearer.models[0].model_base.set_position(0.0, 0.0, 0.0)
+        enemy.models[0].model_base.set_position(0.5, 0.0, 0.0)
+        enemy.models[1].model_base.set_position(0.6, 0.3, 0.0)
+        enemy.models[2].model_base.set_position(0.8, -0.2, 0.0)
+        game.map.units = [bearer, enemy]
+
+        candidates = game._rise_to_challenge_candidates(player)
+        self.assertIn(bearer, candidates)
+
+        bearer.special_rules["enhancement_rise_to_challenge_used"] = True
+        candidates_after = game._rise_to_challenge_candidates(player)
+        self.assertNotIn(bearer, candidates_after)
+
+    def test_rise_to_challenge_decision_handler(self):
+        from warhammer40k_ai.engine.game import Game, Battlefield
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_RISE_TO_CHALLENGE
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        game = Game(Battlefield(width=44, height=30))
+        army = Army.with_detachment("Emperor's Children", detachment_type="Peerless Bladesmen")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.REMOTE, army)
+        army.player = player
+
+        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
+        bearer.set_parent_army(army)
+        army.units = [bearer]
+
+        game.players = [player]
+        game.rebuild_entity_registry()
+
+        unit_id = get_entity_id(bearer)
+        choose_opt = DecisionOption.create("Bearer", payload={"unit_id": unit_id})
+        skip_opt = DecisionOption.create("Skip", payload={"action": "skip"})
+        req = DecisionRequest.create(
+            DECISION_SELECT_RISE_TO_CHALLENGE,
+            "Select Rise to the Challenge unit.",
+            player_id=getattr(player, "id", None),
+            options=[choose_opt, skip_opt],
+        )
+
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=choose_opt.option_id)
+        applied = dispatch_decision(game, req, result)
+        self.assertTrue(applied.ok)
+        self.assertIs(applied.value, bearer)
+
+        skip_result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=skip_opt.option_id)
+        skipped = dispatch_decision(game, req, skip_result)
+        self.assertTrue(skipped.ok)
+        self.assertIsNone(skipped.value)
+
+    def test_pact_points_melee_lethal_and_sustained(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
+        army.emperors_children.pact_points = 5
+
+        attacker_unit = _StubUnit("Attacker", army)
+        target_unit = _StubUnit("Target", army, toughness=4)
+
+        attacker_model = Model(
+            name="Attacker",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=3,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+
+        profile = _make_melee_profile()
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: 6
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(attack_instance.get("lethal_hit", False))
+            self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 1)
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
+    def test_mechanised_murder_rerolls(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Rapid Evisceration")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
+        army.emperors_children.pact_points = 0
+
+        attacker_unit = _StubUnit("Attacker", army, is_transport=True)
+        target_unit = _StubUnit("Target", army, toughness=4)
+
+        attacker_model = Model(
+            name="Attacker",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=3,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+        attacker_unit.models = [attacker_model]
+
+        target_model = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model.parent_unit = target_unit
+        target_unit.models = [target_model]
+
+        profile = _make_melee_profile()
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        seq = iter([1, 5, 1, 4])
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: next(seq)
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(any("Mechanised Murder" in x for x in hit_res.get("special_effects", [])))
+
+            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(any("Mechanised Murder" in x for x in wound_res.get("special_effects", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
     def test_internal_rivalries_roll_modifier_choice(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.units.unit import Unit
         from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE, CHOICE_KEEP_ALL
 
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
         army.player = SimpleNamespace(name="P1", id="P1")
 
@@ -517,7 +517,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
         from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE, CHOICE_KEEP_ALL
 
-        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
         army.player = SimpleNamespace(name="P1", id="P1")
 
@@ -548,9 +548,9 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.utility.decision_utils import resolve_decision_value
         from warhammer40k_ai.utility.entity_ids import get_entity_id
 
-        ec_army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        ec_army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
         ec_army.faction_id = "EC"
-        enemy_army = Army("Opponent", detachment_type="Other")
+        enemy_army = Army.with_detachment("Opponent", detachment_type="Other")
 
         ec_player = Player("EC_Pledge", PlayerControl.REMOTE, army=ec_army)
         enemy_player = Player("Enemy_Pledge", PlayerControl.REMOTE, army=enemy_army)
@@ -612,10 +612,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.utility.entity_ids import get_entity_id
 
-        ec_army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        ec_army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
         ec_army.faction_id = "EC"
         player = Player("EC_InvalidPledge", PlayerControl.REMOTE, army=ec_army)
-        enemy = Player("Enemy_InvalidPledge", PlayerControl.REMOTE, army=Army("Opponent", detachment_type="Other"))
+        enemy = Player("Enemy_InvalidPledge", PlayerControl.REMOTE, army=Army.with_detachment("Opponent", detachment_type="Other"))
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
         game.add_player(player)
@@ -655,9 +655,9 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        ec_army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        ec_army = Army.with_detachment("Emperor's Children", detachment_type="Slaanesh's Chosen")
         ec_army.faction_id = "EC"
-        enemy_army = Army("Opponent", detachment_type="Other")
+        enemy_army = Army.with_detachment("Opponent", detachment_type="Other")
 
         ec_player = Player("EC_Favoured", PlayerControl.REMOTE, army=ec_army)
         enemy_player = Player("Enemy_Favoured", PlayerControl.REMOTE, army=enemy_army)
@@ -703,80 +703,80 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.units.unit import Unit
 
         army = SimpleNamespace()
-        attacker = _StubUnit("Attacker", army)
-        attacker.special_rules = {
-            "sensational_performance_active": True,
-            "sensational_performance_expires_phase": "FIGHT_PHASE",
-        }
-        attacker.round_state.engaged_enemies_at_turn_start = set()
-
-        target = _StubUnit("Target", army)
-        game = SimpleNamespace(
-            phase=SimpleNamespace(name="FIGHT_PHASE"),
-            phase_targeted_units={target._id: {"other"}},
-            phase_charge_targets={target._id: {"other"}},
-        )
-        reason = Unit._sensational_performance_restriction_reason(attacker, target, game)
-        self.assertTrue(reason and "Sensational Performance" in reason)
-
-        game.phase_targeted_units = {}
-        reason = Unit._sensational_performance_restriction_reason(attacker, target, game)
-        self.assertIsNone(reason)
-
-    def test_sensational_performance_bonuses(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.units import wargear as wargear_mod
-
-        army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
-        army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
-
-        attacker_unit = _StubUnit("Attacker", army)
-        attacker_unit.special_rules = {
-            "sensational_performance_active": True,
-            "sensational_performance_expires_phase": "FIGHT_PHASE",
-            "sensational_performance_strength_bonus": 1,
-            "sensational_performance_ap_bonus": 1,
-        }
-        target_unit = _StubUnit("Target", army, toughness=4)
-
-        attacker_model = Model(
-            name="Attacker",
-            movement=6,
-            toughness=4,
-            save=3,
-            wounds=3,
-            leadership=7,
-            objective_control=1,
-            model_base=Base(BaseType.CIRCULAR, 1.0),
-        )
-        attacker_model.parent_unit = attacker_unit
-
-        profile = _make_melee_profile()
-        ap_val = profile.get_effective_ap(attacker_model, target_unit)
-        self.assertEqual(int(ap_val), -1)
-
-        aura_stub = SimpleNamespace(
-            hit=0,
-            wound=0,
-            reroll_hit_ones=False,
-            reroll_wound_ones=False,
-            reroll_hit_reasons=(),
-            reroll_wound_reasons=(),
-            target_toughness_delta=0,
-            target_toughness_reasons=(),
-        )
-
-        old_get_roll = wargear_mod.get_roll
-        wargear_mod.get_roll = lambda _s: 4
-        try:
-            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, {"_aura_attack_mods": aura_stub})
-            self.assertTrue(any("Sensational Performance" in x for x in wound_res.get("modifiers", [])))
-        finally:
-            wargear_mod.get_roll = old_get_roll
-
+        attacker = _StubUnit("Attacker", army)
+        attacker.special_rules = {
+            "sensational_performance_active": True,
+            "sensational_performance_expires_phase": "FIGHT_PHASE",
+        }
+        attacker.round_state.engaged_enemies_at_turn_start = set()
+
+        target = _StubUnit("Target", army)
+        game = SimpleNamespace(
+            phase=SimpleNamespace(name="FIGHT_PHASE"),
+            phase_targeted_units={target._id: {"other"}},
+            phase_charge_targets={target._id: {"other"}},
+        )
+        reason = Unit._sensational_performance_restriction_reason(attacker, target, game)
+        self.assertTrue(reason and "Sensational Performance" in reason)
+
+        game.phase_targeted_units = {}
+        reason = Unit._sensational_performance_restriction_reason(attacker, target, game)
+        self.assertIsNone(reason)
+
+    def test_sensational_performance_bonuses(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Court of the Phoenician")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
+
+        attacker_unit = _StubUnit("Attacker", army)
+        attacker_unit.special_rules = {
+            "sensational_performance_active": True,
+            "sensational_performance_expires_phase": "FIGHT_PHASE",
+            "sensational_performance_strength_bonus": 1,
+            "sensational_performance_ap_bonus": 1,
+        }
+        target_unit = _StubUnit("Target", army, toughness=4)
+
+        attacker_model = Model(
+            name="Attacker",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=3,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+
+        profile = _make_melee_profile()
+        ap_val = profile.get_effective_ap(attacker_model, target_unit)
+        self.assertEqual(int(ap_val), -1)
+
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: 4
+        try:
+            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, {"_aura_attack_mods": aura_stub})
+            self.assertTrue(any("Sensational Performance" in x for x in wound_res.get("modifiers", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
     def test_sensational_performance_action_log(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
@@ -784,13 +784,13 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.utility.decision_utils import resolve_decision_command
         from warhammer40k_ai.utility.event_bus import get_recent_actions
-
-        army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
-        army.faction_id = "EC"
-        player = Player("P1_Sensational_Log", PlayerControl.REMOTE, army=army)
-        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        game.add_player(player)
-
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Court of the Phoenician")
+        army.faction_id = "EC"
+        player = Player("P1_Sensational_Log", PlayerControl.REMOTE, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        game.add_player(player)
+
         unit = _StubUnit("Attacker", army)
         unit.round_state.charged_this_round = True
         army.units = [unit]
@@ -808,60 +808,60 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         actions = get_recent_actions(player, limit=5)
         self.assertTrue(any("Sensational Performance" in entry for entry in actions))
-
-    def test_master_of_the_pageant_discount_and_usage(self):
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.roster.player import Player, PlayerControl
-        from warhammer40k_ai.rules.stratagems import Stratagem
-
-        army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
-        army.faction_id = "EC"
-        player = Player("P1", PlayerControl.LOCAL, army=army)
-        player.game = SimpleNamespace(turn=1)
-
-        fulgrim_unit = _StubUnit("Fulgrim", army, keywords=["FULGRIM"])
-        strat = Stratagem(
-            id="sinuous",
-            name="Sinuous Breach",
-            type="Stratagem",
-            description="",
-            cp_cost=1,
-            turn="Your turn",
-            phase="Movement phase",
-            detachment="Court of the Phoenician",
-            faction_id="EC",
-        )
-
-        prev = player.preview_stratagem_cp_cost(strat, target_unit=fulgrim_unit, assume_optional_discounts=True)
-        self.assertEqual(int(prev.get("discount", 0)), 1)
-
-        player.set_next_optional_decision("MASTER_OF_THE_PAGEANT", True)
-        applied = player.apply_stratagem_cp_cost(strat, target_unit=fulgrim_unit)
-        self.assertEqual(int(applied.get("cost", 1)), 0)
-        self.assertEqual(int(army.emperors_children.master_of_pageant_used_round or 0), 1)
-
-        prev2 = player.preview_stratagem_cp_cost(strat, target_unit=fulgrim_unit, assume_optional_discounts=True)
-        self.assertEqual(int(prev2.get("discount", 0)), 0)
-
+
+    def test_master_of_the_pageant_discount_and_usage(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.stratagems import Stratagem
+
+        army = Army.with_detachment("Emperor's Children", detachment_type="Court of the Phoenician")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.LOCAL, army=army)
+        player.game = SimpleNamespace(turn=1)
+
+        fulgrim_unit = _StubUnit("Fulgrim", army, keywords=["FULGRIM"])
+        strat = Stratagem(
+            id="sinuous",
+            name="Sinuous Breach",
+            type="Stratagem",
+            description="",
+            cp_cost=1,
+            turn="Your turn",
+            phase="Movement phase",
+            detachment="Court of the Phoenician",
+            faction_id="EC",
+        )
+
+        prev = player.preview_stratagem_cp_cost(strat, target_unit=fulgrim_unit, assume_optional_discounts=True)
+        self.assertEqual(int(prev.get("discount", 0)), 1)
+
+        player.set_next_optional_decision("MASTER_OF_THE_PAGEANT", True)
+        applied = player.apply_stratagem_cp_cost(strat, target_unit=fulgrim_unit)
+        self.assertEqual(int(applied.get("cost", 1)), 0)
+        self.assertEqual(int(army.emperors_children.master_of_pageant_used_round or 0), 1)
+
+        prev2 = player.preview_stratagem_cp_cost(strat, target_unit=fulgrim_unit, assume_optional_discounts=True)
+        self.assertEqual(int(prev2.get("discount", 0)), 0)
+
     def test_unbound_arrogance_increases_pledge(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
-        army.faction_id = "EC"
-        player = Player("P1", PlayerControl.LOCAL, army=army)
-
-        game = SimpleNamespace(
-            turn=1,
-            event_system=SimpleNamespace(subscribe=lambda *args, **kwargs: None),
-        )
-        player.set_game(game)
-        player.command_points = 1
-
-        unit = _StubUnit("EC Unit", army, faction_keywords=["EMPEROR'S CHILDREN"])
-        manager = player.stratagems
-        manager._current_phase_name = "Shooting phase"
-
+        army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.LOCAL, army=army)
+
+        game = SimpleNamespace(
+            turn=1,
+            event_system=SimpleNamespace(subscribe=lambda *args, **kwargs: None),
+        )
+        player.set_game(game)
+        player.command_points = 1
+
+        unit = _StubUnit("EC Unit", army, faction_keywords=["EMPEROR'S CHILDREN"])
+        manager = player.stratagems
+        manager._current_phase_name = "Shooting phase"
+
         ok = manager.use("UNBOUND ARROGANCE", unit=unit, target_unit=unit, phase_name="Shooting phase")
         self.assertTrue(ok)
         self.assertEqual(int(army.emperors_children.pledge_target or 0), 1)
@@ -871,7 +871,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
-        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army = Army.with_detachment("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
         player = Player("P1", PlayerControl.LOCAL, army=army)
 

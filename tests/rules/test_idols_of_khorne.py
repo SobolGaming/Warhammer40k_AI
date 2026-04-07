@@ -74,9 +74,9 @@ def _make_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    we_army = Army("World Eaters", "Cult of Blood")
+    we_army = Army.with_detachment("World Eaters", "Cult of Blood")
     we_army.faction_id = "WE"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)
@@ -90,7 +90,7 @@ def _make_game():
 def test_cult_of_blood_adds_battleline_keywords():
     from warhammer40k_ai.roster.army import Army
 
-    army = Army("World Eaters", "Cult of Blood")
+    army = Army.with_detachment("World Eaters", "Cult of Blood")
     army.faction_id = "WE"
     jakhals = _make_unit(
         "Jakhals",

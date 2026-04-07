@@ -77,9 +77,9 @@ def _build_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    dg_army = Army("Death Guard", "Virulent Vectorium")
+    dg_army = Army.with_detachment("Death Guard", "Virulent Vectorium")
     dg_army.faction_id = "DG"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     dg_player = Player("DG", control=PlayerControl.LOCAL, army=dg_army)

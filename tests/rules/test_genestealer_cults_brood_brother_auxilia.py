@@ -105,9 +105,9 @@ def _build_game(
     points_limit: int = 2000,
 ) -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    gsc_army = Army("Genestealer Cults", detachment, points_limit=points_limit)
+    gsc_army = Army.with_detachment("Genestealer Cults", detachment, points_limit=points_limit)
     gsc_army.faction_id = "GC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("GSC", control=PlayerControl.REMOTE, army=gsc_army)
     p2 = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

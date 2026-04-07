@@ -83,9 +83,9 @@ def _make_unit(
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
-    sm_army = Army("Space Marines", "Saga of the Great Wolf")
+    sm_army = Army.with_detachment("Space Marines", "Saga of the Great Wolf")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("SM", control=PlayerControl.LOCAL, army=sm_army)

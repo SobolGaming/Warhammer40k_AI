@@ -61,9 +61,9 @@ def _make_unit(name: str, *, abilities=None, keywords=None, faction_keywords=Non
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tyr_army = Army("Tyranids", detachment_type="Other")
+    tyr_army = Army.with_detachment("Tyranids", detachment_type="Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", PlayerControl.REMOTE, army=tyr_army)
     p2 = Player("P2", PlayerControl.REMOTE, army=enemy_army)

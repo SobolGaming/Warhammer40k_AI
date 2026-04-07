@@ -49,7 +49,7 @@ def _make_unit(name, *, abilities=None, keywords=None, transport=""):
 
 def test_destroyed_transport_disembark_retries_as_emergency_after_final_validation_failure():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
-    army = Army("Test", "Detachment")
+    army = Army.with_detachment("Test", "Detachment")
     player = Player("P1", PlayerControl.LOCAL, army)
     game = Game(bf, players=[player])
 

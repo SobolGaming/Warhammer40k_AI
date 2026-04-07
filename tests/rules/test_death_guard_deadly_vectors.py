@@ -80,9 +80,9 @@ def _build_game(detachment: str):
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    dg_army = Army("Death Guard", detachment)
+    dg_army = Army.with_detachment("Death Guard", detachment)
     dg_army.faction_id = "DG"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     dg_player = Player("DG", control=PlayerControl.LOCAL, army=dg_army)

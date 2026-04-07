@@ -84,9 +84,9 @@ def _make_unit(
 def _make_game() -> tuple[Game, Player, Player]:
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    custodes_army = Army("Adeptus Custodes", "Lions of the Emperor")
+    custodes_army = Army.with_detachment("Adeptus Custodes", "Lions of the Emperor")
     custodes_army.faction_id = "AC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     custodes_player = Player("AC", control=PlayerControl.LOCAL, army=custodes_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)

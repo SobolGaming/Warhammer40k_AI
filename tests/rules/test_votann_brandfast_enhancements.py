@@ -81,9 +81,9 @@ def _make_objective(name: str, x: float, y: float) -> Objective:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Leagues of Votann", "Brandfast Oathband")
+    army1 = Army.with_detachment("Leagues of Votann", "Brandfast Oathband")
     army1.faction_id = "LOV"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

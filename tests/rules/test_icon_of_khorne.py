@@ -55,9 +55,9 @@ class TestIconOfKhorne(unittest.TestCase):
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
-        we_army = Army("World Eaters", "Berzerker Warband")
+        we_army = Army.with_detachment("World Eaters", "Berzerker Warband")
         we_army.faction_id = "WE"
-        enemy_army = Army("Enemy", "Other")
+        enemy_army = Army.with_detachment("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
         p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)

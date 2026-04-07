@@ -76,9 +76,9 @@ def _build_game(detachment_type: str = "Reclamation Force"):
     game.turn = 1
     game.phase = BattleRoundPhases.SHOOTING_PHASE
 
-    sm_army = Army("Space Marines", detachment_type)
+    sm_army = Army.with_detachment("Space Marines", detachment_type)
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("Space Marines", control=PlayerControl.REMOTE, army=sm_army)

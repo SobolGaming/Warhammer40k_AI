@@ -73,9 +73,9 @@ def _make_objective(name: str, x: float, y: float) -> Objective:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ik_army = Army("Imperial Knights", detachment_type="Gate Warden Lance")
+    ik_army = Army.with_detachment("Imperial Knights", detachment_type="Gate Warden Lance")
     ik_army.faction_id = "QI"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
     ik_player = Player("IK", PlayerControl.REMOTE, army=ik_army)
     enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)

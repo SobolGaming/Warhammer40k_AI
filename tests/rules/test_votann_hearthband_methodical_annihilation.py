@@ -51,9 +51,9 @@ def create_unit(name: str, x: float, y: float, *, keywords=None, faction_keyword
 
 
 def attach_to_armies(game_map: Map, units_a, units_b):
-    army_a = Army("Army A", "Hearthband")
+    army_a = Army.with_detachment("Army A", "Hearthband")
     army_a.faction_id = "LOV"
-    army_b = Army("Army B", "Other")
+    army_b = Army.with_detachment("Army B", "Other")
     army_b.faction_id = "ENEMY"
     game = SimpleNamespace(map=game_map, turn=1)
     army_a.player = SimpleNamespace(game=game)

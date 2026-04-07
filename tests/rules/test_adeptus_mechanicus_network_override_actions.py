@@ -91,9 +91,9 @@ def _build_game(detachment_type: str = "Data-psalm Conclave"):
     game = Game(battlefield)
     game.turn = 1
 
-    army_adm = Army("Adeptus Mechanicus", detachment_type)
+    army_adm = Army.with_detachment("Adeptus Mechanicus", detachment_type)
     army_adm.faction_id = "ADM"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army_adm)

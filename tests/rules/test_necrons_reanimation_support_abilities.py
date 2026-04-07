@@ -84,9 +84,9 @@ def _build_game():
     game.turn = 1
     game.phase = BattleRoundPhases.SHOOTING_PHASE
 
-    necrons = Army("Necrons", "Detachment")
+    necrons = Army.with_detachment("Necrons", "Detachment")
     necrons.faction_id = "NEC"
-    enemy = Army("Enemy", "Detachment")
+    enemy = Army.with_detachment("Enemy", "Detachment")
     enemy.faction_id = "EN"
 
     p1 = Player("Necron Player", control=PlayerControl.REMOTE, army=necrons)

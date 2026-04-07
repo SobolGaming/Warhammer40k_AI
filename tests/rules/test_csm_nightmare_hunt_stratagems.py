@@ -112,9 +112,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    nightmare_army = Army("Chaos Space Marines", "Nightmare Hunt")
+    nightmare_army = Army.with_detachment("Chaos Space Marines", "Nightmare Hunt")
     nightmare_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     nightmare_player = Player("Nightmare", control=PlayerControl.LOCAL, army=nightmare_army)

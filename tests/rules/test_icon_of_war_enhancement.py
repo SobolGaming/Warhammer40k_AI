@@ -67,7 +67,7 @@ class TestIconOfWarEnhancement(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-        army = Army("World Eaters", "Khorne Daemonkin")
+        army = Army.with_detachment("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game.add_player(player)

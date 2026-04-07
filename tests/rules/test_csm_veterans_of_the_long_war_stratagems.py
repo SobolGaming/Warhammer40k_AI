@@ -124,9 +124,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    veterans_army = Army("Chaos Space Marines", "Veterans of the Long War")
+    veterans_army = Army.with_detachment("Chaos Space Marines", "Veterans of the Long War")
     veterans_army.faction_id = "CSM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     veterans_player = Player("Veterans", control=PlayerControl.LOCAL, army=veterans_army)

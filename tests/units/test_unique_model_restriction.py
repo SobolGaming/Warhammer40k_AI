@@ -35,7 +35,7 @@ def test_unique_model_restriction_blocks_duplicates():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Aeldari", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Aeldari", "Detachment", points_limit=2000)
     unit1 = make_unit("Death Jester", abilities=[ability])
     unit2 = make_unit("Death Jester", abilities=[ability])
     army.add_unit(unit1)
@@ -52,7 +52,7 @@ def test_unique_model_restriction_allows_single_instance():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Aeldari", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Aeldari", "Detachment", points_limit=2000)
     unit = make_unit("Death Jester", abilities=[ability])
     army.add_unit(unit)
 
@@ -66,7 +66,7 @@ def test_named_unit_restriction_blocks_duplicates_with_word_limit():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     unit1 = make_unit("Captain Sicarius", abilities=[ability])
     unit2 = make_unit("Captain Sicarius", abilities=[ability])
     army.add_unit(unit1)
@@ -83,7 +83,7 @@ def test_named_unit_restriction_allows_up_to_digit_limit():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
 
@@ -97,7 +97,7 @@ def test_named_unit_restriction_blocks_when_above_digit_limit():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
@@ -113,7 +113,7 @@ def test_named_unit_restriction_blocks_duplicates_with_digit_one_singular():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
     army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
 
@@ -128,7 +128,7 @@ def test_named_model_restriction_blocks_duplicates():
         "type": "Datasheet",
         "parameter": "",
     }
-    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army = Army.with_detachment("Space Marines", "Detachment", points_limit=2000)
     army.add_unit(make_unit("Emperor's Champion", abilities=[ability]))
     army.add_unit(make_unit("Emperor's Champion", abilities=[ability]))
 

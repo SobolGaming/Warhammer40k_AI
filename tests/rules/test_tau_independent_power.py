@@ -34,7 +34,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=None
 
 
 def test_tau_independent_power_blocks_farsight_with_ethereal_units():
-    army = Army("T'au Empire", "Kauyon", points_limit=2000)
+    army = Army.with_detachment("T'au Empire", "Kauyon", points_limit=2000)
     farsight = make_unit(
         "Commander Farsight",
         keywords=["CHARACTER", "INFANTRY"],
@@ -57,7 +57,7 @@ def test_tau_independent_power_blocks_farsight_with_ethereal_units():
 
 
 def test_tau_independent_power_allows_farsight_without_ethereals():
-    army = Army("T'au Empire", "Kauyon", points_limit=2000)
+    army = Army.with_detachment("T'au Empire", "Kauyon", points_limit=2000)
     farsight = make_unit("Commander Farsight", keywords=["CHARACTER", "INFANTRY"])
     strike_team = make_unit("Strike Team", keywords=["INFANTRY", "BATTLELINE"])
     army.add_unit(farsight)
@@ -67,7 +67,7 @@ def test_tau_independent_power_allows_farsight_without_ethereals():
 
 
 def test_tau_independent_power_allows_ethereals_without_farsight():
-    army = Army("T'au Empire", "Kauyon", points_limit=2000)
+    army = Army.with_detachment("T'au Empire", "Kauyon", points_limit=2000)
     ethereal = make_unit("Ethereal", keywords=["CHARACTER", "INFANTRY", "ETHEREAL"])
     strike_team = make_unit("Strike Team", keywords=["INFANTRY", "BATTLELINE"])
     army.add_unit(ethereal)

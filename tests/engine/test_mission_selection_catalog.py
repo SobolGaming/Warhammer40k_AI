@@ -15,8 +15,8 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 
 
 def _build_game(*, player_a_force: str | None = None, player_b_force: str | None = None) -> Game:
-    army_a = Army("Chaos Daemons", "Test")
-    army_b = Army("Chaos Daemons", "Test")
+    army_a = Army.with_detachment("Chaos Daemons", "Test")
+    army_b = Army.with_detachment("Chaos Daemons", "Test")
     army_a.force_disposition = player_a_force
     army_b.force_disposition = player_b_force
     if player_a_force:

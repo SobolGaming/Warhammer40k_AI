@@ -63,9 +63,9 @@ def _make_model(name, unit, x, y):
 
 
 def _build_game(*, reacting_control=PlayerControl.REMOTE):
-    army_attack = Army("Attack Army", detachment_type="Other")
+    army_attack = Army.with_detachment("Attack Army", detachment_type="Other")
     army_attack.faction_id = "ATK"
-    army_react = Army("React Army", detachment_type="Other")
+    army_react = Army.with_detachment("React Army", detachment_type="Other")
     army_react.faction_id = "CSM"
 
     attacking_player = Player("Attacker", PlayerControl.LOCAL, army=army_attack)
@@ -166,4 +166,4 @@ def test_csm_guns_blazing_once_per_turn_gate_blocks_repeat_trigger():
     )
 
     pending = game.decision_queue.list()
-    assert pending == []
+    assert pending == []

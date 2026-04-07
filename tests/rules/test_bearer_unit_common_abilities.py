@@ -188,7 +188,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         unit = _make_unit("Warboss", abilities=abilities, faction_name="Orks")
         unit._refresh_bearer_unit_common_modifiers()
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(unit)
 
@@ -234,7 +234,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         warboss.deployed = True
         warboss.reserve_status = "deployed"
 
-        army = Army("Orks", "Bully Boyz")
+        army = Army.with_detachment("Orks", "Bully Boyz")
         army.faction_id = "ORK"
         player = Player("Orks", control=PlayerControl.REMOTE, army=army)
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
@@ -274,7 +274,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         leader.attached_to = meganobz
         leader.can_be_attached_to = [meganobz.name]
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(meganobz)
         army.add_unit(leader)
@@ -309,7 +309,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         unit = _make_unit("Zodgrod Wortsnagga", abilities=abilities, faction_name="Orks")
         unit._refresh_bearer_unit_common_modifiers()
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(unit)
 
@@ -342,7 +342,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         )
         target = _make_unit("Target", faction_name="Orks")
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(attacker)
         army.add_unit(target)
@@ -389,7 +389,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         attacker.embarked_in = object()
         target = _make_unit("Target", faction_name="Orks")
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(attacker)
         army.add_unit(target)
@@ -435,7 +435,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         )
         target = _make_unit("Target", faction_name="Orks")
 
-        army = Army("Orks", "Waaagh!")
+        army = Army.with_detachment("Orks", "Waaagh!")
         army.faction_id = "ORK"
         army.add_unit(attacker)
         army.add_unit(target)
@@ -1381,7 +1381,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         bodyguard = _make_unit("Bodyguard", ds_id="BG2")
         leader = _make_unit("Leader", ds_id="LD2", abilities=[ability], attached_to=["BG2"])
 
-        army = Army("Chaos Daemons", "Detachment")
+        army = Army.with_detachment("Chaos Daemons", "Detachment")
         army.faction_id = "CD"
         army.add_unit(bodyguard)
         army.add_unit(leader)
@@ -1407,7 +1407,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         bodyguard = _make_unit("Bodyguard", ds_id="BG3")
         leader = _make_unit("Leader", ds_id="LD3", abilities=[ability], attached_to=["BG3"])
 
-        army = Army("Chaos Daemons", "Detachment")
+        army = Army.with_detachment("Chaos Daemons", "Detachment")
         army.faction_id = "CD"
         army.add_unit(bodyguard)
         army.add_unit(leader)
@@ -1457,7 +1457,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         leader = _make_unit("Leader", ds_id="LD1", abilities=[ability], attached_to=["BG1"], leadership="7")
         leader.models[0].optional_wargear.append("Daemonic Icon")
 
-        army = Army("Chaos Daemons", "Detachment")
+        army = Army.with_detachment("Chaos Daemons", "Detachment")
         army.faction_id = "CD"
         army.add_unit(bodyguard)
         army.add_unit(leader)
@@ -1483,7 +1483,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         leader._refresh_bearer_unit_common_modifiers()
         self.assertEqual(leader.leadership, 7)
 
-        army = Army("Chaos Daemons", "Detachment")
+        army = Army.with_detachment("Chaos Daemons", "Detachment")
         army.faction_id = "CD"
         army.add_unit(bodyguard)
         army.add_unit(leader)

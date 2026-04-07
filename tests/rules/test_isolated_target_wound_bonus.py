@@ -62,8 +62,8 @@ def create_unit(
 
 
 def attach_to_armies(game_map: Map, units_a, units_b):
-    army_a = Army("Army A", "Detachment A")
-    army_b = Army("Army B", "Detachment B")
+    army_a = Army.with_detachment("Army A", "Detachment A")
+    army_b = Army.with_detachment("Army B", "Detachment B")
     for u in units_a:
         army_a.add_unit(u)
     for u in units_b:

@@ -54,8 +54,8 @@ class _ConvergenceDatasheet:
 
 
 def _build_game_with_convergence(quantity: int = 3) -> tuple[Game, Player, Army, Unit]:
-    necron_army = Army("Necrons", "Hypercrypt Legion")
-    enemy_army = Army("Space Marines", "Gladius Task Force")
+    necron_army = Army.with_detachment("Necrons", "Hypercrypt Legion")
+    enemy_army = Army.with_detachment("Space Marines", "Gladius Task Force")
 
     necron_player = Player("Necrons", PlayerControl.LOCAL, army=necron_army)
     enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)

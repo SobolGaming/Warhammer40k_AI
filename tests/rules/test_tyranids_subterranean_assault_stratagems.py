@@ -89,9 +89,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    tyr_army = Army("Tyranids", "Subterranean Assault")
+    tyr_army = Army.with_detachment("Tyranids", "Subterranean Assault")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     tyr_player = Player("Tyranids", control=PlayerControl.LOCAL, army=tyr_army)

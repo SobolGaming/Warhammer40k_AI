@@ -79,7 +79,7 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
             attached_to=["bodyguard1"],
         )
 
-        army = Army("Test Faction", "Detachment")
+        army = Army.with_detachment("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(bodyguard)
         army.add_unit(leader)
@@ -149,7 +149,7 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
             attached_to=["bodyguard2"],
         )
 
-        army = Army("Test Faction", "Detachment")
+        army = Army.with_detachment("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(bodyguard)
         army.add_unit(leader)
@@ -219,7 +219,7 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
             attached_to=["bodyguard1"],
         )
 
-        army = Army("Test Faction", "Detachment")
+        army = Army.with_detachment("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(bodyguard)
         army.add_unit(leader)

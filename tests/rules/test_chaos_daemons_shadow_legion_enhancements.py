@@ -67,9 +67,9 @@ def _make_unit(name: str, army: Army, *, objective_control: int = 1, wounds: int
 def _build_game():
     game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
 
-    shadow_army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+    shadow_army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
     shadow_army.faction_id = "CD"
-    enemy_army = Army("Enemies", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     shadow_player = Player("Shadow", PlayerControl.LOCAL, shadow_army)
@@ -94,7 +94,7 @@ def test_shadow_legion_enhancement_descriptors_registered():
 
 
 def test_leaping_shadows_grants_scouts_9():
-    army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+    army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
     army.faction_id = "CD"
     bearer = _make_unit("Bearer", army)
 
@@ -136,7 +136,7 @@ def test_mantle_of_gloom_reduces_enemy_objective_control_when_engaged():
 
 
 def test_fade_to_darkness_registers_fight_phase_strategic_reserves_ability():
-    army = Army("Chaos Daemons", detachment_type="Shadow Legion")
+    army = Army.with_detachment("Chaos Daemons", detachment_type="Shadow Legion")
     army.faction_id = "CD"
     bearer = _make_unit("Bearer", army)
 

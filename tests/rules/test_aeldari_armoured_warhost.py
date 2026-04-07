@@ -69,7 +69,7 @@ def _make_model(name, unit, *, x=0.0, y=0.0, wounds=6):
 
 class TestAeldariArmouredWarhost(unittest.TestCase):
     def test_skilled_crews_assault_and_reroll_advance(self):
-        army = Army("Aeldari", detachment_type="Armoured Warhost")
+        army = Army.with_detachment("Aeldari", detachment_type="Armoured Warhost")
         army.faction_id = "AE"
 
         vehicle_fly = _make_unit(
@@ -112,9 +112,9 @@ class TestAeldariArmouredWarhost(unittest.TestCase):
         self.assertFalse(infantry.can_shoot_after_advance(profile))
 
     def test_guiding_presence_selection_and_hit_bonus(self):
-        army = Army("Aeldari", detachment_type="Armoured Warhost")
+        army = Army.with_detachment("Aeldari", detachment_type="Armoured Warhost")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -198,9 +198,9 @@ class TestAeldariArmouredWarhost(unittest.TestCase):
         self.assertTrue(any("Guiding Presence" in mod for mod in hit_res.get("modifiers", [])))
 
     def test_harmonisation_matrix_cp_gain(self):
-        army = Army("Aeldari", detachment_type="Armoured Warhost")
+        army = Army.with_detachment("Aeldari", detachment_type="Armoured Warhost")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -233,9 +233,9 @@ class TestAeldariArmouredWarhost(unittest.TestCase):
         self.assertEqual(player.command_points, before + 1)
 
     def test_spirit_stone_heal_and_lone_operative(self):
-        army = Army("Aeldari", detachment_type="Armoured Warhost")
+        army = Army.with_detachment("Aeldari", detachment_type="Armoured Warhost")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

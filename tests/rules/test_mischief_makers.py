@@ -76,9 +76,9 @@ class TestMischiefMakers(unittest.TestCase):
         from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Chaos Daemons", detachment_type="Daemonic Incursion")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Daemonic Incursion")
         army.faction_id = "CD"
-        enemy_army = Army("Opponent", detachment_type="Other")
+        enemy_army = Army.with_detachment("Opponent", detachment_type="Other")
         enemy_army.faction_id = "SM"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
         p2 = Player("P2", PlayerControl.REMOTE, army=enemy_army)

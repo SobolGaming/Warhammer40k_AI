@@ -40,9 +40,9 @@ def _make_unit(name, *, faction_name="Leagues of Votann", faction_keywords=None)
 def _make_game(detachment: str):
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
-    lov_army = Army("Leagues of Votann", detachment)
+    lov_army = Army.with_detachment("Leagues of Votann", detachment)
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.LOCAL, army=lov_army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

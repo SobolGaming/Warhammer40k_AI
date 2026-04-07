@@ -43,9 +43,9 @@ def _make_unit(name, *, abilities=None, keywords=None):
 
 class TestChaosDaemonsPsychicAuras(unittest.TestCase):
     def _make_game(self, attacker_unit, defender_unit):
-        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army = Army.with_detachment("Attacker", detachment_type="Other")
         attacker_army.faction_id = "ATK"
-        defender_army = Army("Defender", detachment_type="Other")
+        defender_army = Army.with_detachment("Defender", detachment_type="Other")
         defender_army.faction_id = "DEF"
         attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
         defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)

@@ -189,7 +189,6 @@ class ArmyMusterer:
         validated_muster = self.validate_request(request)
         army = Army(
             faction=validated_muster.blueprint.faction,
-            detachment_type="",
             points_limit=validated_muster.blueprint.points_limit,
         )
         army.faction_id = validated_muster.faction_id

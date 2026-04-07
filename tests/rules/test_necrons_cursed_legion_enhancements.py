@@ -101,9 +101,9 @@ def _set_unit_location(unit: Unit, *, x: float, y: float) -> None:
 
 def _build_game(*, necron_units: list[Unit], enemy_units: list[Unit]) -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    necron_army = Army("Necrons", "Cursed Legion")
+    necron_army = Army.with_detachment("Necrons", "Cursed Legion")
     necron_army.faction_id = "NEC"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     necron_player = Player("Necrons", control=PlayerControl.LOCAL, army=necron_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

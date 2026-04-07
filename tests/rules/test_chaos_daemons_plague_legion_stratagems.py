@@ -99,9 +99,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    plague_army = Army("Chaos Daemons", "Plague Legion")
+    plague_army = Army.with_detachment("Chaos Daemons", "Plague Legion")
     plague_army.faction_id = "CD"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     plague_player = Player("P1", control=PlayerControl.LOCAL, army=plague_army)

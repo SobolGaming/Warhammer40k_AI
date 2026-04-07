@@ -51,9 +51,9 @@ def _setup_game(
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Chaos Daemons", detachment_name)
+    a1 = Army.with_detachment("Chaos Daemons", detachment_name)
     a1.faction_id = "CD"
-    a2 = Army("Opponents", "Other")
+    a2 = Army.with_detachment("Opponents", "Other")
     p1.set_army(a1)
     p2.set_army(a2)
 

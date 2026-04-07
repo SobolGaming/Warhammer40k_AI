@@ -69,9 +69,9 @@ def _build_game(*, points_limit: int = 2000):
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    dg_army = Army("Death Guard", "Shamblerot Vectorium", points_limit=points_limit)
+    dg_army = Army.with_detachment("Death Guard", "Shamblerot Vectorium", points_limit=points_limit)
     dg_army.faction_id = "DG"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     dg_player = Player("DG", control=PlayerControl.LOCAL, army=dg_army)

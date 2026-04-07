@@ -64,9 +64,9 @@ def create_unit(
 
 
 def attach_to_armies(game_map: Map, units_a, units_b):
-    army_a = Army("Adeptus Custodes", "Lions of the Emperor")
+    army_a = Army.with_detachment("Adeptus Custodes", "Lions of the Emperor")
     army_a.faction_id = "AC"
-    army_b = Army("Enemy", "Other")
+    army_b = Army.with_detachment("Enemy", "Other")
     army_b.faction_id = "ENEMY"
     game = SimpleNamespace(map=game_map, turn=1)
     army_a.player = SimpleNamespace(game=game)

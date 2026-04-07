@@ -61,7 +61,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         return model
 
     def test_eldritch_flames_no_cover_spec_any_weapon(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "In your Shooting phase, after this model has shot, select one enemy unit that was hit by one or more of those attacks. "
@@ -75,7 +75,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertIsNone(specs[0].get("weapon_key"))
 
     def test_deaths_heads_post_shoot_wound_reroll(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         ability_desc = (
             "In your Shooting phase, after this unit has shot, select one enemy unit hit by one or more of those attacks. "
@@ -89,7 +89,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
             abilities=[ability],
             keywords=["NURGLE", "LEGIONES DAEMONICA"],
         )
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target_army.faction_id = "TA"
         target = self._make_unit("Target", target_army)
         army.units = [attacker]
@@ -129,7 +129,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertTrue(mods.get("reroll_wound_full"))
 
     def test_deaths_heads_death_guard_wording_post_shoot_wound_reroll(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
         ability_desc = (
             "In your Shooting phase, after this unit has shot, select one enemy unit hit by one or more of those attacks. "
@@ -143,7 +143,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
             abilities=[ability],
             keywords=["PLAGUE LEGIONS"],
         )
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target_army.faction_id = "TA"
         target = self._make_unit("Target", target_army)
         army.units = [attacker]
@@ -183,7 +183,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertTrue(mods.get("reroll_wound_full"))
 
     def test_death_hex_roll_success_marks_target(self):
-        army = Army("Chaos Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
         ability_desc = (
             "At the start of your Shooting phase, one Psyker with this ability can use it. "
@@ -195,7 +195,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         source = self._make_unit("Sorcerer", army, abilities=[ability], keywords=["PSYKER"])
         source_model = self._make_model("Sorcerer", source, wounds=6)
         source.models = [source_model]
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target = self._make_unit("Target", target_army)
         target_model = self._make_model("Target", target)
         target.models = [target_model]
@@ -231,14 +231,14 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertEqual(sr.get("death_hex_ap_bonus"), 1)
 
     def test_opponent_shooting_phase_disrupt_roll_6_blocks_shooting(self):
-        attacker_army = Army("Chaos Daemons", detachment_type="Other")
+        attacker_army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         attacker_army.faction_id = "CD"
         source = self._make_unit("Changeling", attacker_army)
         source_model = self._make_model("Changeling", source)
         source.models = [source_model]
         attacker_army.units = [source]
 
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target = self._make_unit("Target", target_army)
         target_model = self._make_model("Target", target)
         target.models = [target_model]
@@ -277,7 +277,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertTrue(target.is_shooting_phase_ineligible(game))
 
     def test_fortification_cover_detection(self):
-        army = Army("Chaos Daemons", detachment_type="Other")
+        army = Army.with_detachment("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
         fort_desc = (
             "Each time a ranged attack is allocated to a model, if that model is not fully visible to every model in the attacking unit "
@@ -292,7 +292,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         attacker_model = self._make_model("Attacker", attacker, x=0.0, y=0.0)
         attacker.models = [attacker_model]
 
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target = self._make_unit("Target", target_army)
         target_model = self._make_model("Target", target, x=10.0, y=0.0)
         target.models = [target_model]
@@ -306,7 +306,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         self.assertTrue(cover_info.get("has_benefit_of_cover"))
 
     def test_diseased_cover_death_guard_wording_detection(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
         fort_desc = (
             "Each time a ranged attack is allocated to a model, if that model is not fully visible to the attacking unit "
@@ -321,7 +321,7 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         attacker_model = self._make_model("Attacker", attacker, x=0.0, y=0.0)
         attacker.models = [attacker_model]
 
-        target_army = Army("Target", detachment_type="Other")
+        target_army = Army.with_detachment("Target", detachment_type="Other")
         target = self._make_unit("Target", target_army)
         target_model = self._make_model("Target", target, x=10.0, y=0.0)
         target.models = [target_model]

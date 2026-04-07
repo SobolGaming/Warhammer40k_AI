@@ -101,9 +101,9 @@ def _set_unit_position(unit: Unit, x: float, y: float) -> None:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    drukhari_army = Army("Drukhari", "Realspace Raiders")
+    drukhari_army = Army.with_detachment("Drukhari", "Realspace Raiders")
     drukhari_army.faction_id = "DRU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     drukhari_player = Player("DRU", control=PlayerControl.REMOTE, army=drukhari_army)
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)

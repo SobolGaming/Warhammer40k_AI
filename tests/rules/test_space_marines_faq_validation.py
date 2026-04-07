@@ -132,7 +132,7 @@ def _make_unit(
 
 
 def _make_player(units, *, detachment: str = "Gladius Task Force", control: PlayerControl = PlayerControl.LOCAL) -> tuple[Player, Army]:
-    army = Army("Space Marines", detachment)
+    army = Army.with_detachment("Space Marines", detachment)
     army.faction_id = "SM"
     army.units = list(units if isinstance(units, (list, tuple)) else [units])
     for unit in list(army.units or []):
@@ -144,9 +144,9 @@ def _make_player(units, *, detachment: str = "Gladius Task Force", control: Play
 
 def _build_full_game(*, detachment: str = "Gladius Task Force"):
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", detachment)
+    sm_army = Army.with_detachment("Space Marines", detachment)
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     sm_player = Player("Space Marines", control=PlayerControl.REMOTE, army=sm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

@@ -42,8 +42,8 @@ def make_unit(name: str, *, keywords=None, abilities=None, move: str = "12", cos
 
 
 def attach_to_armies(game_map: Map, units_a, units_b):
-    army_a = Army("Army A", "Detachment A")
-    army_b = Army("Army B", "Detachment B")
+    army_a = Army.with_detachment("Army A", "Detachment A")
+    army_b = Army.with_detachment("Army B", "Detachment B")
     for u in units_a:
         army_a.add_unit(u)
     for u in units_b:
@@ -61,8 +61,8 @@ def test_aircraft_start_in_reserves_and_promote_after_setup():
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
 
@@ -90,7 +90,7 @@ def test_aircraft_start_in_reserves_and_promote_after_setup():
 
 
 def test_aircraft_not_counted_toward_strategic_cap():
-    army = Army("ArmyA", "DetA", points_limit=2000)
+    army = Army.with_detachment("ArmyA", "DetA", points_limit=2000)
     aircraft = make_unit("Airframe", keywords=["Aircraft", "Fly"], cost=500)
     ground = make_unit("Ground", keywords=["Infantry"], cost=500)
     filler_a = make_unit("Filler A", keywords=["Infantry"], cost=100)
@@ -138,7 +138,7 @@ def test_aircraft_move_off_board_sends_to_strategic_reserves_next_turn():
     p1 = Player("P1", PlayerControl.LOCAL, None)
     game.add_player(p1)
 
-    army = Army("ArmyA", "DetA")
+    army = Army.with_detachment("ArmyA", "DetA")
     p1.set_army(army)
 
     aircraft = make_unit("Bomber", keywords=["Aircraft", "Fly"])

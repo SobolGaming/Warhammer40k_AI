@@ -41,8 +41,8 @@ def attach_to_game(game_map: Map, units_a, units_b):
     p2 = Player("P2", PlayerControl.REMOTE, None)
     game.add_player(p1)
     game.add_player(p2)
-    a1 = Army("Army1", "Det1")
-    a2 = Army("Army2", "Det2")
+    a1 = Army.with_detachment("Army1", "Det1")
+    a2 = Army.with_detachment("Army2", "Det2")
     p1.set_army(a1)
     p2.set_army(a2)
     for u in units_a:

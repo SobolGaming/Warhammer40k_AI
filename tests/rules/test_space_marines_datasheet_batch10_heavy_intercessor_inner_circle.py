@@ -163,7 +163,7 @@ def test_inner_circle_braziers_applies_only_while_led_by_character():
         )
     assert no_leader_result["hit"] is True
 
-    army = Army("Space Marines", detachment_type="Other")
+    army = Army.with_detachment("Space Marines", detachment_type="Other")
     army.faction_id = "SM"
     army.add_unit(inner_circle)
     army.add_unit(leader)

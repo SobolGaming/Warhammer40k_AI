@@ -101,9 +101,9 @@ def _make_unit(
 def _build_game():
     game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
 
-    legion_army = Army("Chaos Daemons", detachment_type="Blood Legion")
+    legion_army = Army.with_detachment("Chaos Daemons", detachment_type="Blood Legion")
     legion_army.faction_id = "CD"
-    enemy_army = Army("Enemies", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemies", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     legion_player = Player("Legion", PlayerControl.REMOTE, legion_army)

@@ -27,7 +27,7 @@ class StubUnit:
 
 class TestSpaceMarineChapters(unittest.TestCase):
     def _make_army(self, units):
-        army = Army(faction="Space Marines", detachment_type="Gladius Task Force")
+        army = Army.with_detachment(faction="Space Marines", detachment_type="Gladius Task Force")
         army.faction_id = "SM"
         army.units = list(units)
         return army
@@ -79,7 +79,7 @@ class TestSpaceMarineChapters(unittest.TestCase):
         army.validate_space_marine_chapters()
 
     def test_blade_of_ultramar_commits_ultramarines_chapter(self):
-        army = Army(faction="Space Marines", detachment_type="Blade of Ultramar")
+        army = Army.with_detachment(faction="Space Marines", detachment_type="Blade of Ultramar")
         army.faction_id = "SM"
         army.units = [
             StubUnit(

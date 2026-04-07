@@ -87,9 +87,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tyr_army = Army("Tyranids", detachment_type="Other")
+    tyr_army = Army.with_detachment("Tyranids", detachment_type="Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
     p1 = Player("P1", PlayerControl.REMOTE, army=enemy_army)
     p2 = Player("P2", PlayerControl.REMOTE, army=tyr_army)
@@ -180,9 +180,9 @@ def test_blistering_assault_triggers_on_wound_loss_and_marks_used_on_move():
 
 def test_blistering_assault_validation_uses_closest_enemy_including_aircraft():
     game_map = Map(100, 100)
-    moving_army = Army("Tyranids", detachment_type="Other")
+    moving_army = Army.with_detachment("Tyranids", detachment_type="Other")
     moving_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "EN"
 
     mover = _make_unit("Carnifex", abilities=[{"name": "Blistering Assault", "description": BLISTERING_ASSAULT_TEXT, "type": "Datasheet", "parameter": ""}])

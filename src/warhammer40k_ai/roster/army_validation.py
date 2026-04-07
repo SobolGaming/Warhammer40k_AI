@@ -84,11 +84,11 @@ def _normalize_attachment_bindings(values: object) -> list[AttachmentBinding]:
 
 def build_army_blueprint_from_request(
     request: object,
-) -> tuple[ArmyBlueprint, bool]:
+) -> ArmyBlueprint:
     """Normalize raw muster input into a build-side ArmyBlueprint."""
 
     if isinstance(request, ArmyBlueprint):
-        return request, False
+        return request
     if request is None:
         raise ArmyValidationError("Army mustering request is missing.")
 
@@ -146,7 +146,7 @@ def build_army_blueprint_from_request(
         allowed_force_dispositions=list(get_value("allowed_force_dispositions", []) or []),
         metadata=dict(get_value("metadata", {}) or {}),
     )
-    return blueprint, False
+    return blueprint
 
 
 def validate_detachment_points_budget(blueprint: ArmyBlueprint) -> int:
@@ -234,7 +234,7 @@ def validate_army_blueprint(blueprint: ArmyBlueprint) -> tuple[str, int]:
 def validate_army_muster_request(request: object) -> ValidatedMuster:
     """Normalize and validate a muster request into a ValidatedMuster."""
 
-    blueprint, _ = build_army_blueprint_from_request(request)
+    blueprint = build_army_blueprint_from_request(request)
     faction_id, spent = validate_army_blueprint(blueprint)
     return ValidatedMuster(
         blueprint=blueprint,

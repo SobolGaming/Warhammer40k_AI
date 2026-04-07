@@ -74,9 +74,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Ordo Malleus Daemon Hunters")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Malleus Daemon Hunters")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -247,4 +247,4 @@ def test_destroy_the_daemonic_rerolls_wound_roll_of_one_only_vs_daemon_targets(m
         allow_rerolls=True,
         log_roll=False,
     )
-    assert "reroll" not in non_daemon_result
+    assert "reroll" not in non_daemon_result

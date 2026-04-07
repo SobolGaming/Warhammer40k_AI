@@ -48,8 +48,8 @@ def _make_players(active_units, opponent_units, *, turn=1):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
-    army1 = Army("Active", "Test")
-    army2 = Army("Opponent", "Test")
+    army1 = Army.with_detachment("Active", "Test")
+    army2 = Army.with_detachment("Opponent", "Test")
     army1.units = list(active_units if isinstance(active_units, (list, tuple)) else [active_units])
     army2.units = list(opponent_units if isinstance(opponent_units, (list, tuple)) else [opponent_units])
 

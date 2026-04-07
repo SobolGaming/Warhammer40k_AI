@@ -54,9 +54,9 @@ class TestHordeMove(unittest.TestCase):
         return model
 
     def _build_game(self, *, target_control=PlayerControl.REMOTE):
-        army_attacker = Army("Attacker", detachment_type="Other")
+        army_attacker = Army.with_detachment("Attacker", detachment_type="Other")
         army_attacker.faction_id = "AT"
-        army_target = Army("Target", detachment_type="Other")
+        army_target = Army.with_detachment("Target", detachment_type="Other")
         army_target.faction_id = "TG"
 
         p1 = Player("P1", PlayerControl.LOCAL, army=army_attacker)

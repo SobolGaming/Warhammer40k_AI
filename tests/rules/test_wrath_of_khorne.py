@@ -79,7 +79,7 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, model_names=None):
 def _make_army():
     from warhammer40k_ai.roster.army import Army
 
-    army = Army("World Eaters", "Vessels of Wrath")
+    army = Army.with_detachment("World Eaters", "Vessels of Wrath")
     army.faction_id = "WE"
     return army
 

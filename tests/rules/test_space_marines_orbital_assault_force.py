@@ -62,9 +62,9 @@ def _build_game(detachment_type: str = "Orbital Assault Force"):
     game = Game(bf)
     game.turn = 1
 
-    sm_army = Army("Space Marines", detachment_type)
+    sm_army = Army.with_detachment("Space Marines", detachment_type)
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
 
     sm_player = Player("Space Marines", control=PlayerControl.LOCAL, army=sm_army)

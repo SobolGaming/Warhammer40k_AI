@@ -83,9 +83,9 @@ def _make_unit(
 
 def _build_game() -> tuple[Game, Army, Army, Player, Player]:
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    lov_army = Army("Leagues of Votann", "Hearthfyre Arsenal")
+    lov_army = Army.with_detachment("Leagues of Votann", "Hearthfyre Arsenal")
     lov_army.faction_id = "LOV"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     lov_player = Player("Votann", control=PlayerControl.REMOTE, army=lov_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

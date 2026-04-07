@@ -71,9 +71,9 @@ def _make_profile(*, is_ranged: bool) -> WargearProfile:
 
 
 def _build_armies(*, target_unit: Unit, enemy_unit: Unit):
-    ork_army = Army("Orks", "Green Tide")
+    ork_army = Army.with_detachment("Orks", "Green Tide")
     ork_army.faction_id = "ORK"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     ork_army.add_unit(target_unit)
     enemy_army.add_unit(enemy_unit)

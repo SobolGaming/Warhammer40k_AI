@@ -47,9 +47,9 @@ def _build_game():
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
 
-    tau_army = Army("Tau", "Det")
+    tau_army = Army.with_detachment("Tau", "Det")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Det")
+    enemy_army = Army.with_detachment("Enemy", "Det")
     enemy_army.faction_id = "EN"
 
     tau_player = Player("Tau", control=PlayerControl.LOCAL, army=tau_army)

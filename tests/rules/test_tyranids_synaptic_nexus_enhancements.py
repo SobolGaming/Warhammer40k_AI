@@ -215,9 +215,9 @@ class _ReinforcementsGame(GameSetupDeploymentReservesMixin):
 
 
 def _build_reinforcements_game():
-    tyr_army = Army("Tyranids", "Synaptic Nexus")
+    tyr_army = Army.with_detachment("Tyranids", "Synaptic Nexus")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     tyr_player = Player("Tyranids", control=PlayerControl.REMOTE, army=tyr_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -302,9 +302,9 @@ def test_synaptic_nexus_enhancement_descriptors_exist():
 
 
 def test_power_of_the_hive_mind_applies_only_to_bearers_psychic_weapons():
-    army = Army("Tyranids", "Synaptic Nexus")
+    army = Army.with_detachment("Tyranids", "Synaptic Nexus")
     army.faction_id = "TYR"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     source = _make_unit(
         "Neurotyrant",
@@ -357,7 +357,7 @@ def test_power_of_the_hive_mind_applies_only_to_bearers_psychic_weapons():
 
 
 def test_dirgeheart_of_kharis_applies_enemy_leadership_penalty_within_range_only():
-    army = Army("Tyranids", "Synaptic Nexus")
+    army = Army.with_detachment("Tyranids", "Synaptic Nexus")
     army.faction_id = "TYR"
     source = _make_unit(
         "Neurotyrant",

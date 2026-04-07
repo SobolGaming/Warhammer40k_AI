@@ -66,7 +66,7 @@ def _make_objective(name: str, x: float, y: float) -> Objective:
 
 class TestSimulacrumImperialis(unittest.TestCase):
     def _build_game(self):
-        army = Army("Adepta Sororitas", "Detachment")
+        army = Army.with_detachment("Adepta Sororitas", "Detachment")
         army.faction_id = "AS"
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])

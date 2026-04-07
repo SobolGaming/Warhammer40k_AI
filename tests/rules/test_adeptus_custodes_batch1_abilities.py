@@ -99,9 +99,9 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
     def _make_game(self):
         battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield)
-        custodes_army = Army("Adeptus Custodes", detachment_type="Other")
+        custodes_army = Army.with_detachment("Adeptus Custodes", detachment_type="Other")
         custodes_army.faction_id = "AC"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
         custodes_player = Player("Custodes", PlayerControl.REMOTE, army=custodes_army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
@@ -287,7 +287,7 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         )
         ability = Ability("Resolute Will", "AC", ability_desc, "Datasheet", "")
 
-        target = self._make_unit("Custodian", Army("Custodes", detachment_type="Other"), abilities=[ability])
+        target = self._make_unit("Custodian", Army.with_detachment("Custodes", detachment_type="Other"), abilities=[ability])
         target_model = self._make_model("Custodian", target)
         target.models = [target_model]
         target._parse_against_attack_characteristic_defensive_rules()
@@ -295,7 +295,7 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         leader = self._make_unit("Leader", target.get_parent_army(), keywords=["Character"])
         leader.models = [self._make_model("Leader Model", leader)]
 
-        attacker = self._make_unit("Attacker", Army("Enemy", detachment_type="Other"))
+        attacker = self._make_unit("Attacker", Army.with_detachment("Enemy", detachment_type="Other"))
         attacker_model = self._make_model("Attacker", attacker)
         attacker.models = [attacker_model]
 
@@ -404,14 +404,14 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         )
         ability = Ability("Purity of Execution", "AC", ability_desc, "Datasheet", "")
 
-        army = Army("Adeptus Custodes", detachment_type="Other")
+        army = Army.with_detachment("Adeptus Custodes", detachment_type="Other")
         army.faction_id = "AC"
         attacker = self._make_unit("Attacker", army, abilities=[ability])
         model = self._make_model("Attacker", attacker)
         model.abilities = {"Purity of Execution": ability}
         attacker.models = [model]
 
-        target_army = Army("Enemy", detachment_type="Other")
+        target_army = Army.with_detachment("Enemy", detachment_type="Other")
         target_army.faction_id = "EN"
         target = self._make_unit("Target", target_army, keywords=["Fly"])
         target.models = [self._make_model("Target", target)]
@@ -455,7 +455,7 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
             "While this unit is within range of an objective marker you control, you can re-roll the Wound roll instead."
         )
         ability = Ability("Stand Vigil", "AC", ability_desc, "Datasheet", "")
-        unit = self._make_unit("Guard", Army("Custodes", detachment_type="Other"), abilities=[ability])
+        unit = self._make_unit("Guard", Army.with_detachment("Custodes", detachment_type="Other"), abilities=[ability])
         unit.models = [self._make_model("Guard", unit)]
         unit._attacker_within_objective_controlled = lambda game_map=None: True
 
@@ -470,7 +470,7 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         )
         ability = Ability("Seeker's Instincts", "AC", ability_desc, "Datasheet", "")
 
-        army = Army("Adeptus Custodes", detachment_type="Other")
+        army = Army.with_detachment("Adeptus Custodes", detachment_type="Other")
         army.faction_id = "AC"
         bodyguard = self._make_unit("Wardens", army)
         leader = self._make_unit("Shield-Captain", army, abilities=[ability])
@@ -497,7 +497,7 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         )
         ability = Ability("Quicksilver Execution", "AC", ability_desc, "Datasheet", "")
 
-        unit = self._make_unit("Bikes", Army("Custodes", detachment_type="Other"), abilities=[ability])
+        unit = self._make_unit("Bikes", Army.with_detachment("Custodes", detachment_type="Other"), abilities=[ability])
         unit.models = [self._make_model("Rider", unit)]
 
         specs = unit.unit_move_over_mortal_wounds_specs()

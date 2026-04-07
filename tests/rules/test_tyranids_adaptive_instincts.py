@@ -82,9 +82,9 @@ def _aura_stub():
 
 
 def _build_game():
-    tyr_army = Army("Tyranids", detachment_type="Other")
+    tyr_army = Army.with_detachment("Tyranids", detachment_type="Other")
     tyr_army.faction_id = "TYR"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     tyr_player = Player("Tyranids", PlayerControl.REMOTE, army=tyr_army)

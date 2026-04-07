@@ -96,9 +96,9 @@ def _first_option(request, predicate):
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    enemy_army = Army("Enemy", "Detachment")
+    enemy_army = Army.with_detachment("Enemy", "Detachment")
     enemy_army.faction_id = "EN"
-    tyr_army = Army("Tyranids", "Detachment")
+    tyr_army = Army.with_detachment("Tyranids", "Detachment")
     tyr_army.faction_id = "TYR"
     enemy_player = Player("EN", control=PlayerControl.REMOTE, army=enemy_army)
     tyr_player = Player("TYR", control=PlayerControl.REMOTE, army=tyr_army)

@@ -54,7 +54,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
         self.assertTrue(unit.special_rules.get("sticky_objectives"))
 
-        army = Army("Test Faction", "Detachment")
+        army = Army.with_detachment("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(unit)
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
@@ -120,7 +120,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         unit.models[0].set_location(100.0, 0.0, 0.0, 0.0)
         transport.models[0].set_location(0.0, 0.0, 0.0, 0.0)
 
-        army = Army("Test Faction", "Detachment")
+        army = Army.with_detachment("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(unit)
         army.add_unit(transport)

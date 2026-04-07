@@ -67,9 +67,9 @@ class TestLopingSpeed(unittest.TestCase):
         return model
 
     def _build_game(self, *, reacting_control=PlayerControl.LOCAL, moving_control=PlayerControl.LOCAL):
-        army_move = Army("Moving Army", detachment_type="Other")
+        army_move = Army.with_detachment("Moving Army", detachment_type="Other")
         army_move.faction_id = "MOVE"
-        army_react = Army("Reactive Army", detachment_type="Other")
+        army_react = Army.with_detachment("Reactive Army", detachment_type="Other")
         army_react.faction_id = "REACT"
 
         moving_player = Player("Mover", moving_control, army=army_move)

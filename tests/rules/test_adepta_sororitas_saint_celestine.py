@@ -95,7 +95,7 @@ def _make_aux_model(name: str, unit: Unit) -> Model:
 def _setup_game_with_unit(unit: Unit):
     battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(battlefield)
-    army = Army("Adepta Sororitas", detachment_type="Other")
+    army = Army.with_detachment("Adepta Sororitas", detachment_type="Other")
     army.faction_id = "AS"
     player = Player("Sororitas", PlayerControl.LOCAL, army=army)
     game.add_player(player)

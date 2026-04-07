@@ -63,9 +63,9 @@ class TestPostShootApBonus(unittest.TestCase):
         return model
 
     def test_post_shoot_ap_bonus_marks_target_and_applies(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -147,9 +147,9 @@ class TestPostShootApBonus(unittest.TestCase):
         self.assertEqual(len(game.decision_queue.list()), 0)
 
     def test_post_shoot_ap_bonus_turn_end_melee_only(self):
-        army = Army("Tyranids", detachment_type="Other")
+        army = Army.with_detachment("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -234,9 +234,9 @@ class TestPostShootApBonus(unittest.TestCase):
         self.assertEqual(melee_profile.get_effective_ap(ally_model, target_unit), 0)
 
     def test_post_shoot_ap_bonus_excludes_monster_vehicle_candidates(self):
-        army = Army("Death Guard", detachment_type="Other")
+        army = Army.with_detachment("Death Guard", detachment_type="Other")
         army.faction_id = "DG"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -290,9 +290,9 @@ class TestPostShootApBonus(unittest.TestCase):
         self.assertNotIn(str(vehicle_target._id), option_ids)
 
     def test_hailstrike_marks_only_hit_non_monster_vehicle_target(self):
-        army = Army("Space Marines", detachment_type="Other")
+        army = Army.with_detachment("Space Marines", detachment_type="Other")
         army.faction_id = "SM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "EN"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

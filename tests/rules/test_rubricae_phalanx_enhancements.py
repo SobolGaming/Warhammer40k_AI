@@ -87,9 +87,9 @@ def _build_game():
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ts_army = Army("Thousand Sons", "Rubricae Phalanx")
+    ts_army = Army.with_detachment("Thousand Sons", "Rubricae Phalanx")
     ts_army.faction_id = "TS"
-    enemy_army = Army("Enemy", "Detachment")
+    enemy_army = Army.with_detachment("Enemy", "Detachment")
     enemy_army.faction_id = "SM"
     p1 = Player("P1", control=PlayerControl.REMOTE, army=ts_army)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)

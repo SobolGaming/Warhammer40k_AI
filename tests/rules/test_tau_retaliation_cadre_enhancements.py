@@ -169,9 +169,9 @@ def _apply_puretide_engram_neurochip(unit: Unit) -> Enhancement:
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    tau_army = Army("T'au Empire", "Retaliation Cadre")
+    tau_army = Army.with_detachment("T'au Empire", "Retaliation Cadre")
     tau_army.faction_id = "TAU"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     tau_player = Player("T'au", control=PlayerControl.REMOTE, army=tau_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

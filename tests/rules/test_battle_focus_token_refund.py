@@ -33,7 +33,7 @@ class TestBattleFocusTokenRefund(unittest.TestCase):
         return mgr
 
     def test_battle_focus_token_refund_success(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         army.player = SimpleNamespace(id="player-ae")
 
@@ -57,7 +57,7 @@ class TestBattleFocusTokenRefund(unittest.TestCase):
         self.assertEqual(mgr.tokens, 1)
 
     def test_battle_focus_token_refund_fail(self):
-        army = Army("Aeldari", detachment_type="Other")
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
         army.faction_id = "AE"
         army.player = SimpleNamespace(id="player-ae")
 

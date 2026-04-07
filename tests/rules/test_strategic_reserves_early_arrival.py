@@ -55,7 +55,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         return unit
 
     def test_strategic_reserves_round_bonus_allows_turn_one_arrival(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
         player = Player("P1", PlayerControl.REMOTE, army=army)
         _ = player
@@ -70,7 +70,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertFalse(unit.can_arrive_from_reserves(4))
 
     def test_strategic_reserves_round_bonus_not_applied_without_rule(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         unit = self._make_unit("Normal", army, abilities=[])
@@ -80,7 +80,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
 
     def test_strategic_reserves_round_bonus_requires_started_in_reserves(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         ability = Ability("Bestial Raiders", "TEST", ABILITY_TEXT, "Datasheet", "")
@@ -91,7 +91,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
 
     def test_hover_mode_strategic_reserves_rule_allows_turn_one_arrival(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         ability = Ability("Aerial Deployment", "TEST", HOVER_ABILITY_TEXT, "Datasheet", "")
@@ -108,7 +108,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertFalse(unit.can_arrive_from_reserves(4))
 
     def test_hover_mode_strategic_reserves_rule_requires_hover_mode(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         ability = Ability("Aerial Deployment", "TEST", HOVER_ABILITY_TEXT, "Datasheet", "")
@@ -121,7 +121,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
 
     def test_direct_early_arrival_text_allows_turn_one_from_standard_reserves(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         ability = Ability("Quantum Invader", "TEST", DIRECT_EARLY_ARRIVAL_TEXT, "Datasheet", "")
@@ -137,7 +137,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertFalse(unit.can_arrive_from_reserves(4))
 
     def test_direct_early_arrival_text_still_requires_started_in_reserves(self):
-        army = Army("Test", detachment_type="Other")
+        army = Army.with_detachment("Test", detachment_type="Other")
         army.faction_id = "TEST"
 
         ability = Ability("Quantum Invader", "TEST", DIRECT_EARLY_ARRIVAL_TEXT, "Datasheet", "")

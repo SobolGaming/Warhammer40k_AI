@@ -89,9 +89,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    sm_army = Army("Space Marines", "The Angelic Host")
+    sm_army = Army.with_detachment("Space Marines", "The Angelic Host")
     sm_army.faction_id = "SM"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "EN"
     sm_player = Player("Space Marines", control=PlayerControl.REMOTE, army=sm_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)

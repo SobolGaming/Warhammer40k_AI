@@ -72,9 +72,9 @@ def _make_unit(
 
 
 def _build_game():
-    army = Army("Aeldari", detachment_type="Devoted of Ynnead")
+    army = Army.with_detachment("Aeldari", detachment_type="Devoted of Ynnead")
     army.faction_id = "AE"
-    enemy_army = Army("Enemy", detachment_type="Other")
+    enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
     enemy_army.faction_id = "SM"
 
     player = Player("Aeldari", control=PlayerControl.REMOTE, army=army)

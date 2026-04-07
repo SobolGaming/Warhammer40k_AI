@@ -57,13 +57,13 @@ def _make_unit(name: str, *, abilities=None, keywords=None, faction_keywords=Non
 
 
 def _build_admech_army() -> Army:
-    army = Army("Adeptus Mechanicus", detachment_type="Other")
+    army = Army.with_detachment("Adeptus Mechanicus", detachment_type="Other")
     army.faction_id = "ADM"
     return army
 
 
 def _build_enemy_army() -> Army:
-    army = Army("Enemy", detachment_type="Other")
+    army = Army.with_detachment("Enemy", detachment_type="Other")
     army.faction_id = "EN"
     return army
 

@@ -77,7 +77,7 @@ class _MapStub:
 
 class TestChaosKnightsInfernalLanceStratagems(unittest.TestCase):
     def _setup_env(self, phase_name: str):
-        army = Army("Chaos Knights", detachment_type="Infernal Lance")
+        army = Army.with_detachment("Chaos Knights", detachment_type="Infernal Lance")
         army.faction_id = "QT"
         player = Player("CK", control=PlayerControl.REMOTE, army=army)
         game = _GameStub(active_player=player, phase_name=phase_name)
@@ -128,7 +128,7 @@ class TestChaosKnightsInfernalLanceStratagems(unittest.TestCase):
         unit = _make_unit("Knight", faction_keywords=["CHAOS KNIGHTS"])
         army.add_unit(unit)
         target = _make_unit("Enemy", faction_keywords=["ENEMY"])
-        target_army = Army("Enemy", detachment_type="None")
+        target_army = Army.with_detachment("Enemy", detachment_type="None")
         target_army.faction_id = "EN"
         target_army.add_unit(target)
 
@@ -170,7 +170,7 @@ class TestChaosKnightsInfernalLanceStratagems(unittest.TestCase):
         army, player, game = self._setup_env("SHOOTING_PHASE")
         unit = _make_unit("Knight", faction_keywords=["CHAOS KNIGHTS"])
         army.add_unit(unit)
-        enemy_player = Player("EN", control=PlayerControl.REMOTE, army=Army("Enemy", detachment_type="None"))
+        enemy_player = Player("EN", control=PlayerControl.REMOTE, army=Army.with_detachment("Enemy", detachment_type="None"))
         enemy_player.army.faction_id = "EN"
         enemy_unit = _make_unit("Enemy", faction_keywords=["ENEMY"])
         enemy_player.army.add_unit(enemy_unit)

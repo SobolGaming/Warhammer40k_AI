@@ -63,9 +63,9 @@ def _make_model(name, unit, x, y):
 
 
 def _build_game():
-    army_move = Army("Moving Army", detachment_type="Other")
+    army_move = Army.with_detachment("Moving Army", detachment_type="Other")
     army_move.faction_id = "EN"
-    army_react = Army("Adeptus Mechanicus", detachment_type="Other")
+    army_react = Army.with_detachment("Adeptus Mechanicus", detachment_type="Other")
     army_react.faction_id = "ADM"
 
     moving_player = Player("Mover", PlayerControl.REMOTE, army=army_move)

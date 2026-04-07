@@ -49,9 +49,9 @@ def _build_game():
     from warhammer40k_ai.roster.player import Player, PlayerControl
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    army1 = Army("Tau", "Mont'ka")
+    army1 = Army.with_detachment("Tau", "Mont'ka")
     army1.faction_id = "TAU"
-    army2 = Army("Enemy", "Other")
+    army2 = Army.with_detachment("Enemy", "Other")
     army2.faction_id = "EN"
     p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
     p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)

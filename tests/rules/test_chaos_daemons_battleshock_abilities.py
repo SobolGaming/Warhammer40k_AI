@@ -90,9 +90,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         return model
 
     def test_demagogue_queues_and_clears_battleshock(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -137,9 +137,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertFalse(target_unit.is_battle_shocked())
 
     def test_devastating_charge_triggers_battleshock(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -175,9 +175,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertEqual(enemy_unit.tests, [3])
 
     def test_disease_of_mirth_aura_excludes_monsters(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -222,9 +222,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertEqual(monster_unit.tests, [])
 
     def test_terrifying_assault_engagement_battleshock(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CSM"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -251,9 +251,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         enemy_unit.take_battle_shock_test = lambda turn=1: enemy_unit.tests.append(int(turn))
 
     def test_formless_horror_gate_pass_allows_target_for_decision(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -311,9 +311,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertTrue(apply_result2.ok)
 
     def test_formless_horror_gate_fail_blocks_phase(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -385,7 +385,7 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertEqual(calls, [1])
 
     def test_shadow_of_khorne_aura_reroll_source(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
 
         target_unit = self._make_unit(
@@ -408,9 +408,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertIn("Shadow of Khorne (Aura)", sources)
 
     def test_symphony_of_pain_queues_and_rerolls(self):
-        army = Army("Chaos", detachment_type="Other")
+        army = Army.with_detachment("Chaos", detachment_type="Other")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -463,9 +463,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertTrue(wound_mods.get("reroll_wound_full"))
 
     def test_maggot_maws_applies_mortal_wounds(self):
-        army = Army("Chaos", detachment_type="Plague Legion")
+        army = Army.with_detachment("Chaos", detachment_type="Plague Legion")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -521,9 +521,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertNotIn("maggot_maws_pending", target_unit.special_rules)
 
     def test_cankerblight_skip_applies_daemonic_terror(self):
-        army = Army("Chaos", detachment_type="Plague Legion")
+        army = Army.with_detachment("Chaos", detachment_type="Plague Legion")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)
@@ -563,9 +563,9 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         self.assertNotIn("cankerblight_pending", target_unit.special_rules)
 
     def test_cankerblight_use_destroys_model(self):
-        army = Army("Chaos", detachment_type="Plague Legion")
+        army = Army.with_detachment("Chaos", detachment_type="Plague Legion")
         army.faction_id = "CD"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         player = Player("Player", PlayerControl.REMOTE, army=army)

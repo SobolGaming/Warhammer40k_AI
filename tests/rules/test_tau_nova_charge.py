@@ -69,9 +69,9 @@ class TestTauNovaCharge(unittest.TestCase):
         return model
 
     def _setup_game(self):
-        tau_army = Army("Tau", detachment_type="Other")
+        tau_army = Army.with_detachment("Tau", detachment_type="Other")
         tau_army.faction_id = "TAU"
-        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
         enemy_army.faction_id = "SM"
 
         tau_player = Player("Tau", PlayerControl.REMOTE, army=tau_army)

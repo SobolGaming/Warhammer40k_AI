@@ -40,8 +40,8 @@ class _MockDatasheet:
 
 
 def _build_game(*, authoritative: bool) -> tuple[Game, Player, Unit]:
-    custodes_army = Army("Adeptus Custodes", "Lions of the Emperor")
-    enemy_army = Army("Orks", "Other")
+    custodes_army = Army.with_detachment("Adeptus Custodes", "Lions of the Emperor")
+    enemy_army = Army.with_detachment("Orks", "Other")
 
     custodes_player = Player("Custodes", PlayerControl.LOCAL, army=custodes_army)
     enemy_player = Player("Enemy", PlayerControl.LOCAL, army=enemy_army)

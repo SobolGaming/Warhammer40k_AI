@@ -97,7 +97,7 @@ def _boyz_bodyguard_ability() -> Ability:
 
 
 def _build_army(units):
-    army = Army(faction="Orks", detachment_type="War Horde", points_limit=2000)
+    army = Army.with_detachment(faction="Orks", detachment_type="War Horde", points_limit=2000)
     army.player = _DummyPlayer()
     army.units = list(units)
     for unit in list(army.units):

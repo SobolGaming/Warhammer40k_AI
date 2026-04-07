@@ -80,7 +80,7 @@ def _aura_stub():
 
 
 def test_grand_coven_selection_once_per_battle_and_round_expiry():
-    army = Army("Thousand Sons", "Grand Coven")
+    army = Army.with_detachment("Thousand Sons", "Grand Coven")
     army.faction_id = "TS"
     mgr = army.thousand_sons_detachments
 
@@ -97,7 +97,7 @@ def test_grand_coven_selection_once_per_battle_and_round_expiry():
 
 
 def test_imbued_manifestation_adds_psychic_range():
-    army = Army("Thousand Sons", "Grand Coven")
+    army = Army.with_detachment("Thousand Sons", "Grand Coven")
     army.faction_id = "TS"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
 
@@ -112,7 +112,7 @@ def test_imbued_manifestation_adds_psychic_range():
 
 
 def test_psychic_maelstrom_adds_wound_bonus():
-    army = Army("Thousand Sons", "Grand Coven")
+    army = Army.with_detachment("Thousand Sons", "Grand Coven")
     army.faction_id = "TS"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
 
@@ -139,7 +139,7 @@ def test_psychic_maelstrom_adds_wound_bonus():
 
 
 def test_wrath_of_the_immaterium_grants_devastating_wounds():
-    army = Army("Thousand Sons", "Grand Coven")
+    army = Army.with_detachment("Thousand Sons", "Grand Coven")
     army.faction_id = "TS"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
 
@@ -177,7 +177,7 @@ def test_wrath_of_the_immaterium_grants_devastating_wounds():
 
 
 def test_eldritch_vortex_of_etaph_adds_psychic_strength_and_damage_for_bearer():
-    army = Army("Thousand Sons", "Grand Coven")
+    army = Army.with_detachment("Thousand Sons", "Grand Coven")
     army.faction_id = "TS"
     army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
 

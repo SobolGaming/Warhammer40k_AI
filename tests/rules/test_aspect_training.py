@@ -95,7 +95,7 @@ class TestAspectTraining(unittest.TestCase):
         )
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Test", detachment_type="Test")
+        army = Army.with_detachment("Test", detachment_type="Test")
         army.add_unit(banshees)
         army.add_unit(leader)
 
@@ -137,7 +137,7 @@ class TestAspectTraining(unittest.TestCase):
         )
         from warhammer40k_ai.roster.army import Army
 
-        army = Army("Test", detachment_type="Test")
+        army = Army.with_detachment("Test", detachment_type="Test")
         army.add_unit(scorpions)
         army.add_unit(leader)
 

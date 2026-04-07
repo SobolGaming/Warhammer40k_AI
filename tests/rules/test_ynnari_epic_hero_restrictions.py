@@ -26,7 +26,7 @@ class StubUnit:
 
 class TestYnnariEpicHeroRestrictions(unittest.TestCase):
     def _make_army(self, units):
-        army = Army(faction="Aeldari", detachment_type="Battle Host")
+        army = Army.with_detachment(faction="Aeldari", detachment_type="Battle Host")
         army.faction_id = "AE"
         army.units = list(units)
         return army

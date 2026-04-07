@@ -29,7 +29,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
 
 
 def setup_csm_army(points_limit=2000, detachment="Detachment") -> Army:
-    army = Army("Chaos Space Marines", detachment, points_limit=points_limit)
+    army = Army.with_detachment("Chaos Space Marines", detachment, points_limit=points_limit)
     army.faction_id = "CSM"
     base = make_unit("CSM Unit", faction_keywords=["Heretic Astartes"])
     army.add_unit(base)
@@ -58,7 +58,7 @@ def test_cult_of_dark_gods_points_cap_enforced():
 
 
 def test_cult_of_dark_gods_ignored_for_non_csm():
-    army = Army("World Eaters", "Detachment", points_limit=2000)
+    army = Army.with_detachment("World Eaters", "Detachment", points_limit=2000)
     army.faction_id = "WE"
     cult = make_unit("Khorne Berzerkers", faction_keywords=["World Eaters"], cost=200)
     army.add_unit(cult)

@@ -53,9 +53,9 @@ def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.turn = 1
 
-    army_ik = Army("Imperial Knights", "Valourstrike Lance")
+    army_ik = Army.with_detachment("Imperial Knights", "Valourstrike Lance")
     army_ik.faction_id = "QI"
-    army_enemy = Army("Enemy", "Other")
+    army_enemy = Army.with_detachment("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
     p1 = Player("IK", control=PlayerControl.LOCAL, army=army_ik)

@@ -76,9 +76,9 @@ def _make_unit(
 
 def _build_game():
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
-    ia_army = Army("Imperial Agents", "Ordo Xenos Alien Hunters")
+    ia_army = Army.with_detachment("Imperial Agents", "Ordo Xenos Alien Hunters")
     ia_army.faction_id = "AOI"
-    enemy_army = Army("Enemy", "Other")
+    enemy_army = Army.with_detachment("Enemy", "Other")
     enemy_army.faction_id = "ENEMY"
     ia_player = Player("IA", control=PlayerControl.LOCAL, army=ia_army)
     enemy_player = Player("Enemy", control=PlayerControl.REMOTE, army=enemy_army)
@@ -351,4 +351,4 @@ def test_deathwatch_mission_tactics_purgatus_grants_precision_on_critical_wounds
         log_roll=False,
     )
     assert bool(attack.get("bonus_precision", False))
-    assert any(str(effect) == "Precision" for effect in list(result.get("special_effects", []) or []))
+    assert any(str(effect) == "Precision" for effect in list(result.get("special_effects", []) or []))

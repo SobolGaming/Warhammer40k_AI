@@ -273,7 +273,7 @@ def _unit_has_named_ability_for_rules(unit, ability_name: str) -> bool:
 
 
 class Army:
-    def __init__(self, faction: str, detachment_type: str, points_limit: int = 2000):
+    def __init__(self, faction: str, points_limit: int = 2000):
         self._id = str(uuid.uuid4())
         self.faction = faction
         # faction_id from Factions.json if known; parse_army_list can override later.
@@ -305,9 +305,21 @@ class Army:
 
         self._rule_managers_configured = False
         self._reset_rule_managers()
-        self._seed_initial_detachment(detachment_type)
         if self.faction_id:
             self.configure_rule_managers(force=True)
+
+    @classmethod
+    def with_detachment(
+        cls,
+        faction: str,
+        detachment_type: str,
+        points_limit: int = 2000,
+    ) -> "Army":
+        army = cls(faction=faction, points_limit=points_limit)
+        army._seed_initial_detachment(detachment_type)
+        if army.faction_id:
+            army.configure_rule_managers(force=True)
+        return army
 
     @property
     def id(self) -> str:

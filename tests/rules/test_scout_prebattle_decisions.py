@@ -56,8 +56,8 @@ def _build_remote_only_game():
     game.add_player(p1)
     game.add_player(p2)
 
-    a1 = Army("Army 1", "Detachment 1")
-    a2 = Army("Army 2", "Detachment 2")
+    a1 = Army.with_detachment("Army 1", "Detachment 1")
+    a2 = Army.with_detachment("Army 2", "Detachment 2")
     p1.set_army(a1)
     p2.set_army(a2)
 
