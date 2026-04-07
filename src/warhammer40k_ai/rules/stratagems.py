@@ -124,6 +124,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANIMALISTIC RAGE",
     "HARRYING HOUNDS",
     "ENCIRCLING PACK",
+    "AVENGE THE MASTERS!",
+    "WRETCHED MASSES",
+    "SOUL HUNGER",
+    "UNRESTRAINED RAGE",
+    "WORTHLESS CHATTEL",
+    "PRESERVE THE IDOLS",
     "SYNAPTIC CHANNELLING",
     "SYNAPTIC GOADING",
     "SURPRISE ASSAULT",
@@ -1066,6 +1072,11 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DED SNEAKY",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
+    "AVENGE THE MASTERS!",
+    "WRETCHED MASSES",
+    "SOUL HUNGER",
+    "UNRESTRAINED RAGE",
+    "PRESERVE THE IDOLS",
     "AEGIS ETERNAL",
     "FIRES OF COVENANT",
     "FLAMES OF SANCTITY",
@@ -2200,6 +2211,8 @@ class StratagemManager(
             "BOUNDLESS ZEAL",
             "CUNNING HUNTER",
             "HARRYING HOUNDS",
+            "UNRESTRAINED RAGE",
+            "PRESERVE THE IDOLS",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2267,6 +2280,8 @@ class StratagemManager(
             "THE GRISLY FEAST",
             "YOUR TIME IS NIGH",
             "FINAL REDEMPTION",
+            "AVENGE THE MASTERS!",
+            "WRETCHED MASSES",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
         if "JOIN THE HUNT" in names:
@@ -2332,6 +2347,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
         if "FICKLEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
+        if "WORTHLESS CHATTEL" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_chaos_knights)
         if "PRAISE THE FALLEN" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "HAIL OF VENGEANCE" in names:
@@ -2602,6 +2619,7 @@ class StratagemManager(
             "HYPERPHASIC RECALL",
             "A TRAP WELL LAID",
             "TAKEN ALIVE",
+            "SOUL HUNGER",
         }:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved)
 
@@ -7855,6 +7873,12 @@ class StratagemManager(
             "ANIMALISTIC RAGE": "Target: just-destroyed WAR DOG model from your army in the Shooting or Fight phase",
             "HARRYING HOUNDS": "Target: WAR DOG unit within 9\" of an enemy unit that just ended a move in your opponent's Movement phase",
             "ENCIRCLING PACK": "Target: WAR DOG unit wholly within 12\" of a battlefield edge and not in Engagement Range at end of opponent's Fight phase",
+            "AVENGE THE MASTERS!": "Target: your CHAOS KNIGHTS unit that was just destroyed; mark the enemy unit that destroyed it until end of battle",
+            "WRETCHED MASSES": "Target: your destroyed DAMNED unit (excluding Accursed Cultists); return an identical replacement unit to Strategic Reserves (once per battle)",
+            "SOUL HUNGER": "Target: your CHAOS KNIGHTS unit that just fought and destroyed one or more models; regain D3 lost wounds, or D3+2 if any destroyed models were from Battle-shocked units",
+            "UNRESTRAINED RAGE": "Target: your CHAOS KNIGHTS unit that just Advanced or Fell Back; it can shoot and charge after that move this turn",
+            "WORTHLESS CHATTEL": "Target: your DAMNED unit; it ignores its own Engagement Range for ranged target selection this phase and may destroy its own models after inflicting engaged shooting damage",
+            "PRESERVE THE IDOLS": "Target: your DAMNED unit within 6\" of a friendly CHAOS KNIGHTS unit that is within 9\" of the enemy that just moved; make a reactive Normal move up to 6\" ending closer to that enemy",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
@@ -10191,6 +10215,18 @@ class StratagemManager(
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("iconoclast_worthless_chattel_active") is True:
+                            exp = str(sr.get("iconoclast_worthless_chattel_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "iconoclast_worthless_chattel_active",
+                                    "iconoclast_worthless_chattel_expires_phase",
+                                    "iconoclast_worthless_chattel_turn_owner",
+                                    "iconoclast_worthless_chattel_turn",
+                                    "iconoclast_worthless_chattel_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
                         if isinstance(sr, dict) and sr.get("pyrogenesis_active") is True:
                             exp = str(sr.get("pyrogenesis_expires_phase", "") or "").strip().upper()
                             if not exp or exp == "SHOOTING_PHASE":
@@ -11967,6 +12003,7 @@ class StratagemManager(
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_vanguard_move_end_reactions(unit=unit, action=action)
         self._queue_houndpack_lance_move_end_reactions(unit=unit, action=action)
+        self._queue_iconoclast_fiefdom_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12731,6 +12768,17 @@ class StratagemManager(
             pass
         sr["ficklefire_pending_mortal_wounds"] = 0
         root.special_rules = sr
+
+    def _on_unit_shooting_resolved_chaos_knights(
+        self,
+        attacker_unit=None,
+        damage_by_target_while_engaged=None,
+        **_kwargs,
+    ):
+        self._resolve_iconoclast_worthless_chattel_after_shooting(
+            attacker_unit=attacker_unit,
+            damage_by_target_while_engaged=damage_by_target_while_engaged,
+        )
 
     def _on_unit_shooting_resolved_praise_the_fallen(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
@@ -15680,6 +15728,11 @@ class StratagemManager(
                 target_unit=target_unit,
                 killing_models_by_target=_kwargs.get("killing_models_by_target"),
             )
+            self._queue_iconoclast_fiefdom_fight_attacks_resolved_reactions(
+                unit=unit,
+                target_unit=target_unit,
+                killing_models_by_target=_kwargs.get("killing_models_by_target"),
+            )
             self._queue_cryptek_conclave_fight_attacks_resolved_reactions(
                 unit=unit,
                 target_unit=target_unit,
@@ -17127,6 +17180,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_iconoclast_fiefdom_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_tau_montka_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -17675,6 +17735,8 @@ class StratagemManager(
                 "BLOODY VENGEANCE",
                 "DRAWN TO THE SLAUGHTER",
                 "PALL OF DREAD",
+                "AVENGE THE MASTERS!",
+                "WRETCHED MASSES",
             ) and _unit_cannot_be_target_of_stratagem(tgt):
                 if name_u == "INSANE BRAVERY":
                     # Only bypass battle-shock restriction, not embarked restriction.

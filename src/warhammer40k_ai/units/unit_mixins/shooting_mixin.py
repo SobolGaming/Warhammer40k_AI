@@ -146,11 +146,11 @@ class ShootingMixin:
                 logger.info(f"{self.name} cannot shoot after falling back")
                 return False
 
-        ficklefire_active = False
+        ignore_engagement_active = False
         try:
-            ficklefire_active = bool(self._is_ficklefire_active())
+            ignore_engagement_active = bool(self._ignore_engagement_for_ranged_targeting_active())
         except Exception:
-            ficklefire_active = False
+            ignore_engagement_active = False
         all_is_rot_active = self._death_guard_all_is_rot_active()
 
         # BGNT hit modifier snapshot:
@@ -158,7 +158,7 @@ class ShootingMixin:
         # apply -1 to Hit (unless Pistols). Snapshot this now so casualties later don't change it mid-activation.
         try:
             bgnt_locked_at_selection = bool((self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase() and self._is_locked_in_combat(game_map))
-            if ficklefire_active or all_is_rot_active:
+            if ignore_engagement_active or all_is_rot_active:
                 bgnt_locked_at_selection = False
             setattr(self, "_bgnt_locked_at_target_selection", bgnt_locked_at_selection)
         except Exception:
@@ -173,7 +173,7 @@ class ShootingMixin:
             is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
             # Determine if this unit is engaged with any enemy
             engaged = self._is_locked_in_combat(game_map)
-            if engaged and (ficklefire_active or all_is_rot_active):
+            if engaged and (ignore_engagement_active or all_is_rot_active):
                 engaged = False
 
             # Build per-model "has pistol decl" and "has other decl"
@@ -1338,12 +1338,12 @@ class ShootingMixin:
             except Exception:
                 has_siege_shield = False
         is_siege_shield_demolisher = has_siege_shield and ("demolisher" in weapon_name and "cannon" in weapon_name)
-        ficklefire_active = False
+        ignore_engagement_active = False
         try:
-            if hasattr(self, "_is_ficklefire_active"):
-                ficklefire_active = bool(self._is_ficklefire_active())
+            if hasattr(self, "_ignore_engagement_for_ranged_targeting_active"):
+                ignore_engagement_active = bool(self._ignore_engagement_for_ranged_targeting_active())
         except Exception:
-            ficklefire_active = False
+            ignore_engagement_active = False
         all_is_rot_active = self._death_guard_all_is_rot_active()
         fortification_only = False
         if target_locked:
@@ -1354,7 +1354,7 @@ class ShootingMixin:
         if target_locked and not fortification_only and all_is_rot_active:
             if self._death_guard_target_locked_only_by_shooter(target_unit, game_map):
                 target_locked = False
-        if target_locked and not fortification_only and ficklefire_active:
+        if target_locked and not fortification_only and ignore_engagement_active:
             engaged_with_other = False
             try:
                 shooter_root = self.get_attached_unit_root()
@@ -1384,7 +1384,7 @@ class ShootingMixin:
                 target_locked = False
         if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
-            if ficklefire_active or all_is_rot_active:
+            if ignore_engagement_active or all_is_rot_active:
                 shooter_in_er_of_target = False
             if self.weapon_profile_counts_as_pistol(weapon_profile, model=model):
                 if not shooter_in_er_of_target:
@@ -1418,7 +1418,7 @@ class ShootingMixin:
                 if all_is_rot_active:
                     if shooter_root is not None and friendly_root is shooter_root:
                         continue
-                elif ficklefire_active:
+                elif ignore_engagement_active:
                     if shooter_root is not None and friendly_root is shooter_root:
                         continue
                 else:
@@ -1905,7 +1905,7 @@ class ShootingMixin:
         if not is_engaged:
             return True
 
-        if self._is_ficklefire_active():
+        if self._ignore_engagement_for_ranged_targeting_active():
             try:
                 parent = getattr(weapon_profile, "parent_wargear", None)
                 if parent is None or parent.is_ranged():

@@ -337,7 +337,12 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
     model = resolve_model(game, model_val)
     ctx = dict(getattr(request, "context", {}) or {})
     selection_kind = str(ctx.get("selection_kind", "") or "")
-    if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy", "battleshock_clear_destroy_model"} and model is not None:
+    if selection_kind in {
+        "cankerblight_destroy",
+        "fear_made_manifest_destroy",
+        "battleshock_clear_destroy_model",
+        "worthless_chattel_destroy",
+    } and model is not None:
         try:
             model.die(game_map=getattr(game, "map", None))
         except Exception:
@@ -400,7 +405,7 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
                 else:
                     append_action(player, f"{ability_name}: {target_name} loses {model_name}.")
             return model
-        if selection_kind == "fear_made_manifest_destroy":
+        if selection_kind in {"fear_made_manifest_destroy", "worthless_chattel_destroy"}:
             try:
                 remaining = int(ctx.get("destroy_remaining", 1) or 1)
             except Exception:
@@ -429,9 +434,12 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
                             for next_model in models
                         ]
                         if options:
-                            ability_name = str(ctx.get("ability_name", "") or "Fear Made Manifest (Aura)").strip()
+                            default_ability_name = "Fear Made Manifest (Aura)"
+                            if selection_kind == "worthless_chattel_destroy":
+                                default_ability_name = "Worthless Chattel"
+                            ability_name = str(ctx.get("ability_name", "") or default_ability_name).strip()
                             if not ability_name:
-                                ability_name = "Fear Made Manifest (Aura)"
+                                ability_name = default_ability_name
                             followup_ctx = dict(ctx)
                             followup_ctx["destroy_remaining"] = int(remaining)
                             req = DecisionRequest.create(

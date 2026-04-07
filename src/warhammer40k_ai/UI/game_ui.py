@@ -3647,7 +3647,7 @@ class GameView:
         if decision_type == DECISION_SELECT_TARGET_MODEL:
             ctx = dict(getattr(request, "context", {}) or {})
             selection_kind = str(ctx.get("selection_kind", "") or "")
-            if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy"}:
+            if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy", "worthless_chattel_destroy"}:
                 player = self._resolve_player_by_id(getattr(request, "player_id", None))
                 if player is None:
                     return
@@ -3662,6 +3662,8 @@ class GameView:
                 dialog_attr = "cankerblight_model_dialog"
                 if selection_kind == "fear_made_manifest_destroy":
                     dialog_attr = "fear_made_manifest_model_dialog"
+                elif selection_kind == "worthless_chattel_destroy":
+                    dialog_attr = "worthless_chattel_model_dialog"
                 if not hasattr(self, dialog_attr) or getattr(self, dialog_attr) is None:
                     try:
                         from .dialogs import QuarrySelectionDialog
@@ -3675,7 +3677,11 @@ class GameView:
                         resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
                     return
 
-                default_name = "Cankerblight" if selection_kind == "cankerblight_destroy" else "Fear Made Manifest (Aura)"
+                default_name = "Cankerblight"
+                if selection_kind == "fear_made_manifest_destroy":
+                    default_name = "Fear Made Manifest (Aura)"
+                elif selection_kind == "worthless_chattel_destroy":
+                    default_name = "Worthless Chattel"
                 ability_name = str(ctx.get("ability_name", "") or default_name).strip()
                 target_unit_name = "Target unit"
                 try:

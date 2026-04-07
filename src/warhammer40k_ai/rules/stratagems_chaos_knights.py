@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,11 @@ class ChaosKnightsStratagemMixin:
     def _is_infernal_lance_detachment(self) -> bool:
         mgr = self._chaos_knights_detachment_manager()
         checker = getattr(mgr, "is_infernal_lance", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_iconoclast_fiefdom(self) -> bool:
+        mgr = self._chaos_knights_detachment_manager()
+        checker = getattr(mgr, "is_iconoclast_fiefdom", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _chaos_knights_current_turn_key(self) -> str:
@@ -1347,6 +1353,954 @@ class ChaosKnightsStratagemMixin:
         )
         return True
 
+    def _is_chaos_knights_damned_unit(self, unit: Any) -> bool:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return False
+        army = self._chaos_knights_army()
+        if army is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not army:
+            return False
+        mgr = self._chaos_knights_detachment_manager()
+        checker = getattr(mgr, "_unit_is_damned", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except Exception:
+                return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        return bool(has_any_kw("DAMNED")) if callable(has_any_kw) else False
+
+    def _chaos_knights_is_battle_shocked(self, unit: Any) -> bool:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "is_battle_shocked", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                return False
+        return bool(getattr(root, "battle_shocked", False))
+
+    def _chaos_knights_alive_models(self, unit: Any) -> List[Any]:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        alive_models: List[Any] = []
+        for model in list(models or []):
+            if model is None:
+                continue
+            alive_value = getattr(model, "is_alive", True)
+            try:
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+            except Exception:
+                alive = False
+            if alive:
+                alive_models.append(model)
+        alive_models.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return alive_models
+
+    def _chaos_knights_unit_contains_character_member(self, unit: Any) -> bool:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        if callable(has_any_kw) and bool(has_any_kw("CHARACTER")):
+            return True
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in list(members or []):
+            has_any_kw = getattr(member, "has_any_keyword", None)
+            if callable(has_any_kw) and bool(has_any_kw("CHARACTER")):
+                return True
+        return False
+
+    def _iconoclast_is_accursed_cultists_unit(self, unit: Any) -> bool:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return False
+        return "ACCURSED CULTISTS" in self._chaos_knights_normalize_name(getattr(root, "name", "") or "")
+
+    def _chaos_knights_heal_lost_wounds(self, unit: Any, amount: int) -> int:
+        root = self._chaos_knights_root(unit)
+        if root is None:
+            return 0
+        try:
+            remaining = max(0, int(amount or 0))
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return 0
+        healed = 0
+        for model in list(self._chaos_knights_alive_models(root) or []):
+            base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            lost = max(0, int(base_wounds - current_wounds))
+            if lost <= 0:
+                continue
+            heal_now = min(int(remaining), int(lost))
+            if heal_now <= 0:
+                continue
+            heal_fn = getattr(model, "heal", None)
+            if callable(heal_fn):
+                try:
+                    heal_fn(int(heal_now))
+                except Exception:
+                    continue
+            else:
+                model.wounds = min(base_wounds, current_wounds + heal_now)
+            healed += int(heal_now)
+            remaining -= int(heal_now)
+            if remaining <= 0:
+                break
+        return int(healed)
+
+    def _chaos_knights_copy_model_wargear(self, source_unit: Any, target_unit: Any) -> None:
+        if source_unit is None or target_unit is None:
+            return
+
+        def _norm(text: str) -> str:
+            raw = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in str(text or "").lower())
+            return " ".join(raw.split())
+
+        source_models = list(getattr(source_unit, "models", []) or [])
+        source_models.extend(list(getattr(source_unit, "models_lost", []) or []))
+
+        buckets: dict[str, list[Any]] = {}
+        for source_model in source_models:
+            key = _norm(getattr(source_model, "name", "") or "")
+            buckets.setdefault(key, []).append(source_model)
+
+        possible = list(getattr(target_unit, "possible_wargear", []) or [])
+        possible_by_name = {_norm(getattr(wg, "name", "") or ""): wg for wg in possible}
+        leftovers = [model for model in source_models if model is not None]
+
+        for target_model in list(getattr(target_unit, "models", []) or []):
+            key = _norm(getattr(target_model, "name", "") or "")
+            source_model = None
+            if key in buckets and buckets[key]:
+                source_model = buckets[key].pop(0)
+            elif leftovers:
+                source_model = leftovers.pop(0)
+            if source_model is None:
+                continue
+            target_model.wargear = []
+            for wargear in list(getattr(source_model, "wargear", []) or []):
+                name_key = _norm(getattr(wargear, "name", "") or "")
+                target_model.wargear.append(possible_by_name.get(name_key, wargear))
+            target_model.optional_wargear = list(getattr(source_model, "optional_wargear", []) or [])
+
+    def _clone_iconoclast_wretched_masses_unit(self, unit: Any) -> Any:
+        if unit is None:
+            return None
+        clone_hook = getattr(unit, "clone_for_cult_ambush", None)
+        if callable(clone_hook):
+            return clone_hook()
+        try:
+            from ..units.unit import Unit as UnitClass
+        except ImportError:
+            return None
+        datasheet = getattr(unit, "_datasheet", None)
+        if datasheet is None:
+            return None
+        count = int(getattr(unit, "starting_model_count", 0) or 0)
+        if count <= 0:
+            count = len(list(getattr(unit, "models", []) or []))
+        if count <= 0:
+            count = len(list(getattr(unit, "models_lost", []) or []))
+        if count <= 0:
+            return None
+        try:
+            new_unit = UnitClass(datasheet, quantity=count, enhancement=getattr(unit, "enhancement", None))
+        except TypeError:
+            new_unit = UnitClass(datasheet, quantity=count)
+        self._chaos_knights_copy_model_wargear(unit, new_unit)
+        new_unit.is_warlord = bool(getattr(unit, "is_warlord", False))
+        return new_unit
+
+    def _prepare_iconoclast_wretched_masses_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        army = self._chaos_knights_army()
+        if army is None:
+            return False
+        set_parent = getattr(unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(army)
+        else:
+            unit.parent_army = army
+        set_reserve = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve):
+            set_reserve("strategic_reserves")
+        else:
+            unit.reserve_status = "strategic_reserves"
+        mark_midgame = getattr(unit, "mark_entered_reserves_midgame", None)
+        if callable(mark_midgame):
+            mark_midgame(game=self.game)
+        unit.deployed = True
+        unit.reserve_turn_deployed = None
+        unit.arrived_from_reserves_this_turn = False
+        if hasattr(army, "add_unit"):
+            army.add_unit(unit)
+        else:
+            army.units.append(unit)
+        rebuild_registry = getattr(self.game, "rebuild_entity_registry", None) if self.game is not None else None
+        if callable(rebuild_registry):
+            rebuild_registry()
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is not None and isinstance(getattr(game_map, "units", None), list) and unit in game_map.units:
+            game_map.units.remove(unit)
+        return True
+
+    def _iconoclast_unrestrained_rage_candidates(self, *, require_advanced: bool = False, require_fell_back: bool = False) -> List[Any]:
+        if not self._is_iconoclast_fiefdom():
+            return []
+        candidates: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates() or []):
+            round_state = getattr(root, "round_state", None)
+            if require_advanced and not bool(getattr(round_state, "advanced_this_round", False)):
+                continue
+            if require_fell_back and not bool(getattr(round_state, "fell_back_this_round", False)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_knights_sort_key)
+        return candidates
+
+    def _iconoclast_preserve_the_idols_pairs(self, enemy_unit: Any) -> List[Dict[str, Any]]:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return []
+        enemy_root = self._chaos_knights_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        source_units: List[Any] = []
+        for root in list(self._chaos_knights_unit_candidates() or []):
+            distance = self._chaos_knights_distance_between_units(root, enemy_root)
+            if distance is None or distance > 9.0 + 1e-6:
+                continue
+            source_units.append(root)
+        if not source_units:
+            return []
+        army = self._chaos_knights_army()
+        if army is None:
+            return []
+        pair_by_unit_id: Dict[str, Dict[str, Any]] = {}
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            damned_root = self._chaos_knights_root(unit)
+            if damned_root is None:
+                continue
+            damned_id = self._chaos_knights_sort_key(damned_root)
+            if not damned_id or damned_id in seen_roots:
+                continue
+            seen_roots.add(damned_id)
+            if not self._is_chaos_knights_damned_unit(damned_root):
+                continue
+            if not self._chaos_knights_on_battlefield(damned_root, require_targetable=True):
+                continue
+            if self._chaos_knights_is_battle_shocked(damned_root):
+                continue
+            if self._chaos_knights_in_engagement_range(damned_root):
+                continue
+            chosen_source = None
+            chosen_source_id = ""
+            for source_root in list(source_units or []):
+                distance = self._chaos_knights_distance_between_units(damned_root, source_root)
+                if distance is None or distance > 6.0 + 1e-6:
+                    continue
+                source_id = self._chaos_knights_sort_key(source_root)
+                if chosen_source is None or source_id < chosen_source_id:
+                    chosen_source = source_root
+                    chosen_source_id = source_id
+            if chosen_source is None:
+                continue
+            pair_by_unit_id[damned_id] = {
+                "unit": damned_root,
+                "unit_id": damned_id,
+                "source_unit": chosen_source,
+                "source_unit_id": chosen_source_id,
+            }
+        pairs = list(pair_by_unit_id.values())
+        pairs.sort(key=lambda item: (str(item.get("unit_id", "") or ""), str(item.get("source_unit_id", "") or "")))
+        return pairs
+
+    def _iconoclast_worthless_chattel_has_pending_decision(self, *, unit_id: str) -> bool:
+        if self.game is None:
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_TARGET_MODEL:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("selection_kind", "") or "") != "worthless_chattel_destroy":
+                continue
+            if str(ctx.get("target_unit_id", "") or "") != str(unit_id or ""):
+                continue
+            return True
+        return False
+
+    def _queue_iconoclast_fiefdom_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        moving_root = self._chaos_knights_root(unit)
+
+        if active_player is self.player:
+            if action_key not in {"advance", "fall back", "fallback"}:
+                return
+            stratagem = self.get_by_name("UNRESTRAINED RAGE")
+            if stratagem is None or moving_root is None:
+                return
+            if not self._chaos_knights_owned_by_player(moving_root, self.player):
+                return
+            if action_key == "advance":
+                if moving_root not in list(self._iconoclast_unrestrained_rage_candidates(require_advanced=True) or []):
+                    return
+            else:
+                if moving_root not in list(self._iconoclast_unrestrained_rage_candidates(require_fell_back=True) or []):
+                    return
+            if self._chaos_knights_reaction_exists("unit_move_ended", stratagem.name):
+                return
+            if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < self._chaos_knights_effective_cp_cost(
+                stratagem,
+                target_unit=moving_root,
+            ):
+                return
+            self._queue_reaction(
+                {
+                    "event": "unit_move_ended",
+                    "phase_name": "Movement phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "unit": moving_root,
+                    "target_unit": moving_root,
+                    "action": action,
+                },
+                use_timer=False,
+            )
+            return
+
+        if action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            return
+        if moving_root is None:
+            return
+        try:
+            if moving_root.get_parent_army().player is self.player:
+                return
+        except Exception:
+            return
+        stratagem = self.get_by_name("PRESERVE THE IDOLS")
+        if stratagem is None:
+            return
+        if self._chaos_knights_reaction_exists("unit_move_ended", stratagem.name):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        pairs = list(self._iconoclast_preserve_the_idols_pairs(moving_root) or [])
+        if not pairs:
+            return
+        first_target = pairs[0].get("source_unit") or pairs[0].get("unit")
+        if int(getattr(self.player, "command_points", 0) or 0) < self._chaos_knights_effective_cp_cost(
+            stratagem,
+            target_unit=first_target,
+        ):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": moving_root,
+            "candidates": [pair["unit"] for pair in list(pairs or [])],
+            "candidate_source_unit_ids": {
+                str(pair.get("unit_id", "") or ""): str(pair.get("source_unit_id", "") or "")
+                for pair in list(pairs or [])
+                if str(pair.get("unit_id", "") or "") and str(pair.get("source_unit_id", "") or "")
+            },
+            "action": action,
+        }
+        if len(pairs) == 1:
+            payload["unit"] = pairs[0]["unit"]
+            payload["target_unit"] = pairs[0]["unit"]
+            payload["source_unit_id"] = pairs[0]["source_unit_id"]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_iconoclast_fiefdom_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any = None,
+    ) -> None:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return
+        root = self._chaos_knights_root(destroyed_unit)
+        if root is None or not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        phase_name = str(self._current_phase_name or "").strip() or self._chaos_knights_phase_label(
+            str(getattr(getattr(self.game, "phase", None), "name", "") or "")
+        )
+
+        avenge = self.get_by_name("AVENGE THE MASTERS!")
+        destroyer_root = self._chaos_knights_root(destroyed_by_unit)
+        if (
+            avenge is not None
+            and self._is_chaos_knights_unit(root)
+            and destroyer_root is not None
+            and not self._chaos_knights_owned_by_player(destroyer_root, self.player)
+            and not self._chaos_knights_reaction_exists("unit_destroyed", avenge.name)
+            and (avenge.name or "").strip().upper() not in self._used_stratagems_this_phase
+            and int(getattr(self.player, "command_points", 0) or 0)
+            >= self._chaos_knights_effective_cp_cost(avenge, target_unit=root)
+        ):
+            self._queue_reaction(
+                {
+                    "event": "unit_destroyed",
+                    "phase_name": phase_name,
+                    "stratagem": avenge.name,
+                    "cp_cost": avenge.cp_cost,
+                    "unit": root,
+                    "target_unit": root,
+                    "enemy_unit": destroyer_root,
+                },
+                use_timer=False,
+            )
+
+        wretched = self.get_by_name("WRETCHED MASSES")
+        if wretched is None:
+            return
+        if bool(getattr(self, "_iconoclast_wretched_masses_used", False)):
+            return
+        if not self._is_chaos_knights_damned_unit(root):
+            return
+        if self._iconoclast_is_accursed_cultists_unit(root):
+            return
+        if self._chaos_knights_is_alive(root):
+            return
+        if self._chaos_knights_reaction_exists("unit_destroyed", wretched.name):
+            return
+        if (wretched.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._chaos_knights_effective_cp_cost(
+            wretched,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": wretched.name,
+                "cp_cost": wretched.cp_cost,
+                "unit": root,
+                "target_unit": root,
+            },
+            use_timer=False,
+        )
+
+    def _queue_iconoclast_fiefdom_fight_attacks_resolved_reactions(
+        self,
+        *,
+        unit: Any,
+        target_unit: Any = None,
+        killing_models_by_target: Any = None,
+    ) -> None:
+        del target_unit
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        root = self._chaos_knights_root(unit)
+        if root is None or not self._chaos_knights_owned_by_player(root, self.player):
+            return
+        if not self._is_chaos_knights_unit(root):
+            return
+        kill_map = killing_models_by_target if isinstance(killing_models_by_target, dict) else {}
+        if not kill_map:
+            return
+        battle_shocked_kills = False
+        destroyed_any = False
+        for target in sorted(list(kill_map), key=self._chaos_knights_sort_key):
+            target_root = self._chaos_knights_root(target)
+            if target_root is None or self._chaos_knights_owned_by_player(target_root, self.player):
+                continue
+            killed_models = kill_map.get(target)
+            if not killed_models:
+                continue
+            destroyed_any = True
+            if self._chaos_knights_is_battle_shocked(target_root):
+                battle_shocked_kills = True
+                break
+        if not destroyed_any:
+            return
+        stratagem = self.get_by_name("SOUL HUNGER")
+        if stratagem is None:
+            return
+        if self._chaos_knights_reaction_exists("fight_attacks_resolved", stratagem.name):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < self._chaos_knights_effective_cp_cost(
+            stratagem,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "fight_attacks_resolved",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "battle_shocked_kills": bool(battle_shocked_kills),
+            },
+            use_timer=False,
+        )
+
+    def _resolve_iconoclast_worthless_chattel_after_shooting(
+        self,
+        *,
+        attacker_unit: Any,
+        damage_by_target_while_engaged: dict[Any, int] | None,
+    ) -> None:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._chaos_knights_root(attacker_unit)
+        if attacker_root is None or not self._chaos_knights_owned_by_player(attacker_root, self.player):
+            return
+        if not self._is_chaos_knights_damned_unit(attacker_root):
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("iconoclast_worthless_chattel_active"):
+            return
+        exp = str(sr.get("iconoclast_worthless_chattel_expires_phase", "") or "").strip().upper()
+        if exp and exp != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("iconoclast_worthless_chattel_turn_owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        damage_map = damage_by_target_while_engaged if isinstance(damage_by_target_while_engaged, dict) else {}
+        if not damage_map:
+            return
+        total_rolls = 0
+        for target in sorted(list(damage_map), key=self._chaos_knights_sort_key):
+            target_root = self._chaos_knights_root(target)
+            if target_root is None or self._chaos_knights_owned_by_player(target_root, self.player):
+                continue
+            try:
+                total_rolls += max(0, int(damage_map.get(target, 0) or 0))
+            except (TypeError, ValueError):
+                continue
+        if total_rolls <= 0:
+            return
+        destroy_count = 0
+        for _ in range(int(total_rolls)):
+            roll = int(get_roll("D6") or 0)
+            if roll >= 4:
+                destroy_count += 1
+        alive_models = list(self._chaos_knights_alive_models(attacker_root) or [])
+        destroy_count = min(int(destroy_count), len(alive_models))
+        if destroy_count <= 0:
+            return
+        try:
+            from ..utility.event_bus import append_action
+        except Exception:
+            append_action = None
+        if len(alive_models) == 1:
+            try:
+                alive_models[0].die(game_map=getattr(self.game, "map", None))
+            except Exception:
+                return
+            if callable(append_action):
+                append_action(
+                    self.player,
+                    f"{getattr(attacker_root, 'name', 'Unit')}: Worthless Chattel destroys 1 model after shooting.",
+                )
+            return
+        unit_id = self._chaos_knights_sort_key(attacker_root)
+        if self._iconoclast_worthless_chattel_has_pending_decision(unit_id=unit_id):
+            return
+        from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                str(getattr(model, "name", "Model") or "Model"),
+                payload={"model_id": get_entity_id(model)},
+            )
+            for model in list(alive_models or [])
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            f"Worthless Chattel: select a model to destroy ({int(destroy_count)} remaining).",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "selection_kind": "worthless_chattel_destroy",
+                "target_unit_id": unit_id,
+                "destroy_remaining": int(destroy_count),
+                "ability_name": "Worthless Chattel",
+            },
+        )
+        try:
+            self.game.request_decision(request)
+        except Exception:
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "add"):
+                queue.add(request)
+
+    def _use_iconoclast_avenge_the_masters(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom():
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit"))
+        if root is None:
+            logger.error("ERROR: AVENGE THE MASTERS!: no destroyed CHAOS KNIGHTS unit provided")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: AVENGE THE MASTERS!: destroying enemy unit is missing")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: AVENGE THE MASTERS!: target must be a CHAOS KNIGHTS unit")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: AVENGE THE MASTERS!: target unit is not yours")
+            return False
+        if self._chaos_knights_is_alive(root):
+            logger.error("ERROR: AVENGE THE MASTERS!: target unit was not destroyed")
+            return False
+        if self._chaos_knights_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: AVENGE THE MASTERS!: destroying unit must be an enemy unit")
+            return False
+        mgr = self._chaos_knights_detachment_manager()
+        if mgr is None:
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        mark_enemy = getattr(mgr, "mark_iconoclast_avenged_enemy", None)
+        if not callable(mark_enemy) or not bool(mark_enemy(enemy_root)):
+            logger.error("ERROR: AVENGE THE MASTERS!: failed to mark the destroying enemy unit")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: AVENGE THE MASTERS!: %s is Marked until the end of the battle.",
+            getattr(enemy_root, "name", "Enemy Unit"),
+        )
+        return True
+
+    def _use_iconoclast_wretched_masses(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom():
+            return False
+        if bool(getattr(self, "_iconoclast_wretched_masses_used", False)):
+            logger.error("ERROR: WRETCHED MASSES: already used this battle")
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            logger.error("ERROR: WRETCHED MASSES: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: WRETCHED MASSES: target unit is not yours")
+            return False
+        if self._chaos_knights_is_alive(root):
+            logger.error("ERROR: WRETCHED MASSES: target unit was not destroyed")
+            return False
+        if not self._is_chaos_knights_damned_unit(root):
+            logger.error("ERROR: WRETCHED MASSES: target must be a DAMNED unit")
+            return False
+        if self._iconoclast_is_accursed_cultists_unit(root):
+            logger.error("ERROR: WRETCHED MASSES: ACCURSED CULTISTS are excluded")
+            return False
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if len(members) > 1 and self._chaos_knights_unit_contains_character_member(root):
+            logger.error("ERROR: WRETCHED MASSES: cannot return destroyed CHARACTER Attached units")
+            return False
+        cloned = self._clone_iconoclast_wretched_masses_unit(root)
+        if cloned is None:
+            logger.error("ERROR: WRETCHED MASSES: failed to clone destroyed unit")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._prepare_iconoclast_wretched_masses_unit(cloned):
+            logger.error("ERROR: WRETCHED MASSES: failed to place cloned unit into Strategic Reserves")
+            return False
+        self._iconoclast_wretched_masses_used = True
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: WRETCHED MASSES: added a new %s unit to Strategic Reserves at Starting Strength.",
+            getattr(cloned, "name", "Unit"),
+        )
+        return True
+
+    def _use_iconoclast_soul_hunger(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom():
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            logger.error("ERROR: SOUL HUNGER: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: SOUL HUNGER: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: SOUL HUNGER: target must be a CHAOS KNIGHTS unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SOUL HUNGER: wrong phase")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: SOUL HUNGER: target unit is not on the battlefield")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        heal_amount = int(get_roll("D3") or 0)
+        if bool(merged.get("battle_shocked_kills", False)):
+            heal_amount += 2
+        healed = self._chaos_knights_heal_lost_wounds(root, heal_amount)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SOUL HUNGER: %s regains up to %d lost wound(s) (%d restored).",
+            getattr(root, "name", "Unit"),
+            int(heal_amount),
+            int(healed),
+        )
+        return True
+
+    def _use_iconoclast_unrestrained_rage(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            logger.error("ERROR: UNRESTRAINED RAGE: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: UNRESTRAINED RAGE: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(root):
+            logger.error("ERROR: UNRESTRAINED RAGE: target must be a CHAOS KNIGHTS unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNRESTRAINED RAGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: UNRESTRAINED RAGE: not your turn")
+            return False
+        action_key = str(merged.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in {"advance", "fall back", "fallback"}:
+            logger.error("ERROR: UNRESTRAINED RAGE: invalid trigger action")
+            return False
+        if action_key == "advance":
+            if root not in list(self._iconoclast_unrestrained_rage_candidates(require_advanced=True) or []):
+                logger.error("ERROR: UNRESTRAINED RAGE: target unit did not Advance")
+                return False
+            move_mode = "advance"
+        else:
+            if root not in list(self._iconoclast_unrestrained_rage_candidates(require_fell_back=True) or []):
+                logger.error("ERROR: UNRESTRAINED RAGE: target unit did not Fall Back")
+                return False
+            move_mode = "fall_back"
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["iconoclast_unrestrained_rage_active"] = True
+        sr["iconoclast_unrestrained_rage_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["iconoclast_unrestrained_rage_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        sr["iconoclast_unrestrained_rage_move_mode"] = move_mode
+        sr["iconoclast_unrestrained_rage_source"] = str(getattr(stratagem, "name", "") or "UNRESTRAINED RAGE")
+        root.special_rules = sr
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: UNRESTRAINED RAGE: %s can shoot and charge after %s this turn.",
+            getattr(root, "name", "Unit"),
+            "Advancing" if move_mode == "advance" else "Falling Back",
+        )
+        return True
+
+    def _use_iconoclast_worthless_chattel(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        if root is None:
+            candidates = list(merged.get("candidates", []) or [])
+            root = self._chaos_knights_root(candidates[0]) if len(candidates) == 1 else None
+        if root is None:
+            logger.error("ERROR: WORTHLESS CHATTEL: no target unit provided")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: WORTHLESS CHATTEL: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_damned_unit(root):
+            logger.error("ERROR: WORTHLESS CHATTEL: target must be a DAMNED unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: WORTHLESS CHATTEL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: WORTHLESS CHATTEL: not your turn")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: WORTHLESS CHATTEL: target must be an eligible battlefield unit")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["iconoclast_worthless_chattel_active"] = True
+        sr["iconoclast_worthless_chattel_expires_phase"] = "SHOOTING_PHASE"
+        sr["iconoclast_worthless_chattel_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["iconoclast_worthless_chattel_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        sr["iconoclast_worthless_chattel_source"] = str(getattr(stratagem, "name", "") or "WORTHLESS CHATTEL")
+        root.special_rules = sr
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: WORTHLESS CHATTEL: %s ignores its own Engagement Range for ranged target selection this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_iconoclast_preserve_the_idols(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_iconoclast_fiefdom() or self.game is None:
+            return False
+        merged = self._chaos_knights_pending_context(stratagem.name, kwargs)
+        root = self._chaos_knights_root(merged.get("unit") or merged.get("target_unit"))
+        enemy_root = self._chaos_knights_root(merged.get("enemy_unit"))
+        if root is None or enemy_root is None:
+            logger.error("ERROR: PRESERVE THE IDOLS: target unit or enemy trigger unit missing")
+            return False
+        if not self._chaos_knights_owned_by_player(root, self.player):
+            logger.error("ERROR: PRESERVE THE IDOLS: target unit is not yours")
+            return False
+        if not self._is_chaos_knights_damned_unit(root):
+            logger.error("ERROR: PRESERVE THE IDOLS: selected moving unit must be a DAMNED unit")
+            return False
+        phase_name = str(merged.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: PRESERVE THE IDOLS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: PRESERVE THE IDOLS: only usable in your opponent's Movement phase")
+            return False
+        action_key = str(merged.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            logger.error("ERROR: PRESERVE THE IDOLS: invalid trigger action")
+            return False
+        if not self._chaos_knights_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PRESERVE THE IDOLS: selected DAMNED unit is not eligible")
+            return False
+        if self._chaos_knights_is_battle_shocked(root):
+            logger.error("ERROR: PRESERVE THE IDOLS: selected DAMNED unit is Battle-shocked")
+            return False
+        if self._chaos_knights_in_engagement_range(root):
+            logger.error("ERROR: PRESERVE THE IDOLS: selected DAMNED unit is within Engagement Range")
+            return False
+        unit_id = self._chaos_knights_sort_key(root)
+        candidate_source_ids = dict(merged.get("candidate_source_unit_ids", {}) or {})
+        source_unit_id = str(
+            merged.get("source_unit_id")
+            or candidate_source_ids.get(unit_id, "")
+            or ""
+        ).strip()
+        source_root = self._chaos_knights_root(merged.get("source_unit"))
+        if source_root is None and source_unit_id:
+            source_root = self._chaos_knights_resolve_unit(source_unit_id)
+        if source_root is None:
+            logger.error("ERROR: PRESERVE THE IDOLS: source CHAOS KNIGHTS unit is missing")
+            return False
+        if not self._chaos_knights_owned_by_player(source_root, self.player):
+            logger.error("ERROR: PRESERVE THE IDOLS: source unit is not yours")
+            return False
+        if not self._is_chaos_knights_unit(source_root):
+            logger.error("ERROR: PRESERVE THE IDOLS: source unit must be a CHAOS KNIGHTS unit")
+            return False
+        if not self._chaos_knights_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: PRESERVE THE IDOLS: source CHAOS KNIGHTS unit is not eligible")
+            return False
+        source_distance = self._chaos_knights_distance_between_units(source_root, enemy_root)
+        if source_distance is None or source_distance > 9.0 + 1e-6:
+            logger.error("ERROR: PRESERVE THE IDOLS: source unit must be within 9\" of the enemy trigger unit")
+            return False
+        damned_distance = self._chaos_knights_distance_between_units(root, source_root)
+        if damned_distance is None or damned_distance > 6.0 + 1e-6:
+            logger.error("ERROR: PRESERVE THE IDOLS: selected DAMNED unit must be within 6\" of the source unit")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: PRESERVE THE IDOLS: reactive move queue unavailable")
+            return False
+        if not self._chaos_knights_spend_cp(stratagem, target_unit=source_root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="chaos_knights_preserve_the_idols",
+            movement_type="move",
+            reactive_movement_type="preserve_the_idols",
+            source=str(getattr(stratagem, "name", "PRESERVE THE IDOLS") or "PRESERVE THE IDOLS"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_engagement_range=False,
+            extra_context={
+                "preserve_the_idols_enemy_unit_id": self._chaos_knights_sort_key(enemy_root),
+                "preserve_the_idols_source_unit_id": self._chaos_knights_sort_key(source_root),
+            },
+        )
+        if request is None:
+            logger.error("ERROR: PRESERVE THE IDOLS: failed to queue reactive move")
+            return False
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: PRESERVE THE IDOLS: %s can make a Normal move of up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_chaos_knights_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_key = self._chaos_knights_normalize_name(getattr(stratagem, "name", "") or "")
         if name_key == "VOX-HOWL":
@@ -1359,4 +2313,16 @@ class ChaosKnightsStratagemMixin:
             return self._use_houndpack_harrying_hounds(stratagem, **kwargs)
         if name_key == "ENCIRCLING PACK":
             return self._use_houndpack_encircling_pack(stratagem, **kwargs)
+        if name_key == "AVENGE THE MASTERS!":
+            return self._use_iconoclast_avenge_the_masters(stratagem, **kwargs)
+        if name_key == "WRETCHED MASSES":
+            return self._use_iconoclast_wretched_masses(stratagem, **kwargs)
+        if name_key == "SOUL HUNGER":
+            return self._use_iconoclast_soul_hunger(stratagem, **kwargs)
+        if name_key == "UNRESTRAINED RAGE":
+            return self._use_iconoclast_unrestrained_rage(stratagem, **kwargs)
+        if name_key == "WORTHLESS CHATTEL":
+            return self._use_iconoclast_worthless_chattel(stratagem, **kwargs)
+        if name_key == "PRESERVE THE IDOLS":
+            return self._use_iconoclast_preserve_the_idols(stratagem, **kwargs)
         return None

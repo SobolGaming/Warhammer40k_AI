@@ -283,6 +283,54 @@ def _validate_predatory_pursuit_positions(
     return ()
 
 
+def _validate_preserve_the_idols_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    context = dict(ctx or {})
+    reactive_kind = str(context.get("reactive_move_kind", "") or "").strip().lower()
+    reactive_move_type = str(context.get("reactive_move_movement_type", "") or "").strip().lower()
+    if reactive_kind != "chaos_knights_preserve_the_idols" and reactive_move_type != "preserve_the_idols":
+        return ()
+    if unit is None:
+        return ("Move unit: Preserve the Idols requires a valid unit.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None or not hasattr(game_map, "get_distance_between_units"):
+        return ("Move unit: Preserve the Idols requires unit distance support.",)
+
+    enemy_unit_id = str(context.get("preserve_the_idols_enemy_unit_id", "") or "").strip()
+    if not enemy_unit_id:
+        return ("Move unit: Preserve the Idols enemy unit is missing.",)
+    enemy_unit = get_unit(game, enemy_unit_id)
+    if enemy_unit is None:
+        return ("Move unit: Preserve the Idols enemy unit could not be resolved.",)
+
+    source_unit_id = str(context.get("preserve_the_idols_source_unit_id", "") or "").strip()
+    if source_unit_id and get_unit(game, source_unit_id) is None:
+        return ("Move unit: Preserve the Idols source unit could not be resolved.",)
+
+    try:
+        current_distance = float(game_map.get_distance_between_units(unit, enemy_unit))
+    except (AttributeError, TypeError, ValueError):
+        return ("Move unit: Preserve the Idols could not measure the starting distance.",)
+
+    snapshot = current_model_positions(unit)
+    apply_model_positions(game, list(model_positions or []))
+    try:
+        final_distance = float(game_map.get_distance_between_units(unit, enemy_unit))
+    except (AttributeError, TypeError, ValueError):
+        apply_model_positions(game, snapshot)
+        return ("Move unit: Preserve the Idols could not measure the ending distance.",)
+    apply_model_positions(game, snapshot)
+
+    if not final_distance + 1e-6 < current_distance:
+        return ("Move unit: Preserve the Idols move must end closer to the enemy unit.",)
+    return ()
+
+
 def _validate_hearthfyre_cogitated_need_positions(
     game: object,
     unit: object,
@@ -1408,6 +1456,14 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     )
     if predatory_pursuit_errors:
         return predatory_pursuit_errors
+    preserve_the_idols_errors = _validate_preserve_the_idols_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if preserve_the_idols_errors:
+        return preserve_the_idols_errors
     hearthfyre_errors = _validate_hearthfyre_cogitated_need_positions(
         game,
         unit,

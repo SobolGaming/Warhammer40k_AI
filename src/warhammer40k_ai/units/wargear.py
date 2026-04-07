@@ -12630,9 +12630,9 @@ class WargearProfile:
             if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not attack_counts_as_pistol):
                 skip_bgnt = False
                 try:
-                    if hasattr(pu, "_is_ficklefire_active"):
+                    if hasattr(pu, "_ignore_engagement_for_ranged_targeting_active"):
                         game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
-                        skip_bgnt = bool(pu._is_ficklefire_active(game=game))
+                        skip_bgnt = bool(pu._ignore_engagement_for_ranged_targeting_active(game=game))
                 except Exception:
                     skip_bgnt = False
                 if self._is_siege_shield_demolisher_attack(attacker):
@@ -12657,9 +12657,9 @@ class WargearProfile:
                     skip_shooter = False
                     shooter_root = pu
                     try:
-                        if hasattr(pu, "_is_ficklefire_active"):
+                        if hasattr(pu, "_ignore_engagement_for_ranged_targeting_active"):
                             game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
-                            skip_shooter = bool(pu._is_ficklefire_active(game=game))
+                            skip_shooter = bool(pu._ignore_engagement_for_ranged_targeting_active(game=game))
                     except Exception:
                         skip_shooter = False
                     try:

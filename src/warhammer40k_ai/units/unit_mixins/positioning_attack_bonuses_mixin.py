@@ -411,6 +411,17 @@ class PositioningAttackBonusesMixin:
                             "source": str(source or "Marked Prey"),
                         }
                     ]
+            avenged_fn = getattr(mgr, "iconoclast_avenged_enemy_lethal_hits", None) if mgr is not None else None
+            if callable(avenged_fn):
+                lethal_hits, source = avenged_fn(model, target)
+                if bool(lethal_hits):
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "any",
+                            "keyword": "LETHAL HITS",
+                            "source": str(source or "Avenge the Masters!"),
+                        }
+                    ]
             dark_sacrifice_fn = getattr(mgr, "iconoclast_dark_sacrifice_weapon_keyword", None) if mgr is not None else None
             dark_sacrifice_multi_fn = (
                 getattr(mgr, "iconoclast_dark_sacrifice_weapon_keywords", None)

@@ -18875,6 +18875,13 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            if self._is_iconoclast_unrestrained_rage_active(game=game, require_advanced=True):
+                if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("enhancement_master_of_machine_war_active")):
                 return True
@@ -19235,6 +19242,12 @@ class ActionsMovementMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and bool(sr.get("enhancement_master_of_machine_war_active")):
+                return True
+        except Exception:
+            pass
+        try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            if self._is_iconoclast_unrestrained_rage_active(game=game, require_fell_back=True):
                 return True
         except Exception:
             pass
@@ -19824,6 +19837,12 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            if self._is_iconoclast_unrestrained_rage_active(game=game, require_advanced=True):
+                return True
+        except Exception:
+            pass
+        try:
             if self._thousand_sons_rubricae_stratagem_active(
                 active_key="thousand_sons_touched_by_tzeentch_active",
                 owner_key="thousand_sons_touched_by_tzeentch_turn_owner",
@@ -19935,6 +19954,12 @@ class ActionsMovementMixin:
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             return True
+        try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            if self._is_iconoclast_unrestrained_rage_active(game=game, require_fell_back=True):
+                return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
@@ -20795,7 +20820,7 @@ class ActionsMovementMixin:
         if not is_engaged:
             return True
 
-        if self._is_ficklefire_active():
+        if self._ignore_engagement_for_ranged_targeting_active():
             return True
             
         # If engaged and no profile provided, assume cannot shoot
@@ -20815,7 +20840,7 @@ class ActionsMovementMixin:
 
     def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
         """Check if this unit can shoot at a specific target while engaged with other units."""
-        if self._is_ficklefire_active():
+        if self._ignore_engagement_for_ranged_targeting_active():
             return True
         # If unit is not in engagement range, they can always shoot
         if not any(game_map.is_within_engagement_range(self, enemy)
@@ -20883,6 +20908,100 @@ class ActionsMovementMixin:
                 return False
             if int(getattr(game, "turn", 0) or 0) != turn:
                 return False
+        return True
+
+    def _is_iconoclast_worthless_chattel_active(
+        self,
+        *,
+        game=None,
+        phase_name: Optional[str] = None,
+    ) -> bool:
+        """Return True if this unit currently ignores its own engagement range for ranged targeting."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("iconoclast_worthless_chattel_active"):
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        owner = str(sr.get("iconoclast_worthless_chattel_turn_owner", "") or "")
+        if owner:
+            try:
+                unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
+            except Exception:
+                unit_owner = ""
+            if unit_owner and owner != unit_owner:
+                return False
+        exp = str(sr.get("iconoclast_worthless_chattel_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = ""
+            if phase_name:
+                phase_key = str(phase_name or "").strip().upper().replace(" ", "_")
+            if not phase_key and game is not None:
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_key and phase_key != exp:
+                return False
+        turn = int(sr.get("iconoclast_worthless_chattel_turn", 0) or 0)
+        if turn:
+            if game is None:
+                return False
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return False
+        return True
+
+    def _ignore_engagement_for_ranged_targeting_active(
+        self,
+        *,
+        game=None,
+        phase_name: Optional[str] = None,
+    ) -> bool:
+        return bool(
+            self._is_ficklefire_active(game=game, phase_name=phase_name)
+            or self._is_iconoclast_worthless_chattel_active(game=game, phase_name=phase_name)
+        )
+
+    def _is_iconoclast_unrestrained_rage_active(
+        self,
+        *,
+        game=None,
+        require_advanced: bool = False,
+        require_fell_back: bool = False,
+    ) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("iconoclast_unrestrained_rage_active"):
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        owner = str(sr.get("iconoclast_unrestrained_rage_turn_owner", "") or "")
+        turn = int(sr.get("iconoclast_unrestrained_rage_turn", 0) or 0)
+        if game is None:
+            return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if owner and str(getattr(current_player, "id", "") or "") != owner:
+            return False
+        if turn and int(getattr(game, "turn", 0) or 0) != turn:
+            return False
+        move_mode = str(sr.get("iconoclast_unrestrained_rage_move_mode", "") or "").strip().lower()
+        if require_advanced and move_mode not in {"advance", "advanced"}:
+            return False
+        if require_fell_back and move_mode not in {"fall_back", "fallback", "fall back"}:
+            return False
         return True
 
     def _is_locked_in_combat(self, game_map: 'Map') -> bool:

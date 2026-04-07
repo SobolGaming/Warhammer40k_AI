@@ -147,6 +147,73 @@ _HOUNDPACK_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009766002": StratagemToolDescriptor(
+        stratagem_id="000009766002",
+        name="Avenge the Masters!",
+        timing="any_phase_on_friendly_chaos_knights_destroyed",
+        target="destroyed_chaos_knights_unit",
+        duration="until_end_of_battle",
+        effect="mark_destroying_enemy_for_damned_lethal_hits",
+        cp_cost=1,
+        effect_params={"attacker_keyword": "DAMNED", "granted_keyword": "LETHAL HITS"},
+    ),
+    "000009766003": StratagemToolDescriptor(
+        stratagem_id="000009766003",
+        name="Wretched Masses",
+        timing="any_phase_on_destroyed_damned_unit",
+        target="destroyed_damned_unit_excluding_accursed_cultists",
+        duration="immediate",
+        effect="clone_unit_into_strategic_reserves",
+        cp_cost=2,
+        effect_params={"once_per_battle": True, "return_starting_strength": True},
+    ),
+    "000009766004": StratagemToolDescriptor(
+        stratagem_id="000009766004",
+        name="Soul Hunger",
+        timing="fight_phase_after_friendly_chaos_knights_fights",
+        target="chaos_knights_unit_that_just_fought",
+        duration="immediate",
+        effect="regain_lost_wounds_on_kill",
+        cp_cost=1,
+        effect_params={"heal_roll": "D3", "bonus_heal_vs_battleshocked": 2},
+    ),
+    "000009766005": StratagemToolDescriptor(
+        stratagem_id="000009766005",
+        name="Unrestrained Rage",
+        timing="movement_phase_after_advance_or_fall_back",
+        target="chaos_knights_unit_that_advanced_or_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_or_fall_back",
+        cp_cost=1,
+    ),
+    "000009766006": StratagemToolDescriptor(
+        stratagem_id="000009766006",
+        name="Worthless Chattel",
+        timing="shooting_phase",
+        target="damned_unit",
+        duration="until_end_of_phase",
+        effect="ignore_engagement_for_ranged_targeting_with_self_destruct_rolls",
+        cp_cost=1,
+        effect_params={"destroy_roll_threshold": 4},
+    ),
+    "000009766007": StratagemToolDescriptor(
+        stratagem_id="000009766007",
+        name="Preserve the Idols",
+        timing="opponent_movement_phase_after_enemy_move",
+        target="chaos_knights_unit_within_9_of_enemy_move_end",
+        duration="immediate",
+        effect="damned_reactive_normal_move_closer_to_enemy",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"damned_move_distance": 6.0, "damned_source_range": 6.0},
+    ),
+}
+
+_ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008437002": StratagemToolDescriptor(
         stratagem_id="000008437002",
@@ -11710,6 +11777,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12136,6 +12206,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
     return (
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _ICONOCLAST_FIEFDOM_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)

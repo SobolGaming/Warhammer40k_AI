@@ -48,6 +48,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self.houndpack_marked_prey_unit_id: str = ""
         self.houndpack_marked_prey_turn: int = 0
         self.houndpack_marked_prey_owner_id: str = ""
+        self._iconoclast_avenged_enemy_unit_ids: set[str] = set()
         self._houndpack_character_unit_ids: set[str] = set()
         self._houndpack_character_selection_resolved: bool = False
         self._iconoclast_pave_the_way_unit_ids: set[str] = set()
@@ -1939,6 +1940,45 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self.houndpack_marked_prey_unit_id = ""
         self.houndpack_marked_prey_turn = 0
         self.houndpack_marked_prey_owner_id = ""
+
+    def clear_iconoclast_avenged_enemies(self) -> None:
+        self._iconoclast_avenged_enemy_unit_ids.clear()
+
+    def mark_iconoclast_avenged_enemy(self, target_unit) -> bool:
+        if not self.is_iconoclast_fiefdom():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        target_id = self._unit_root_id(target_root)
+        if not target_id:
+            return False
+        self._iconoclast_avenged_enemy_unit_ids.add(target_id)
+        return True
+
+    def is_iconoclast_avenged_enemy(self, target_unit) -> bool:
+        if not self.is_iconoclast_fiefdom():
+            return False
+        target_id = self._unit_root_id(target_unit)
+        if not target_id:
+            return False
+        return str(target_id) in self._iconoclast_avenged_enemy_unit_ids
+
+    def iconoclast_avenged_enemy_lethal_hits(self, attacker_model, target_unit) -> tuple[bool, str]:
+        if not self.is_iconoclast_fiefdom():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None or not self.is_iconoclast_avenged_enemy(target_root):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None or not self._unit_belongs_to_army(attacker_root):
+            return False, ""
+        if not self._unit_is_damned(attacker_root):
+            return False, ""
+        return True, "Avenge the Masters!"
 
     def _collect_marked_prey_candidates(self, *, game=None, player=None) -> list:
         if game is None or player is None:
