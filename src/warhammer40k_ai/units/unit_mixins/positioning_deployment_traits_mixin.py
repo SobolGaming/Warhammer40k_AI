@@ -388,6 +388,38 @@ class PositioningDeploymentTraitsMixin:
                 )
 
         try:
+            bellicosa_min = float(sr.get("bridgehead_bellicosa_deep_strike_min_distance", 0) or 0)
+        except (TypeError, ValueError):
+            bellicosa_min = 0.0
+        if bellicosa_min > 0:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None)
+            owner_id = str(sr.get("bridgehead_bellicosa_turn_owner", "") or "")
+            turn_raw = sr.get("bridgehead_bellicosa_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if game is not None:
+                try:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    cur_turn = 0
+                get_current_player = getattr(game, "get_current_player", None)
+                cur_player = get_current_player() if callable(get_current_player) else None
+                cur_owner = str(getattr(cur_player, "id", "") or "")
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                exp = str(sr.get("bridgehead_bellicosa_expires_phase", "") or "").strip().upper()
+                if owner_id and cur_owner and owner_id != cur_owner:
+                    bellicosa_min = 0.0
+                elif turn and cur_turn and turn != cur_turn:
+                    bellicosa_min = 0.0
+                elif exp and pname and exp != pname:
+                    bellicosa_min = 0.0
+            if bellicosa_min > 0:
+                min_dist = bellicosa_min if min_dist is None else min(min_dist, bellicosa_min)
+
+        try:
             tau_shortened_blade_min = float(sr.get("tau_shortened_blade_deep_strike_min_distance", 0) or 0)
         except (TypeError, ValueError):
             tau_shortened_blade_min = 0.0
@@ -1259,12 +1291,12 @@ class PositioningDeploymentTraitsMixin:
                 pass
         if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
-        
+
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['infiltrate'] = found
-        
+
         return found
 
 
@@ -1447,7 +1479,7 @@ class PositioningDeploymentTraitsMixin:
                 return True
         except Exception:
             pass
-        
+
         return False
 
 
@@ -1594,7 +1626,7 @@ class PositioningDeploymentTraitsMixin:
 
     def has_scout(self) -> Tuple[bool, float]:
         """Check if the unit has Scout ability and return the scout distance.
-        
+
         Returns:
             Tuple[bool, float]: A tuple containing:
                 - A boolean indicating if the unit has Scout ability
@@ -1653,7 +1685,7 @@ class PositioningDeploymentTraitsMixin:
             and 'scout' in getattr(self, '_ability_cache', {})
         ):
             return self._ability_cache['scout']
-        
+
         try:
             found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
         except ValueError:
@@ -1739,29 +1771,29 @@ class PositioningDeploymentTraitsMixin:
                     result = (True, float(min_dist))
         except Exception:
             pass
-        
+
         # Cache the result when there are no dynamic Verminous Haze state checks.
         if (not verminous_haze_active) and (not am_scout_dynamic) and (not csm_scout_dynamic):
             if not hasattr(self, '_ability_cache'):
                 self._ability_cache = {}
             self._ability_cache['scout'] = result
-        
+
         return result
 
 
     def get_scout_distance_normalized(self, max_scout_distance: float = 12.0) -> float:
         """Get the normalized scout distance for deployment considerations.
-        
+
         Args:
             max_scout_distance (float): Maximum possible scout distance for normalization
-            
+
         Returns:
             float: Normalized scout distance (0.0 to 1.0), where 1.0 represents maximum scout mobility
         """
         has_scout_ability, scout_distance = self.has_scout()
         if not has_scout_ability:
             return 0.0
-        
+
         return min(scout_distance / max_scout_distance, 1.0)
 
 

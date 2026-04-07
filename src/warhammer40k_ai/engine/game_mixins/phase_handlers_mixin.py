@@ -20898,6 +20898,26 @@ class GamePhaseHandlersMixin:
                         "post_shoot_no_cover_turn",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("bridgehead_fire_and_relocate_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "bridgehead_fire_and_relocate_active",
+                        "bridgehead_fire_and_relocate_expires_phase",
+                        "bridgehead_fire_and_relocate_owner",
+                        "bridgehead_fire_and_relocate_turn",
+                        "bridgehead_fire_and_relocate_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("bridgehead_firing_hot_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "bridgehead_firing_hot_active",
+                        "bridgehead_firing_hot_expires_phase",
+                        "bridgehead_firing_hot_owner",
+                        "bridgehead_firing_hot_turn",
+                        "bridgehead_firing_hot_source",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("unleash_hell_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -21769,6 +21789,17 @@ class GamePhaseHandlersMixin:
                             "reletavistic_tether_no_charge_turn_owner",
                             "reletavistic_tether_no_charge_turn",
                             "reletavistic_tether_no_charge_source",
+                        ):
+                            sr.pop(k, None)
+                    if str(sr.get("bridgehead_bellicosa_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "bridgehead_bellicosa_no_charge_turn_owner",
+                            "bridgehead_bellicosa_no_charge_turn",
+                            "bridgehead_bellicosa_turn_owner",
+                            "bridgehead_bellicosa_turn",
+                            "bridgehead_bellicosa_expires_phase",
+                            "bridgehead_bellicosa_deep_strike_min_distance",
+                            "bridgehead_bellicosa_source",
                         ):
                             sr.pop(k, None)
                     if str(sr.get("aetherstride_sustained_hits_d3_owner", "") or "") == owner_id:

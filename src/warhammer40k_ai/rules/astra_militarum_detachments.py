@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 from ..utility.dice import get_roll
@@ -9,6 +10,16 @@ from .detachment_manager import DetachmentManagerBase
 
 class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     faction_id = "AM"
+    _BRIDGEHEAD_FIRING_HOT_WEAPON_NAMES = frozenset(
+        {
+            "hot shot lascarbine",
+            "hot shot lasgun",
+            "hot shot laspistol",
+            "hot shot marksman rifle",
+            "hot shot volley gun",
+            "sentry hot shot volley gun",
+        }
+    )
     _ARTILLERY_SUPPORT_MODE_ABILITY = "siege_regiment_artillery_support_mode"
     _ARTILLERY_SUPPORT_INCENDIARY_ABILITY = "siege_regiment_incendiary_bombardment"
     _ARTILLERY_SUPPORT_SMOKE_ABILITY = "siege_regiment_smoke_shells"
@@ -1401,6 +1412,102 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not (set_up or disembarked):
             return 0, ""
         return 1, "Fire Zone Purge"
+
+    @staticmethod
+    def _normalize_weapon_name(text: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").strip().lower()).strip()
+
+    def _bridgehead_firing_hot_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, int, str]:
+        if not self.is_bridgehead_strike():
+            return 0, 0, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return 0, 0, ""
+        if attacker_model is None or target_unit is None or weapon_profile is None:
+            return 0, 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None:
+            return 0, 0, ""
+        if not self._unit_in_army(root):
+            return 0, 0, ""
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("bridgehead_firing_hot_active")):
+            return 0, 0, ""
+
+        game_obj = game
+        if game_obj is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is not None:
+            active_player = getattr(game_obj, "get_current_player", lambda: None)()
+            active_player_id = str(getattr(active_player, "id", "") or "")
+            owner_id = str(sr.get("bridgehead_firing_hot_owner", "") or "")
+            if owner_id and active_player_id and owner_id != active_player_id:
+                return 0, 0, ""
+            current_turn = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+            marked_turn = self._safe_int(sr.get("bridgehead_firing_hot_turn", 0) or 0, 0)
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return 0, 0, ""
+            current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            expires_phase = str(sr.get("bridgehead_firing_hot_expires_phase", "") or "").strip().upper()
+            if expires_phase and current_phase and expires_phase != current_phase:
+                return 0, 0, ""
+
+        weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or getattr(weapon_profile, "name", "") or "")
+        if self._normalize_weapon_name(weapon_name) not in self._BRIDGEHEAD_FIRING_HOT_WEAPON_NAMES:
+            return 0, 0, ""
+
+        distance = self._distance_between_units(root, target_root, game=game_obj)
+        if distance is None or distance > 12.0 + 1e-6:
+            return 0, 0, ""
+        source = str(sr.get("bridgehead_firing_hot_source", "") or "FIRING HOT").strip() or "FIRING HOT"
+        return 1, 1, source
+
+    def bridgehead_firing_hot_strength_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        strength_bonus, _ap_bonus, source = self._bridgehead_firing_hot_bonus(
+            attacker_model,
+            target_unit,
+            attack_type=attack_type,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+        return int(strength_bonus), source
+
+    def bridgehead_firing_hot_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _strength_bonus, ap_bonus, source = self._bridgehead_firing_hot_bonus(
+            attacker_model,
+            target_unit,
+            attack_type=attack_type,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+        return int(ap_bonus), source
 
     def born_soldiers_lethal_hits_applies(
         self,

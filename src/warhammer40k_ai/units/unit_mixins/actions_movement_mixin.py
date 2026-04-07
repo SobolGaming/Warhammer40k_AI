@@ -69,7 +69,7 @@ class ActionsMovementMixin:
 
     def do_command_action(self, game_map: 'Map', current_turn: int = 1) -> bool:
         """Executes the command action for the unit.
-        
+
         Args:
             game_map: The game map
             current_turn: The current battle round number
@@ -294,19 +294,19 @@ class ActionsMovementMixin:
                 _cancel_action_due_to_move()
         else:
             raise ValueError(f"Invalid action: {action}")
-        
+
         # Mark unit as having moved this round if action was successful
         # AND set remained_stationary_this_round to False if the unit actually moved
         if success:
             self.round_state.moved_this_round = True
-            # If the unit performed any movement action (not remain stationary), 
+            # If the unit performed any movement action (not remain stationary),
             # it did not remain stationary this round
             if action != MovementAction.REMAIN_STATIONARY.value:
                 self.round_state.remained_stationary_this_round = False
             # Overwatch trigger: movement end
             if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
                 _publish("unit_move_ended", unit=self, action=('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move'))
-        
+
         return success
 
     def remain_stationary(self) -> bool:
@@ -15718,7 +15718,7 @@ class ActionsMovementMixin:
         pivot_note = ""
         if pivot_degrees:
             try:
-                pivot_note = f", pivot {float(pivot_degrees):.1f}°"
+                pivot_note = f", pivot {float(pivot_degrees):.1f}Ã‚Â°"
             except (TypeError, ValueError):
                 pivot_note = ""
         logger.info(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) "
@@ -15789,7 +15789,7 @@ class ActionsMovementMixin:
     ) -> bool:
         """
         Moves the unit towards the destination using optimized individual model pathfinding.
-        
+
         This method now uses the new pathfinding system that:
         1. Moves models individually using optimized pathfinding
         2. Validates coherency after all models have moved
@@ -15809,7 +15809,7 @@ class ActionsMovementMixin:
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
-        
+
         # Check if unit can move after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_move_after_arriving_from_reserves():
             logger.info(f"{self.name} cannot move - arrived from reserves this turn")
@@ -15989,7 +15989,7 @@ class ActionsMovementMixin:
             else:
                 advance_roll = self.round_state.advance_roll
                 logger.info(f"Using stored advance roll: {advance_roll}")
-            
+
             if advance_roll is None:
                 logger.error(f"Failed to roll dice for advancing unit {self.name}")
                 return False
@@ -16014,7 +16014,7 @@ class ActionsMovementMixin:
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
         boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
-        
+
         # Check if formation finding failed
         if potential_positions is None:
             logger.info(f"{self.name} cannot move - no valid formation found at destination")
@@ -16023,7 +16023,7 @@ class ActionsMovementMixin:
         # Use the pathing API for individual-model movement.
         from ...pathing.api import PathQuery, plan_model_path
         from ...utility.calcs import process_unit_movement_with_coherency_check
-        
+
         model_movements = []
         successful_moves = 0
 
@@ -16031,7 +16031,7 @@ class ActionsMovementMixin:
         for model_index, (model, model_destination) in enumerate(zip(self.models, potential_positions)):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting to move from {model_start} to {model_destination}")
-            
+
             # Calculate straight-line distance for this model
             model_distance = measure_direct_distance(
                 (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
@@ -16040,12 +16040,12 @@ class ActionsMovementMixin:
                 movement_type,
                 game_map,
             )
-            
+
             # Check if this model can reach its destination
             if model_distance > movement_range:
                 logger.info(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
-            
+
             path_result = plan_model_path(
                 PathQuery(
                     model=model,
@@ -16060,14 +16060,14 @@ class ActionsMovementMixin:
                 )
             )
             path = list(path_result.waypoints) if path_result.valid else None
-            
+
             if not path:
                 logger.debug(f"Model {model._id} optimized pathfinding failed - destination may violate movement rules")
                 continue
-            
+
             # Calculate path distance
             path_distance = measure_path_distance(path, self, movement_type, game_map)
-            
+
             if path_distance > movement_range:
                 logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
                 # Try to move as far as possible along the path
@@ -16075,18 +16075,18 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 distance_along_path = 0.0
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
-                
+
                 for node in path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, movement_type)
-                    
+
                     if distance_along_path + segment_distance > movement_range:
                         # Stop here, can't go further
                         break
-                    
+
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 # Move to the furthest reachable position
                 if distance_along_path > 0:
                     final_position = model.last_move_path[-1]
@@ -16101,19 +16101,19 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 distance_along_path = 0.0
-                
+
                 for node in path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, movement_type)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 model_movements.append((model_index, model.last_move_path))
                 successful_moves += 1
                 logger.debug(f"Model {model._id} moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
 
         # Unit position is now determined by model positions
-        
+
         # Check if any movement occurred
         if successful_moves == 0:
             logger.info(f"{self.name} could not move - no models could reach any valid positions")
@@ -16121,7 +16121,7 @@ class ActionsMovementMixin:
 
         # NEW: Validate unit coherency after all models have moved
         is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
-        
+
         if not is_coherent:
             logger.info(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
@@ -16129,7 +16129,7 @@ class ActionsMovementMixin:
                 if i < len(self.models):
                     self.models[i].set_location(*original_pos)
             return False
-        
+
         # CRITICAL VALIDATION: Check for illegal overlaps after movement
         # This catches cases where models might be overlapping with enemies after movement
         if self.models and self.models[0].is_alive:
@@ -16139,7 +16139,7 @@ class ActionsMovementMixin:
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
             end_z = start_z
-        
+
         # Check for base overlaps with enemy models
         enemy_units = game_map.get_enemy_units(self)
         for model in self.models:
@@ -16159,7 +16159,7 @@ class ActionsMovementMixin:
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
                         return False
-        
+
         # Calculate actual distance the unit moved (rules-aware)
         unit_distance_moved = measure_direct_distance(
             (start_x, start_y, start_z),
@@ -16168,11 +16168,11 @@ class ActionsMovementMixin:
             movement_type,
             game_map,
         )
-        
+
         # Provide detailed feedback
         action_name = 'advanced' if advance else 'moved'
         logger.info(f"{self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
-        
+
         if successful_moves < len(self.models):
             logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
 
@@ -16195,7 +16195,7 @@ class ActionsMovementMixin:
         target_units: Optional[list['Unit']] = None,
     ) -> bool:
         """Special movement for charge actions that allows moving into engagement range.
-        
+
         Unlike normal movement, charge movement:
         1. Allows models to move into engagement range of enemy units
         2. Uses relaxed collision detection for final positioning
@@ -16220,7 +16220,7 @@ class ActionsMovementMixin:
                 _game.event_system.publish("unit_move_started", unit=self, action="charge")
         except Exception:
             pass
-        
+
         # Get starting position from first model
         if not self.models or not self.models[0].is_alive:
             logger.error(f"Cannot charge move unit {self.name}: no valid models")
@@ -16238,19 +16238,19 @@ class ActionsMovementMixin:
         if not first_model_pos:
             logger.error(f"Cannot charge move unit {self.name}: first model has no position")
             return False
-        
+
         # Store starting position for feedback and rollback
         start_x, start_y = first_model_pos[0], first_model_pos[1]
         start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
-        
+
         # Store original model positions for potential rollback
         original_model_positions = []
         for model in self.models:
             model_pos = model.get_location()
             original_model_positions.append(model_pos)
-        
+
         # Store original model positions for potential rollback
-        
+
         from ...utility.calcs import MovementType
         # Calculate maximum charge distance available (rules-aware)
         max_charge_distance = measure_direct_distance(
@@ -16260,7 +16260,7 @@ class ActionsMovementMixin:
             MovementType.CHARGE,
             game_map,
         )
-        
+
         targets = list(target_units or [])
         if not targets and target_unit is not None:
             targets = [target_unit]
@@ -16276,15 +16276,15 @@ class ActionsMovementMixin:
         if not all_enemy_models:
             logger.info(f"{self.name} cannot charge - no alive models in target unit {targets[0].name}")
             return False
-        
+
         successful_moves = 0
-        
+
         # FAST PATH FOR SINGLE MODEL UNITS - use pathfinding but skip formation complexity
         if len(self.models) == 1:
             logger.info(f"{self.name} using single-model charge path")
             model = self.models[0]
             model_start = model.get_location()
-            
+
             # Calculate straight-line distance to destination (rules-aware)
             model_distance = measure_direct_distance(
                 (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
@@ -16293,12 +16293,12 @@ class ActionsMovementMixin:
                 MovementType.CHARGE,
                 game_map,
             )
-            
+
             # Check if within charge distance
             if model_distance > max_charge_distance:
                 logger.info(f"{self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                 return False
-            
+
             # Use charge-aware pathing for single model.
             from ...pathing.api import PathQuery, plan_model_path
 
@@ -16320,43 +16320,43 @@ class ActionsMovementMixin:
                     exact_refine_max_paths=1,
                 )
             ).to_legacy_dict()
-            
+
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 logger.error(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
                 return False
 
             shortest_path = pathfinding_result['path']
-            
+
             # Calculate path distance
             path_distance = measure_path_distance(shortest_path, self, MovementType.CHARGE, game_map)
-            
+
             # Check if path is within charge distance
             if path_distance > max_charge_distance:
                 logger.info(f"{self.name} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
                 return False
-            
+
             # Move the model to destination
             new_z = game_map.get_height_at_point(destination[0], destination[1])
             new_facing = self.calculate_strategic_facing(destination[0], destination[1], game_map)
             model.set_location(destination[0], destination[1], new_z, new_facing)
             successful_moves = 1
-            
+
             logger.info(f"{self.name} (single model) charged via pathfinding - distance: {path_distance:.1f}\"")
-        
+
         else:
             # COMPLEX PATH FOR MULTI-MODEL UNITS - use formation positioning
             logger.info(f"{self.name} using multi-model charge path")
-            
+
             # Generate potential positions for models with enhanced pathfinding for charges
             boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
             potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
-            
+
             # Use formation positioning if available, otherwise fall back to individual positioning
             if potential_positions is not None:
                 # Use formation positioning with enhanced pathfinding validation
                 for model, model_destination in zip(self.models, potential_positions):
                     model_start = model.get_location()
-                    
+
                     # Calculate distance for this model
                     model_distance = measure_direct_distance(
                         (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
@@ -16365,12 +16365,12 @@ class ActionsMovementMixin:
                         MovementType.CHARGE,
                         game_map,
                     )
-                    
+
                     # Check if within charge distance
                     if model_distance > max_charge_distance:
                         logger.debug(f"Model {model._id} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                         continue
-                    
+
                     # Use charge-aware pathing for charge movement.
                     from ...pathing.api import PathQuery, plan_model_path
 
@@ -16395,10 +16395,10 @@ class ActionsMovementMixin:
 
                     if pathfinding_result and pathfinding_result.get('valid'):
                         shortest_path = pathfinding_result['path']
-                        
+
                         # Calculate path distance
                         path_distance = measure_path_distance(shortest_path, self, MovementType.CHARGE, game_map)
-                        
+
                         if path_distance <= max_charge_distance:
                             # Move to destination
                             model.set_location(*model_destination)
@@ -16410,17 +16410,17 @@ class ActionsMovementMixin:
                         logger.debug(f"Model {model._id} cannot charge to formation position - pathfinding failed")
             else:
                 logger.error(f"{self.name} charge failed - no valid formation found, trying individual positioning")
-            
+
             # If formation failed or had limited success, try individual model positioning
             if successful_moves < len(self.models) // 2:  # If less than half succeeded
                 # Move each model individually using enhanced pathfinding
                 for model in self.models:
                     model_start = model.get_location()
-                
+
                     # Find the closest enemy model to this model
                     closest_enemy = None
                     closest_distance = float('inf')
-                    
+
                     for enemy_model in all_enemy_models:
                         enemy_pos = enemy_model.get_location()
                         distance = get_dist(
@@ -16431,47 +16431,47 @@ class ActionsMovementMixin:
                         if distance < closest_distance:
                             closest_distance = distance
                             closest_enemy = enemy_model
-                    
+
                     if not closest_enemy:
                         continue
-                    
+
                     # Calculate direction towards closest enemy
                     enemy_pos = closest_enemy.get_location()
                     dx = enemy_pos[0] - model_start[0]
                     dy = enemy_pos[1] - model_start[1]
                     dz = enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
-                    
+
                     distance_to_enemy = get_dist(dx, dy, dz)
-                    
+
                     if distance_to_enemy == 0:
                         # Already at enemy position, no movement needed
                         successful_moves += 1
                         continue
-                    
+
                     # Normalize direction vector
                     dx /= distance_to_enemy
                     dy /= distance_to_enemy
                     dz /= distance_to_enemy if distance_to_enemy > 0 else 1
-                    
+
                     # Calculate how far to move: use the distance provided by attempt_charge
                     # Get as close as possible to the enemy for better pile-in positioning
                     target_distance = max_charge_distance  # Use the distance calculated by attempt_charge
-                    
+
                     if target_distance <= 0:
                         # Already close enough or can't move closer
                         successful_moves += 1
                         continue
-                    
+
                     # Calculate new position
                     new_x = model_start[0] + dx * target_distance
                     new_y = model_start[1] + dy * target_distance
                     new_z = game_map.get_height_at_point(new_x, new_y)
                     new_facing = self.calculate_strategic_facing(new_x, new_y, game_map)
-                    
+
                     # CRITICAL: Validate position before moving to prevent friendly unit overlaps
                     # Import here to avoid circular imports
                     from ...utility.calcs import check_friendly_ending_collision
-                    
+
                     # Check if the new position would collide with friendly units
                     if check_friendly_ending_collision(model, (new_x, new_y, new_z), game_map):
                         # Position would cause collision - try to find alternative position
@@ -16482,7 +16482,7 @@ class ActionsMovementMixin:
                             alt_x = model_start[0] + dx * alt_distance
                             alt_y = model_start[1] + dy * alt_distance
                             alt_z = game_map.get_height_at_point(alt_x, alt_y)
-                            
+
                             if not check_friendly_ending_collision(model, (alt_x, alt_y, alt_z), game_map):
                                 # Found a valid alternative position
                                 new_x, new_y, new_z = alt_x, alt_y, alt_z
@@ -16490,16 +16490,16 @@ class ActionsMovementMixin:
                                 alternative_found = True
                                 logger.debug(f"Model {model._id} found alternative charge position at {distance_factor:.1f} of original distance")
                                 break
-                        
+
                         if not alternative_found:
                             # No valid position found - skip this model
                             logger.debug(f"Model {model._id} cannot charge - no valid position found without friendly collisions")
                             continue
-                    
+
                     # Move the model to the validated position
                     model.set_location(new_x, new_y, new_z, new_facing)
                     successful_moves += 1
-                    
+
                     actual_distance_moved = get_dist(
                         new_x - model_start[0],
                         new_y - model_start[1],
@@ -16507,14 +16507,14 @@ class ActionsMovementMixin:
                     )
                     target_name = target_unit.name if target_unit else "closest enemy"
                     logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name} (from {target_name})")
-        
+
         # Unit position is now determined by model positions
-        
+
         # Check if any movement occurred
         if successful_moves == 0:
             logger.info(f"{self.name} could not charge - no models could reach any valid positions")
             return False
-        
+
         # CRITICAL VALIDATION: Final check for any overlaps after all models positioned
         # This catches edge cases where models might still overlap despite individual validation
         friendly_units = game_map.get_friendly_units(self)
@@ -16559,7 +16559,7 @@ class ActionsMovementMixin:
                 if i < len(self.models):
                     self.models[i].set_location(*original_pos)
             return False
-        
+
         # Get final position for feedback from first model
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
@@ -16568,7 +16568,7 @@ class ActionsMovementMixin:
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
             end_z = start_z
-        
+
         # Calculate actual distance the unit moved (rules-aware)
         unit_distance_moved = measure_direct_distance(
             (start_x, start_y, start_z),
@@ -16577,16 +16577,16 @@ class ActionsMovementMixin:
             MovementType.CHARGE,
             game_map,
         )
-        
+
         # Provide detailed feedback
         logger.info(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
-        
+
         if successful_moves < len(self.models):
             logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
-        
+
         # Mark unit as having moved this round
         self.round_state.moved_this_round = True
-        
+
         logger.info(f"Unit {self.name} charge moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         # Publish movement end for stratagem reaction windows (e.g. TANK SHOCK / FIRE OVERWATCH on Charge moves).
         try:
@@ -17220,7 +17220,7 @@ class ActionsMovementMixin:
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
         """Falls back from close combat.
-        
+
         Battle-Shocked units that fall back must take Desperate Escape Tests.
         Units that fall back can move within engagement range and over enemy models,
         but cannot end within engagement range of any enemy models.
@@ -17476,7 +17476,7 @@ class ActionsMovementMixin:
                 except Exception:
                     pass
                 return False
-        
+
         fallback_desperate = False
         fallback_bs_penalty = 0
         fallback_any_penalty = 0
@@ -17917,7 +17917,7 @@ class ActionsMovementMixin:
         if not self.models:
             logger.error(f"Cannot fall back unit {self.name}: no models in unit")
             return False
-        
+
         # Get starting position from first model
         if not self.models or not self.models[0].is_alive:
             logger.error(f"Cannot fall back unit {self.name}: no valid models")
@@ -17939,10 +17939,10 @@ class ActionsMovementMixin:
         # Store starting position for feedback
         start_x, start_y = first_model_pos[0], first_model_pos[1]
         start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
-        
+
         # Fall Back movement distance is the unit's Move characteristic
         movement_range = self.movement
-        
+
         from ...utility.calcs import MovementType
         # Calculate straight-line distance to destination (rules-aware)
         distance_to_destination = measure_direct_distance(
@@ -17952,7 +17952,7 @@ class ActionsMovementMixin:
             MovementType.FALL_BACK,
             game_map,
         )
-        
+
         # Check if destination is within movement range
         if distance_to_destination > movement_range:
             logger.info(f"{self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
@@ -17961,19 +17961,19 @@ class ActionsMovementMixin:
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
         boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
-        
+
         # Check if formation finding failed
         if potential_positions is None:
             logger.info(f"{self.name} cannot fall back - no valid formation found at destination")
             return False
-            
+
         successful_moves = 0
         total_models_moved_over_enemies = 0
-        
+
         for model, model_destination in zip(self.models, potential_positions):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting to fall back from {model_start} to {model_destination}")
-            
+
             # Calculate straight-line distance for this model
             model_distance = measure_direct_distance(
                 (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
@@ -17982,12 +17982,12 @@ class ActionsMovementMixin:
                 MovementType.FALL_BACK,
                 game_map,
             )
-            
+
             # Check if this model can reach its destination
             if model_distance > movement_range:
                 logger.info(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
-            
+
             # Try pathing for Fall Back movement using the unified pathing API.
             from ...pathing.api import PathQuery, plan_model_path
             from ...utility.calcs import MovementType
@@ -18015,15 +18015,15 @@ class ActionsMovementMixin:
             if not shortest_path:
                 logger.debug(f"Model {model._id} pathfinding returned no waypoints for fall back")
                 continue
-            
+
             # Calculate path distance
             path_distance = measure_path_distance(shortest_path, self, MovementType.FALL_BACK, game_map)
-            
+
             # Check for Desperate Escape Tests (models that move over enemy models).
             enemy_models_moved_over = list(path_result.moved_over_enemy_model_ids or [])
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
                 logger.info(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
-                
+
                 # Take Desperate Escape Test for this model
                 roll = get_roll("D6")
                 if roll <= 2:
@@ -18033,7 +18033,7 @@ class ActionsMovementMixin:
                 else:
                     logger.info(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ")
                     total_models_moved_over_enemies += 1
-            
+
             if path_distance > movement_range:
                 logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
                 # Try to move as far as possible along the path
@@ -18041,18 +18041,18 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 distance_along_path = 0.0
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
-                
+
                 for node in shortest_path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, MovementType.FALL_BACK)
-                    
+
                     if distance_along_path + segment_distance > movement_range:
                         # Stop here, can't go further
                         break
-                    
+
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 # Move to the furthest reachable position
                 if distance_along_path > 0:
                     final_position = model.last_move_path[-1]
@@ -18066,28 +18066,28 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 distance_along_path = 0.0
-                
+
                 for node in shortest_path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, MovementType.FALL_BACK)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 successful_moves += 1
                 logger.debug(f"Model {model._id} fell back to {model_destination}, path distance: {distance_along_path:.1f}\"")
-        
+
         # Unit position is now determined by model positions
-        
+
         # Check if any movement occurred
         if successful_moves == 0:
             logger.info(f"{self.name} could not fall back - no models could reach valid positions")
             return False
-        
+
         # Check if unit was wiped out during Desperate Escape Tests
         if not self.is_alive():
             logger.info(f"{self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
             return False
-        
+
         # CRITICAL VALIDATION: Check for illegal overlaps after fall back
         # Fall back has special rules - units can move over enemies but cannot end overlapping
         enemy_units = game_map.get_enemy_units(self)
@@ -18106,7 +18106,7 @@ class ActionsMovementMixin:
                         # For fall back, we don't have original positions stored, so this is a critical error
                         # The fall back move should have been validated during pathfinding
                         return False
-        
+
         # Get final position for feedback from first model
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
@@ -18115,7 +18115,7 @@ class ActionsMovementMixin:
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
             end_z = start_z
-        
+
         # Calculate actual distance the unit moved (rules-aware)
         unit_distance_moved = measure_direct_distance(
             (start_x, start_y, start_z),
@@ -18124,17 +18124,17 @@ class ActionsMovementMixin:
             MovementType.FALL_BACK,
             game_map,
         )
-        
+
         # Provide detailed feedback
         logger.info(f"{self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
-        
+
         if total_models_moved_over_enemies > 0:
             logger.info(f" {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
-        
+
         if successful_moves < len(self.models):
             remaining_models = len(self.models)
             logger.info(f" Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
-        
+
         logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.fell_back_this_round = True
         try:
@@ -18475,10 +18475,10 @@ class ActionsMovementMixin:
 
     def has_advance_and_shoot(self, *, excluded_sources: Optional[Sequence[str]] = None) -> bool:
         """Check if the unit has an ability that allows shooting after advancing.
-        
+
         This checks for unit abilities that allow shooting after advancing,
         based on actual Warhammer 40k ability descriptions.
-        
+
         Returns:
             bool: True if the unit has an ability that allows shooting after advancing
         """
@@ -18496,7 +18496,7 @@ class ActionsMovementMixin:
         # Use cached result if available
         if cache_key in getattr(self, '_ability_cache', {}):
             return self._ability_cache[cache_key]
-        
+
         found = False
         if self.has_thrill_seekers():
             found = True
@@ -18537,7 +18537,7 @@ class ActionsMovementMixin:
                 "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                 "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
             ], excluded_sources=excluded_source_keys)
-        
+
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
@@ -18635,10 +18635,10 @@ class ActionsMovementMixin:
 
     def has_fell_back_and_shoot(self) -> bool:
         """Check if the unit has an ability that allows shooting after falling back.
-        
+
         This checks for unit abilities that allow shooting after falling back,
         based on actual Warhammer 40k ability descriptions.
-        
+
         Returns:
             bool: True if the unit has an ability that allows shooting after falling back
         """
@@ -18831,7 +18831,7 @@ class ActionsMovementMixin:
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
-        
+
         found = False
         try:
             army = self.get_parent_army()
@@ -18859,24 +18859,24 @@ class ActionsMovementMixin:
                 if not found:
                     data = self._get_fall_back_shoot_extended_rule_data()
                     found = bool(data.get("grants_fall_back_shoot"))
-        
+
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['fell_back_and_shoot'] = found
-        
+
         return found
 
     def can_shoot_after_advance(self, profile) -> bool:
         """Check if this unit can shoot after advancing with the given weapon profile.
-        
+
         A unit can shoot after advancing if either:
         1. The weapon profile is an Assault weapon, OR
         2. The unit has an ability that allows shooting after advancing
-        
+
         Args:
             profile: The weapon profile to check
-            
+
         Returns:
             bool: True if the unit can shoot this weapon after advancing
         """
@@ -18887,6 +18887,33 @@ class ActionsMovementMixin:
                 return True
             if ActionsMovementMixin._tau_alien_expertise_shoot_after_advance_active(self):
                 return True
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("bridgehead_fire_and_relocate_active")):
+                applies = True
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                owner_id = str(sr.get("bridgehead_fire_and_relocate_owner", "") or "")
+                turn = int(sr.get("bridgehead_fire_and_relocate_turn", 0) or 0)
+                expires_phase = str(sr.get("bridgehead_fire_and_relocate_expires_phase", "") or "").strip().upper()
+                if game is not None:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                    current_owner_id = str(getattr(current_player, "id", "") or "")
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if owner_id and current_owner_id and owner_id != current_owner_id:
+                        applies = False
+                    elif turn and current_turn and turn != current_turn:
+                        applies = False
+                    elif expires_phase and current_phase and expires_phase != current_phase:
+                        applies = False
+                if applies and callable(is_ranged_fn) and bool(is_ranged_fn()):
+                    return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("battle_focus_star_engines_active"):
@@ -19222,22 +19249,22 @@ class ActionsMovementMixin:
         # Check for Assault weapons
         if profile.is_assault():
             return True
-            
+
         # Check for unit abilities that allow advance and shoot
         if self.has_advance_and_shoot():
             return True
-            
+
         return False
 
     def can_shoot_after_fall_back(self, profile, model: Optional['Model'] = None) -> bool:
         """Check if this unit can shoot after falling back with the given weapon profile.
-        
+
         In 10th edition, Falling Back normally makes a unit not eligible to shoot.
         A unit can only shoot after falling back if it has an ability that explicitly allows it.
-        
+
         Args:
             profile: The weapon profile to check
-            
+
         Returns:
             bool: True if the unit can shoot this weapon after falling back
         """
@@ -19523,7 +19550,7 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
-            
+
         return False
 
     def is_shooting_phase_ineligible(self, game=None) -> bool:
@@ -20582,40 +20609,40 @@ class ActionsMovementMixin:
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute a scout move for the unit during pre-battle rules phase.
-        
+
         Scout moves have special restrictions:
         - Cannot move within engagement range of enemy units
         - Cannot end within 9" of enemy units
         - Cannot charge or advance during scout move
         - Considered a normal move action (terrain rules apply)
-        
+
         Args:
             destination: Target position (x, y, z)
             game_map: The game map for validation and movement
-            
+
         Returns:
             bool: True if scout move was successful
         """
         if not self.models:
             logger.error(f"Cannot scout move unit {self.name}: no models in unit")
             return False
-        
+
         # Check if unit has scout ability
         has_scout, scout_distance = self.has_scout()
         if not has_scout:
             logger.error(f"Unit {self.name} does not have Scout ability")
             return False
-        
+
         # Check if unit has already made a scout move
         if hasattr(self, 'scout_move_made') and self.scout_move_made:
             logger.error(f"Unit {self.name} has already made a scout move")
             return False
-        
+
         # Check if unit is deployed (not in reserves)
         if not self.deployed or self.reserve_status != 'deployed':
             logger.error(f"Unit {self.name} is not deployed and cannot make scout move")
             return False
-        
+
         # Get starting position from first model
         if not self.models or not self.models[0].is_alive:
             logger.error(f"Cannot scout move unit {self.name}: no valid models")
@@ -20629,7 +20656,7 @@ class ActionsMovementMixin:
         # Store starting position for feedback
         start_x, start_y = first_model_pos[0], first_model_pos[1]
         start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
-        
+
         from ...utility.calcs import MovementType
         # Calculate straight-line distance to destination (rules-aware)
         distance_to_destination = measure_direct_distance(
@@ -20639,16 +20666,16 @@ class ActionsMovementMixin:
             MovementType.SCOUT,
             game_map,
         )
-        
+
         # Check if destination is within scout distance
         if distance_to_destination > scout_distance:
             logger.info(f"{self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
             return False
-        
+
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
         boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
-        
+
         # Check if formation finding failed
         if potential_positions is None:
             logger.info(f"{self.name} cannot scout move - no valid formation found at destination")
@@ -20665,18 +20692,18 @@ class ActionsMovementMixin:
                 if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
                     logger.info(f"{self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
                     return False
-            
+
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
         original_model_positions = []
         for model in self.models:
             original_model_positions.append(model.get_location())
 
         successful_moves = 0
-        
+
         for model, model_destination in zip(self.models, potential_positions):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting scout move from {model_start} to {model_destination}")
-            
+
             # Calculate straight-line distance for this model
             model_distance = measure_direct_distance(
                 (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
@@ -20685,23 +20712,23 @@ class ActionsMovementMixin:
                 MovementType.SCOUT,
                 game_map,
             )
-            
+
             # Check if this model can reach its destination
             if model_distance > scout_distance:
                 logger.info(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
                 continue  # Skip this model, don't move it
-            
+
             # Find model index for pathfinding
             model_index = None
             for i, m in enumerate(self.models):
                 if m == model:
                     model_index = i
                     break
-            
+
             if model_index is None:
                 logger.error(f"Could not find model index for {model.name}")
                 continue
-            
+
             from ...pathing.api import PathQuery, plan_model_path
 
             path_result = plan_model_path(
@@ -20718,14 +20745,14 @@ class ActionsMovementMixin:
                 )
             )
             path = list(path_result.waypoints) if path_result.valid else None
-            
+
             if not path:
                 logger.debug(f"Model {model._id} optimized pathfinding failed for scout move - destination may be invalid")
                 continue
-            
+
             # Calculate path distance
             path_distance = measure_path_distance(path, self, MovementType.SCOUT, game_map)
-            
+
             if path_distance > scout_distance:
                 logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
                 # Try to move as far as possible along the path
@@ -20733,18 +20760,18 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 distance_along_path = 0.0
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
-                
+
                 for node in path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, MovementType.SCOUT)
-                    
+
                     if distance_along_path + segment_distance > scout_distance:
                         # Stop here, can't go further
                         break
-                    
+
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 # Move to the furthest reachable position
                 if distance_along_path > 0:
                     final_position = model.last_move_path[-1]
@@ -20758,33 +20785,33 @@ class ActionsMovementMixin:
                 model.last_move_path = [last_node]
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 distance_along_path = 0.0
-                
+
                 for node in path[1:]:
                     segment_distance = movement_segment_cost(last_node, node, self, MovementType.SCOUT)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-                
+
                 successful_moves += 1
                 logger.debug(f"Model {model._id} scout moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
-        
+
         # Unit position is now determined by model positions
-        
+
         # Check if any movement occurred
         if successful_moves == 0:
             logger.info(f"{self.name} could not scout move - no models could reach valid positions")
             return False
-        
+
         # NEW: Validate unit coherency after all models have moved (scout moves must maintain coherency)
         from ...utility.calcs import validate_unit_coherency_after_movement
-        
+
         # Get final positions of all models
         final_positions = []
         for model in self.models:
             final_positions.append(model.get_location())
-        
+
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
-        
+
         if not is_coherent:
             logger.info(f"{self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
@@ -20792,7 +20819,7 @@ class ActionsMovementMixin:
                 if i < len(self.models):
                     self.models[i].set_location(*original_pos)
             return False
-        
+
         # CRITICAL VALIDATION: Check for illegal overlaps after scout move
         # Scout moves cannot end overlapping with enemy models
         enemy_units = game_map.get_enemy_units(self)
@@ -20813,7 +20840,7 @@ class ActionsMovementMixin:
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
                         return False
-        
+
         # Get final position for feedback from first model
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
@@ -20822,7 +20849,7 @@ class ActionsMovementMixin:
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
             end_z = start_z
-        
+
         # Calculate actual distance the unit moved (rules-aware)
         unit_distance_moved = measure_direct_distance(
             (start_x, start_y, start_z),
@@ -20831,16 +20858,16 @@ class ActionsMovementMixin:
             MovementType.SCOUT,
             game_map,
         )
-        
+
         # Mark unit as having made a scout move
         self.scout_move_made = True
-        
+
         # Provide detailed feedback
         logger.info(f"{self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
-        
+
         if successful_moves < len(self.models):
             logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
-        
+
         logger.info(f"Unit {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True
 
@@ -20852,17 +20879,17 @@ class ActionsMovementMixin:
             for enemy in game_map.get_enemy_units(self)
             if enemy.is_alive()
         )
-        
+
         if not is_engaged:
             return True
 
         if self._ignore_engagement_for_ranged_targeting_active():
             return True
-            
+
         # If engaged and no profile provided, assume cannot shoot
         if profile is None:
             return False
-            
+
         # PISTOLS: can be used while within Engagement Range (target restriction enforced elsewhere)
         if self.weapon_profile_counts_as_pistol(profile):
             return True

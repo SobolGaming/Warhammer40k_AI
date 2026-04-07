@@ -494,7 +494,7 @@ class PositioningFightMovementMixin:
     def score_position(self, x, y, z, facing, game_map, model, placed_positions):
         """
         Score a candidate position for model placement.
-        Lower is better. 
+        Lower is better.
         You can enhance this to factor in more things: cover, distance to objective, edge, enemy, etc.
         """
         # Simple version: maximize coherency, avoid edge, avoid obstacles.
@@ -524,16 +524,16 @@ class PositioningFightMovementMixin:
 
     def _get_reduced_boundary_repulsors(self, game_map: 'Map') -> List:
         """Get reduced boundary repulsors for formation finding during movement.
-        
+
         These are smaller than the full battlefield edge repulsors to allow better
         formation finding in crowded areas while still preventing units from going
         off the battlefield.
         """
         from shapely.geometry import Polygon
-        
+
         repulsors = []
         repulsor_thickness = 0.25  # Reduced from 0.5 to 0.25 inches
-        
+
         # Left battlefield edge repulsor (reduced)
         left_edge = Polygon([
             (-repulsor_thickness, -repulsor_thickness),
@@ -542,7 +542,7 @@ class PositioningFightMovementMixin:
             (-repulsor_thickness, game_map.height + repulsor_thickness)
         ])
         repulsors.append(left_edge)
-        
+
         # Right battlefield edge repulsor (reduced)
         right_edge = Polygon([
             (game_map.width, -repulsor_thickness),
@@ -551,7 +551,7 @@ class PositioningFightMovementMixin:
             (game_map.width, game_map.height + repulsor_thickness)
         ])
         repulsors.append(right_edge)
-        
+
         # Bottom battlefield edge repulsor (reduced)
         bottom_edge = Polygon([
             (-repulsor_thickness, -repulsor_thickness),
@@ -560,7 +560,7 @@ class PositioningFightMovementMixin:
             (-repulsor_thickness, 0)
         ])
         repulsors.append(bottom_edge)
-        
+
         # Top battlefield edge repulsor (reduced)
         top_edge = Polygon([
             (-repulsor_thickness, game_map.height),
@@ -577,15 +577,15 @@ class PositioningFightMovementMixin:
 
     def calculate_strategic_facing(self, x: float, y: float, game_map: 'Map') -> float:
         """Calculate strategic facing direction towards enemies or objectives"""
-        
+
         # Get our army to determine enemies
         army = self.get_parent_army()
         if not army:
             return 0.0  # Default facing if no army context
-        
+
         best_target = None
         min_distance = float('inf')
-        
+
         # Priority 1: Face nearest visible enemy unit
         for unit in game_map.units:
             if unit != self and unit.get_parent_army() != army and unit.is_alive():
@@ -604,7 +604,7 @@ class PositioningFightMovementMixin:
                 if closest_enemy_pos and closest_enemy_distance < min_distance:
                     min_distance = closest_enemy_distance
                     best_target = closest_enemy_pos
-        
+
         # Priority 2: If no enemies, face towards objectives
         if not best_target and hasattr(game_map, 'objectives'):
             for objective in game_map.objectives:
@@ -613,13 +613,13 @@ class PositioningFightMovementMixin:
                 if distance < min_distance:
                     min_distance = distance
                     best_target = obj_pos
-        
+
         # Priority 3: Face towards center of battlefield
         if not best_target:
             center_x = game_map.width / 2
             center_y = game_map.height / 2
             best_target = (center_x, center_y)
-        
+
         # Calculate angle to target
         dx = best_target[0] - x
         dy = best_target[1] - y
@@ -636,9 +636,9 @@ class PositioningFightMovementMixin:
                                 boundary_repulsors=None):
         """
         Computes (x, y, z, facing) for each model in self.models.
-        Tries formation templates (block, wedge, circle, column) built 
+        Tries formation templates (block, wedge, circle, column) built
         with safe spacing based on base size; falls back to per-model A*.
-        
+
         Args:
             start_x: Target X coordinate for unit placement
             start_y: Target Y coordinate for unit placement
@@ -647,7 +647,7 @@ class PositioningFightMovementMixin:
             relax_iters: Number of relaxation iterations (default 5)
             avoid_friendly_units: Whether to avoid collisions with friendly units
             boundary_repulsors: Optional list of boundary repulsor polygons to avoid
-            
+
         Returns:
             List of (x, y, z, facing) tuples for each model, or None if failed
         """
@@ -692,11 +692,11 @@ class PositioningFightMovementMixin:
                     if unit != self:  # Don't include models from the unit being positioned
                         friendly_models.extend(unit.models)
                 blocking_models.extend(friendly_models)
-            
+
             # Use provided boundary repulsors or default to empty list
             if boundary_repulsors is None:
                 boundary_repulsors = []
-            
+
             # one-off spatial index of terrain + blocking models + boundary repulsors
             # Convert terrain features to blocking polygons for this unit
             from ...utility.calcs import get_terrain_blocking_polygons
@@ -754,7 +754,7 @@ class PositioningFightMovementMixin:
         enemy_models = game_map.get_enemy_models(self)
         blocking_models = enemy_models
         logger.debug(f"DEBUG: Found {len(enemy_models)} enemy models")
-        
+
         if avoid_friendly_units:
             # Add friendly models from other units (excluding self)
             friendly_models = []
@@ -763,13 +763,13 @@ class PositioningFightMovementMixin:
                     friendly_models.extend(unit.models)
             blocking_models.extend(friendly_models)
             logger.debug(f"DEBUG: Added {len(friendly_models)} friendly models from other units")
-        
+
         logger.debug(f"DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
-        
+
         # 2) Use provided boundary repulsors or default to empty list
         if boundary_repulsors is None:
             boundary_repulsors = []
-        
+
         # 3) Spatial index of terrain + blocking models + boundary repulsors
         # Convert terrain features to blocking polygons for this unit
         from ...utility.calcs import get_terrain_blocking_polygons
@@ -796,7 +796,7 @@ class PositioningFightMovementMixin:
         # 6) Try each template
         for template_name, offsets in templates.items():
             logger.debug(f"DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
-            
+
             # world positions in 2D & then lift to 3D + facing
             world = []
             pts2d = offsets + origin_2d
@@ -811,14 +811,14 @@ class PositioningFightMovementMixin:
             for i, (dx, dy) in enumerate(offsets):
                 model_x = origin_2d[0] + dx
                 model_y = origin_2d[1] + dy
-                
+
                 # Create temporary model base at this position
                 temp_model = self.models[i] if i < len(self.models) else self.models[0]
                 temp_base = temp_model.model_base.get_base_shape()
-                temp_base_positioned = translate(temp_base, 
+                temp_base_positioned = translate(temp_base,
                                                model_x - temp_base.centroid.x,
                                                model_y - temp_base.centroid.y)
-                
+
                 # Check collision with obstacles and enemy models only
                 # (friendly unit avoidance is handled by the avoid_friendly_units parameter)
                 base_hits = query_spatial_index(tree, temp_base_positioned)
@@ -830,7 +830,7 @@ class PositioningFightMovementMixin:
                             break
                     if model_collision_detected:
                         break
-            
+
             if model_collision_detected:
                 logger.debug(f"DEBUG: Template '{template_name}' rejected - model base overlap detected")
                 continue
@@ -850,14 +850,14 @@ class PositioningFightMovementMixin:
             # Relaxation loop (terrain + self-collisions)
             for relax_iter in range(relax_iters):
                 collided = False
-                
+
                 # precompute friendly polys at current trial positions
                 friendly = []
                 for idx, pos in enumerate(world):
                     base = self.models[idx].model_base.get_base_shape()
                     friendly.append(
-                        translate(base, 
-                                pos[0] - base.centroid.x, 
+                        translate(base,
+                                pos[0] - base.centroid.x,
                                 pos[1] - base.centroid.y)
                     )
 
@@ -881,7 +881,7 @@ class PositioningFightMovementMixin:
                             if hasattr(hit, 'is_valid'):
                                 logger.debug(f"DEBUG:   is_valid: {hit.is_valid}")
                         raise
-                    
+
                     if intersects_any:
                         # repel along the vector between centroids
                         b = next(b for b in hits if poly_i.intersects(b))
@@ -892,7 +892,7 @@ class PositioningFightMovementMixin:
                         pos[1] += (vy / norm) * grid_step
                         pos[2] = game_map.get_surface_height_for_model(self.models[i], pos[0], pos[1])
                         collided = True
-                        
+
                 if not collided:
                     logger.debug(f"DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
                     break
@@ -948,10 +948,10 @@ class PositioningFightMovementMixin:
             # Commit & coherency-graph check
             for m, pos in zip(self.models, world):
                 m.set_location(*pos)
-                
+
             coherency_ok = self.check_coherency_graph()
             logger.debug(f"DEBUG: Template '{template_name}' coherency check: {' PASSED' if coherency_ok else ' FAILED'}")
-            
+
             if coherency_ok:
                 logger.debug(f"DEBUG: Successfully found formation using template '{template_name}'")
                 return [(x, y, z, f) for x, y, z, f in world]
@@ -1255,6 +1255,24 @@ class PositioningFightMovementMixin:
                 if current_owner == owner and current_turn == turn:
                     return False
 
+        if isinstance(sr, dict) and sr.get("bridgehead_bellicosa_no_charge_turn_owner"):
+            owner = str(sr.get("bridgehead_bellicosa_no_charge_turn_owner") or "")
+            turn_raw = sr.get("bridgehead_bellicosa_no_charge_turn", 0)
+            try:
+                turn = int(turn_raw or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            if owner and game is not None:
+                get_current_player = getattr(game, "get_current_player", None)
+                current_player = get_current_player() if callable(get_current_player) else None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if current_owner == owner and current_turn == turn:
+                    return False
+
         if isinstance(sr, dict) and sr.get("tau_shortened_blade_no_charge_turn_owner"):
             owner = str(sr.get("tau_shortened_blade_no_charge_turn_owner") or "")
             turn_raw = sr.get("tau_shortened_blade_no_charge_turn", 0)
@@ -1415,10 +1433,10 @@ class PositioningFightMovementMixin:
                             return False
         except Exception:
             pass
-            
+
         if self._thrill_seekers_restriction_reason(target_unit, game):
             return False
-        
+
         # Charge declaration has a hard 12" target gate; charge-roll modifiers only
         # affect the later charge move distance after a legal declaration is made.
         distance = game.map.get_distance_between_units(self, target_unit)

@@ -1568,7 +1568,7 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     ),
     "000008886004": StratagemToolDescriptor(
         stratagem_id="000008886004",
-        name="ALWAYS LOOKIN’ FER A FIGHT",
+        name="ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT",
         timing="fight_phase_on_unit_destroyed",
         target="orks_nobz_or_meganobz_unit_that_destroyed_enemy",
         duration="until_end_of_phase",
@@ -1598,7 +1598,7 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     ),
     "000008886006": StratagemToolDescriptor(
         stratagem_id="000008886006",
-        name="CUT’EM DOWN",
+        name="CUTÃ¢â‚¬â„¢EM DOWN",
         timing="opponent_movement_phase_after_enemy_selected_to_fall_back",
         target="orks_nobz_or_meganobz_unit_within_engagement_range_of_enemy",
         duration="until_end_of_phase",
@@ -2381,6 +2381,90 @@ _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
 
 _CULT_OF_BLOOD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.values()
+}
+
+_BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009802002": StratagemToolDescriptor(
+        stratagem_id="000009802002",
+        name="Bellicosa Drop",
+        timing="movement_phase_reinforcements_step",
+        target="astra_militarum_infantry_unit_in_reserves_with_deep_strike",
+        duration="until_end_of_turn",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"min_distance": 6.0, "no_charge": True},
+    ),
+    "000009802003": StratagemToolDescriptor(
+        stratagem_id="000009802003",
+        name="Firing Hot",
+        timing="shooting_phase_on_select_to_shoot",
+        target="militarum_tempestus_or_kasrkin_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="conditional_hot_shot_strength_ap_bonus",
+        cp_cost=2,
+        range_in=12.0,
+        effect_params={
+            "weapon_names": [
+                "hot-shot lascarbine",
+                "hot-shot lasgun",
+                "hot-shot laspistol",
+                "hot-shot marksman rifle",
+                "hot-shot volley gun",
+                "sentry hot-shot volley gun",
+            ],
+            "strength_bonus": 1,
+            "ap_bonus": 1,
+            "max_range": 12.0,
+        },
+    ),
+    "000009802004": StratagemToolDescriptor(
+        stratagem_id="000009802004",
+        name="Fire and Relocate",
+        timing="shooting_phase",
+        target="non_titanic_astra_militarum_unit",
+        duration="until_end_of_phase",
+        effect="shoot_after_advance",
+        cp_cost=1,
+    ),
+    "000009802005": StratagemToolDescriptor(
+        stratagem_id="000009802005",
+        name="Servo-Designators",
+        timing="shooting_phase_after_friendly_infantry_shoots",
+        target="astra_militarum_infantry_unit_that_just_shot",
+        duration="until_end_of_phase",
+        effect="post_shoot_no_cover",
+        cp_cost=1,
+        effect_params={"requires_visible_hit_target": True},
+    ),
+    "000009802006": StratagemToolDescriptor(
+        stratagem_id="000009802006",
+        name="Aerial Extraction",
+        timing="end_of_opponent_fight_phase",
+        target="astra_militarum_unit_with_deep_strike_or_valkyrie_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+    ),
+    "000009802007": StratagemToolDescriptor(
+        stratagem_id="000009802007",
+        name="On My Position",
+        timing="end_of_opponent_fight_phase",
+        target="regiment_infantry_unit_in_engagement_range",
+        duration="immediate",
+        effect="engagement_mortal_wounds_and_self_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "enemy_roll": "D6",
+            "enemy_success_on": 2,
+            "enemy_mortal_wounds": "D6",
+            "self_mortal_wounds": "3D3",
+        },
+    ),
+}
+
+_BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS.values()
 }
 
 _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -9225,7 +9309,7 @@ _ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor]
     ),
     "000010681005": StratagemToolDescriptor(
         stratagem_id="000010681005",
-        name="Auto‑Sense Coordination",
+        name="AutoÃ¢â‚¬â€˜Sense Coordination",
         timing="shooting_or_fight_phase_before_selected",
         target="one_adeptus_astartes_unit_not_yet_selected_to_shoot_or_fight",
         duration="until_end_of_phase",
@@ -11997,6 +12081,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12386,6 +12473,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
+        or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)

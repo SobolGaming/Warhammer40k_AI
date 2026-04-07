@@ -2831,7 +2831,7 @@
         "phase": "Fight phase",
         "detachment": "Bridgehead Strike",
         "detachment_id": "000000996",
-        "description": "<b>WHEN:</b> End of your opponent\u2019s Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ASTRA</span> <span class=\"kwb\">MILITARUM</span> unit from your army that is not within Engagement Range of one or more enemy units, if all of its models have the Deep Strike ability, or one Valkyrie unit from your army that is not within Engagement Range of one or more enemy units.<br><br><b>EFFECT:</b> Remove your unit from the battlefield and place it into Strategic Reserves."
+        "description": "<b>WHEN:</b> End of your opponent\u2019s Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ASTRA</span> <span class=\"kwb\">MILITARUM</span> unit from your army that is not within Engagement Range of one or more enemy units and has the Deep Strike ability, or one Valkyrie unit from your army that is not within Engagement Range of one or more enemy units.<br><br><b>EFFECT:</b> Remove your unit from the battlefield and place it into Strategic Reserves."
     },
     {
         "faction_id": "AM",

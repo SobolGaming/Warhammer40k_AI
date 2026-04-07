@@ -72,6 +72,15 @@ def _norm(text: str) -> str:
 def _canon_stratagem_name(value: str) -> str:
     text = str(value or "")
     text = text.replace("\u2019", "'").replace("\u2018", "'")
+    text = (
+        text.replace("\u2010", "-")
+        .replace("\u2011", "-")
+        .replace("\u2012", "-")
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+        .replace("\u2212", "-")
+        .replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœ", "-")
+    )
     text = re.sub(r"\s+", " ", text).strip()
     return text.upper()
 
@@ -1057,7 +1066,7 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you do until the end of the phase weapons equipped by models in that unit have the hazardous ability as well",
             r"if a weapon equipped by a model from you army has the hazardous ability from multiple sources each time you take a hazardous test for that weapon it is failed on a roll of a \d+ or a \d+",
         ),
-        "Lissen ’Ere": (
+        "Lissen Ã¢â‚¬â„¢Ere": (
             r"once per battle round in your command phase or after being set up on the battlefield in your movement phase each boss snikrot mek and warboss model in your army can issue taktiks abilities",
             r"to do so select one of the taktiks abilities below and select one friendly orks unit within 6 of that model to issue them to",
             r"that model must take a leadership test(?: if failed the selected unit suffers 1 mortal wound)?",
@@ -1447,7 +1456,7 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"leagues of votann transport units from your army have the following ability",
             r"while a friendly leagues of votann infantry unit is wholly within 6 of this transport ranged weapons equipped by models in that infantry unit have the sustained hits 1 ability",
         ),
-        "Fury From The Dêlve": (
+        "Fury From The DÃƒÂªlve": (
             r"cthonian beserks units from your army have the deep strike ability",
             r"cthonian beserks units from your army gain the battleline keyword",
         ),
@@ -2213,7 +2222,7 @@ def _parse_attribute_value(value: str) -> Optional[int]:
     s = str(value).replace("\"", "").replace("+", "").replace("*", "").strip()
     if not s:
         return None
-    if s in ("-", "—"):
+    if s in ("-", "Ã¢â‚¬â€"):
         return 0
     if "-" in s:
         return None
@@ -2681,9 +2690,9 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Brandfast Oathband: friendly LEAGUES OF VOTANN INFANTRY units wholly within 6\" of a friendly LEAGUES OF VOTANN TRANSPORT gain [SUSTAINED HITS 1] for ranged weapons.",
         ),
-        "Fury From The Dêlve": (
+        "Fury From The DÃƒÂªlve": (
             "Supported",
-            "Dêlve Assault Shift: Cthonian Beserks units gain Deep Strike and the BATTLELINE keyword.",
+            "DÃƒÂªlve Assault Shift: Cthonian Beserks units gain Deep Strike and the BATTLELINE keyword.",
         ),
         "Methodical Annihilation": (
             "Supported",
@@ -2691,11 +2700,11 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Martial Leverage": (
             "Supported",
-            "Needgaârd Oathband: gain 1 Yield Point each time an enemy unit is destroyed (integrates with Prioritised Efficiency).",
+            "NeedgaÃƒÂ¢rd Oathband: gain 1 Yield Point each time an enemy unit is destroyed (integrates with Prioritised Efficiency).",
         ),
         "Optimal Application": (
             "Supported",
-            "Hearthfyre Arsenal: at the end of your Command phase, gain up to 2 YP from controlled non-deployment-zone objectives with Iron-master/Memnyr Strategist models in range; in your Shooting phase, Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator units can spend 1 YP when selected to shoot to re-roll Hit rolls of 1 until end of phase.",
+            "Hearthfyre Arsenal: at the end of your Command phase, gain up to 2 YP from controlled non-deployment-zone objectives with Iron-master/Memnyr Strategist models in range; in your Shooting phase, BrÃƒÂ´khyr/Ironkin Steeljacks/Arkanyst Evaluator units can spend 1 YP when selected to shoot to re-roll Hit rolls of 1 until end of phase.",
         ),
         "Ruthless Reinvestment": (
             "Supported",
@@ -2951,7 +2960,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Dread Mob: each time an eligible Mek/Walker/Grots Vehicle unit is selected to shoot or fight, choose roll/manual effect via CHOOSE_QUARRY; effects apply until phase end (Sustained Hits 1, Lethal Hits, or AP +2 on Critical Wound), manual selection also grants Hazardous, and multiple Hazardous sources fail on 1-2.",
         ),
-        "Lissen ’Ere": (
+        "Lissen Ã¢â‚¬â„¢Ere": (
             "Supported",
             "Taktikal Brigade: each Boss Snikrot/Mek/Warboss model can issue one once-per-battle-round Taktik choice (or none) in your Command phase or after Reinforcements setup in your Movement phase; selected friendly ORKS unit within 6\" takes a Leadership test for the issuing model (failure inflicts 1 mortal wound) and gains one Taktik until your next Command phase (Get Stuck In charge re-rolls, Get On Wiv It +1 melee Strength, Sneaky Stalkin' Stealth + model-level Benefit of Cover excluding Meganobz, Shoota Drills +1 ranged hit for INFANTRY/MOUNTED models), with Battle-shock gating and Stormboyz gaining Battleline.",
         ),
@@ -3260,7 +3269,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Questoris Companions: when a current Code Chivalric Oath is fulfilled, start-of-turn Heroes of Legend automatically prepares and queues additional Deed/Quality oath selection using deterministic CHOOSE_CHIVALRIC_OATH flow, prevents re-selecting previously used Deeds/Qualities (including random-roll duplicates), preserves fulfilled Oath Qualities as cumulative active effects, and grants +1CP when each additional Oath Deed is completed.",
         ),
-        "Valour’s Reward": (
+        "ValourÃ¢â‚¬â„¢s Reward": (
             "Supported",
             "Questoris Companions: Valour's Reward expended-state tracking is provided for listed detachment enhancements (expended enhancements are blocked via manager state), and every time a Code Chivalric Oath is fulfilled all expended enhancement states are cleared.",
         ),
@@ -3997,7 +4006,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy PSYKER units within 12\": Psychic weapons gain [HAZARDOUS].",
         ),
-        ("CD", "P’tarix’s Sorcerous Syphon (Aura)"): (
+        ("CD", "PÃ¢â‚¬â„¢tarixÃ¢â‚¬â„¢s Sorcerous Syphon (Aura)"): (
             "Supported",
             "Enemy units within 12\": Psychic attacks suffer -1 to wound.",
         ),
@@ -4297,7 +4306,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("GK", "Surge of Wrath (Psychic)"): ("Supported", "Melee attacks vs MONSTER/VEHICLE can re-roll Hit, Wound, and Damage rolls."),
         ("GK", "Techmarine"): ("Supported", "Conditional Lone Operative within 3\" of friendly GREY KNIGHTS VEHICLE units."),
         ("GK", "Truesilver Aegis (Aura)"): ("Supported", "Friendly GREY KNIGHTS units wholly within 6\" gain Feel No Pain 6+ against mortal wounds."),
-        ("GK", "Untouchable Purity"): ("Supported", "Leading only: bearer’s attached unit gains Feel No Pain 4+ against mortal wounds."),
+        ("GK", "Untouchable Purity"): ("Supported", "Leading only: bearerÃ¢â‚¬â„¢s attached unit gains Feel No Pain 4+ against mortal wounds."),
         ("GK", "Haloed in Soulfire (Psychic)"): (
             "Supported",
             "Leading: attached unit can only be targeted by ranged attacks within 18\".",
@@ -5020,7 +5029,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("GC", "Sudden Assault"): ("Supported", "Leading: unit gains Fights First."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
-        ("LOV", "Brōkhyr Guild Support"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEAGUES OF VOTANN VEHICLE or IRONKIN STEELJACKS units; disabled while attached."),
+        ("LOV", "BrÃ…Âkhyr Guild Support"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEAGUES OF VOTANN VEHICLE or IRONKIN STEELJACKS units; disabled while attached."),
         ("LOV", "Breaching Fire"): ("Supported", "After shooting: select a hit enemy unit; it cannot gain Benefit of Cover until the start of your next Shooting phase."),
         ("LOV", "Cyberstimms"): ("Supported", "Melee fight-on-death after attacker resolves; roll gets +1 while your army has Fortify Takeover."),
         ("LOV", "Science Guild Support"): ("Supported", "Conditional Lone Operative within 3\" of other friendly LEAGUES OF VOTANN INFANTRY units, excluding units with Lone Operative."),
@@ -5072,7 +5081,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("NEC", "Accelerator Mandible"): (
             "Supported",
-            "Start of Fight phase: optional selection of a friendly CANOPTEK unit within 3\" of the bearer’s unit; selected unit improves melee Weapon Skill by 1 until end of phase.",
+            "Start of Fight phase: optional selection of a friendly CANOPTEK unit within 3\" of the bearerÃ¢â‚¬â„¢s unit; selected unit improves melee Weapon Skill by 1 until end of phase.",
         ),
         ("NEC", "Harassment Swarm (Aura)"): (
             "Supported",
@@ -5180,7 +5189,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Single-model bearer Toughness characteristic bonus is applied, and Firing Deck is removed when the rule text removes it.",
         ),
-        ("ORK", "’Ard Case"): (
+        ("ORK", "Ã¢â‚¬â„¢Ard Case"): (
             "Supported",
             "Single-model bearer Toughness characteristic bonus is applied, and Firing Deck is removed when the rule text removes it.",
         ),
@@ -5720,7 +5729,7 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Enemy unit ends move within 9\": optional 6\" reactive Normal move if Captain Sicarius's unit is not in Engagement Range.",
         ),
-        ("SM", "Angel’s Wrath", "000000083"): (
+        ("SM", "AngelÃ¢â‚¬â„¢s Wrath", "000000083"): (
             "Supported",
             "Leading: when the attached unit ends a Charge move, melee weapons equipped by models in that unit gain +1 Strength until end of turn.",
         ),
@@ -12722,7 +12731,7 @@ def _selected_to_shoot_named_ranged_bonus_support(description: str) -> Optional[
         return None
     pattern = re.compile(
         r"^each time this unit is selected to shoot,? it can use this ability\.? if it does,? until the end of the phase,? "
-        r"add (?P<attacks>\d+) to the attacks characteristic of (?P<weapon>[a-z0-9 '’+\-]+?) equipped by models in this unit "
+        r"add (?P<attacks>\d+) to the attacks characteristic of (?P<weapon>[a-z0-9 'Ã¢â‚¬â„¢+\-]+?) equipped by models in this unit "
         r"and you can only select one enemy unit as the target of all of this unit'?s attacks\.?$",
         re.IGNORECASE,
     )
@@ -12881,7 +12890,7 @@ def _model_attack_skill_override_support(description: str) -> Optional[Tuple[str
     skill_label = "BS" if attack_type == "ranged" else "WS"
     return (
         "Supported",
-        f"Bearer’s {attack_type} weapons use {skill_label} {value}+.",
+        f"BearerÃ¢â‚¬â„¢s {attack_type} weapons use {skill_label} {value}+.",
     )
 
 
@@ -15667,7 +15676,7 @@ def _post_shoot_friendly_attack_ignores_cover_support(description: str) -> Optio
     keyword = re.sub(r"\s+", " ", str(m.group("keyword") or "").strip()).upper()
     return (
         "Supported",
-        f"After the bearer’s unit shoots: select an enemy unit hit by the bearer; friendly {keyword} attacks against it gain [IGNORES COVER] until phase end.",
+        f"After the bearerÃ¢â‚¬â„¢s unit shoots: select an enemy unit hit by the bearer; friendly {keyword} attacks against it gain [IGNORES COVER] until phase end.",
     )
 
 
@@ -17511,7 +17520,7 @@ def _fight_selected_unit_target_keyword_wound_bonus_support(description: str) ->
     source = str(m.group("source") or "Familiar").strip()
     return (
         "Supported",
-        f"Once per battle when selected to fight: {source} grants the bearer’s unit +{bonus} to wound against {keyword} targets until end of phase.",
+        f"Once per battle when selected to fight: {source} grants the bearerÃ¢â‚¬â„¢s unit +{bonus} to wound against {keyword} targets until end of phase.",
     )
 
 
@@ -19429,10 +19438,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008522003": "Osseus Key: start of opponent Shooting phase, select one visible enemy non-TITANIC VEHICLE within 12\" of the bearer; it takes a Leadership test, suffering -1 to hit on a pass or becoming ineligible to shoot on a fail until end of phase.",
         "000008522004": "Beacon Angelis: models in the bearer unit gain Deep Strike, and that unit can be targeted with Rapid Ingress for 0CP.",
         "000008522005": "The Tome of Ectoclades: once per battle after selecting an Oath of Moment target, optional secondary Oath target selection is queued and grants Oath hit re-rolls against both targets until your next Command phase.",
-        "000009067002": "Prowling Agitant: once per turn, after an enemy Normal/Advance/Fall Back move ends within 9\" of the bearer’s unit (and while not engaged), that unit can make a reactive Normal move up to D6\".",
-        "000009067003": "A Chink in Their Armour: when the bearer is set up as Reinforcements, ranged weapons in the bearer’s unit gain [LETHAL HITS] until the end of your next Fight phase.",
-        "000009067004": "Our Time Is Nigh: once per battle, when the bearer’s unit declares a charge, optional yes/no activation grants +2 to that unit’s Charge rolls until end of phase.",
-        "000009067005": "Assassination Edict: attacks made by models in the bearer’s unit gain +1 to hit when targeting CHARACTER units.",
+        "000009067002": "Prowling Agitant: once per turn, after an enemy Normal/Advance/Fall Back move ends within 9\" of the bearerÃ¢â‚¬â„¢s unit (and while not engaged), that unit can make a reactive Normal move up to D6\".",
+        "000009067003": "A Chink in Their Armour: when the bearer is set up as Reinforcements, ranged weapons in the bearerÃ¢â‚¬â„¢s unit gain [LETHAL HITS] until the end of your next Fight phase.",
+        "000009067004": "Our Time Is Nigh: once per battle, when the bearerÃ¢â‚¬â„¢s unit declares a charge, optional yes/no activation grants +2 to that unitÃ¢â‚¬â„¢s Charge rolls until end of phase.",
+        "000009067005": "Assassination Edict: attacks made by models in the bearerÃ¢â‚¬â„¢s unit gain +1 to hit when targeting CHARACTER units.",
         "000009075002": "Predatory Instincts: models in the bearer's unit gain Infiltrators, and once per battle round the bearer's unit can use Heroic Intervention for 0CP even if another unit already used it that phase.",
         "000009075003": "Biomorph Adaptation: while the bearer is alive, melee weapons equipped by the bearer gain +1 AP and +1 Damage.",
         "000009075004": "Mutagenic Regeneration: in each Command phase, one damaged model in the bearer's combined attached unit regains 1 lost wound while the bearer is alive and on the battlefield.",
@@ -19583,7 +19592,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010014002": "Pledge of Eternal Servitude: first time bearer is destroyed, takes a Leadership test at phase end; on pass, bearer returns with D6 wounds.",
         "000010014003": "Pledge of Dark Glory: while bearer is leading a unit, models in that unit improve Leadership by 1 and Objective Control by 1.",
         "000010014004": "Pledge of Mortal Pain: start of Shooting phase, select visible enemy within 12\" of bearer; it takes a Leadership test (subtract 2 from result if Battle-shocked) and suffers 3 mortal wounds on failure.",
-        "000010014005": "Pledge of Unholy Fortune: once per turn after a hit, wound or saving throw for bearer’s unit, if bearer is not Battle-shocked, treat that roll as an unmodified 6.",
+        "000010014005": "Pledge of Unholy Fortune: once per turn after a hit, wound or saving throw for bearerÃ¢â‚¬â„¢s unit, if bearer is not Battle-shocked, treat that roll as an unmodified 6.",
         "000010010002": "Empyric Suffusion: once per battle round, one friendly SLAANESH unit within 6\" of the bearer can be targeted with Heroic Intervention for 0CP.",
         "000010010003": "Dark Blessings: once per battle, after an enemy selects targets, the bearer can gain a 3+ invulnerable save until end of phase.",
         "000010010004": "Possessed Blade: start of battle select one bearer melee weapon for +1 Attacks; each time bearer is selected to fight, optional +1 Damage and selected weapon gains [DEVASTATING WOUNDS] and [HAZARDOUS] for those attacks.",
@@ -19616,9 +19625,9 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
         "000010086002": "Murderous Onslaught: if bearer unit disembarked this turn, enemy units cannot use Fire Overwatch against it until end of turn.",
         "000010086003": "Aggressive Deployment: if bearer starts embarked in a Dedicated Transport, that Transport gains Scouts 9\".",
-        "000010086004": "Unleash Hell: start of Shooting phase select a friendly Vehicle within 6\" (or bearer’s Transport); after it shoots, suppress a hit enemy unit until your next turn.",
+        "000010086004": "Unleash Hell: start of Shooting phase select a friendly Vehicle within 6\" (or bearerÃ¢â‚¬â„¢s Transport); after it shoots, suppress a hit enemy unit until your next turn.",
         "000010086005": "Infernal Infusion: once per battle at the start of the Fight phase, bearer unit gains Fights First until end of phase.",
-        "000010074002": "Chosen of the Blood God: add 3\" to the range of the bearer’s Aura abilities.",
+        "000010074002": "Chosen of the Blood God: add 3\" to the range of the bearerÃ¢â‚¬â„¢s Aura abilities.",
         "000010074003": "Butcher Lord: bearer can attach to Jakhals or Goremongers during Declare Battle Formations; while attached to GOREMONGERS, bearer has Infiltrators.",
         "000010074004": "Brazen Form: bearer gains +1 Toughness and Feel No Pain 5+.",
         "000010074005": "Strategic Slaughter: after deployment, redeploy up to three friendly Jakhals and/or Goremongers units; selected units may be placed into Strategic Reserves regardless of limits.",
@@ -19627,35 +19636,35 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010082004": "Frenzied Focus: attacks made by models in bearer unit score critical hits on unmodified 5+.",
         "000010082005": "Violent Demise: bearer Deadly Demise triggers on 2+ and uses Deadly Demise D3+1 instead of D3.",
         "000009847002": "Archslaughterer: bearer melee weapons gain +1 AP; while bearer has VESSEL OF WRATH, bearer melee weapons gain +1 Damage.",
-        "000009847003": "Vox-diabolus: each melee kill by the bearer’s unit rolls D6 (+1 if bearer is VESSEL OF WRATH) and gains 1CP on 4+.",
+        "000009847003": "Vox-diabolus: each melee kill by the bearerÃ¢â‚¬â„¢s unit rolls D6 (+1 if bearer is VESSEL OF WRATH) and gains 1CP on 4+.",
         "000009847004": "Avenger's Crown: if the bearer is destroyed by a melee attack and has not fought this phase, roll D6; on 2+ that model fights after the attacker finishes, then is removed.",
         "000009847005": "Gateways to Glory: on Normal/Advance/Charge moves, bearer can move through models/terrain; Normal/Advance moves cannot end in Engagement Range.",
-        "000010435002": "Oathbound Speculator: bearer’s unit re-rolls Wound rolls of 1; when selected to shoot or fight, optional spend 3YP for +1 to wound until end of phase.",
+        "000010435002": "Oathbound Speculator: bearerÃ¢â‚¬â„¢s unit re-rolls Wound rolls of 1; when selected to shoot or fight, optional spend 3YP for +1 to wound until end of phase.",
         "000010435003": "Dead Reckoning: at end of turn, if bearer is on battlefield and no YP were spent in that turn, optional gain 1YP.",
-        "000010435004": "Iron Ambassador: once per battle when bearer’s unit is selected to shoot, optional spend up to 3YP; bearer’s ranged weapons gain +Damage equal to YP spent until end of phase.",
-        "000010435005": "Ancestral Crest: once per turn, when bearer’s unit is targeted by Command Re-roll, optional spend 1YP to reduce that CP cost by 1.",
-        "000009823002": "Bastion Shield: ranged attacks against bearer’s unit worsen AP by 1 within 12\"; optional spend 1YP extends the AP worsening range to 18\" until end of phase.",
+        "000010435004": "Iron Ambassador: once per battle when bearerÃ¢â‚¬â„¢s unit is selected to shoot, optional spend up to 3YP; bearerÃ¢â‚¬â„¢s ranged weapons gain +Damage equal to YP spent until end of phase.",
+        "000010435005": "Ancestral Crest: once per turn, when bearerÃ¢â‚¬â„¢s unit is targeted by Command Re-roll, optional spend 1YP to reduce that CP cost by 1.",
+        "000009823002": "Bastion Shield: ranged attacks against bearerÃ¢â‚¬â„¢s unit worsen AP by 1 within 12\"; optional spend 1YP extends the AP worsening range to 18\" until end of phase.",
         "000009823003": "Quake Multigenerator: after bearer shoots, select a non-TITANIC enemy unit hit by bearer attacks; that unit is suppressed until the start of your next turn.",
-        "000009823005": "High Kâhl: models in bearer’s unit gain melee fight-on-death on 4+ if destroyed before fighting.",
-        "000010443002": "Dêlvwerke Navigator: in the Reinforcements step of your Movement phase, optional single-dialog selection of a visible friendly Cthonian Beserks unit and YP spend; return 1 destroyed model plus 1 additional destroyed model per 2 YP spent.",
+        "000009823005": "High KÃƒÂ¢hl: models in bearerÃ¢â‚¬â„¢s unit gain melee fight-on-death on 4+ if destroyed before fighting.",
+        "000010443002": "DÃƒÂªlvwerke Navigator: in the Reinforcements step of your Movement phase, optional single-dialog selection of a visible friendly Cthonian Beserks unit and YP spend; return 1 destroyed model plus 1 additional destroyed model per 2 YP spent.",
         "000010443003": "Multiwave System Jammer: once per battle in your Movement phase, optional single-dialog selection of a friendly CTHONIAN unit in Reserves; selected unit treats the current battle round as 1 higher for Reserves setup until end of phase.",
         "000010443004": "Quake Supervisor: while the bearer is within 3\" of a friendly LEAGUES OF VOTANN ARTILLERY unit, the bearer gains Lone Operative while unattached, and those ARTILLERY units gain +1 to hit against targets visible to the bearer.",
-        "000010443005": "Piledriver: each time the bearer’s unit is selected to fight, optional spend up to 2 YP; bearer melee weapons gain +Damage equal to YP spent until end of phase, stacking across repeated fight selections in the same phase.",
-        "000010447002": "Tactical Alchemy: in your Command phase, if bearer’s unit controls an objective marker you control outside your deployment zone, optional spend 1YP and roll D6; on 4+ gain 1CP.",
-        "000010447003": "Trivärg Cyber Implant: when bearer’s unit is selected to shoot, ranged weapons gain [SUSTAINED HITS 2] if it disembarked this turn, otherwise optional spend 2YP for that bonus until end of phase.",
-        "000010447004": "Precursive Judgement: while bearer’s unit is wholly within 6\" of a friendly LEAGUES OF VOTANN TRANSPORT, Fire Overwatch costs 0CP for that unit and hits are scored on unmodified 5+ rolls.",
-        "000010447005": "Signature Restoration: each time the bearer’s Forgewrought Expertise repairs a friendly LEAGUES OF VOTANN model, that model regains 1 additional lost wound.",
-        "000010451002": "Fârstrydr Node: models in the bearerâ€™s unit gain Deep Strike.",
-        "000010451003": "Calculated Tenacity: while the bearer is leading, models in the bearerâ€™s unit gain +1 Objective Control.",
-        "000010451004": "Mantle of Elders: when the bearerâ€™s unit spends 1YP for Optimal Application, roll D6 and on 2+ regain 1YP.",
+        "000010443005": "Piledriver: each time the bearerÃ¢â‚¬â„¢s unit is selected to fight, optional spend up to 2 YP; bearer melee weapons gain +Damage equal to YP spent until end of phase, stacking across repeated fight selections in the same phase.",
+        "000010447002": "Tactical Alchemy: in your Command phase, if bearerÃ¢â‚¬â„¢s unit controls an objective marker you control outside your deployment zone, optional spend 1YP and roll D6; on 4+ gain 1CP.",
+        "000010447003": "TrivÃƒÂ¤rg Cyber Implant: when bearerÃ¢â‚¬â„¢s unit is selected to shoot, ranged weapons gain [SUSTAINED HITS 2] if it disembarked this turn, otherwise optional spend 2YP for that bonus until end of phase.",
+        "000010447004": "Precursive Judgement: while bearerÃ¢â‚¬â„¢s unit is wholly within 6\" of a friendly LEAGUES OF VOTANN TRANSPORT, Fire Overwatch costs 0CP for that unit and hits are scored on unmodified 5+ rolls.",
+        "000010447005": "Signature Restoration: each time the bearerÃ¢â‚¬â„¢s Forgewrought Expertise repairs a friendly LEAGUES OF VOTANN model, that model regains 1 additional lost wound.",
+        "000010451002": "FÃƒÂ¢rstrydr Node: models in the bearerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s unit gain Deep Strike.",
+        "000010451003": "Calculated Tenacity: while the bearer is leading, models in the bearerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s unit gain +1 Objective Control.",
+        "000010451004": "Mantle of Elders: when the bearerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s unit spends 1YP for Optimal Application, roll D6 and on 2+ regain 1YP.",
         "000010451005": "Graviton Vault: after the bearer shoots or fights, choose one enemy MONSTER or VEHICLE unit hit by the bearer; that unit is suppressed until the start of your next turn.",
-        "000010439002": "Eye for Weakness: models in the bearer’s unit gain +1 to wound against assailed enemy units.",
-        "000010439003": "Writ of Acquisition: in your Shooting phase, after the bearer’s unit has shot, gain 1YP for each assailed enemy unit hit by that unit’s attacks, to a maximum of 3YP.",
-        "000010439004": "Surgical Saboteur: in your Shooting phase, after the bearer’s unit has shot, choose one enemy MONSTER or VEHICLE unit hit by that unit’s attacks; it becomes pinned until the start of your next Shooting phase.",
-        "000010439005": "Nomad Strategist: once per battle at the end of your opponent’s Fight phase, if the bearer is on the battlefield, optionally spend up to 4YP and place one Hernkyn unit plus one additional Hernkyn unit per 2YP spent into Strategic Reserves, ignoring assailed enemies for Engagement Range eligibility.",
-        "000010708002": "Mercenary Prospector: each time an enemy unit is destroyed by the bearerâ€™s unit, gain 2YP.",
+        "000010439002": "Eye for Weakness: models in the bearerÃ¢â‚¬â„¢s unit gain +1 to wound against assailed enemy units.",
+        "000010439003": "Writ of Acquisition: in your Shooting phase, after the bearerÃ¢â‚¬â„¢s unit has shot, gain 1YP for each assailed enemy unit hit by that unitÃ¢â‚¬â„¢s attacks, to a maximum of 3YP.",
+        "000010439004": "Surgical Saboteur: in your Shooting phase, after the bearerÃ¢â‚¬â„¢s unit has shot, choose one enemy MONSTER or VEHICLE unit hit by that unitÃ¢â‚¬â„¢s attacks; it becomes pinned until the start of your next Shooting phase.",
+        "000010439005": "Nomad Strategist: once per battle at the end of your opponentÃ¢â‚¬â„¢s Fight phase, if the bearer is on the battlefield, optionally spend up to 4YP and place one Hernkyn unit plus one additional Hernkyn unit per 2YP spent into Strategic Reserves, ignoring assailed enemies for Engagement Range eligibility.",
+        "000010708002": "Mercenary Prospector: each time an enemy unit is destroyed by the bearerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s unit, gain 2YP.",
         "000010708003": "Metaphysical Brokerage: at the end of your turn, if the bearer is on the battlefield and you gained fewer than 3YP this turn, gain the difference.",
-        "000010708004": "Etacarn SB9 Targeting Implant: bearerâ€™s unit re-rolls Hit rolls of 1; when selected to shoot or fight, optional spend 3YP for [SUSTAINED HITS 1] until end of phase.",
+        "000010708004": "Etacarn SB9 Targeting Implant: bearerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s unit re-rolls Hit rolls of 1; when selected to shoot or fight, optional spend 3YP for [SUSTAINED HITS 1] until end of phase.",
         "000010708005": "Asset Manipulator: at the start of the Command phase, optional spend 3YP; until end of turn, enemy units within 3\" of the bearer suffer -1 Objective Control.",
         "000010637002": "Abhuman Detail: COMMISSAR bearer can issue Orders to OGRYN units and can attach to Ogryn Squad/Bullgryn Squad during Declare Battle Formations.",
         "000010637003": "Aquilan Eye: bearer gains Target Weak Spot Order option (ranged attacks by ordered unit improve AP by 1 vs targets within 12\").",
@@ -19706,34 +19715,34 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009757002": "Decoy Targets: in your Movement phase, optional single-dialog model selection (or None); selected other friendly INFANTRY model is destroyed and bearer is set up as close as possible to it (not within Engagement Range), up to twice per battle and no more than once per battle round.",
         "000009757003": "Esoteric Explosives: when targeted by the Grenades Stratagem, mortal wounds are inflicted on 3+ instead of 4+.",
         "000009757004": "Intraneural Biotech: once per battle round, bearer can be targeted with Heroic Intervention or Counter-offensive for 0CP and can still use that Stratagem even if it was already used on a different unit this phase.",
-        "000009757005": "Micromelta Rounds: bearer’s exitus rifle gains [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+].",
+        "000009757005": "Micromelta Rounds: bearerÃ¢â‚¬â„¢s exitus rifle gains [ANTI-MONSTER 4+] and [ANTI-VEHICLE 4+].",
         "000010123002": "Daemon Weapon of Nurgle: bearer melee attacks score critical hits on unmodified 5+.",
         "000010123003": "Furnace of Plagues: bearer melee weapons gain +1 Strength, +1 Attacks, and Devastating Wounds.",
         "000010123004": "Arch Contaminator: while the bearer's (attached) unit is within range of a controlled objective, attacks can re-roll Wound rolls.",
         "000010123005": "Revolting Regeneration: bearer gains Feel No Pain 5+.",
-        "000009729002": "Droning Chorus: ranged weapons equipped by models in the bearer’s unit gain [ASSAULT].",
-        "000009729003": "Insectile Murmuration: each time a model in the bearer’s unit attacks a target within friendly Death Guard Contagion Range, re-roll Wound rolls of 1.",
+        "000009729002": "Droning Chorus: ranged weapons equipped by models in the bearerÃ¢â‚¬â„¢s unit gain [ASSAULT].",
+        "000009729003": "Insectile Murmuration: each time a model in the bearerÃ¢â‚¬â„¢s unit attacks a target within friendly Death Guard Contagion Range, re-roll Wound rolls of 1.",
         "000009729004": "Rejuvenating Swarm: at the end of each phase, the bearer regains all lost wounds.",
-        "000009729005": "Plagueveil: while the bearer’s unit is within range of a controlled objective marker, it can only be targeted by ranged attacks from within 18\".",
-        "000010127002": "Eye of Affliction: ranged weapons equipped by models in the bearer’s unit gain [ignores cover] while targeting Afflicted enemy units.",
-        "000010127003": "Bilemaw Blight: at the start of your Shooting phase, until end of phase, add 12\" to the Range characteristic of the bearer’s Plague Wind weapon.",
-        "000010127004": "Shriekworm Familiar: once per battle round, the bearer’s unit can be targeted by Fire Overwatch for 0CP.",
+        "000009729005": "Plagueveil: while the bearerÃ¢â‚¬â„¢s unit is within range of a controlled objective marker, it can only be targeted by ranged attacks from within 18\".",
+        "000010127002": "Eye of Affliction: ranged weapons equipped by models in the bearerÃ¢â‚¬â„¢s unit gain [ignores cover] while targeting Afflicted enemy units.",
+        "000010127003": "Bilemaw Blight: at the start of your Shooting phase, until end of phase, add 12\" to the Range characteristic of the bearerÃ¢â‚¬â„¢s Plague Wind weapon.",
+        "000010127004": "Shriekworm Familiar: once per battle round, the bearerÃ¢â‚¬â„¢s unit can be targeted by Fire Overwatch for 0CP.",
         "000010127005": "Tendrilous Emissions: while bearer is within 3\" of friendly Death Guard Vehicle units, bearer gains Lone Operative and those nearby Vehicles re-roll Wound rolls of 1 for ranged attacks against units visible to the bearer.",
         "000010139002": "Witherbone Pipes: while the bearer is leading a Poxwalkers unit, models in that unit gain +1 Objective Control and that unit adds 1 to Battle-shock and Leadership tests.",
         "000010139003": "Lord of the Walking Pox: if the bearer is leading a Poxwalkers unit and is in Strategic Reserves, treat the current battle round as the third for setting up that unit on the battlefield.",
-        "000010139004": "Sorrowsyphon: while the bearer is leading a Poxwalkers unit, the bearer’s Plague Wind weapon gains +1 Damage; each time the bearer makes one or more Plague Wind attacks, after the bearer’s unit resolves attacks, D3 bodyguard models in that unit are destroyed.",
+        "000010139004": "Sorrowsyphon: while the bearer is leading a Poxwalkers unit, the bearerÃ¢â‚¬â„¢s Plague Wind weapon gains +1 Damage; each time the bearer makes one or more Plague Wind attacks, after the bearerÃ¢â‚¬â„¢s unit resolves attacks, D3 bodyguard models in that unit are destroyed.",
         "000010139005": "Talisman of Burgeoning: while the bearer is leading a unit, Poxwalkers models in that unit gain +1 Toughness.",
         "000010135002": "Beckoning Blight: when a friendly PLAGUE LEGIONS unit with Deep Strike is set up wholly within 12\" of the bearer, it can be set up more than 6\" from enemy models instead of more than 9\".",
-        "000010135003": "Fell Harvester: add 2 to the Attacks characteristic of the bearer’s melee weapons.",
-        "000010135004": "Entropic Knell: in the Battle-shock step of your opponent’s Command phase, enemy units within 6\" of the bearer that are below Starting Strength must take a Battle-shock test with -1 to that test.",
+        "000010135003": "Fell Harvester: add 2 to the Attacks characteristic of the bearerÃ¢â‚¬â„¢s melee weapons.",
+        "000010135004": "Entropic Knell: in the Battle-shock step of your opponentÃ¢â‚¬â„¢s Command phase, enemy units within 6\" of the bearer that are below Starting Strength must take a Battle-shock test with -1 to that test.",
         "000010135005": "Tome of Bounteous Blessings: each time a friendly PLAGUE LEGIONS unit within 12\" takes a Battle-shock test, add 1 to that test; on a passed test restore D3 lost wounds to one model, or if that unit is BATTLELINE return up to D3 destroyed models instead.",
-        "000010131002": "Final Ingredient: once per battle after the bearer’s unit fights and destroys one or more CHARACTER models, choose one Plague; Afflicted enemy units gain that Plague in addition to other effects until battle end.",
-        "000010131003": "Visions of Virulence: enemy units enfeebled by the bearer’s Pestilent Fallout are treated as Afflicted while that enfeebled state is active.",
+        "000010131002": "Final Ingredient: once per battle after the bearerÃ¢â‚¬â„¢s unit fights and destroys one or more CHARACTER models, choose one Plague; Afflicted enemy units gain that Plague in addition to other effects until battle end.",
+        "000010131003": "Visions of Virulence: enemy units enfeebled by the bearerÃ¢â‚¬â„¢s Pestilent Fallout are treated as Afflicted while that enfeebled state is active.",
         "000010131004": "Needle of Nurgle: when the bearer uses Tainted Narthecium, bodyguard return amount is D3 models instead of 1.",
-        "000010131005": "Cornucophagus: during Declare Battle Formations choose one Plague; enemy units within the bearer’s Contagion Range gain that Plague in addition to other effects.",
-        "000010143002": "Face of Death: at the start of each Fight phase, enemy units within Engagement Range of the bearer’s unit must take Battle-shock tests.",
+        "000010131005": "Cornucophagus: during Declare Battle Formations choose one Plague; enemy units within the bearerÃ¢â‚¬â„¢s Contagion Range gain that Plague in addition to other effects.",
+        "000010143002": "Face of Death: at the start of each Fight phase, enemy units within Engagement Range of the bearerÃ¢â‚¬â„¢s unit must take Battle-shock tests.",
         "000010143003": "Vile Vigour: while the bearer is leading a unit, models in that unit gain +1 Move and that unit can re-roll Advance rolls.",
-        "000010143004": "Warprot Talisman: once per battle at the end of your opponent’s turn, if the bearer’s unit is not within Engagement Range, it can be removed from the battlefield and placed into Strategic Reserves.",
+        "000010143004": "Warprot Talisman: once per battle at the end of your opponentÃ¢â‚¬â„¢s turn, if the bearerÃ¢â‚¬â„¢s unit is not within Engagement Range, it can be removed from the battlefield and placed into Strategic Reserves.",
         "000010143005": "Helm of the Fly King: while the bearer is leading a unit, models in that unit can only be targeted by ranged attacks from within 18\".",
         "000010574002": "Dark Vitality: bearer's unit can always be Empowered by Pain in your Shooting and Fight phases even with no Pain tokens.",
         "000010574003": "Labyrinthine Cunning: start of your Command phase choose to spend 1 Pain token for 1CP or roll D6 and gain 1CP on 4+.",
@@ -19747,16 +19756,16 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010576003": "Sadistic Fulcrum: each time you spend 1 Pain token to Empower bearer unit in your Shooting phase, single-dialog choose one friendly DRUKHARI Transport within 6\" (or None); selected transport can re-roll Hit rolls until end of phase.",
         "000010576004": "Spiteful Raider: each time bearer unit destroys an enemy unit in the Fight phase, if that enemy was within objective range when bearer unit was selected to fight, gain 1 additional Pain token.",
         "000010576005": "Nightmare Shroud: each time bearer unit disembarks from a Transport, enemy units cannot use Fire Overwatch against it until end of turn.",
-        "000010580002": "Pharmacophex: after selecting Combat Drugs each Command phase, roll D6; bearer’s unit gains the rolled Combat Drug until next Command phase unless that drug is already active army-wide.",
+        "000010580002": "Pharmacophex: after selecting Combat Drugs each Command phase, roll D6; bearerÃ¢â‚¬â„¢s unit gains the rolled Combat Drug until next Command phase unless that drug is already active army-wide.",
         "000010580003": "Chronoshard: once per battle at the start of the Fight phase, bearer unit can gain Fights First until end of phase.",
-        "000010580004": "Periapt of Torments: enemy units cannot target the bearer’s unit with Fire Overwatch.",
+        "000010580004": "Periapt of Torments: enemy units cannot target the bearerÃ¢â‚¬â„¢s unit with Fire Overwatch.",
         "000010580005": "Morghenna's Curse: bearer melee weapons gain +1 AP and +1 Damage.",
         "000010584002": "Master Regenesist: when bearer uses Fleshcraft, single-dialog choice determines D3+1 (base) vs D3+3 model return amount.",
         "000010584003": "Master Nemesine: bearer weapons gain [ANTI-BEAST 2+] and [ANTI-MONSTER 4+].",
-        "000010584004": "Master Artisan: bearer gains +1 Wounds and models in bearer’s unit gain +1 Toughness while bearer is alive.",
-        "000010584005": "Master Repugnomancer (Aura): bearer’s Fear Incarnate range increases by 3\", and friendly DRUKHARI units within 9\" that fail Battle-shock or are destroyed can grant 1 Pain token on 4+.",
+        "000010584004": "Master Artisan: bearer gains +1 Wounds and models in bearerÃ¢â‚¬â„¢s unit gain +1 Toughness while bearer is alive.",
+        "000010584005": "Master Repugnomancer (Aura): bearerÃ¢â‚¬â„¢s Fear Incarnate range increases by 3\", and friendly DRUKHARI units within 9\" that fail Battle-shock or are destroyed can grant 1 Pain token on 4+.",
         "000010588002": "Leechbite Plate: bearer Save characteristic is set to 3+, and at the start of either player's Command phase an optional confirmation can spend 1 Pain token to heal the bearer to full wounds.",
-        "000010588003": "Webway Awl: models in the bearer's unit gain Deep Strike, and Rapid Ingress can target the bearer’s unit for 0CP.",
+        "000010588003": "Webway Awl: models in the bearer's unit gain Deep Strike, and Rapid Ingress can target the bearerÃ¢â‚¬â„¢s unit for 0CP.",
         "000010588004": "Informant Network: at the start of Declare Battle Formations, select up to three friendly Kabalite Warriors and/or Hand of the Archon units to gain Infiltrators.",
         "000010588005": "Towering Arrogance: while the bearer is leading a unit, models in that unit gain +1 Objective Control and improve Leadership by 1.",
         "000010151002": "Touched by the Warp: bearer gains the PSYKER keyword.",
@@ -19889,7 +19898,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009991004": "Targetin' Squigs: each time a model in the bearer's unit makes a ranged attack, add 1 to the Hit roll.",
         "000009991005": "Zog Off and Eat Dakka!: the bearer's unit is eligible to shoot in a turn in which it Fell Back.",
         "000008885002": "Big Gob: start of Fight phase select one enemy unit within Engagement Range of the bearer to take a Battle-shock test at -1.",
-        "000008885004": "’Eadstompa: Infantry Warboss bearer re-rolls Wound rolls of 1 against targets below Starting Strength, or re-rolls Wound rolls against targets that are Below Half-strength.",
+        "000008885004": "Ã¢â‚¬â„¢Eadstompa: Infantry Warboss bearer re-rolls Wound rolls of 1 against targets below Starting Strength, or re-rolls Wound rolls against targets that are Below Half-strength.",
         "000008885005": "Tellyporta: models in the bearer's unit gain Deep Strike.",
         "000008868002": "Glory Hog: models in the bearer's unit gain Scouts 9\".",
         "000008868003": "Proper Killy: melee weapons equipped by the bearer gain +1 Damage.",
@@ -19930,7 +19939,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008985003": "Invigorated Mechatendrils: add 4\" to the bearer's Move characteristic.",
         "000008985004": "Tempting Addendum: when a friendly HERETIC ASTARTES DAEMON VEHICLE unit invokes its contract within 3\" of the bearer, failed Dark Pact mortal wounds increase by 1 and that unit can re-roll Hit rolls until end of phase.",
         "000008985005": "Soul Harvester: while the bearer is on the battlefield, each time an enemy unit within 12\" of the bearer is destroyed roll D6 and gain 1CP on 5+.",
-        "000008357002": "Eye of Tzeentch: after the bearer’s unit makes a Dark Pact and passes its Leadership test, if the modified result is 8+ gain 1CP.",
+        "000008357002": "Eye of Tzeentch: after the bearerÃ¢â‚¬â„¢s unit makes a Dark Pact and passes its Leadership test, if the modified result is 8+ gain 1CP.",
         "000008357003": "Intoxicating Elixir: bearer gains Feel No Pain 5+ and, after shooting or fighting, if the bearer's unit made and passed a Dark Pact this phase, queue a bearer-hit-target Battle-shock selection.",
         "000008357004": "Orbs of Unlife: end of Fight phase, roll D6 for each enemy unit within 3\" of the bearer; on 4+ that unit suffers D3 mortal wounds (threshold improves to 3+ when a Dark Pact was made and passed this phase).",
         "000008357005": "Talisman of Burning Blood: bearer melee weapons gain +1 Attacks and +1 Strength, replaced by a D3 roll for both characteristics when a Dark Pact was made and passed this phase.",
@@ -19956,7 +19965,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010689005": "Reavers' Flurry: selected HERETIC ASTARTES unit that charged and has not fought gains +1 melee Attack until end of phase.",
         "000010689006": "To the Favoured the Spoils: after enemy shooting resolves, an eligible wounded HERETIC ASTARTES unit gets a D6 reactive surge move toward the closest non-AIRCRAFT enemy and may enter Engagement Range.",
         "000010689007": "Encircling Surge: at the end of your opponent's Fight phase, an eligible HERETIC ASTARTES non-MONSTER/non-VEHICLE unit wholly within 6\" of a battlefield edge and not engaged enters Strategic Reserves.",
-        "000008960002": "Eager for Vengeance: while the bearer is alive and leading, the bearer’s unit can shoot and declare a charge after Falling Back; if that unit Fell Back this turn, attacks against your Focus of Hatred gain +1 to Hit and charges that include your Focus gain +1 to Charge rolls.",
+        "000008960002": "Eager for Vengeance: while the bearer is alive and leading, the bearerÃ¢â‚¬â„¢s unit can shoot and declare a charge after Falling Back; if that unit Fell Back this turn, attacks against your Focus of Hatred gain +1 to Hit and charges that include your Focus gain +1 to Charge rolls.",
         "000008960003": "Eye of Abaddon: while the bearer is alive on the battlefield, when your Focus of Hatred is destroyed roll D6 and gain 1CP on 4+.",
         "000008960004": "Mark of Legend: once per turn, the bearer can re-roll one Hit roll, one Wound roll, or one saving throw (single shared per-turn usage).",
         "000008960005": "Warmaster's Gift: bearer attacks that target your Focus of Hatred score a Critical Wound on a successful unmodified Wound roll of 5+.",
@@ -20152,16 +20161,16 @@ def _stratagem_support(
         "TACTICAL MASTERY": "Your Movement phase: selected ADEPTUS ASTARTES unit is eligible to shoot and declare a charge after Advancing this turn; if it has RAVENWING, it can also shoot and declare a charge after Falling Back this turn.",
         "TALON STRIKE": "Your Shooting phase or the Fight phase: selected Ravenwing Mounted unit that has not been selected to act gains +1 to wound against INFANTRY CHARACTER and MOUNTED CHARACTER units until end of phase.",
         "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
-        "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
+        "BERZERKERÃ¢â‚¬â„¢S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "ANTI-GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
-        "ANTI‑GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
+        "ANTIÃ¢â‚¬â€˜GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
         "BLIND GRENADES": "Opponent Charge phase reaction after charge declaration: selected AGENTS OF THE IMPERIUM GRENADES unit (or VINDICARE ASSASSIN) that was declared as a charge target imposes -1 to that enemy unit's Charge roll, or -2 if the selected target is VINDICARE ASSASSIN.",
         "HYPERSTIMMS": "Opponent Shooting phase or either Fight phase defensive reaction after enemy targets are selected: selected AGENTS OF THE IMPERIUM CHARACTER unit gains +1 Toughness until end of phase; if the selected unit is an EVERSOR ASSASSIN, it also gains Feel No Pain 4+ until end of phase.",
         "ORBITAL OVERSIGHT": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected AGENTS OF THE IMPERIUM INFANTRY unit can only be selected as a target of ranged attacks by attacking models within 18\", or within 6\" if that unit has Lone Operative, until end of phase.",
         "PRIME TARGET": "Your Shooting phase or either player's Fight phase: selected AGENTS OF THE IMPERIUM unit that has not yet acted re-rolls Wound rolls of 1 against CHARACTER targets until end of phase; OFFICIO ASSASSINORUM models in that unit can instead re-roll Wound rolls against the enemy WARLORD.",
         "WILL-SAPPING SALVO": "Your Shooting phase: selected AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; if selected unit is CULEXUS ASSASSIN, its ranged weapon Damage characteristic becomes 3 until end of phase.",
         "MASTERS OF THE VOID": "Your Movement phase: selected VOIDFARERS CHARACTER unit enables each AGENTS OF THE IMPERIUM unit from your army that arrives from Strategic Reserves this turn to be set up within your opponent's deployment zone (all other restrictions still apply) until end of phase.",
-        "WILL‑SAPPING SALVO": "Your Shooting phase: selected AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; if selected unit is CULEXUS ASSASSIN, its ranged weapon Damage characteristic becomes 3 until end of phase.",
+        "WILLÃ¢â‚¬â€˜SAPPING SALVO": "Your Shooting phase: selected AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; if selected unit is CULEXUS ASSASSIN, its ranged weapon Damage characteristic becomes 3 until end of phase.",
         "BLESSING OF BURNING BLOOD": "Shooting/Fight phase: after enemy targets; BLOOD LEGIONS unit within 6\" of targeted WORLD EATERS grants 5++ (4++ if Boon of Blood active) until end of phase.",
         "BLITZING FIREPOWER": "Shooting phase: ASURYANI unit gains Sustained Hits 1 vs targets within 12\"; if already has Sustained Hits, crits on 5+.",
         "CLOUDSTRIKE": "Movement Reinforcements start: AELDARI VEHICLE FLY in Strategic Reserves gains temporary Deep Strike with >6\" setup; on arrival cannot charge this turn; affected Transports enforce >6\" disembark distance and no-charge for disembarking units this turn.",
@@ -20174,7 +20183,7 @@ def _stratagem_support(
         "FIRE AND FADE": "Shooting phase: ASURYANI INFANTRY makes Normal move D6+1\" after shooting; cannot charge or embark this turn.",
         "INSENSATE RAMPAGE": "Defensive reaction after targets selected: DEATH COMPANY unit gains Feel No Pain 5+ until end of phase.",
         "KHAINE'S VENGEANCE": "Opponent Movement phase reaction after an eligible enemy is selected to Fall Back: selected ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range forces that enemy unit to take Desperate Escape tests (Battle-shocked enemies take them at -1).",
-        "KHAINE’S VENGEANCE": "Opponent Movement phase reaction after an eligible enemy is selected to Fall Back: selected ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range forces that enemy unit to take Desperate Escape tests (Battle-shocked enemies take them at -1).",
+        "KHAINEÃ¢â‚¬â„¢S VENGEANCE": "Opponent Movement phase reaction after an eligible enemy is selected to Fall Back: selected ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range forces that enemy unit to take Desperate Escape tests (Battle-shocked enemies take them at -1).",
         "LIGHTNING-FAST REACTIONS": "Shooting/Fight phase: targeted ASURYANI (non-Wraith Construct) gets -1 to hit until end of phase.",
         "PALL OF DREAD": "Any phase: when a friendly YNNARI unit is just destroyed while within range of a previously controlled objective marker, select one such marker; it remains under your control until your opponent's Level of Control is greater at end of a phase.",
         "PARTING THE VEIL": "Fight phase, just after an enemy unit selects targets: selected YNNARI unit fights on death in melee automatically after the attacker finishes its attacks until end of phase.",
@@ -20185,7 +20194,7 @@ def _stratagem_support(
         "CLOAK AND SHADOW": "Opponent Shooting phase reaction after enemy targets are selected: selected AELDARI INFANTRY unit within range of a controlled objective gains Stealth and can only be targeted by ranged attacks from within 18\" until end of phase.",
         "EXIT THE STAGE": "End of opponent Fight phase: selected HARLEQUINS unit not in Engagement Range is removed from the battlefield and placed into Strategic Reserves.",
         "HEROES' FALL": "Fight phase defensive reaction after enemy targets are selected: selected HARLEQUINS unit gains melee fight-on-death on 4+ until end of phase.",
-        "HEROES’ FALL": "Fight phase defensive reaction after enemy targets are selected: selected HARLEQUINS unit gains melee fight-on-death on 4+ until end of phase.",
+        "HEROESÃ¢â‚¬â„¢ FALL": "Fight phase defensive reaction after enemy targets are selected: selected HARLEQUINS unit gains melee fight-on-death on 4+ until end of phase.",
         "MOCKING FLIGHT": "Your Movement phase reaction after a HARLEQUINS unit Falls Back: selected unit can shoot and declare a charge this turn despite Falling Back.",
         "STAGED DEATH": "Any phase reaction before removal: selected just-destroyed HARLEQUINS CHARACTER model returns to the battlefield at the end of that phase as close as possible to where it was destroyed, not within Engagement Range, with half its Starting Wounds (once per battle per model).",
         "OUTCAST AMBUSH": "Your Shooting phase: selected Rangers or Shroud Runners unit that has not been selected to shoot gains [IGNORES COVER], [RAPID FIRE 1], and improves AP by 1 on ranged attacks until end of phase.",
@@ -20195,7 +20204,7 @@ def _stratagem_support(
         "NO PREY TOO BIG": "Your Shooting phase: selected ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot gains +1 to Wound rolls for attacks whose Strength is lower than the target unit's highest Toughness until end of phase.",
         "PIRATES' DUE": "Fight phase: selected AELDARI unit that has not been selected to fight re-rolls Wound rolls of 1 until end of phase; if selected unit has ANHRATHE, it can instead re-roll Wound rolls against enemy units within range of objective markers.",
         "RAIDERS' SPOILS": "Command phase: selected ANHRATHE unit within Engagement Range gains +1 Objective Control until the start of the next Command phase.",
-        "RAIDERS’ SPOILS": "Command phase: selected ANHRATHE unit within Engagement Range gains +1 Objective Control until the start of the next Command phase.",
+        "RAIDERSÃ¢â‚¬â„¢ SPOILS": "Command phase: selected ANHRATHE unit within Engagement Range gains +1 Objective Control until the start of the next Command phase.",
         "COST OF VICTORY": "End of opponent Fight phase: selected GUARDIANS unit not in Engagement Range enters Strategic Reserves and returns every destroyed GUARDIANS model to that unit.",
         "BLADES OF ASURYAN": "Your Shooting phase: selected Dire Avengers or Guardians unit that has not been selected to shoot gains [PISTOL] on ranged weapons until end of phase.",
         "SHIELD NODES": "Opponent Shooting phase or the Fight phase, just after an enemy unit selects targets: selected Dire Avengers or Guardians unit that was targeted by that enemy unit imposes -1 to wound against attacks that target it this phase while it is within range of one or more objective markers.",
@@ -20204,7 +20213,7 @@ def _stratagem_support(
         "PRESENTIMENT OF DREAD": "Command phase: selected ASURYANI PSYKER model chooses one visible enemy unit within 18\"; that enemy unit must take a Battle-shock test at -1.",
         "FOREWARNED": "Fight phase reaction after enemy targets are selected: selected ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) targeted by that enemy and within 9\" of a friendly ASURYANI PSYKER imposes -1 to hit and -1 to wound against attacks that target it until end of phase.",
         "SEER'S EYE": "Your Shooting phase or the Fight phase: select one AELDARI PSYKER model, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight, and one enemy unit visible to that PSYKER; attacks by that WRAITH unit against that enemy can ignore AP/Damage modifiers until end of phase.",
-        "SEER’S EYE": "Your Shooting phase or the Fight phase: select one AELDARI PSYKER model, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight, and one enemy unit visible to that PSYKER; attacks by that WRAITH unit against that enemy can ignore AP/Damage modifiers until end of phase.",
+        "SEERÃ¢â‚¬â„¢S EYE": "Your Shooting phase or the Fight phase: select one AELDARI PSYKER model, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight, and one enemy unit visible to that PSYKER; attacks by that WRAITH unit against that enemy can ignore AP/Damage modifiers until end of phase.",
         "SOUL BRIDGE": "Your Command phase: selected WRAITHBLADES/WRAITHGUARD/WRAITHLORD unit and one ASURYANI PSYKER model are linked; until the start of your next Command phase, that WRAITH unit counts as within 12\" of that PSYKER for Psychic Guidance and Spirit Guides.",
         "SPIRIT TOKEN": "Start of your Movement phase: selected WRAITHBLADES or WRAITHGUARD unit chooses one objective marker you control within range; that marker becomes sticky under your control until your opponent's Level of Control is greater at the end of a phase.",
         "BLADES FROM BEYOND": "Your Fight phase: selected WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit that has not been selected to fight gains [DEVASTATING WOUNDS] on melee weapons until end of phase.",
@@ -20227,12 +20236,12 @@ def _stratagem_support(
         "ISHA'S FURY": "Opponent Movement phase, just after an enemy unit ends a Normal, Advance, or Fall Back move: selected ASURYANI PSYKER model within 9\" of that enemy rolls six D6; for each 3+, that enemy unit suffers 1 mortal wound.",
         "PSYCHIC SHIELD": "Opponent Shooting phase, just after an enemy unit has selected its targets: selected ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that was selected as a target and is within 9\" of a friendly ASURYANI PSYKER can only be selected as a target of ranged attacks from within 18\" until end of phase.",
         "VAUL'S VENGEANCE": "Opponent Shooting phase or the Fight phase, just after an enemy unit destroys one of your Dire Avengers or Guardians units: selected War Walkers unit can shoot as if it were your Shooting phase after that enemy finishes its attacks, and those attacks can only target that enemy unit (once per battle round).",
-        "VAUL’S VENGEANCE": "Opponent Shooting phase or the Fight phase, just after an enemy unit destroys one of your Dire Avengers or Guardians units: selected War Walkers unit can shoot as if it were your Shooting phase after that enemy finishes its attacks, and those attacks can only target that enemy unit (once per battle round).",
+        "VAULÃ¢â‚¬â„¢S VENGEANCE": "Opponent Shooting phase or the Fight phase, just after an enemy unit destroys one of your Dire Avengers or Guardians units: selected War Walkers unit can shoot as if it were your Shooting phase after that enemy finishes its attacks, and those attacks can only target that enemy unit (once per battle round).",
         "TRICKSTERS' RETORT": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected TROUPE unit within 9\" of that enemy unit can make a Normal move up to 6\".",
-        "TRICKSTERS’ RETORT": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected TROUPE unit within 9\" of that enemy unit can make a Normal move up to 6\".",
+        "TRICKSTERSÃ¢â‚¬â„¢ RETORT": "Opponent Movement phase reaction after an enemy unit ends a Normal, Advance, or Fall Back move: selected TROUPE unit within 9\" of that enemy unit can make a Normal move up to 6\".",
         "WARDING SALVOES": "Your Shooting phase or the Fight phase: selected Dire Avengers or Guardians unit that has not been selected to shoot/fight can re-roll wound rolls for attacks that target enemy units within range of one or more objective markers until end of phase.",
         "YRIEL'S EXAMPLE": "Fight phase defensive reaction after enemy targets are selected: selected AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) targeted by that enemy unit gains Feel No Pain 5+ until end of phase.",
-        "YRIEL’S EXAMPLE": "Fight phase defensive reaction after enemy targets are selected: selected AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) targeted by that enemy unit gains Feel No Pain 5+ until end of phase.",
+        "YRIELÃ¢â‚¬â„¢S EXAMPLE": "Fight phase defensive reaction after enemy targets are selected: selected AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) targeted by that enemy unit gains Feel No Pain 5+ until end of phase.",
         "WITHDRAW AND REINFORCE": "End of opponent Fight phase: selected ANHRATHE unit not in Engagement Range enters Strategic Reserves; if below Starting Strength, all destroyed non-CHARACTER models are returned to that unit.",
         "VENGEFUL SORROW": "Opponent Shooting phase reaction after enemy shooting resolves: selected AELDARI INFANTRY unit that lost models and is not Battle-shocked/engaged can make a Surge move of up to D6+1\" toward the closest non-AIRCRAFT enemy unit (can enter Engagement Range).",
         "WEBWAY TUNNEL": "End of opponent Fight phase: ASURYANI INFANTRY wholly within 9\" of battlefield edge goes to Strategic Reserves.",
@@ -20474,6 +20483,10 @@ def _stratagem_support(
         "ENDLESS SERVITUDE": "End of Fight phase: NECRONS (non-MONSTER/non-TITANIC) within controlled objective triggers Reanimation Protocols (D3).",
         "REACTIVE REPOSITION": "Opponent Shooting phase: NECRONS (non-MONSTER/non-TITANIC) targeted unit makes a Normal move (D6\").",
         "MORDIAN MINUTE": "Shooting phase: ASTRA MILITARUM INFANTRY with First Rank, Fire! Second Rank, Fire! (not yet shot) gains +1 Strength on ranged attacks this phase.",
+        "AERIAL EXTRACTION": "End of opponent Fight phase: selected ASTRA MILITARUM unit with Deep Strike, or a Valkyrie, that is not within Engagement Range enters Strategic Reserves.",
+        "BELLICOSA DROP": "Movement phase Reinforcements step: selected ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike can be set up more than 6\" horizontally from enemy units this phase and cannot declare a charge this turn.",
+        "FIRE AND RELOCATE": "Shooting phase: selected non-TITANIC ASTRA MILITARUM unit on the battlefield can shoot after Advancing until end of phase.",
+        "FIRING HOT": "Shooting phase: selected MILITARUM TEMPESTUS or Kasrkin unit that has not yet shot improves the Strength and AP of listed hot-shot ranged weapons by 1 against targets within 12\" until end of phase.",
         "AGGRESSOR IMPERATIVE": "Movement phase: selected SKITARII unit that has not been selected to move treats its Advance distance this phase as a fixed +6\"; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move to gain the same effect.",
         "BALEFUL HALO": "Fight phase reaction after enemy targets are selected: selected non-VEHICLE ADEPTUS MECHANICUS unit imposes -1 to Wound rolls for attacks that target it this turn; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "BULWARK IMPERATIVE": "Opponent Shooting phase reaction after enemy targets are selected: selected SKITARII unit gains a 4+ invulnerable save this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
@@ -20481,8 +20494,10 @@ def _stratagem_support(
         "EXTINCTION ORDER": "Command phase: select one TECH-PRIEST model and one objective marker within 24\"; roll one D6 for each enemy unit within range of that marker and on each 4+ that unit suffers 1 mortal wound and takes a Battle-shock test.",
         "LETHAL DOSAGE": "Shooting phase: selected ADEPTUS MECHANICUS unit not yet selected to shoot gains [LETHAL HITS] on ranged weapons this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "NO RETREAT!": "Command phase: ASTRA MILITARUM unit with Duty and Honour! selects a controlled objective in range; that objective remains sticky until opponent control breaks it.",
+        "ON MY POSITION": "End of opponent Fight phase: selected REGIMENT INFANTRY unit within Engagement Range rolls one D6 for each engaged enemy unit, dealing D6 mortal wounds on each 2+, then suffers 3D3 mortal wounds.",
         "PRE-CALIBRATED PURGE SOLUTION": "Shooting phase: selected ADEPTUS MECHANICUS unit not yet selected to shoot re-rolls ranged Hit rolls against enemy units in the opponent deployment zone this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "PURGING FIRE": "Shooting phase: ordered ASTRA MILITARUM unit within objective range (not yet shot) gains Lethal Hits on ranged attacks this phase.",
+        "SERVO-DESIGNATORS": "Your Shooting phase, just after a friendly ASTRA MILITARUM INFANTRY unit shoots: select one visible enemy unit it hit so that enemy cannot gain Benefit of Cover until end of phase.",
         "SNAP TO IT": "Any phase: ASTRA MILITARUM OFFICER issues one Voice of Command order immediately (local prompt or explicit remote officer/order/target payload).",
         "UNTRAMMELLED FEROCITY": "Movement phase: targeted TYRANIDS MONSTER unit can move through models (excluding TITANIC) and terrain <=4\"; can move within Engagement Range but cannot end there; crossing >4\" terrain risks Battle-shock on 1.",
         "THE SMOTHERING SHADOW": "Any phase reaction after an enemy unit fails a Battle-shock test: selected friendly SYNAPSE unit within 12\" rolls 6D6 and inflicts 1 mortal wound for each 3+ on that enemy.",
@@ -20523,7 +20538,7 @@ def _stratagem_support(
         "SANCTIFIED IMMOLATION": "Any phase reaction before removal: destroyed ADEPTA SORORITAS VEHICLE model with Deadly Demise auto-triggers its explosion.",
         "DIVINE INTERVENTION": "Any phase reaction on destroyed ADEPTA SORORITAS CHARACTER (excluding Saint Celestine): discard 1-3 Miracle dice to return one destroyed model at phase end with D3 + discarded wounds (capped by starting wounds).",
         "RELENTLESS ASSAULT": "Your Movement phase reaction after an ADEPTUS ASTARTES unit Falls Back: selected unit chooses shoot or charge this turn despite Falling Back, or becomes Battle-shocked to do both.",
-        "GUIDED DISRUPTION": "Your Shooting phase or either Fight phase reaction after a friendly ADEPTUS ASTARTES BATTLELINE unit finishes its attacks: when that unit’s Interlocking Tactics ability marks an enemy hit by those attacks as auspex scanned, that enemy becomes pinned until the start of your next turn unless it is a MONSTER or VEHICLE.",
+        "GUIDED DISRUPTION": "Your Shooting phase or either Fight phase reaction after a friendly ADEPTUS ASTARTES BATTLELINE unit finishes its attacks: when that unitÃ¢â‚¬â„¢s Interlocking Tactics ability marks an enemy hit by those attacks as auspex scanned, that enemy becomes pinned until the start of your next turn unless it is a MONSTER or VEHICLE.",
         "HERESY UNDONE": "Your Shooting/Charge phase: selected non-BATTLELINE ADEPTUS ASTARTES unit can shoot or declare a charge after Advancing or Falling Back this phase; if it does, every shooting or charge target must be an auspex scanned unit.",
         "LIGHT OF VENGEANCE": "Shooting/Fight phase: selected ADEPTUS ASTARTES unit that has not yet shot/fought chooses [LETHAL HITS] or [SUSTAINED HITS 1]; that keyword applies this phase while targeting auspex scanned units, or while the selected unit has the BATTLELINE keyword.",
         "ADAPTIVE TACTICS": "Your Command phase: select up to two Kill Team units, or one other ADEPTUS ASTARTES unit; each selected unit gains a chosen Mission Tactic (Furor, Malleus, or Purgatus) until your next Command phase instead of the army-wide Mission Tactic.",
@@ -20534,7 +20549,7 @@ def _stratagem_support(
         "PROFANE SYMBIOSIS": "End of any phase: CHAOS KNIGHTS unit (not Empowered) makes a Malefic Surge; same unit once per battle round.",
         "CORRUPTING TAINT": "Command phase after Malefic Surge: CHAOS KNIGHTS CHARACTER selects controlled objective in range to become sticky until opponent has greater control.",
         "UNLEASH BALEFIRE": "Shooting phase: mark CHAOS KNIGHTS unit; after shooting select a hit enemy, Battle-shock test; on fail, Aflame (-2 Move, -2 Charge) until end of opponent's next turn.",
-        "SHOCK BOMBARDMENT": "Your Shooting phase or either Fight phase reaction after a friendly ADEPTUS ASTARTES BATTLELINE unit finishes its attacks: when that unit’s Interlocking Tactics ability marks an enemy hit by those attacks as auspex scanned, that enemy becomes suppressed until the start of your next turn and suffers -1 to Hit.",
+        "SHOCK BOMBARDMENT": "Your Shooting phase or either Fight phase reaction after a friendly ADEPTUS ASTARTES BATTLELINE unit finishes its attacks: when that unitÃ¢â‚¬â„¢s Interlocking Tactics ability marks an enemy hit by those attacks as auspex scanned, that enemy becomes suppressed until the start of your next turn and suffers -1 to Hit.",
         "SITE-TO-SITE TELEPORTATION": "End of opponent Fight phase: select up to two Kill Team units, or one other ADEPTUS ASTARTES INFANTRY unit, that are not within Engagement Range; selected units enter Strategic Reserves and gain temporary Deep Strike until the end of your next Movement phase.",
         "WARP VISION": "Shooting phase: CHAOS KNIGHTS unit ranged weapons ignore cover until end of phase.",
         "DEFIANT TO THE LAST": "Opponent Fight phase: targeted ADEPTUS CUSTODES unit fights on death on 4+ (add 2 if Character) after attacker finishes; then removed.",
@@ -20573,7 +20588,7 @@ def _stratagem_support(
         "PIOUS ENMITY": "Fight phase: selected CHAPLAIN or JUDICIAR unit that has not yet fought re-rolls melee Hit rolls of 1 until end of phase, and also re-rolls melee Wound rolls of 1 when targeting MONSTER or VEHICLE units.",
         "PRACTICAL TACTICS": "Opponent Movement phase reaction after an enemy ends a Normal, Advance, or Fall Back move: selected ADEPTUS ASTARTES INFANTRY or MOUNTED unit within 9\" that is not within Engagement Range can make a reactive Normal move of up to D6\", or up to 6\" if that unit is under Tactical Doctrine.",
         "PREYTAKER'S EYE": "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet acted chooses [LETHAL HITS] or [SUSTAINED HITS 1] for its relevant weapons until end of phase.",
-        "PREYTAKER’S EYE": "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet acted chooses [LETHAL HITS] or [SUSTAINED HITS 1] for its relevant weapons until end of phase.",
+        "PREYTAKERÃ¢â‚¬â„¢S EYE": "Your Shooting phase or the Fight phase: selected ADEPTUS ASTARTES INFANTRY unit that has not yet acted chooses [LETHAL HITS] or [SUSTAINED HITS 1] for its relevant weapons until end of phase.",
         "RUTHLESS BUTCHERY": "Shooting/Fight phase: selected ADEPTUS ASTARTES DREADNOUGHT/TERMINATOR/BLADEGUARD VETERAN SQUAD/STERNGUARD VETERAN SQUAD/VANGUARD VETERAN SQUAD unit that has not yet acted gains +1 to Hit, and if it is Below Starting Strength it also gains +1 to Wound, until end of phase.",
         "RIGID DISCIPLINE": "End of the Fight phase: selected ADEPTUS ASTARTES unit within Engagement Range can make a Fall Back move of up to 6\".",
         "RUNES OF CLAIMING": "End of your Command phase: selected ADEPTUS ASTARTES INFANTRY or WALKER unit within range of a controlled objective makes that objective sticky until your opponent's Level of Control is greater at the end of a phase.",
@@ -20702,7 +20717,7 @@ def _stratagem_support(
         "SKULLS BEGET BLOOD": "Your Shooting phase: LEGIONES DAEMONICA KHORNE INFANTRY/MOUNTED unit (not Fell Back, not in Engagement Range) selects a visible enemy within 8\" that is not in Engagement Range of your units; roll 6D6 and each 4+ inflicts 1 mortal wound.",
         "SHEATHED IN BRASS": "Opponent Shooting phase defensive reaction after targets selected: targeted LEGIONES DAEMONICA KHORNE unit has Save characteristic 3+ until end of phase.",
         "WRATH UNDENIABLE": "Fight phase defensive reaction after enemy targets selected: targeted LEGIONES DAEMONICA KHORNE unit rolls D6 for each model destroyed by melee attacks this phase; on 4+ that model fights on death after attacks resolve.",
-        "GORE‑HUNGRY ONSLAUGHT": "Movement/Charge phase: LEGIONES DAEMONICA KHORNE unit can move through terrain features for move/advance/fall back (Movement phase) or charge (Charge phase).",
+        "GOREÃ¢â‚¬â€˜HUNGRY ONSLAUGHT": "Movement/Charge phase: LEGIONES DAEMONICA KHORNE unit can move through terrain features for move/advance/fall back (Movement phase) or charge (Charge phase).",
         "IMPOSSIBLE ECLIPSE": "Any phase: TZEENTCH LEGIONES DAEMONICA MONSTER extends Shadow of Chaos into No Man's Land and/or opponent deployment until end of phase (both costs Flux).",
         "PYROGENESIS": "Shooting/Fight phase: TZEENTCH LEGIONES DAEMONICA unit gains +2S (or spend Flux for +3S and +1 AP) until end of phase.",
         "THE REALM OF CHAOS": "End of opponent turn: up to two Shadow-of-Chaos units (or one other unit) enter Strategic Reserves and return next Movement phase via Deep Strike.",
@@ -22609,7 +22624,7 @@ def _build_matrix() -> str:
     datasheets_by_faction = deduped_by_faction
 
     if dedupe_conflicts:
-        logger.info("⚠️ Datasheets with same name but different content detected:")
+        logger.info("Ã¢Å¡Â Ã¯Â¸Â Datasheets with same name but different content detected:")
         for entry in dedupe_conflicts:
             parts = []
             for item in entry.get("entries", []):

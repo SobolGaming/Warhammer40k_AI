@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "AERIAL EXTRACTION",
     "A LONG LEASH",
     "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
@@ -45,6 +46,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANGELIC GRACE",
     "ANGELIC DESCENT",
     "BASTION OF FAITH",
+    "BELLICOSA DROP",
     "BLINDING RADIANCE",
     "BALEFUL HALO",
     "BLAZING IRE",
@@ -74,7 +76,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL MODIFICATIONS",
     "EXPERIMENTAL WEAPONRY",
     "EXEMPLAR'S WISDOM",
-    "EXEMPLAR’S WISDOM",
+    "EXEMPLARÃ¢â‚¬â„¢S WISDOM",
     "FAITH AND FURY",
     "AUTOSTIMULANTS",
     "BLACK CRUSADE",
@@ -274,7 +276,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A TEMPTING TRAP",
     "ALPHA STRIKE",
     "ANTI-GRAV REPULSION",
-    "ANTI‑GRAV REPULSION",
+    "ANTIÃ¢â‚¬â€˜GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
     "ADAPTIVE TACTICS",
     "BATTLE DRILL RECALL",
@@ -338,7 +340,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PIOUS ENMITY",
     "PRACTICAL TACTICS",
     "PREYTAKER'S EYE",
-    "PREYTAKER’S EYE",
+    "PREYTAKERÃ¢â‚¬â„¢S EYE",
     "PTERRORSHADES",
     "EYE OF THE PACK",
     "RELENTLESS ASSAULT",
@@ -382,7 +384,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CARRY FORTH THE FAITHFUL",
     "CASTIGATE THE DEMAGOGUES",
     "CHAMPION'S GUIDANCE",
-    "CHAMPION’S GUIDANCE",
+    "CHAMPIONÃ¢â‚¬â„¢S GUIDANCE",
     "CLOUDSTRIKE",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
@@ -408,11 +410,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HORRIFYING VIOLENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
+    "FIRE AND RELOCATE",
+    "FIRING HOT",
     "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
     "HUNTER'S INSTINCTS",
-    "HUNTER’S INSTINCTS",
+    "HUNTERÃ¢â‚¬â„¢S INSTINCTS",
     "HUNTERS' TRAIL",
     "LAYERED WARDS",
     "LET DUTY BE YOUR SHIELD",
@@ -443,6 +447,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MORDIAN MINUTE",
     "NEW ORDERS",
     "NO RETREAT!",
+    "ON MY POSITION",
     "OBDURATE VENGEANCE",
     "PEERLESS WARRIOR",
     "PURGING FIRE",
@@ -473,6 +478,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
     "SPOOR OF THE UNHOLY",
+    "SERVO-DESIGNATORS",
     "SUPPRESS AND OVERWHELM",
     "SYMPHONY OF SUFFERING",
     "THE GRISLY FEAST",
@@ -541,7 +547,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DEATH FROM ON HIGH",
     "OVERFLIGHT",
     "SPIRALLING EVASION",
-    "SEER’S EYE",
+    "SEERÃ¢â‚¬â„¢S EYE",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
@@ -563,7 +569,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "YRIEL'S EXAMPLE",
     "YRIEL\u2019S EXAMPLE",
     "PIRATES' DUE",
-    "PIRATES’ DUE",
+    "PIRATESÃ¢â‚¬â„¢ DUE",
     "ASSAIL",
     "FIERY SHIELD",
     "IRON ARM",
@@ -598,7 +604,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORBITAL OVERSIGHT",
     "PRIME TARGET",
     "WILL-SAPPING SALVO",
-    "WILL‑SAPPING SALVO",
+    "WILLÃ¢â‚¬â€˜SAPPING SALVO",
     "REACTIVE REPOSITION",
     "RED WRATH",
     "DEADLY DEBUT",
@@ -610,19 +616,19 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BULLDOZER BRUTALITY",
     "COME ON LADZ!",
     "BRAGGIN' RIGHTS",
-    "BRAGGIN’ RIGHTS",
+    "BRAGGINÃ¢â‚¬â„¢ RIGHTS",
     "COMPETITIVE STREAK",
     "GO GET 'EM!",
-    "GO GET ’EM!",
+    "GO GET Ã¢â‚¬â„¢EM!",
     "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
     "TOO ARROGANT TO DIE",
     "ALWAYS LOOKIN' FER A FIGHT",
-    "ALWAYS LOOKIN’ FER A FIGHT",
+    "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT",
     "CRUSHING IMPACT",
     "CUT'EM DOWN",
-    "CUT’EM DOWN",
+    "CUTÃ¢â‚¬â„¢EM DOWN",
     "DRAG IT DOWN",
     "BASH AND GRAB",
     "GRAB AND BASH",
@@ -638,15 +644,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LONG, UNCONTROLLED BURSTS",
     "SUPERFUELLED BOILER",
     "BOARDIN' RUSH",
-    "BOARDIN’ RUSH",
+    "BOARDINÃ¢â‚¬â„¢ RUSH",
     "DAT ONE'S EVEN BIGGA!",
-    "DAT ONE’S EVEN BIGGA!",
+    "DAT ONEÃ¢â‚¬â„¢S EVEN BIGGA!",
     "ORKS IS STILL ORKS",
     "SPESHUL SHELLS",
     "DAT'S OURS",
     "DED SNEAKY",
     "KRUNCHIN' DESCENT",
-    "KRUNCHIN’ DESCENT",
+    "KRUNCHINÃ¢â‚¬â„¢ DESCENT",
     "TAKTIKAL RETREAT",
     "HUGE SHOW-OFFS",
     "FIGHT PROPPA",
@@ -658,12 +664,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPEEDIEST FREEKS",
     "EXTRA GUBBINZ",
     "WHERE D'YA FINK YOU'RE GOING?",
-    "WHERE D’YA FINK YOU’RE GOING?",
+    "WHERE DÃ¢â‚¬â„¢YA FINK YOUÃ¢â‚¬â„¢RE GOING?",
     "KRUMP AND RUN",
     "ON TO DA NEXT",
     "CONNIVING RUNTS",
     "MORE GITZ OVER 'ERE!",
-    "MORE GITZ OVER ’ERE!",
+    "MORE GITZ OVER Ã¢â‚¬â„¢ERE!",
     "RUN THEM THROUGH!",
     "CAREEN!",
     "'ARD AS NAILS",
@@ -804,7 +810,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SWIFT DEPLOYMENT",
     "SYCOPHANTIC SURGE",
     "KHAINE'S VENGEANCE",
-    "KHAINE’S VENGEANCE",
+    "KHAINEÃ¢â‚¬â„¢S VENGEANCE",
     "PRETERNATURAL PRECISION",
     "PRE-CALIBRATED PURGE SOLUTION",
     "UNCANNY REACTIONS",
@@ -846,7 +852,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DISPERSED FORMATION",
     "EXPOSED FLAWS",
     "FRONTIER MOMENTUM",
-    "HUNTR’S MARK",
+    "HUNTRÃ¢â‚¬â„¢S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
     "PREVENTATIVE PURGE",
@@ -877,7 +883,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "AGGRESSIVE ONSLAUGHT",
     "ARDENT AUTOMATA",
     "ANTI-GRAV REPULSION",
-    "ANTI‑GRAV REPULSION",
+    "ANTIÃ¢â‚¬â€˜GRAV REPULSION",
     "ARMOUR OF ABHORRENCE",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
@@ -943,7 +949,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DERANGED FEROCITY",
     "TWISTED MIRAGE",
     "KHAINE'S VENGEANCE",
-    "KHAINE’S VENGEANCE",
+    "KHAINEÃ¢â‚¬â„¢S VENGEANCE",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "COUNTERCHARGE",
@@ -953,7 +959,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "HUNTER'S INSTINCTS",
-    "HUNTER’S INSTINCTS",
+    "HUNTERÃ¢â‚¬â„¢S INSTINCTS",
     "INSANE BRAVERY",
     "INTO DARKNESS",
     "NEW ORDERS",
@@ -1063,7 +1069,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RED WRATH",
     "ORKS IS NEVER BEATEN",
     "GO GET 'EM!",
-    "GO GET ’EM!",
+    "GO GET Ã¢â‚¬â„¢EM!",
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
@@ -1071,15 +1077,15 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CRUSHING IMPACT",
     "UNSTOPPABLE MOMENTUM",
     "KRUNCHIN' DESCENT",
-    "KRUNCHIN’ DESCENT",
+    "KRUNCHINÃ¢â‚¬â„¢ DESCENT",
     "INSTINCTIVE HUNTERS",
     "WHERE D'YA FINK YOU'RE GOING?",
-    "WHERE D’YA FINK YOU’RE GOING?",
+    "WHERE DÃ¢â‚¬â„¢YA FINK YOUÃ¢â‚¬â„¢RE GOING?",
     "KRUMP AND RUN",
     "ON TO DA NEXT",
     "CONNIVING RUNTS",
     "MORE GITZ OVER 'ERE!",
-    "MORE GITZ OVER ’ERE!",
+    "MORE GITZ OVER Ã¢â‚¬â„¢ERE!",
     "SQUIG FLINGIN'",
     "DED SNEAKY",
     "PROFANE SYMBIOSIS",
@@ -1153,7 +1159,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
     "INEXORABLE EFFICIENCY",
-    "HUNTR’S MARK",
+    "HUNTRÃ¢â‚¬â„¢S MARK",
     "OPPORTUNISTIC ESCALATION",
     "ORDERED RETREAT",
     "PREVENTATIVE PURGE",
@@ -2141,11 +2147,11 @@ class StratagemManager(
             "PHASE MELDING",
             "PUNISH THE CRAVEN",
             "CUT'EM DOWN",
-            "CUT’EM DOWN",
+            "CUTÃ¢â‚¬â„¢EM DOWN",
             "KHAINE'S VENGEANCE",
             "ILLUMINATED PRIORITY",
             "INEXORABLE EFFICIENCY",
-            "KHAINE’S VENGEANCE",
+            "KHAINEÃ¢â‚¬â„¢S VENGEANCE",
             "CARRY FORTH THE FAITHFUL",
             "LASH OF GUILT",
             "SEIZE THE PRIZE",
@@ -2212,7 +2218,7 @@ class StratagemManager(
             "UNBREAKABLE LINES",
             "WIND-SWIFT EVASION",
             "HUNTER'S INSTINCTS",
-            "HUNTER’S INSTINCTS",
+            "HUNTERÃ¢â‚¬â„¢S INSTINCTS",
             "A DEADLY PRIZE",
             "RAPTORIAL VIGILANCE",
             "SHOCK AND HORROR",
@@ -2244,7 +2250,7 @@ class StratagemManager(
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
             "ANTI-GRAV REPULSION",
-            "ANTI‑GRAV REPULSION",
+            "ANTIÃ¢â‚¬â€˜GRAV REPULSION",
             "BLIND GRENADES",
             "COMBAT EMBARKATION",
             "A DEADLY SNARE",
@@ -2275,7 +2281,7 @@ class StratagemManager(
             "DRAWN TO THE SLAUGHTER",
             "ALWAYS LOOKIN' FER A FIGHT",
             "BASTION RUNNING",
-            "ALWAYS LOOKIN’ FER A FIGHT",
+            "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT",
             "PALL OF DREAD",
             "SPITEFUL DEMISE",
             "VAUL'S VENGEANCE",
@@ -2358,7 +2364,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fury_unleashed)
         if "REACTIVE REPOSITION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
-        if "INSANITY'S IRE" in names or "INSANITY’S IRE" in names:
+        if "INSANITY'S IRE" in names or "INSANITYÃ¢â‚¬â„¢S IRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_annihilation_legion)
         if "SWIFT AS THE EAGLE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
@@ -2402,7 +2408,7 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_space_marines_forgefathers)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
-        if names & {"GO GET 'EM!", "GO GET ’EM!"}:
+        if names & {"GO GET 'EM!", "GO GET Ã¢â‚¬â„¢EM!"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_orks_green_tide)
         if "SYNAPTIC GOADING" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tyranids_unending_swarm)
@@ -2434,9 +2440,11 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
         if "SUPPRESS AND OVERWHELM" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
+        if "SERVO-DESIGNATORS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_bridgehead_servo_designators)
         if "TO THE FAVOURED THE SPOILS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_hurons_marauders)
-        if "REAVERS' REACTION" in names or "REAVERS’ REACTION" in names:
+        if "REAVERS' REACTION" in names or "REAVERSÃ¢â‚¬â„¢ REACTION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_renegade_warband)
         if "ALL IS ROT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_death_guard)
@@ -2475,7 +2483,7 @@ class StratagemManager(
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
             "STALKIN' TAKTIKS",
-            "STALKIN’ TAKTIKS",
+            "STALKINÃ¢â‚¬â„¢ TAKTIKS",
             "SPEEDIEST FREEKS",
             "EXTRA GUBBINZ",
             "TOO ARROGANT TO DIE",
@@ -2663,6 +2671,7 @@ class StratagemManager(
             "COST OF VICTORY",
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
+            "AERIAL EXTRACTION",
             "WRAITHLIKE RETREAT",
             "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
@@ -2689,6 +2698,7 @@ class StratagemManager(
             "PROFANE SYMBIOSIS",
             "HUNGRY FOR COMBAT",
             "ENCIRCLING PACK",
+            "ON MY POSITION",
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
             "RAPID EMBARKATION",
@@ -2736,7 +2746,7 @@ class StratagemManager(
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
             "ANTI-GRAV REPULSION",
-            "ANTI‑GRAV REPULSION",
+            "ANTIÃ¢â‚¬â€˜GRAV REPULSION",
             "CLOUDSTRIKE",
             "FULL-THROTTLE ASSAULT",
             "RUN THEM THROUGH!",
@@ -2759,11 +2769,14 @@ class StratagemManager(
             "STINKING MIRE",
             "FEINT AND THRUST",
             "MOBILE LETHALITY",
+            "BELLICOSA DROP",
             "STRIKE FROM THE SHADOWS",
             "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
             "PITILESS CANNONADE",
             "POINT-BLANK DESTRUCTION",
+            "FIRE AND RELOCATE",
+            "FIRING HOT",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
             "CHRONODISTORTION",
@@ -2830,9 +2843,9 @@ class StratagemManager(
             "TAILORED TOXINS",
             "TAKEN ALIVE",
             "ALWAYS LOOKIN' FER A FIGHT",
-            "ALWAYS LOOKIN’ FER A FIGHT",
+            "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT",
             "CUT'EM DOWN",
-            "CUT’EM DOWN",
+            "CUTÃ¢â‚¬â„¢EM DOWN",
             "WARP STALKERS",
             "AEGIS ETERNAL",
             "FIRES OF COVENANT",
@@ -2932,7 +2945,7 @@ class StratagemManager(
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
-            "KHAINE’S VENGEANCE",
+            "KHAINEÃ¢â‚¬â„¢S VENGEANCE",
             "DARK APPARITIONS",
             "ANCESTRAL SENTENCE",
             "CYBERSTIMM INFUSION",
@@ -2940,7 +2953,7 @@ class StratagemManager(
             "HIDDEN ACCESSWAYS",
             "HONOUR OF THE HOLD",
             "HUNTR'S MARK",
-            "HUNTR’S MARK",
+            "HUNTRÃ¢â‚¬â„¢S MARK",
             "MATERIALISATION MATRICES",
             "ORDERED RETREAT",
             "PREVENTATIVE PURGE",
@@ -2956,7 +2969,7 @@ class StratagemManager(
             "THE ARRO'KON PROTOCOL",
             "THE SHORTENED BLADE",
             "WILL-SAPPING SALVO",
-            "WILL‑SAPPING SALVO",
+            "WILLÃ¢â‚¬â€˜SAPPING SALVO",
             "UNYIELDING AGGRESSION",
             "VOID HARDENED",
             "UNSTOPPABLE FORCE",
@@ -4843,7 +4856,7 @@ class StratagemManager(
                 "Requires your Shooting phase and an ASURYANI INFANTRY non-WRAITH CONSTRUCT unit that has not been selected to shoot and is within 9\" of a friendly ASURYANI PSYKER"
             )
             return result
-        if name_u in {"ISHA'S FURY", "ISHA’S FURY"}:
+        if name_u in {"ISHA'S FURY", "ISHAÃ¢â‚¬â„¢S FURY"}:
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
             if phase_name_l and phase_name_l != "movement phase":
                 result["reason"] = "Requires opponent Movement phase"
@@ -5512,7 +5525,7 @@ class StratagemManager(
                 "Requires opponent Movement phase trigger after an enemy unit Falls Back from one of your DESTROYER CULT or FLAYED ONES units"
             )
             return result
-        if name_u in {"INSANITY'S IRE", "INSANITY’S IRE"}:
+        if name_u in {"INSANITY'S IRE", "INSANITYÃ¢â‚¬â„¢S IRE"}:
             if list(context.get("candidates") or []):
                 result["available"] = True
                 result["reason"] = None
@@ -5582,6 +5595,58 @@ class StratagemManager(
                 result["available"] = True
                 result["reason"] = None
                 return result
+        if name_u == "BELLICOSA DROP":
+            if self._bridgehead_bellicosa_drop_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase Reinforcements step and ASTRA MILITARUM INFANTRY in Reserves with Deep Strike"
+            return result
+        if name_u == "FIRE AND RELOCATE":
+            if self._bridgehead_fire_and_relocate_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires non-TITANIC ASTRA MILITARUM unit on the battlefield"
+            return result
+        if name_u == "FIRING HOT":
+            if self._bridgehead_firing_hot_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires MILITARUM TEMPESTUS or Kasrkin unit that has not shot this phase"
+            return result
+        if name_u in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                reaction_name = str(reaction.get("stratagem", "") or "").strip().upper()
+                if reaction_name not in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires your Shooting phase just after an ASTRA MILITARUM INFANTRY unit has shot and hit a visible enemy unit"
+            return result
+        if name_u == "AERIAL EXTRACTION":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "AERIAL EXTRACTION":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires end of opponent's Fight phase and eligible Deep Strike unit or Valkyrie not within Engagement Range"
+            return result
+        if name_u == "ON MY POSITION":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ON MY POSITION":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires end of opponent's Fight phase and engaged REGIMENT INFANTRY unit on the battlefield"
+            return result
         if name_u == "MORDIAN MINUTE":
             if self._grizzled_mordian_minute_candidates():
                 result["available"] = True
@@ -6981,7 +7046,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase and is within Engagement Range of an enemy unit"
             return result
-        if name_u in {"BRAGGIN' RIGHTS", "BRAGGIN’ RIGHTS"}:
+        if name_u in {"BRAGGIN' RIGHTS", "BRAGGINÃ¢â‚¬â„¢ RIGHTS"}:
             pairs = list(context.get("pair_candidates") or context.get("pairs") or context.get("candidates") or [])
             if not pairs:
                 pairs = self._orks_green_tide_braggin_rights_pairs()
@@ -7001,7 +7066,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase"
             return result
-        if name_u in {"GO GET 'EM!", "GO GET ’EM!"}:
+        if name_u in {"GO GET 'EM!", "GO GET Ã¢â‚¬â„¢EM!"}:
             candidates = list(context.get("candidates") or [])
             if candidates:
                 result["available"] = True
@@ -7063,7 +7128,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Charge phase trigger after a Beast Snagga Mounted unit ends a Charge move and an enemy unit in Engagement Range"
             return result
-        if name_u in {"KRUNCHIN' DESCENT", "KRUNCHIN’ DESCENT"}:
+        if name_u in {"KRUNCHIN' DESCENT", "KRUNCHINÃ¢â‚¬â„¢ DESCENT"}:
             candidates = list(context.get("candidates") or [])
             if not candidates:
                 candidates = self._orks_charge_end_mortal_wound_source_candidates(
@@ -7106,7 +7171,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your opponent's Shooting phase or the Fight phase after enemy targets are selected, and a targeted NOBZ or MEGANOBZ unit"
             return result
-        if name_u in {"ALWAYS LOOKIN' FER A FIGHT", "ALWAYS LOOKIN’ FER A FIGHT"}:
+        if name_u in {"ALWAYS LOOKIN' FER A FIGHT", "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT"}:
             destroyed_by_unit = context.get("destroyed_by_unit") or context.get("unit") or context.get("target_unit")
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -7119,7 +7184,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires the Fight phase, just after an enemy unit is destroyed by a friendly NOBZ or MEGANOBZ unit"
             return result
-        if name_u in {"CUT'EM DOWN", "CUT’EM DOWN"}:
+        if name_u in {"CUT'EM DOWN", "CUTÃ¢â‚¬â„¢EM DOWN"}:
             moving_unit = context.get("moving_unit") or context.get("enemy_unit") or context.get("unit")
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -7332,7 +7397,7 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting/Fight target-selection trigger with a Dire Avengers or Guardians unit selected as a target"
             return result
-        if name_u in {"VAUL'S VENGEANCE", "VAUL’S VENGEANCE"}:
+        if name_u in {"VAUL'S VENGEANCE", "VAULÃ¢â‚¬â„¢S VENGEANCE"}:
             if self._aeldari_guardian_vauls_vengeance_used_this_round():
                 result["reason"] = "Once per battle round used"
                 return result
@@ -7682,7 +7747,7 @@ class StratagemManager(
             "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
             "BIRTH OF A SAGA": "Target: one Wolf Guard Headtaker or Wolf Guard Terminator Pack Leader model from your army; it gains the CHARACTER keyword until the start of your next Command phase and its unit counts as a CHARACTER unit",
             "CHAMPION'S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
-            "CHAMPION’S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
+            "CHAMPIONÃ¢â‚¬â„¢S GUIDANCE": "Target: your SPACE WOLVES CHARACTER unit that has not been selected to shoot or fight this phase; it can re-roll Hit rolls until end of phase",
             "COUNTERCHARGE": "End of opponent's Charge phase: target your ADEPTUS ASTARTES CHARACTER unit within 6\" of enemy units it could charge; it declares an out-of-turn charge against only those enemies and does not receive the Charge bonus",
             "EYE OF THE PACK": "Target: your ADEPTUS ASTARTES unit that has not been selected to shoot this phase; add 1 to wound rolls for its ranged attacks until end of phase",
             "FENRISIAN FEROCITY": "Target: your ADEPTUS ASTARTES MOUNTED or WALKER unit that has not been selected to move or charge this phase; it moves through models and terrain this phase, with TITANIC models still blocking and move/advance/fall back unable to end in Engagement Range",
@@ -7695,13 +7760,13 @@ class StratagemManager(
             "UNBRIDLED FEROCITY": "Target: your SPACE WOLVES unit that has not been selected to fight this phase; add 1 to wound rolls for its melee attacks until end of phase",
             "UNRELENTING HUNTERS": "Target: your ADEPTUS ASTARTES unit that has not been selected to move this phase; it can charge after Falling Back this turn, and if it is SPACE WOLVES it can also charge after Advancing",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
-            "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
+            "ANTIÃ¢â‚¬â€˜GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
             "COMBAT MANIFESTATION": "Target: your GREY KNIGHTS unit arriving using Deep Strike this phase; it can set up more than 6\" horizontally from enemies and cannot declare a charge this turn",
             "CLOUDSTRIKE": "Target: AELDARI VEHICLE FLY unit in Strategic Reserves",
             "DOOM INESCAPABLE": "Target: AVATAR OF KHAINE unit not yet selected to shoot",
             "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
-            "KHAINE’S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
+            "KHAINEÃ¢â‚¬â„¢S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
             "BLOODY DANCE": "Target: your HARLEQUINS INFANTRY or MOUNTED unit within 6\" of an enemy unit it can charge",
             "CLOAK AND SHADOW": "Target: AELDARI INFANTRY unit selected by an enemy shooter and within range of an objective marker you control",
@@ -7717,7 +7782,7 @@ class StratagemManager(
             "MASTERS OF THE VOID": "Target: your VOIDFARERS CHARACTER unit; AGENTS OF THE IMPERIUM units arriving from Strategic Reserves this turn can be set up in your opponent's deployment zone (other restrictions still apply)",
             "NO PREY TOO BIG": "Target: your ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot this phase",
             "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
-            "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
+            "PIRATESÃ¢â‚¬â„¢ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
@@ -7728,7 +7793,7 @@ class StratagemManager(
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
             "SEER'S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
-            "SEER’S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
+            "SEERÃ¢â‚¬â„¢S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
             "SOUL BRIDGE": "Target: your WRAITHBLADES/WRAITHGUARD/WRAITHLORD unit and one ASURYANI PSYKER model; until your next Command phase the selected WRAITH unit counts as within 12\" of that PSYKER for Psychic Guidance and Spirit Guides",
             "SPIRIT TOKEN": "Target: your WRAITHBLADES or WRAITHGUARD unit; select one objective marker you control within that unit's range to remain sticky until opponent control becomes greater at phase end",
             "BLADES FROM BEYOND": "Target: your WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit that has not been selected to fight this phase; its melee weapons gain [DEVASTATING WOUNDS] until end of phase",
@@ -7750,12 +7815,12 @@ class StratagemManager(
             "UNSHROUDED TRUTH": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to move this phase, was not set up this phase, and is within 9\" of a friendly ASURYANI PSYKER; remove and set it up again more than 9\" horizontally from enemy models",
             "FATE INESCAPABLE": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to shoot this phase and is within 9\" of a friendly ASURYANI PSYKER; ranged attacks gain [IGNORES COVER] and improve AP by 1 on Critical Wounds this phase",
             "ISHA'S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
-            "ISHA’S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
+            "ISHAÃ¢â‚¬â„¢S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
             "PSYCHIC SHIELD": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a ranged attack target and within 9\" of a friendly ASURYANI PSYKER; until end of phase it can only be targeted by ranged attacks from within 18\"",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "VAUL'S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
-            "VAUL’S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
+            "VAULÃ¢â‚¬â„¢S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
             "WARDING SALVOES": "Target: your Dire Avengers or Guardians unit that has not been selected to shoot/fight this phase; it can re-roll Wound rolls when targeting enemies within objective range this phase",
             "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
@@ -7783,7 +7848,7 @@ class StratagemManager(
             "ORBITAL OVERSIGHT": "Target: AGENTS OF THE IMPERIUM INFANTRY unit selected as a target of an enemy shooter's attacks",
             "PRIME TARGET": "Target: your AGENTS OF THE IMPERIUM unit that has not been selected to shoot/fight this phase",
             "WILL-SAPPING SALVO": "Target: your AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot this phase",
-            "WILL‑SAPPING SALVO": "Target: your AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot this phase",
+            "WILLÃ¢â‚¬â€˜SAPPING SALVO": "Target: your AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
             "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",
@@ -7793,9 +7858,15 @@ class StratagemManager(
             "FEIGNED WEAKNESS": "Target: DRUKHARI unit that Fell Back",
             "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
             "HEIGHTENED JEALOUSY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured or after destroying an enemy)",
+            "AERIAL EXTRACTION": "Target: your ASTRA MILITARUM Deep Strike unit or Valkyrie not within Engagement Range at end of opponent's Fight phase; enters Strategic Reserves",
+            "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
+            "FIRE AND RELOCATE": "Target: non-TITANIC ASTRA MILITARUM unit on the battlefield; can shoot after advancing this phase",
+            "FIRING HOT": "Target: MILITARUM TEMPESTUS or Kasrkin unit that has not been selected to shoot this phase",
             "MORDIAN MINUTE": "Target: ASTRA MILITARUM INFANTRY unit with First Rank, Fire! Second Rank, Fire! (not shot)",
             "NO RETREAT!": "Target: ASTRA MILITARUM unit with Duty and Honour!; select controlled objective in range",
+            "ON MY POSITION": "Target: REGIMENT INFANTRY unit within Engagement Range at end of opponent's Fight phase",
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
+            "SERVO-DESIGNATORS": "Target: ASTRA MILITARUM INFANTRY unit that just shot; choose one visible enemy unit it hit",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
@@ -7858,10 +7929,10 @@ class StratagemManager(
             "BULLDOZER BRUTALITY": "Target: BOYZ unit not yet selected to fight that is within Engagement Range; models within 3\" can fight eligible engaged enemy units until end of phase",
             "COME ON LADZ!": "Target: BOYZ unit with destroyed non-CHARACTER models; return up to D3+2",
             "BRAGGIN' RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
-            "BRAGGIN’ RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
+            "BRAGGINÃ¢â‚¬â„¢ RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
             "COMPETITIVE STREAK": "Target: BOYZ unit not yet selected to fight; gains melee Wound re-roll 1s (or full Wound re-rolls while effectively 10+ for stratagem checks) until end of phase",
             "GO GET 'EM!": "Target: BOYZ unit selected by the enemy shooter's targets; after that enemy finishes shooting, make a D6 reactive move toward the closest enemy unit and you may re-roll the D6 while effectively 10+ for stratagem checks",
-            "GO GET ’EM!": "Target: BOYZ unit selected by the enemy shooter's targets; after that enemy finishes shooting, make a D6 reactive move toward the closest enemy unit and you may re-roll the D6 while effectively 10+ for stratagem checks",
+            "GO GET Ã¢â‚¬â„¢EM!": "Target: BOYZ unit selected by the enemy shooter's targets; after that enemy finishes shooting, make a D6 reactive move toward the closest enemy unit and you may re-roll the D6 while effectively 10+ for stratagem checks",
             "TIDE OF MUSCLE": "Target: BOYZ unit that has not declared a charge this phase; gains +1 to Charge rolls and (while effectively 10+ for stratagem checks) Charge re-rolls until end of phase",
             "GET STUCK IN, LADZ!": "Target: non-GRETCHIN ORKS unit; that unit counts as Waaagh-active until your next Command phase",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
@@ -7871,9 +7942,9 @@ class StratagemManager(
             "CRUSHING IMPACT": "Target: NOBZ or MEGANOBZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (5+, or 4+ if Waaagh-active, max 6 mortals)",
             "TOO ARROGANT TO DIE": "Target: NOBZ or MEGANOBZ unit selected by the attacking enemy's targets; destroyed models can shoot or fight after the attacker finishes its attacks on a 5+ (or effective 3+ while Waaagh-active) until end of phase",
             "ALWAYS LOOKIN' FER A FIGHT": "Target: NOBZ or MEGANOBZ unit that just destroyed an enemy in the Fight phase; Consolidates D3+3\" this phase, or 6\" while Waaagh-active",
-            "ALWAYS LOOKIN’ FER A FIGHT": "Target: NOBZ or MEGANOBZ unit that just destroyed an enemy in the Fight phase; Consolidates D3+3\" this phase, or 6\" while Waaagh-active",
+            "ALWAYS LOOKINÃ¢â‚¬â„¢ FER A FIGHT": "Target: NOBZ or MEGANOBZ unit that just destroyed an enemy in the Fight phase; Consolidates D3+3\" this phase, or 6\" while Waaagh-active",
             "CUT'EM DOWN": "Target: NOBZ or MEGANOBZ unit within Engagement Range of an enemy selected to Fall Back; that enemy must take Desperate Escape tests when it Falls Back, with -1 on each test while Waaagh-active",
-            "CUT’EM DOWN": "Target: NOBZ or MEGANOBZ unit within Engagement Range of an enemy selected to Fall Back; that enemy must take Desperate Escape tests when it Falls Back, with -1 on each test while Waaagh-active",
+            "CUTÃ¢â‚¬â„¢EM DOWN": "Target: NOBZ or MEGANOBZ unit within Engagement Range of an enemy selected to Fall Back; that enemy must take Desperate Escape tests when it Falls Back, with -1 on each test while Waaagh-active",
             "INSTINCTIVE HUNTERS": "Target: BEAST SNAGGA unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
@@ -7882,16 +7953,16 @@ class StratagemManager(
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
             "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
-            "WHERE D’YA FINK YOU’RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
+            "WHERE DÃ¢â‚¬â„¢YA FINK YOUÃ¢â‚¬â„¢RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
             "KRUMP AND RUN": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
             "ON TO DA NEXT": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start",
             "CONNIVING RUNTS": "Target: GRETCHIN unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "MORE GITZ OVER 'ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
-            "MORE GITZ OVER ’ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
+            "MORE GITZ OVER Ã¢â‚¬â„¢ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "SQUIG FLINGIN'": "Target: SPEED FREEKS or TRUKK unit that just ended a Normal/Advance/Fall Back move; select one enemy unit within 9\" to take a Battle-shock test at -1",
             "DED SNEAKY": "Target: KOMMANDOS or STORMBOYZ unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "KRUNCHIN' DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
-            "KRUNCHIN’ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
+            "KRUNCHINÃ¢â‚¬â„¢ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CLAIMED FOR THE DARK GODS": "Target: CHAOS KNIGHTS CHARACTER within range of a controlled objective; select that objective to remain under your control with Level of Control 5 until broken",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
@@ -7981,8 +8052,8 @@ class StratagemManager(
             "BASTION RUNNING": "Target: Hekaton Land Fortress unit that has not been selected to move",
             "COGITATED NEED": "Target: Ironkin Steeljacks unit; make a Normal move ending as close as possible to the closest objective marker",
             "CYBERSTIMM INFUSION": "Target: CTHONIAN BESERKS unit that has not been selected to fight; optional 2 YP for full Wound re-rolls",
-            "DELAYED-FIRE ROUNDS": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot; select one hit non-MONSTER/non-VEHICLE enemy",
-            "FIRST CONCERN": "Target: Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot after remaining stationary",
+            "DELAYED-FIRE ROUNDS": "Target: BrÃƒÂ´khyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot; select one hit non-MONSTER/non-VEHICLE enemy",
+            "FIRST CONCERN": "Target: BrÃƒÂ´khyr/Ironkin Steeljacks/Arkanyst Evaluator unit that just shot after remaining stationary",
             "FURY OF THE HEARTH": "Target: Einhyr Hearthguard unit that has not been selected to shoot; optional 1 YP for Sustained Hits 1",
             "GRAND ARTIFICE": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
             "HIDDEN ACCESSWAYS": "Target: CTHONIAN BESERKS, HEARTHKYN WARRIORS, or HERNKYN YAEGIRS unit not within Engagement Range",
@@ -8001,17 +8072,17 @@ class StratagemManager(
             "DISPERSED FORMATION": "Opponent Shooting phase reaction after targets are selected: target your LEAGUES OF VOTANN INFANTRY or MOUNTED unit selected by that attacker; it gains Stealth and Benefit of Cover against ranged attacks this phase",
             "EXPOSED FLAWS": "Target: HERNKYN unit that has not been selected to shoot; optional 2 YP grants full wound re-rolls this phase, otherwise full wound re-rolls apply only against assailed targets",
             "FRONTIER MOMENTUM": "Target: HERNKYN unit that has not been selected to move; if it Advances this phase, add 6\" instead of rolling",
-            "HUNTR’S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
+            "HUNTRÃ¢â‚¬â„¢S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
             "OPPORTUNISTIC ESCALATION": "Target: non-Hekaton LEAGUES OF VOTANN VEHICLE hit by enemy shooting while Hostile Acquisition is active",
             "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
-            "PREVENTATIVE PURGE": "Target: Brôkhyr Thunderkyn or Ironkin Steeljacks unit; shoot a falling-back enemy with -1 to hit",
+            "PREVENTATIVE PURGE": "Target: BrÃƒÂ´khyr Thunderkyn or Ironkin Steeljacks unit; shoot a falling-back enemy with -1 to hit",
             "REACTIVE REPRISAL": "Target: LEAGUES OF VOTANN unit targeted by enemy shooting; shoot the attacking enemy unit",
             "RANGER TACTICS": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot; it gains full hit re-rolls this phase while attacking assailed targets, and HERNKYN units gain them against all targets",
             "SECURE POSITIONS": "Target: LEAGUES OF VOTANN TRANSPORT with embarked LEAGUES OF VOTANN unit",
             "SUPERIOR CRAFTSMANSHIP": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; +1 Damage versus MONSTER/VEHICLE targets",
             "SURE OF PURPOSE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
             "TECTONIC FRACTURE": "Target: CTHONIAN EARTHSHAKERS unit that just shot; select one enemy unit it hit this phase",
-            "UNWAVERING ACCURACY": "Target: Brôkhyr Thunderkyn unit that has not been selected to shoot; ignore negative BS/Hit/Wound/AP modifiers for ranged attacks",
+            "UNWAVERING ACCURACY": "Target: BrÃƒÂ´khyr Thunderkyn unit that has not been selected to shoot; ignore negative BS/Hit/Wound/AP modifiers for ranged attacks",
             "UNSTOPPABLE FORCE": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; pile in and consolidate up to 6\"",
             "UNYIELDING AGGRESSION": "Target: LEAGUES OF VOTANN INFANTRY unit that Fell Back this turn",
             "VENGEANCE FLARE": "Target: LEAGUES OF VOTANN INFANTRY hit by enemy shooting; select Kapricus/Sagitaur within 6\", or Hekaton within 6\" if 2 YP are spent",
@@ -9757,6 +9828,10 @@ class StratagemManager(
             raise
         try:
             self._queue_houndpack_lance_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_bridgehead_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -20577,7 +20652,7 @@ class StratagemManager(
         admech_result = self._use_adeptus_mechanicus_rad_zone_stratagem(s, **kwargs)
         if admech_result is not None:
             return admech_result
-        am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
+        am_result = self._use_astra_militarum_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result
         as_result = self._use_adepta_sororitas_hallowed_stratagem(s, **kwargs)
