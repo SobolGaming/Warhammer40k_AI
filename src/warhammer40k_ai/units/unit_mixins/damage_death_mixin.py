@@ -776,6 +776,12 @@ class DamageDeathMixin:
         if not fleed and game_map is not None and not skip_deadly:
             defer_deadly = bool(self._trigger_deadly_demise(model, game_map))
         if defer_deadly:
+            try:
+                if bool(getattr(model, "_houndpack_animalistic_rage_deferred_removal_once", False)):
+                    setattr(model, "_houndpack_animalistic_rage_deferred_removal_once", False)
+                    return
+            except Exception:
+                pass
             # Record the loss now, but keep the model to allow CAREEN movement.
             try:
                 if not bool(getattr(model, "_careen_loss_recorded", False)):
@@ -2207,6 +2213,33 @@ class DamageDeathMixin:
         """Trigger Deadly Demise ability when a model is killed.
 
         Returns True if the explosion is deferred (e.g., CAREEN)."""
+        try:
+            skip_queue = bool(getattr(dying_model, "_houndpack_animalistic_rage_skip_queue_once", False))
+        except Exception:
+            skip_queue = False
+        if skip_queue:
+            try:
+                setattr(dying_model, "_houndpack_animalistic_rage_skip_queue_once", False)
+            except Exception:
+                pass
+        else:
+            try:
+                army = self.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                mgr = getattr(player, "stratagems", None) if player is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "")
+                if mgr is not None and bool(
+                    mgr.queue_houndpack_animalistic_rage(self, dying_model, game_map=game_map, phase_name=phase_name)
+                ):
+                    try:
+                        setattr(dying_model, "_houndpack_animalistic_rage_deferred_removal_once", True)
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+
         # Check if the unit has Deadly Demise ability
         has_deadly_demise, damage_dice = self.has_deadly_demise()
         if not has_deadly_demise:
@@ -2471,6 +2504,42 @@ class DamageDeathMixin:
             return False
         self._apply_deadly_demise_explosion(damage_dice=damage_dice, position=model_position, game_map=game_map)
         return False
+
+    def resolve_houndpack_animalistic_rage_pending(self, game_map: Optional['Map']) -> None:
+        model = None
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("houndpack_animalistic_rage_pending")):
+            return
+        model_id = str(sr.get("houndpack_animalistic_rage_model_id", "") or "")
+        for candidate in list(getattr(self, "models", []) or []):
+            if str(get_entity_id(candidate) or "") == model_id:
+                model = candidate
+                break
+        for key in (
+            "houndpack_animalistic_rage_pending",
+            "houndpack_animalistic_rage_model_id",
+            "houndpack_animalistic_rage_enemy_unit_id",
+            "houndpack_animalistic_rage_phase_name",
+            "houndpack_animalistic_rage_available_actions",
+            "houndpack_animalistic_rage_turn",
+            "houndpack_animalistic_rage_turn_owner",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+        if model is None:
+            return
+        try:
+            setattr(model, "_houndpack_animalistic_rage_skip_queue_once", True)
+        except Exception:
+            pass
+        deferred = bool(self._trigger_deadly_demise(model, game_map))
+        if deferred:
+            return
+        try:
+            setattr(model, "_skip_deadly_demise_once", True)
+        except Exception:
+            pass
+        self.remove_model(model, False, game_map=game_map)
 
     def resolve_careen_deadly_demise(self, game_map: Optional['Map'], *, use_move: bool = True) -> None:
         if not bool(getattr(self, "_careen_pending_destroyed", False)):

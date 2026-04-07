@@ -118,6 +118,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "REINFORCED HIVE NODE",
     "IRRESISTIBLE WILL",
     "INVISIBLE HUNTER",
+    "VOX-HOWL",
+    "HUNGRY FOR COMBAT",
+    "CUNNING HUNTER",
+    "ANIMALISTIC RAGE",
+    "HARRYING HOUNDS",
+    "ENCIRCLING PACK",
     "SYNAPTIC CHANNELLING",
     "SYNAPTIC GOADING",
     "SURPRISE ASSAULT",
@@ -2192,6 +2198,8 @@ class StratagemManager(
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
             "BOUNDLESS ZEAL",
+            "CUNNING HUNTER",
+            "HARRYING HOUNDS",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {
@@ -2634,6 +2642,8 @@ class StratagemManager(
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
             "PROFANE SYMBIOSIS",
+            "HUNGRY FOR COMBAT",
+            "ENCIRCLING PACK",
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
             "RAPID EMBARKATION",
@@ -7839,6 +7849,12 @@ class StratagemManager(
             "KRUNCHIN’ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
+            "VOX-HOWL": "Target: WAR DOG CHARACTER unit from your army in your Shooting or Fight phase",
+            "HUNGRY FOR COMBAT": "Target: two or more friendly WAR DOG units in Engagement Range of the same enemy unit",
+            "CUNNING HUNTER": "Target: WAR DOG unit from your army that just Fell Back in your Movement phase",
+            "ANIMALISTIC RAGE": "Target: just-destroyed WAR DOG model from your army in the Shooting or Fight phase",
+            "HARRYING HOUNDS": "Target: WAR DOG unit within 9\" of an enemy unit that just ended a move in your opponent's Movement phase",
+            "ENCIRCLING PACK": "Target: WAR DOG unit wholly within 12\" of a battlefield edge and not in Engagement Range at end of opponent's Fight phase",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
@@ -8464,6 +8480,10 @@ class StratagemManager(
                                         "cp_cost": s.cp_cost,
                                         "candidates": candidates,
                                     }, use_timer=False)
+        except Exception:
+            raise
+        try:
+            self._queue_houndpack_lance_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -9673,6 +9693,10 @@ class StratagemManager(
             self._cleanup_penitent_host_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_houndpack_lance_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
         # Queue NEW ORDERS at end of your Command phase
         try:
             is_your_turn = player is self.player
@@ -9733,7 +9757,7 @@ class StratagemManager(
         # Chaos Knights: PROFANE SYMBIOSIS (end of any phase)
         try:
             s = self.get_by_name("PROFANE SYMBIOSIS")
-            if s and self._chaos_knights_detachment_manager() is not None:
+            if s and self._infernal_lance_detachment_manager() is not None:
                 phase_label = self._current_phase_name or str(getattr(phase, "name", "") or "")
                 if self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
                     if s.can_use(self.player, self.game, phase_name=phase_label):
@@ -11805,7 +11829,7 @@ class StratagemManager(
             return
         if player is not None and player is not self.player:
             return
-        if self._chaos_knights_detachment_manager() is None:
+        if self._infernal_lance_detachment_manager() is None:
             return
         phase_name = str(self._current_phase_name or "").strip().lower()
         if phase_name != "command phase":
@@ -11942,6 +11966,7 @@ class StratagemManager(
         self._queue_death_guard_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_crusher_move_end_reactions(unit=unit, action=action)
         self._queue_tyranids_vanguard_move_end_reactions(unit=unit, action=action)
+        self._queue_houndpack_lance_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12565,7 +12590,7 @@ class StratagemManager(
         active_player = getattr(self.game, "get_current_player", lambda: None)()
         if active_player is not self.player:
             return
-        if self._chaos_knights_detachment_manager() is None:
+        if self._infernal_lance_detachment_manager() is None:
             return
         try:
             root = attacker_unit.get_attached_unit_root()
@@ -17703,6 +17728,9 @@ class StratagemManager(
         chaos_daemons_blood_legion_result = self._use_chaos_daemons_blood_legion_stratagem(s, **kwargs)
         if chaos_daemons_blood_legion_result is not None:
             return chaos_daemons_blood_legion_result
+        chaos_knights_result = self._use_chaos_knights_stratagem(s, **kwargs)
+        if chaos_knights_result is not None:
+            return chaos_knights_result
         # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
         if name_u == "GILDED CHAMPION":
             model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)
@@ -23558,7 +23586,7 @@ class StratagemManager(
             if unit is None:
                 logger.error("ERROR: Profane Symbiosis: no target unit provided")
                 return False
-            mgr = self._chaos_knights_detachment_manager()
+            mgr = self._infernal_lance_detachment_manager()
             if mgr is None:
                 return False
             try:
@@ -23622,7 +23650,7 @@ class StratagemManager(
             if unit is None:
                 logger.error("ERROR: Corrupting Taint: no target unit provided")
                 return False
-            mgr = self._chaos_knights_detachment_manager()
+            mgr = self._infernal_lance_detachment_manager()
             if mgr is None:
                 return False
             try:
@@ -23686,7 +23714,7 @@ class StratagemManager(
             if unit is None:
                 logger.error("ERROR: Unleash Balefire: no target unit provided")
                 return False
-            if self._chaos_knights_detachment_manager() is None:
+            if self._infernal_lance_detachment_manager() is None:
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -23742,7 +23770,7 @@ class StratagemManager(
             if unit is None:
                 logger.error("ERROR: Warp Vision: no target unit provided")
                 return False
-            if self._chaos_knights_detachment_manager() is None:
+            if self._infernal_lance_detachment_manager() is None:
                 return False
             try:
                 root = unit.get_attached_unit_root()

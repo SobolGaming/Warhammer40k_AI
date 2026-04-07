@@ -584,6 +584,12 @@ class FightPhaseManager:
                             continue
                     except Exception:
                         pass
+                    try:
+                        lock_check = getattr(fighting_unit, "_houndpack_hungry_for_combat_target_locked_to", None)
+                        if callable(lock_check) and not bool(lock_check(enemy_root, game=self.game)):
+                            continue
+                    except Exception:
+                        pass
                     eligible_targets.append(enemy_root)
             except Exception:
                 continue

@@ -7965,6 +7965,74 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _houndpack_hungry_for_combat_context(self, *, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("houndpack_hungry_for_combat_active")):
+            return None
+        target_id = str(sr.get("houndpack_hungry_for_combat_target_id", "") or "")
+        if not target_id:
+            return None
+        try:
+            crit_threshold = int(sr.get("houndpack_hungry_for_combat_crit_threshold", 5) or 5)
+        except Exception:
+            crit_threshold = 5
+        source = (
+            str(sr.get("houndpack_hungry_for_combat_source", "") or "HUNGRY FOR COMBAT").strip()
+            or "HUNGRY FOR COMBAT"
+        )
+        if game is None:
+            return {
+                "target_id": target_id,
+                "crit_threshold": int(crit_threshold),
+                "target_lock": bool(sr.get("houndpack_hungry_for_combat_target_lock", True)),
+                "source": source,
+            }
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("houndpack_hungry_for_combat_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("houndpack_hungry_for_combat_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("houndpack_hungry_for_combat_turn_owner", "") or "")
+        if effect_owner:
+            try:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {
+            "target_id": target_id,
+            "crit_threshold": int(crit_threshold),
+            "target_lock": bool(sr.get("houndpack_hungry_for_combat_target_lock", True)),
+            "source": source,
+        }
+
+    def _houndpack_hungry_for_combat_target_locked_to(self, target_unit, *, game=None) -> bool:
+        context = self._houndpack_hungry_for_combat_context(game=game)
+        if not isinstance(context, dict):
+            return True
+        if not bool(context.get("target_lock", True)):
+            return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        expected_target_id = str(context.get("target_id", "") or "")
+        if expected_target_id and current_target_id and expected_target_id != current_target_id:
+            return False
+        return True
+
     def _gsc_integrated_tactics_context(self, *, game=None) -> Optional[dict]:
         get_root = getattr(self, "get_attached_unit_root", None)
         root = get_root() if callable(get_root) else self
@@ -18580,6 +18648,19 @@ class ActionsMovementMixin:
             return True
         try:
             sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("cunning_hunter_active"):
+                owner = str(sr.get("cunning_hunter_turn_owner", "") or "")
+                turn = int(sr.get("cunning_hunter_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
                 owner = str(sr.get("feigned_retreat_turn_owner", "") or "")
                 turn = int(sr.get("feigned_retreat_turn", 0) or 0)
@@ -20083,6 +20164,19 @@ class ActionsMovementMixin:
             if isinstance(sr, dict) and sr.get("aeldari_lethal_ruse_charge_after_fall_back_active"):
                 owner = str(sr.get("aeldari_lethal_ruse_turn_owner", "") or "")
                 turn = int(sr.get("aeldari_lethal_ruse_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("cunning_hunter_active"):
+                owner = str(sr.get("cunning_hunter_turn_owner", "") or "")
+                turn = int(sr.get("cunning_hunter_turn", 0) or 0)
                 game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
                 if game is None:
                     return True

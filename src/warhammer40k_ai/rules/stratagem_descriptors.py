@@ -78,6 +78,75 @@ _INFERNAL_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010313002": StratagemToolDescriptor(
+        stratagem_id="000010313002",
+        name="Vox-Howl",
+        timing="shooting_or_fight_phase",
+        target="war_dog_character_unit",
+        duration="immediate",
+        effect="battle_shock_aura_and_friendly_clear",
+        cp_cost=1,
+        range_in=6.0,
+        once_per_battle_round=True,
+        effect_params={"enemy_battle_shock_test": True, "friendly_clear_battle_shock": True},
+    ),
+    "000010313003": StratagemToolDescriptor(
+        stratagem_id="000010313003",
+        name="Hungry For Combat",
+        timing="fight_phase_start",
+        target="two_or_more_war_dog_units_engaging_same_enemy",
+        duration="until_end_of_phase",
+        effect="melee_target_lock_and_crit_hit_threshold",
+        cp_cost=1,
+        effect_params={"target_lock": True, "crit_hit_threshold": 5},
+    ),
+    "000010313004": StratagemToolDescriptor(
+        stratagem_id="000010313004",
+        name="Cunning Hunter",
+        timing="movement_phase_after_fall_back",
+        target="war_dog_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010313005": StratagemToolDescriptor(
+        stratagem_id="000010313005",
+        name="Animalistic Rage",
+        timing="shooting_or_fight_phase_on_destroyed_model",
+        target="destroyed_war_dog_model",
+        duration="immediate",
+        effect="shoot_or_fight_before_removal",
+        cp_cost=1,
+        effect_params={"before_deadly_demise": True},
+    ),
+    "000010313006": StratagemToolDescriptor(
+        stratagem_id="000010313006",
+        name="Harrying Hounds",
+        timing="opponent_movement_phase_after_enemy_move",
+        target="war_dog_unit_within_9_of_enemy_move_end",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"move_distance": 6, "can_end_engagement": False},
+    ),
+    "000010313007": StratagemToolDescriptor(
+        stratagem_id="000010313007",
+        name="Encircling Pack",
+        timing="end_of_opponent_fight_phase",
+        target="war_dog_unit_wholly_within_12_of_battlefield_edge",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=12.0,
+    ),
+}
+
+_HOUNDPACK_LANCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008437002": StratagemToolDescriptor(
         stratagem_id="000008437002",
@@ -11638,6 +11707,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12063,6 +12135,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         return None
     return (
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)

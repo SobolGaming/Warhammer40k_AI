@@ -2777,12 +2777,48 @@ def _apply_choose_hyper_adaptation(game: object, request: DecisionRequest, resul
 
 
 def _validate_choose_frenzy(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
-    if is_skip_choice(request, result):
+    errors = () if is_skip_choice(request, result) else validate_option_choice(request, result)
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    if str(ctx.get("ability", "") or "").strip().lower() != "chaos_knights_animalistic_rage":
         return ()
-    return validate_option_choice(request, result)
+    unit = resolve_unit(game, ctx.get("unit_id"))
+    if unit is None:
+        return ("Animalistic Rage unit not found.",)
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict) or not bool(sr.get("houndpack_animalistic_rage_pending")):
+        return ("Animalistic Rage is no longer pending.",)
+    payload = _option_payload(request, result)
+    choice = "skip" if is_skip_choice(request, result) else str(payload.get("action", "") or "").strip().lower()
+    available_actions = {
+        str(value or "").strip().lower()
+        for value in list(sr.get("houndpack_animalistic_rage_available_actions", []) or [])
+        if str(value or "").strip()
+    }
+    if choice not in {"shoot", "fight", "skip"}:
+        return ("Animalistic Rage requires a shoot, fight, or skip choice.",)
+    if choice != "skip" and choice not in available_actions:
+        return ("Animalistic Rage choice is no longer available.",)
+    return ()
 
 
 def _apply_choose_frenzy(game: object, request: DecisionRequest, result: DecisionResult):
+    ctx = dict(getattr(request, "context", {}) or {})
+    if str(ctx.get("ability", "") or "").strip().lower() == "chaos_knights_animalistic_rage":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Animalistic Rage player not found.")
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            raise RuntimeError("Animalistic Rage stratagem manager not found.")
+        unit = resolve_unit(game, ctx.get("unit_id"))
+        if unit is None:
+            raise RuntimeError("Animalistic Rage unit not found.")
+        payload = _option_payload(request, result)
+        choice = "skip" if is_skip_choice(request, result) else str(payload.get("action", "") or "").strip().lower()
+        manager.resolve_houndpack_animalistic_rage_choice(unit, choice=choice)
+        return {"action": choice}
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
