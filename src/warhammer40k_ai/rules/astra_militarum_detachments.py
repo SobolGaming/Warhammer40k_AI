@@ -381,6 +381,8 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         max_units: int,
         allow_skip: bool,
         required_units: int = 0,
+        extra_context: dict[str, Any] | None = None,
+        skip_pending_check: bool = False,
     ) -> bool:
         if game is None or not bool(getattr(game, "is_authoritative", True)):
             return False
@@ -402,14 +404,15 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
 
         from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
-        if self._pending_artillery_support_request(
-            game,
-            decision_type=DECISION_SELECT_REALM_OF_CHAOS_UNITS,
-            ability_key=ability_key,
-            army_id=army_id,
-            battle_round=int(battle_round or 0),
-        ):
-            return False
+        if not bool(skip_pending_check):
+            if self._pending_artillery_support_request(
+                game,
+                decision_type=DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                ability_key=ability_key,
+                army_id=army_id,
+                battle_round=int(battle_round or 0),
+            ):
+                return False
 
         from ..engine.decisions import DecisionOption, DecisionRequest
 
@@ -426,6 +429,8 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "allowed_unit_ids": list(allowed_ids),
             "optional": bool(allow_skip),
         }
+        if isinstance(extra_context, dict):
+            context.update(dict(extra_context))
         if int(required_units or 0) > 0:
             context["required_units"] = int(required_units)
         if bool(allow_skip):
@@ -443,6 +448,40 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             request_decision(request)
             return True
         return False
+
+    def _queue_siege_regiment_creeping_barrage_roll_request(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: int,
+        allowed_units: list,
+        successful_unit_ids: Iterable[str],
+        roll_results: list[dict[str, Any]] | None,
+        max_shaken: int,
+    ) -> bool:
+        successful_ids = self._normalise_unit_ids(successful_unit_ids)
+        return self._queue_siege_regiment_unit_selection_request(
+            game=game,
+            player=player,
+            battle_round=battle_round,
+            ability_key=self._ARTILLERY_SUPPORT_CREEPING_SELECTION_ABILITY,
+            ability_name="Creeping Barrage",
+            prompt=(
+                "Creeping Barrage: select the next eligible enemy unit to roll for "
+                f"({len(successful_ids)}/{int(max_shaken)} shaken so far)."
+            ),
+            allowed_units=allowed_units,
+            max_units=1,
+            allow_skip=False,
+            required_units=1,
+            extra_context={
+                "creeping_barrage_max_shaken": int(max_shaken),
+                "creeping_barrage_successful_unit_ids": list(successful_ids),
+                "creeping_barrage_rolls": list(roll_results or []),
+            },
+            skip_pending_check=True,
+        )
 
     def _clear_artillery_support_shaken(self, unit) -> None:
         root = self._unit_root(unit)
@@ -615,59 +654,125 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                 "pending_selection": False,
             }
 
-        rolls = []
-        successful = []
-        for enemy in list(candidates or []):
-            roll_value = int(get_roll("D6") or 0)
-            enemy_id = self._entity_id(enemy)
-            rolls.append({"unit_id": enemy_id, "roll": int(roll_value)})
-            if roll_value >= 5:
-                successful.append(enemy)
-        successful.sort(key=lambda unit: self._entity_id(unit))
-        successful_ids = [self._entity_id(unit) for unit in list(successful or []) if self._entity_id(unit)]
-
-        if len(successful_ids) <= int(max_units):
-            shaken_ids = self.apply_siege_regiment_creeping_barrage_selection(
-                successful_ids,
-                game=game,
-                player=owner,
-                battle_round=int(battle_round or 0),
-                allowed_unit_ids=successful_ids,
-            )
+        if len(candidates) <= int(max_units):
+            rolls = []
+            shaken_ids = []
+            for enemy in list(candidates or []):
+                roll_value = int(get_roll("D6") or 0)
+                enemy_id = self._entity_id(enemy)
+                rolls.append({"unit_id": enemy_id, "roll": int(roll_value)})
+                if roll_value < 5:
+                    continue
+                self._apply_artillery_support_shaken(
+                    enemy,
+                    battle_round=int(battle_round or 0),
+                    source="Creeping Barrage",
+                )
+                if enemy_id:
+                    shaken_ids.append(enemy_id)
             return {
                 "mode": "creeping_barrage",
                 "max_units": int(max_units),
                 "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
-                "successful_unit_ids": list(successful_ids),
                 "shaken_unit_ids": list(shaken_ids),
                 "rolls": rolls,
                 "pending_selection": False,
             }
 
-        queued = self._queue_siege_regiment_unit_selection_request(
+        queued = self._queue_siege_regiment_creeping_barrage_roll_request(
             game=game,
             player=owner,
             battle_round=int(battle_round or 0),
-            ability_key=self._ARTILLERY_SUPPORT_CREEPING_SELECTION_ABILITY,
-            ability_name="Creeping Barrage",
-            prompt=(
-                "Creeping Barrage: select "
-                f"{int(max_units)} successful unit(s) to be shaken (Move -2\", Charge -2)."
-            ),
-            allowed_units=successful,
-            max_units=int(max_units),
-            allow_skip=False,
-            required_units=int(max_units),
+            allowed_units=candidates,
+            successful_unit_ids=[],
+            roll_results=[],
+            max_shaken=int(max_units),
         )
         return {
             "mode": "creeping_barrage",
             "max_units": int(max_units),
             "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
-            "successful_unit_ids": list(successful_ids),
             "shaken_unit_ids": [],
-            "rolls": rolls,
+            "rolls": [],
             "pending_selection": bool(queued),
-            "required_units": int(max_units),
+        }
+
+    def resolve_siege_regiment_creeping_barrage_roll(
+        self,
+        unit_ids: Iterable[str],
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        allowed_unit_ids: Iterable[str] | None = None,
+        successful_unit_ids: Iterable[str] | None = None,
+        roll_results: Iterable[dict[str, Any]] | None = None,
+        max_shaken: int = 0,
+    ) -> dict:
+        owner = player if player is not None else getattr(self.army, "player", None)
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        if int(max_shaken or 0) <= 0:
+            max_shaken = self.siege_regiment_artillery_support_max_units(game=game_obj)
+        candidates = self._eligible_enemy_units_for_artillery_support(game=game_obj, player=owner)
+        if allowed_unit_ids is not None:
+            allowed = set(self._normalise_unit_ids(allowed_unit_ids))
+            candidates = [root for root in list(candidates or []) if self._entity_id(root) in allowed]
+        selected = self._resolve_roots_from_ids(unit_ids, candidates=candidates)[:1]
+        if not selected:
+            return {
+                "mode": "creeping_barrage",
+                "max_units": int(max_shaken),
+                "pending_selection": False,
+                "selected_unit_id": "",
+                "roll": 0,
+                "rolls": list(roll_results or []),
+                "shaken_unit_ids": self._normalise_unit_ids(successful_unit_ids or []),
+                "remaining_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
+            }
+
+        target = selected[0]
+        target_id = self._entity_id(target)
+        roll_value = int(get_roll("D6") or 0)
+        rolls = list(roll_results or [])
+        rolls.append({"unit_id": target_id, "roll": int(roll_value)})
+
+        shaken_ids = self._normalise_unit_ids(successful_unit_ids or [])
+        if roll_value >= 5 and target_id and target_id not in set(shaken_ids):
+            self._apply_artillery_support_shaken(
+                target,
+                battle_round=round_now,
+                source="Creeping Barrage",
+            )
+            shaken_ids.append(target_id)
+            shaken_ids = self._normalise_unit_ids(shaken_ids)
+
+        remaining = [
+            root
+            for root in list(candidates or [])
+            if self._entity_id(root) and self._entity_id(root) != target_id
+        ]
+        queued = False
+        if len(shaken_ids) < int(max_shaken) and remaining:
+            queued = self._queue_siege_regiment_creeping_barrage_roll_request(
+                game=game_obj,
+                player=owner,
+                battle_round=round_now,
+                allowed_units=remaining,
+                successful_unit_ids=shaken_ids,
+                roll_results=rolls,
+                max_shaken=int(max_shaken),
+            )
+
+        return {
+            "mode": "creeping_barrage",
+            "max_units": int(max_shaken),
+            "pending_selection": bool(queued),
+            "selected_unit_id": str(target_id or ""),
+            "roll": int(roll_value),
+            "rolls": rolls,
+            "shaken_unit_ids": list(shaken_ids),
+            "remaining_unit_ids": [self._entity_id(unit) for unit in remaining if self._entity_id(unit)],
         }
 
     def apply_siege_regiment_artillery_support_mode(

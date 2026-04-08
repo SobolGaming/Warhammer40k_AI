@@ -630,6 +630,9 @@ class AstraMilitarumStratagemMixin:
             return []
         if not self._am_has_keyword(root, "REGIMENT"):
             return []
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return []
         return [root]
 
     def _combined_arms_stalwart_protector_candidates(
@@ -3360,6 +3363,10 @@ class AstraMilitarumStratagemMixin:
             return False
         if self._am_is_alive(root):
             logger.error("ERROR: REINFORCEMENTS!: target unit must have been just destroyed")
+            return False
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            logger.error("ERROR: REINFORCEMENTS!: target unit cannot be Battle-shocked")
             return False
         eligible = candidates or self._combined_arms_reinforcements_candidates(destroyed_unit=root)
         if not eligible or root not in list(eligible or []):

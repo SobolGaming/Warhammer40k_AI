@@ -237,7 +237,7 @@ class TestAstraMilitarumSiegeRegiment(unittest.TestCase):
         self.assertFalse(bool(save_result.get("saved")))
         self.assertTrue(bool(attack_instance.get("ignores_cover")))
 
-    def test_creeping_barrage_overflow_prompts_selection_and_applies_shaken_penalties(self):
+    def test_creeping_barrage_overflow_resolves_one_unit_at_a_time_and_stops_at_cap(self):
         game, am_army, enemy_army, am_player, _enemy_player = _build_game(size=BattlefieldSize.STRIKE_FORCE)
         friendly = _make_unit("Friendly", keywords=["ASTRA MILITARUM", "INFANTRY"], faction_keywords=["ASTRA MILITARUM"])
         _set_model_location(friendly, x=0.0, y=0.0)
@@ -263,34 +263,57 @@ class TestAstraMilitarumSiegeRegiment(unittest.TestCase):
         am_army.on_battle_round_start(1)
         mode_request = _ability_requests(game, DECISION_CHOOSE_QUARRY, "siege_regiment_artillery_support_mode")[0]
         creeping_option = _choose_option(mode_request, payload_key="artillery_support_mode", payload_value="creeping_barrage")
-        with patch("warhammer40k_ai.rules.astra_militarum_detachments.get_roll", side_effect=[5, 5, 5, 5]):
+        with patch("warhammer40k_ai.rules.astra_militarum_detachments.get_roll", side_effect=[5, 5, 5, 1]):
             mode_result = resolve_decision_command(game, mode_request, creeping_option.option_id, player_id=am_player.id)
-        self.assertTrue(bool(getattr(mode_result, "ok", False)))
+            self.assertTrue(bool(getattr(mode_result, "ok", False)))
 
-        selection_request = _ability_requests(
-            game,
-            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
-            "siege_regiment_creeping_barrage_selection",
-        )[0]
-        self.assertEqual(int((selection_request.context or {}).get("required_units", 0) or 0), 3)
-        confirm = _confirm_option(selection_request)
-        selected_ids = [str(get_entity_id(unit) or "") for unit in far_enemies[:3]]
-        selection_result = resolve_decision_command(
-            game,
-            selection_request,
-            confirm.option_id,
-            result_payload={"unit_ids": selected_ids},
-            player_id=am_player.id,
-        )
-        self.assertTrue(bool(getattr(selection_result, "ok", False)))
+            chosen_order = [far_enemies[3], far_enemies[1], far_enemies[0]]
+            for idx, unit in enumerate(chosen_order, start=1):
+                requests = _ability_requests(
+                    game,
+                    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                    "siege_regiment_creeping_barrage_selection",
+                )
+                self.assertEqual(len(requests), 1)
+                selection_request = requests[0]
+                self.assertEqual(int((selection_request.context or {}).get("required_units", 0) or 0), 1)
+                confirm = _confirm_option(selection_request)
+                selection_result = resolve_decision_command(
+                    game,
+                    selection_request,
+                    confirm.option_id,
+                    result_payload={"unit_ids": [str(get_entity_id(unit) or "")]},
+                    player_id=am_player.id,
+                )
+                self.assertTrue(bool(getattr(selection_result, "ok", False)))
+                if idx < 3:
+                    self.assertEqual(
+                        len(
+                            _ability_requests(
+                                game,
+                                DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                                "siege_regiment_creeping_barrage_selection",
+                            )
+                        ),
+                        1,
+                    )
 
-        for unit in far_enemies[:3]:
+        for unit in chosen_order:
             self.assertTrue(bool(unit.special_rules.get("artillery_support_shaken_active")))
             effective_move = unit.get_effective_model_characteristic(unit.models[0], "movement")
             self.assertEqual(int(effective_move), 4)
             charge_mods = list(game.get_charge_roll_modifiers(unit, target_unit=friendly) or [])
             self.assertTrue(any(int(mod[0]) == -2 for mod in charge_mods))
-        self.assertFalse(bool(far_enemies[3].special_rules.get("artillery_support_shaken_active")))
+        self.assertFalse(
+            bool(
+                _ability_requests(
+                    game,
+                    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                    "siege_regiment_creeping_barrage_selection",
+                )
+            )
+        )
+        self.assertFalse(bool(far_enemies[2].special_rules.get("artillery_support_shaken_active")))
         self.assertFalse(bool(near_enemy.special_rules.get("artillery_support_shaken_active")))
 
         game.turn = 2

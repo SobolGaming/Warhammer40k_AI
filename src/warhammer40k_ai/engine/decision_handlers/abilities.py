@@ -799,38 +799,46 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
                     units.append(unit)
             return units
 
-        apply_fn = getattr(mgr, "apply_siege_regiment_creeping_barrage_selection", None)
-        if not callable(apply_fn):
-            raise RuntimeError("Creeping Barrage apply function is unavailable.")
-        applied_ids = list(
-            apply_fn(
+        resolve_fn = getattr(mgr, "resolve_siege_regiment_creeping_barrage_roll", None)
+        if not callable(resolve_fn):
+            raise RuntimeError("Creeping Barrage roll resolver is unavailable.")
+        outcome = dict(
+            resolve_fn(
                 unit_ids,
                 game=game,
                 player=player,
                 battle_round=battle_round,
                 allowed_unit_ids=allowed_ids,
+                successful_unit_ids=list(ctx.get("creeping_barrage_successful_unit_ids", []) or []),
+                roll_results=list(ctx.get("creeping_barrage_rolls", []) or []),
+                max_shaken=int(ctx.get("creeping_barrage_max_shaken", ctx.get("max_units", 0)) or 0),
             )
-            or []
+            or {}
         )
-        labels = []
-        for uid in list(applied_ids or []):
-            unit = resolve_unit(game, str(uid))
-            if unit is not None:
-                labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
-        if labels:
-            _log_action_for_players(
-                game,
-                player,
-                "Creeping Barrage: " + ", ".join(labels) + " are shaken until end of battle round.",
-            )
+        selected_unit = resolve_unit(game, str(outcome.get("selected_unit_id", "") or ""))
+        roll_value = int(outcome.get("roll", 0) or 0)
+        shaken_ids = {
+            str(uid or "").strip()
+            for uid in list(outcome.get("shaken_unit_ids", []) or [])
+            if str(uid or "").strip()
+        }
+        if selected_unit is not None:
+            selected_id = str(get_entity_id(selected_unit) or "")
+            if selected_id and selected_id in shaken_ids and roll_value >= 5:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Creeping Barrage: rolled {int(roll_value)} for {getattr(selected_unit, 'name', 'Unit')}; it is shaken.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Creeping Barrage: rolled {int(roll_value)} for {getattr(selected_unit, 'name', 'Unit')}; it is not shaken.",
+                )
         else:
-            _log_action_for_players(game, player, "Creeping Barrage: no units were shaken.")
-        units = []
-        for uid in list(applied_ids or []):
-            unit = resolve_unit(game, str(uid))
-            if unit is not None:
-                units.append(unit)
-        return units
+            _log_action_for_players(game, player, "Creeping Barrage: no unit selected.")
+        return [selected_unit] if selected_unit is not None else []
 
     if ability_key == "subterranean_assault_trygon_character_selection":
         player = resolve_player(game, request.player_id)

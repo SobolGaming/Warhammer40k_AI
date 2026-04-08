@@ -3332,7 +3332,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Artillery Support": (
             "Supported",
-            "Siege Regiment: at the start of each battle round, select Creeping Barrage, Incendiary Bombardment, or Smoke Shells; Creeping Barrage rolls for each eligible enemy unit more than 12\" from every friendly on-battlefield model and applies Shaken (Move -2\", Charge -2) up to battle-size caps (Incursion 2, Strike Force 3, Onslaught 4), Incendiary Bombardment selects eligible enemy units up to that cap to become Scattered (cannot have Benefit of Cover), and Smoke Shells selects friendly units up to that cap to gain Stealth until the end of the battle round.",
+            "Siege Regiment: at the start of each battle round, select Creeping Barrage, Incendiary Bombardment, or Smoke Shells; Creeping Barrage rolls against eligible enemy units more than 12\" from every friendly on-battlefield model one at a time in player-chosen order and stops once the battle-size shake cap is reached (Incursion 2, Strike Force 3, Onslaught 4), applying Shaken (Move -2\", Charge -2) on 5+, while Incendiary Bombardment selects eligible enemy units up to that cap to become Scattered (cannot have Benefit of Cover), and Smoke Shells selects friendly units up to that cap to gain Stealth until the end of the battle round.",
         ),
         "Rad-bombardment": (
             "Supported",

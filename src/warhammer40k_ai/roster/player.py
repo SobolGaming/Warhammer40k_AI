@@ -288,10 +288,7 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
                 bonus_range = int(spec.get("roll_bonus_range", 0) or 0)
             except (TypeError, ValueError):
                 bonus_range = 0
-            source_kind = str(spec.get("_cp_refund_source_kind", "") or "").strip().lower()
-            source_model_id = str(spec.get("source_model_id", "") or "").strip()
-            if source_kind == "aura":
-                source_model_id = ""
+            source_model_id = ""
             key = (
                 int(spec.get("roll_min", 0) or 0),
                 int(spec.get("cp_gain", 0) or 0),
@@ -358,6 +355,8 @@ class Player(PlayerControlMixin, PlayerResourceMixin, PlayerScoringMixin, Player
     def _maybe_apply_targeted_stratagem_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
         root = self._resolve_owned_unit_root_by_id(target_unit_id)
         if root is None:
+            return
+        if not self._unit_is_alive_or_unknown(root):
             return
         specs = self._target_unit_stratagem_cp_refund_specs(root)
         if not specs:
