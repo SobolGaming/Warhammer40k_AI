@@ -99,6 +99,12 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
         return self._player_id(current_player)
 
+    @staticmethod
+    def _clear_prefixed_special_rules(sr: dict[str, Any], prefix: str) -> None:
+        for key in list(sr.keys()):
+            if key == f"{prefix}_active" or key.startswith(f"{prefix}_"):
+                sr.pop(key, None)
+
     def _unit_is_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -825,6 +831,10 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         game_obj = game if game is not None else self._current_game()
+        self.cleanup_hammer_of_the_emperor_battle_round_effects(
+            battle_round=int(battle_round or 0),
+            game=game_obj,
+        )
         self.clear_artillery_support_effects(game=game_obj)
         if not self.is_siege_regiment():
             return
@@ -994,6 +1004,76 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
 
     def unit_is_officer(self, unit) -> bool:
         return self._unit_has_keyword(unit, "OFFICER")
+
+    def _unit_is_below_half_strength(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "is_below_half_strength", None)
+        if callable(checker):
+            return bool(checker())
+        return bool(getattr(root, "is_below_half_strength", False))
+
+    @staticmethod
+    def _weapon_profile_is_ranged(profile) -> bool:
+        if profile is None:
+            return True
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def _hammer_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_hammer_of_the_emperor():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_turn = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id != active_player_id:
+            return None, None
+        return root, sr
+
+    def _hammer_phase_effect_state(self, unit, *, prefix: str, game=None):
+        root, sr = self._hammer_turn_effect_state(unit, prefix=prefix, game=game)
+        if root is None or not isinstance(sr, dict):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None, None
+        return root, sr
+
+    def _hammer_battle_round_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_hammer_of_the_emperor():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_round = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_round = self._safe_int(sr.get(f"{prefix}_battle_round", 0) or 0, 0)
+        if marked_round and current_round and marked_round != current_round:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_owner", "") or "")
+        army_owner_id = self._player_id(getattr(self.army, "player", None))
+        if owner_id and army_owner_id and owner_id != army_owner_id:
+            return None, None
+        return root, sr
 
     def _unit_has_order(self, unit) -> bool:
         if unit is None:
@@ -1851,6 +1931,380 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             ability_cache = getattr(root, "_ability_cache", None)
             if isinstance(ability_cache, dict):
                 ability_cache.pop("selfless_protector_rule", None)
+
+    def activate_hammer_of_the_emperor_blazing_advance(
+        self,
+        unit,
+        *,
+        game=None,
+        source: str = "",
+    ) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "SQUADRON"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hammer_of_the_emperor_blazing_advance_active"] = True
+        sr["hammer_of_the_emperor_blazing_advance_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["hammer_of_the_emperor_blazing_advance_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["hammer_of_the_emperor_blazing_advance_source"] = (
+            str(source or "BLAZING ADVANCE").strip() or "BLAZING ADVANCE"
+        )
+        root.special_rules = sr
+        return True
+
+    def activate_hammer_of_the_emperor_tactical_withdrawal(
+        self,
+        unit,
+        *,
+        game=None,
+        source: str = "",
+    ) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "SQUADRON"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hammer_of_the_emperor_tactical_withdrawal_active"] = True
+        sr["hammer_of_the_emperor_tactical_withdrawal_turn"] = self._safe_int(
+            getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        sr["hammer_of_the_emperor_tactical_withdrawal_turn_owner"] = self._player_id(
+            getattr(self.army, "player", None)
+        )
+        sr["hammer_of_the_emperor_tactical_withdrawal_source"] = (
+            str(source or "TACTICAL WITHDRAWAL").strip() or "TACTICAL WITHDRAWAL"
+        )
+        root.special_rules = sr
+        return True
+
+    def can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._hammer_turn_effect_state(
+            unit,
+            prefix="hammer_of_the_emperor_blazing_advance",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        if not self._weapon_profile_is_ranged(profile):
+            return False
+        root, _sr = self._hammer_turn_effect_state(
+            unit,
+            prefix="hammer_of_the_emperor_tactical_withdrawal",
+            game=game,
+        )
+        return bool(root is not None)
+
+    def activate_hammer_of_the_emperor_crash_through(
+        self,
+        unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "VEHICLE"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = set(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+        added = set()
+        for move_type in ("move", "advance", "charge"):
+            if move_type not in current:
+                current.add(move_type)
+                added.add(move_type)
+        if current:
+            sr["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+        if added:
+            sr["hammer_of_the_emperor_crash_through_added_phase_move_terrain_only_types"] = sorted(added)
+        sr["hammer_of_the_emperor_crash_through_active"] = True
+        sr["hammer_of_the_emperor_crash_through_expires_phase"] = self._phase_key(
+            phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or ""
+        )
+        sr["hammer_of_the_emperor_crash_through_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["hammer_of_the_emperor_crash_through_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["hammer_of_the_emperor_crash_through_source"] = (
+            str(source or "CRASH THROUGH").strip() or "CRASH THROUGH"
+        )
+        root.special_rules = sr
+        return True
+
+    def activate_hammer_of_the_emperor_final_hour(
+        self,
+        unit,
+        *,
+        game=None,
+        source: str = "",
+    ) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "SQUADRON"):
+            return False
+        if self.unit_is_officer(root) or not self._unit_is_below_half_strength(root):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hammer_of_the_emperor_final_hour_active"] = True
+        sr["hammer_of_the_emperor_final_hour_battle_round"] = self._safe_int(
+            getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        sr["hammer_of_the_emperor_final_hour_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["hammer_of_the_emperor_final_hour_source"] = str(source or "FINAL HOUR").strip() or "FINAL HOUR"
+        root.special_rules = sr
+        return True
+
+    def hammer_of_the_emperor_final_hour_hazardous_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        if attacker_model is None:
+            return False, ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return False, ""
+        if weapon_profile is not None:
+            is_one_shot = getattr(weapon_profile, "is_one_shot", None)
+            if callable(is_one_shot) and bool(is_one_shot()):
+                return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._hammer_battle_round_effect_state(
+            attacker_unit,
+            prefix="hammer_of_the_emperor_final_hour",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return False, ""
+        source = str(sr.get("hammer_of_the_emperor_final_hour_source", "") or "FINAL HOUR").strip() or "FINAL HOUR"
+        return True, source
+
+    def hammer_of_the_emperor_final_hour_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None:
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._hammer_battle_round_effect_state(
+            attacker_unit,
+            prefix="hammer_of_the_emperor_final_hour",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return None
+        source = str(sr.get("hammer_of_the_emperor_final_hour_source", "") or "FINAL HOUR").strip() or "FINAL HOUR"
+        return {
+            "name": source,
+            "attack_type": "ranged",
+            "skill_kinds": {"ballistic"},
+            "allow_hit": True,
+        }
+
+    def activate_hammer_of_the_emperor_furious_cannonade(
+        self,
+        unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "SQUADRON"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hammer_of_the_emperor_furious_cannonade_active"] = True
+        sr["hammer_of_the_emperor_furious_cannonade_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["hammer_of_the_emperor_furious_cannonade_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["hammer_of_the_emperor_furious_cannonade_expires_phase"] = self._phase_key(
+            phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or ""
+        )
+        sr["hammer_of_the_emperor_furious_cannonade_ap_bonus"] = 1
+        sr["hammer_of_the_emperor_furious_cannonade_source"] = (
+            str(source or "FURIOUS CANNONADE").strip() or "FURIOUS CANNONADE"
+        )
+        root.special_rules = sr
+        return True
+
+    def hammer_of_the_emperor_furious_cannonade_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, sr = self._hammer_phase_effect_state(
+            attacker_unit,
+            prefix="hammer_of_the_emperor_furious_cannonade",
+            game=game,
+        )
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None or not isinstance(sr, dict):
+            return 0, ""
+        game_obj = game if game is not None else self._current_game()
+        distance = self._distance_between_units(root, target_root, game=game_obj)
+        if distance is None or distance > 12.0 + 1e-6:
+            return 0, ""
+        bonus = self._safe_int(sr.get("hammer_of_the_emperor_furious_cannonade_ap_bonus", 0) or 0, 0)
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("hammer_of_the_emperor_furious_cannonade_source", "") or "FURIOUS CANNONADE").strip()
+        return int(bonus), source or "FURIOUS CANNONADE"
+
+    def cleanup_hammer_of_the_emperor_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_hammer_of_the_emperor() or self.army is None:
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if bool(sr.get("hammer_of_the_emperor_crash_through_active", False)):
+                marked_round = self._safe_int(sr.get("hammer_of_the_emperor_crash_through_turn", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("hammer_of_the_emperor_crash_through_expires_phase", "") or "")
+                marked_owner = str(sr.get("hammer_of_the_emperor_crash_through_turn_owner", "") or "")
+                if (not round_now or not marked_round or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    added = set(sr.get("hammer_of_the_emperor_crash_through_added_phase_move_terrain_only_types") or [])
+                    current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                    kept = [move_type for move_type in current if move_type not in added]
+                    if kept:
+                        sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                    else:
+                        sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                    self._clear_prefixed_special_rules(sr, "hammer_of_the_emperor_crash_through")
+            if bool(sr.get("hammer_of_the_emperor_furious_cannonade_active", False)):
+                marked_round = self._safe_int(sr.get("hammer_of_the_emperor_furious_cannonade_turn", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get("hammer_of_the_emperor_furious_cannonade_expires_phase", "") or "")
+                marked_owner = str(sr.get("hammer_of_the_emperor_furious_cannonade_turn_owner", "") or "")
+                if (not round_now or not marked_round or marked_round == round_now) and (
+                    not phase_key or not marked_phase or marked_phase == phase_key
+                ) and (not owner_id or not marked_owner or marked_owner == owner_id):
+                    self._clear_prefixed_special_rules(sr, "hammer_of_the_emperor_furious_cannonade")
+            root.special_rules = sr
+
+    def cleanup_hammer_of_the_emperor_battle_round_effects(
+        self,
+        *,
+        battle_round: int = 0,
+        game=None,
+    ) -> None:
+        if not self.is_hammer_of_the_emperor() or self.army is None:
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        if round_now <= 0:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for prefix in (
+                "hammer_of_the_emperor_blazing_advance",
+                "hammer_of_the_emperor_tactical_withdrawal",
+                "hammer_of_the_emperor_crash_through",
+                "hammer_of_the_emperor_furious_cannonade",
+            ):
+                if not bool(sr.get(f"{prefix}_active", False)):
+                    continue
+                marked_turn = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+                if marked_turn and marked_turn == round_now:
+                    continue
+                if prefix == "hammer_of_the_emperor_crash_through":
+                    added = set(sr.get("hammer_of_the_emperor_crash_through_added_phase_move_terrain_only_types") or [])
+                    current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                    kept = [move_type for move_type in current if move_type not in added]
+                    if kept:
+                        sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                    else:
+                        sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                self._clear_prefixed_special_rules(sr, prefix)
+            if bool(sr.get("hammer_of_the_emperor_final_hour_active", False)):
+                marked_round = self._safe_int(sr.get("hammer_of_the_emperor_final_hour_battle_round", 0) or 0, 0)
+                if not marked_round or marked_round != round_now:
+                    self._clear_prefixed_special_rules(sr, "hammer_of_the_emperor_final_hour")
+            root.special_rules = sr
 
     def _unit_is_transport_unit(self, unit) -> bool:
         root = self._unit_root(unit)

@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 IMPLEMENTED_STRATAGEM_NAMES = {
     "AERIAL EXTRACTION",
     "A LONG LEASH",
+    "ABLATIVE PLATING",
     "ABLATIVE CARAPACE",
     "ADRENAL SURGE",
     "AGGRESSIVE ONSLAUGHT",
@@ -49,6 +50,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BELLICOSA DROP",
     "BLINDING RADIANCE",
     "BALEFUL HALO",
+    "BLAZING ADVANCE",
     "BLAZING IRE",
     "CLEANSING FLAMES",
     "BULWARK IMPERATIVE",
@@ -67,9 +69,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
+    "CRASH THROUGH",
     "CONQUERORS WITHOUT MERCY",
     "CORROSIVE VISCERA",
     "DIVINE GUIDANCE",
+    "FINAL HOUR",
     "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
@@ -415,6 +419,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FIELDS OF FIRE",
     "FIRING HOT",
     "FLEXIBLE COMMAND",
+    "FURIOUS CANNONADE",
     "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
@@ -495,6 +500,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "TACTICAL WITHDRAWAL",
     "TACTICAL MASTERY",
     "TALON STRIKE",
     "DANCE MACABRE",
@@ -886,6 +892,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "ABLATIVE PLATING",
     "AGGRESSIVE ONSLAUGHT",
     "ARDENT AUTOMATA",
     "ANTI-GRAV REPULSION",
@@ -902,6 +909,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BLAZING EARTH",
+    "BLAZING ADVANCE",
     "CALCULATED FEINT",
     "CLAIMED FOR THE DARK GODS",
     "FOCUSED HATRED",
@@ -1041,6 +1049,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SHADE PATH",
     "SPITEFUL DEMISE",
     "THIEVES OF PAIN",
+    "TACTICAL WITHDRAWAL",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "FOOLS' FLIGHT",
@@ -2235,6 +2244,7 @@ class StratagemManager(
             "MASSIVE IMPACT",
             "RELENTLESS PURSUIT",
             "PREDATORY PURSUIT",
+            "TACTICAL WITHDRAWAL",
             "MILLENNIA OF EXPERIENCE",
             "ETHEREAL PHANTASM",
             "STRANDS OF TIME",
@@ -2247,6 +2257,7 @@ class StratagemManager(
             "PREVENTATIVE PURGE",
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
+            "BLAZING ADVANCE",
             "BOUNDLESS ZEAL",
             "CRUSHED LIKE VERMIN",
             "CUNNING HUNTER",
@@ -2525,6 +2536,7 @@ class StratagemManager(
             "CLOAK AND SHADOW",
             "SPIRALLING EVASION",
             "STALWART PROTECTOR",
+            "ABLATIVE PLATING",
     "VENGEFUL SORROW",
     "THE TORCHSTAR GAMBIT",
     "VOID HARDENED",
@@ -5617,12 +5629,59 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase Reinforcements step and ASTRA MILITARUM INFANTRY in Reserves with Deep Strike"
             return result
+        if name_u == "ABLATIVE PLATING":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ABLATIVE PLATING":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            target_units = list(context.get("target_units") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            if self._hammer_ablative_plating_candidates(target_units=target_units):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your opponent's Shooting phase after enemy targets are selected, and a friendly ASTRA MILITARUM VEHICLE that was selected as a target"
+            )
+            return result
+        if name_u == "BLAZING ADVANCE":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BLAZING ADVANCE":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            unit = context.get("target_unit") or context.get("unit")
+            round_state = getattr(unit, "round_state", None) if unit is not None else None
+            if bool(getattr(round_state, "advanced_this_round", False)):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after a friendly SQUADRON unit has Advanced"
+            return result
         if name_u == "COORDINATED ACTION":
             if self._combined_arms_coordinated_action_regiment_candidates():
                 result["available"] = True
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Command phase and a friendly REGIMENT unit plus a visible friendly SQUADRON unit within 6\""
+            return result
+        if name_u == "CRASH THROUGH":
+            if self._hammer_crash_through_candidates(phase_name=phase_name):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Movement or Charge phase and a friendly ASTRA MILITARUM VEHICLE that has not yet been selected this phase"
+            )
             return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
@@ -5651,6 +5710,20 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Command phase and a friendly ASTRA MILITARUM OFFICER with Voice of Command on the battlefield"
+            return result
+        if name_u == "FINAL HOUR":
+            if self._hammer_final_hour_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly non-OFFICER SQUADRON unit that is Below Half-strength"
+            return result
+        if name_u == "FURIOUS CANNONADE":
+            if self._hammer_furious_cannonade_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a friendly SQUADRON unit that has not been selected to shoot"
             return result
         if name_u == "INSPIRED COMMAND":
             if self._combined_arms_inspired_command_officer_candidates():
@@ -5863,6 +5936,23 @@ class StratagemManager(
                     result["reason"] = None
                     return result
             result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a friendly ASTRA MILITARUM VEHICLE on the battlefield"
+            return result
+        if name_u == "TACTICAL WITHDRAWAL":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "TACTICAL WITHDRAWAL":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            unit = context.get("target_unit") or context.get("unit")
+            round_state = getattr(unit, "round_state", None) if unit is not None else None
+            if bool(getattr(round_state, "fell_back_this_round", False)):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase just after a friendly SQUADRON unit Falls Back"
             return result
         if name_u == "NO RETREAT!":
             target_unit = context.get("target_unit") or context.get("unit")
@@ -7943,12 +8033,17 @@ class StratagemManager(
             "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
             "HEIGHTENED JEALOUSY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured or after destroying an enemy)",
             "AERIAL EXTRACTION": "Target: your ASTRA MILITARUM Deep Strike unit or Valkyrie not within Engagement Range at end of opponent's Fight phase; enters Strategic Reserves",
+            "ABLATIVE PLATING": "Target: your ASTRA MILITARUM VEHICLE selected as a target after enemy shooting targets are declared; reduces incoming Damage by 1 this phase",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
+            "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
+            "CRASH THROUGH": "Target: your ASTRA MILITARUM VEHICLE not yet selected to move or charge this phase; it can move horizontally through terrain this phase",
             "FIRE AND RELOCATE": "Target: non-TITANIC ASTRA MILITARUM unit on the battlefield; can shoot after advancing this phase",
             "FIELDS OF FIRE": "Target: one friendly REGIMENT unit, one friendly SQUADRON unit, and one enemy unit; selected friendlies improve AP by 1 against that enemy this phase",
             "FIRING HOT": "Target: MILITARUM TEMPESTUS or Kasrkin unit that has not been selected to shoot this phase",
             "FLEXIBLE COMMAND": "Target: your ASTRA MILITARUM OFFICER units this Command phase; they can issue Orders to REGIMENT and SQUADRON units",
+            "FINAL HOUR": "Target: your Below Half-strength non-OFFICER SQUADRON unit; non-[ONE SHOT] ranged weapons become Hazardous and ranged attacks ignore Ballistic Skill and Hit modifiers until end of battle round",
+            "FURIOUS CANNONADE": "Target: your SQUADRON unit that has not been selected to shoot this phase; ranged attacks against targets within 12\" improve AP by 1 until end of phase",
             "INSPIRED COMMAND": "Target: one ASTRA MILITARUM OFFICER during your opponent's Command phase; issue one Voice of Command order now",
             "MORDIAN MINUTE": "Target: ASTRA MILITARUM INFANTRY unit with First Rank, Fire! Second Rank, Fire! (not shot)",
             "NO RETREAT!": "Target: ASTRA MILITARUM unit with Duty and Honour!; select controlled objective in range",
@@ -7958,6 +8053,7 @@ class StratagemManager(
             "SERVO-DESIGNATORS": "Target: ASTRA MILITARUM INFANTRY unit that just shot; choose one visible enemy unit it hit",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "STALWART PROTECTOR": "Target: your ASTRA MILITARUM VEHICLE after enemy shooting targets are selected; it grants cover to obscured friendly INFANTRY this phase",
+            "TACTICAL WITHDRAWAL": "Target: your SQUADRON unit that just Fell Back; it can shoot this turn after falling back",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
             "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
@@ -9939,6 +10035,14 @@ class StratagemManager(
             cleanup_combined = getattr(am_mgr, "cleanup_combined_arms_phase_effects", None) if am_mgr is not None else None
             if callable(cleanup_combined):
                 cleanup_combined(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
+            cleanup_hammer = getattr(am_mgr, "cleanup_hammer_of_the_emperor_phase_effects", None) if am_mgr is not None else None
+            if callable(cleanup_hammer):
+                cleanup_hammer(
                     phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
                     player=self.player,
                     game=self.game,
@@ -12241,6 +12345,8 @@ class StratagemManager(
         self._queue_houndpack_lance_move_end_reactions(unit=unit, action=action)
         self._queue_lords_of_dread_move_end_reactions(unit=unit, action=action)
         self._queue_iconoclast_fiefdom_move_end_reactions(unit=unit, action=action)
+        self._queue_hammer_blazing_advance_reactions(unit=unit, action=action)
+        self._queue_hammer_tactical_withdrawal_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -13503,6 +13609,13 @@ class StratagemManager(
             raise
         try:
             self._queue_combined_arms_stalwart_protector_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hammer_ablative_plating_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

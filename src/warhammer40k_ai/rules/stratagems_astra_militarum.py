@@ -44,6 +44,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_combined_arms", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_hammer_of_the_emperor(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_hammer_of_the_emperor", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_astra_militarum_unit(self, unit: Any) -> bool:
         root = self._am_root(unit)
         if root is None:
@@ -626,6 +631,72 @@ class AstraMilitarumStratagemMixin:
                 return []
         _ = target_units
         return self._am_battlefield_units(require_vehicle=True)
+
+    def _hammer_selected_to_act_this_phase(self, unit: Any, *, phase_name: str) -> bool:
+        root = self._am_root(unit)
+        if root is None:
+            return False
+        phase_key = str(phase_name or "").strip().lower()
+        round_state = getattr(root, "round_state", None)
+        if phase_key == "movement phase":
+            return bool(getattr(round_state, "moved_this_round", False))
+        if phase_key == "charge phase":
+            return bool(getattr(round_state, "attempted_charge_this_round", False))
+        return False
+
+    def _hammer_ablative_plating_candidates(self, *, target_units: Any = None) -> list[Any]:
+        if not self._is_hammer_of_the_emperor():
+            return []
+        eligible_ids = {
+            self._am_sort_key(unit)
+            for unit in list(self._am_battlefield_units(require_vehicle=True) or [])
+            if self._am_sort_key(unit)
+        }
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._am_root(unit)
+            if root is None:
+                continue
+            unit_id = self._am_sort_key(root)
+            if unit_id and unit_id not in eligible_ids:
+                continue
+            if (not unit_id) and root not in self._am_battlefield_units(require_vehicle=True):
+                continue
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _hammer_crash_through_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_hammer_of_the_emperor():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_vehicle=True) or []):
+            if self._hammer_selected_to_act_this_phase(root, phase_name=phase_name):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _hammer_final_hour_candidates(self) -> list[Any]:
+        if not self._is_hammer_of_the_emperor():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_squadron=True) or []):
+            if self._is_officer_unit(root):
+                continue
+            is_below_half = getattr(root, "is_below_half_strength", None)
+            if not callable(is_below_half) or not bool(is_below_half()):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _hammer_furious_cannonade_candidates(self) -> list[Any]:
+        if not self._is_hammer_of_the_emperor():
+            return []
+        return self._am_battlefield_units(require_squadron=True, require_not_shot=True)
 
     def _bridgehead_bellicosa_drop_candidates(self) -> list[Any]:
         if not self._is_bridgehead_strike():
@@ -1237,6 +1308,157 @@ class AstraMilitarumStratagemMixin:
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_hammer_ablative_plating_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None or not self._is_hammer_of_the_emperor():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._am_root(attacking_unit)
+        if attacker_root is None or self._am_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("ABLATIVE PLATING")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._hammer_ablative_plating_candidates(target_units=target_units)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "shooting_targets_selected":
+                continue
+            if reaction.get("attacking_unit") is attacker_root:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_hammer_blazing_advance_reactions(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower() != "advance" or not self._is_hammer_of_the_emperor():
+            return
+        root = self._am_root(unit)
+        if root is None or not self._am_owned_by_player(root, self.player):
+            return
+        if not self._am_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_astra_militarum_unit(root) or not self._am_has_keyword(root, "SQUADRON"):
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("BLAZING ADVANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "advance",
+        }
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_hammer_tactical_withdrawal_reactions(self, *, unit: Any, action: str) -> None:
+        if str(action or "").strip().lower() != "fall_back" or not self._is_hammer_of_the_emperor():
+            return
+        root = self._am_root(unit)
+        if root is None or not self._am_owned_by_player(root, self.player):
+            return
+        if not self._am_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_astra_militarum_unit(root) or not self._am_has_keyword(root, "SQUADRON"):
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("TACTICAL WITHDRAWAL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "fall_back",
+        }
         queue_reaction = getattr(self, "_queue_reaction", None)
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
@@ -2096,22 +2318,319 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_hammer_ablative_plating(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ABLATIVE PLATING: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ABLATIVE PLATING: not opponent's Shooting phase")
+            return False
+        vehicle_unit = kwargs.get("vehicle_unit") or kwargs.get("vehicle") or kwargs.get("unit") or kwargs.get("target_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        if vehicle_unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("ABLATIVE PLATING")
+            if pending is not None:
+                vehicle_unit = vehicle_unit or pending.get("unit") or pending.get("target_unit")
+                if not target_units:
+                    target_units = list(pending.get("target_units") or [])
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+        if vehicle_unit is None and len(candidates) == 1:
+            vehicle_unit = candidates[0]
+        vehicle_root = self._am_root(vehicle_unit)
+        if vehicle_root is None:
+            logger.error("ERROR: ABLATIVE PLATING: no vehicle unit provided")
+            return False
+        eligible = candidates or self._hammer_ablative_plating_candidates(target_units=target_units)
+        if not eligible or vehicle_root not in list(eligible or []):
+            logger.error("ERROR: ABLATIVE PLATING: selected vehicle is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=vehicle_root):
+            return False
+        entry = {
+            "value": 1,
+            "attack_type": "ranged",
+            "expires_phase": "SHOOTING_PHASE",
+            "source": str(getattr(stratagem, "name", "") or "ABLATIVE PLATING"),
+        }
+        self._append_defensive_effect(vehicle_root, "defensive_damage_reductions", entry)
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ABLATIVE PLATING: %s reduces incoming ranged attack Damage by 1 until end of phase.",
+            getattr(vehicle_root, "name", "Vehicle"),
+        )
+        return True
+
+    def _use_hammer_blazing_advance(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "movement phase":
+            logger.error("ERROR: BLAZING ADVANCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: BLAZING ADVANCE: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("BLAZING ADVANCE")
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+                kwargs.setdefault("action", pending.get("action"))
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: BLAZING ADVANCE: no SQUADRON unit provided")
+            return False
+        if str(kwargs.get("action", "") or "").strip().lower() not in ("", "advance"):
+            logger.error("ERROR: BLAZING ADVANCE: invalid trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            logger.error("ERROR: BLAZING ADVANCE: target did not Advance this turn")
+            return False
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: BLAZING ADVANCE: selected unit is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_hammer_of_the_emperor_blazing_advance", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: BLAZING ADVANCE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(activate(root, game=self.game, source=str(getattr(stratagem, "name", "") or "BLAZING ADVANCE"))):
+            logger.error("ERROR: BLAZING ADVANCE: failed to activate shoot-after-Advance")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: BLAZING ADVANCE: %s can shoot after Advancing this turn.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_hammer_crash_through(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        phase_key = phase_name.lower()
+        if phase_key not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: CRASH THROUGH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CRASH THROUGH: not your turn")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: CRASH THROUGH: no vehicle unit provided")
+            return False
+        eligible = candidates or self._hammer_crash_through_candidates(phase_name=phase_name)
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: CRASH THROUGH: selected vehicle is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_hammer_of_the_emperor_crash_through", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: CRASH THROUGH: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "CRASH THROUGH"),
+            )
+        ):
+            logger.error("ERROR: CRASH THROUGH: failed to activate movement override")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRASH THROUGH: %s can move horizontally through terrain until end of phase.",
+            getattr(root, "name", "Vehicle"),
+        )
+        return True
+
+    def _use_hammer_final_hour(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "command phase":
+            logger.error("ERROR: FINAL HOUR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FINAL HOUR: not your Command phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: FINAL HOUR: no SQUADRON unit provided")
+            return False
+        eligible = candidates or self._hammer_final_hour_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: FINAL HOUR: selected unit is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_hammer_of_the_emperor_final_hour", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: FINAL HOUR: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(activate(root, game=self.game, source=str(getattr(stratagem, "name", "") or "FINAL HOUR"))):
+            logger.error("ERROR: FINAL HOUR: failed to activate the battle-round buff")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FINAL HOUR: %s gains hazardous ranged weapons and ignores ranged hit modifiers until end of battle round.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_hammer_furious_cannonade(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "shooting phase":
+            logger.error("ERROR: FURIOUS CANNONADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FURIOUS CANNONADE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: FURIOUS CANNONADE: no SQUADRON unit provided")
+            return False
+        eligible = candidates or self._hammer_furious_cannonade_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: FURIOUS CANNONADE: selected unit is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_hammer_of_the_emperor_furious_cannonade", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: FURIOUS CANNONADE: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                phase_name=phase_name,
+                source=str(getattr(stratagem, "name", "") or "FURIOUS CANNONADE"),
+            )
+        ):
+            logger.error("ERROR: FURIOUS CANNONADE: failed to activate AP bonus")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: FURIOUS CANNONADE: %s gains AP within 12\" this phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_hammer_tactical_withdrawal(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_hammer_of_the_emperor():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip()
+        if phase_name.lower() != "movement phase":
+            logger.error("ERROR: TACTICAL WITHDRAWAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: TACTICAL WITHDRAWAL: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("TACTICAL WITHDRAWAL")
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+                kwargs.setdefault("action", pending.get("action"))
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: TACTICAL WITHDRAWAL: no SQUADRON unit provided")
+            return False
+        if str(kwargs.get("action", "") or "").strip().lower() not in ("", "fall_back"):
+            logger.error("ERROR: TACTICAL WITHDRAWAL: invalid trigger")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: TACTICAL WITHDRAWAL: target did not Fall Back this turn")
+            return False
+        if candidates and root not in list(candidates or []):
+            logger.error("ERROR: TACTICAL WITHDRAWAL: selected unit is not eligible")
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_hammer_of_the_emperor_tactical_withdrawal", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: TACTICAL WITHDRAWAL: detachment manager unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not bool(
+            activate(
+                root,
+                game=self.game,
+                source=str(getattr(stratagem, "name", "") or "TACTICAL WITHDRAWAL"),
+            )
+        ):
+            logger.error("ERROR: TACTICAL WITHDRAWAL: failed to activate shoot-after-Fall Back")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TACTICAL WITHDRAWAL: %s can shoot after Falling Back this turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_astra_militarum_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u == "ABLATIVE PLATING":
+            return self._use_hammer_ablative_plating(stratagem, **kwargs)
         if name_u == "AERIAL EXTRACTION":
             return self._use_bridgehead_aerial_extraction(stratagem, **kwargs)
         if name_u == "BELLICOSA DROP":
             return self._use_bridgehead_bellicosa_drop(stratagem, **kwargs)
+        if name_u == "BLAZING ADVANCE":
+            return self._use_hammer_blazing_advance(stratagem, **kwargs)
         if name_u == "COORDINATED ACTION":
             return self._use_combined_arms_coordinated_action(stratagem, **kwargs)
+        if name_u == "CRASH THROUGH":
+            return self._use_hammer_crash_through(stratagem, **kwargs)
         if name_u == "FIRE AND RELOCATE":
             return self._use_bridgehead_fire_and_relocate(stratagem, **kwargs)
         if name_u == "FIELDS OF FIRE":
             return self._use_combined_arms_fields_of_fire(stratagem, **kwargs)
+        if name_u == "FINAL HOUR":
+            return self._use_hammer_final_hour(stratagem, **kwargs)
         if name_u == "FIRING HOT":
             return self._use_bridgehead_firing_hot(stratagem, **kwargs)
         if name_u == "FLEXIBLE COMMAND":
             return self._use_combined_arms_flexible_command(stratagem, **kwargs)
+        if name_u == "FURIOUS CANNONADE":
+            return self._use_hammer_furious_cannonade(stratagem, **kwargs)
         if name_u == "INSPIRED COMMAND":
             return self._use_combined_arms_inspired_command(stratagem, **kwargs)
         if name_u == "ON MY POSITION":
@@ -2122,6 +2641,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_bridgehead_servo_designators(stratagem, **kwargs)
         if name_u == "STALWART PROTECTOR":
             return self._use_combined_arms_stalwart_protector(stratagem, **kwargs)
+        if name_u == "TACTICAL WITHDRAWAL":
+            return self._use_hammer_tactical_withdrawal(stratagem, **kwargs)
         if name_u == "MORDIAN MINUTE":
             return self._use_grizzled_mordian_minute(stratagem, **kwargs)
         if name_u == "NO RETREAT!":

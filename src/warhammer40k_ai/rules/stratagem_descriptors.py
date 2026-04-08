@@ -2542,6 +2542,77 @@ _COMBINED_ARMS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COMBINED_ARMS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009866002": StratagemToolDescriptor(
+        stratagem_id="000009866002",
+        name="Final Hour",
+        timing="command_phase",
+        target="below_half_strength_non_officer_squadron_unit",
+        duration="until_end_of_battle_round",
+        effect="ranged_weapons_gain_hazardous_and_ignore_ballistic_skill_and_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "grant_ranged_hazardous": True,
+            "ignore_modifiers": ["ballistic_skill", "hit_roll"],
+            "exclude_weapon_keywords_any": ["ONE SHOT"],
+        },
+    ),
+    "000009866003": StratagemToolDescriptor(
+        stratagem_id="000009866003",
+        name="Blazing Advance",
+        timing="your_movement_phase_after_friendly_advance",
+        target="squadron_unit_that_advanced",
+        duration="until_end_of_turn",
+        effect="shoot_after_advance",
+        cp_cost=1,
+        effect_params={"shoot_after_advance": True},
+    ),
+    "000009866004": StratagemToolDescriptor(
+        stratagem_id="000009866004",
+        name="Tactical Withdrawal",
+        timing="your_movement_phase_after_friendly_fall_back",
+        target="squadron_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_after_fall_back",
+        cp_cost=1,
+        effect_params={"shoot_after_fall_back": True},
+    ),
+    "000009866005": StratagemToolDescriptor(
+        stratagem_id="000009866005",
+        name="Crash Through",
+        timing="your_movement_phase_or_charge_phase",
+        target="astra_militarum_vehicle_unit_not_yet_selected_this_phase",
+        duration="until_end_of_phase",
+        effect="move_horizontally_through_terrain",
+        cp_cost=1,
+        effect_params={"applies_to_move_types": ["move", "advance", "charge"]},
+    ),
+    "000009866006": StratagemToolDescriptor(
+        stratagem_id="000009866006",
+        name="Furious Cannonade",
+        timing="shooting_phase_on_select_to_shoot",
+        target="squadron_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_ap_bonus_within_12",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1, "max_range": 12.0},
+    ),
+    "000009866007": StratagemToolDescriptor(
+        stratagem_id="000009866007",
+        name="Ablative Plating",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="astra_militarum_vehicle_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=2,
+        effect_params={"damage_reduction": 1},
+    ),
+}
+
+_HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010638007": StratagemToolDescriptor(
         stratagem_id="000010638007",
@@ -12177,6 +12248,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COMBINED_ARMS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12576,6 +12650,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _COMBINED_ARMS_STRATAGEM_BY_NAME.get(key)
+        or _HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)

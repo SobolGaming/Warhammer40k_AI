@@ -4871,6 +4871,30 @@ class WargearProfile:
                     ap_val -= int(bonus)
         except Exception:
             pass
+        try:
+            unit = attacker_unit
+            army = unit.get_parent_army() if unit is not None else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "hammer_of_the_emperor_furious_cannonade_ap_bonus", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                attack_type = "any"
+                if self.parent_wargear is not None:
+                    if callable(getattr(self.parent_wargear, "is_ranged", None)) and self.parent_wargear.is_ranged():
+                        attack_type = "ranged"
+                    elif callable(getattr(self.parent_wargear, "is_melee", None)) and self.parent_wargear.is_melee():
+                        attack_type = "melee"
+                bonus, _source = bonus_fn(
+                    attacker,
+                    target_root,
+                    attack_type=attack_type,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bonus:
+                    ap_val -= int(bonus)
+        except Exception:
+            pass
         # Death Hex: marked target suffers AP -1 for attacks by the caster's army.
         if target_root is not None and attacker_unit is not None:
             sr = getattr(target_root, "special_rules", None)
@@ -8533,6 +8557,35 @@ class WargearProfile:
                     note = f"{source_name}: [HAZARDOUS] (ranged)"
                     if note not in attack_result.attacks_special_modifiers:
                         attack_result.attacks_special_modifiers.append(note)
+        final_hour_hazardous = False
+        final_hour_source = ""
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = (
+                attacker_unit.get_parent_army()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army")
+                else None
+            )
+            am_mgr = getattr(attacker_army, "astra_militarum_detachments", None) if attacker_army is not None else None
+            hazardous_fn = (
+                getattr(am_mgr, "hammer_of_the_emperor_final_hour_hazardous_applies", None)
+                if am_mgr is not None
+                else None
+            )
+            if callable(hazardous_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                final_hour_hazardous, final_hour_source = hazardous_fn(attacker, weapon_profile=self, game=game)
+        except Exception:
+            final_hour_hazardous = False
+            final_hour_source = ""
+        if final_hour_hazardous:
+            attacker_ranged_hazardous = True
+            hazardous_active = True
+            hazardous_source_count += 1
+            source_name = str(final_hour_source or "FINAL HOUR").strip() or "FINAL HOUR"
+            note = f"{source_name}: [HAZARDOUS] (ranged)"
+            if note not in attack_result.attacks_special_modifiers:
+                attack_result.attacks_special_modifiers.append(note)
         dread_mob_manual_hazardous = False
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -10439,6 +10492,22 @@ class WargearProfile:
                 tyr_rule = None
             if isinstance(tyr_rule, dict) and tyr_rule:
                 return tyr_rule
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        final_hour_rule_fn = (
+            getattr(am_mgr, "hammer_of_the_emperor_final_hour_ignore_hit_modifiers_rule", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(final_hour_rule_fn):
+            try:
+                am_rule = final_hour_rule_fn(
+                    attacker,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                )
+            except Exception:
+                am_rule = None
+            if isinstance(am_rule, dict) and am_rule:
+                return am_rule
         necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         molecular_rule_fn = (
             getattr(necrons_mgr, "cryptek_conclave_molecular_targeting_ignore_hit_modifiers_rule", None)
