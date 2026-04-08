@@ -1,7 +1,7 @@
 import pytest
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint, TerrainArea
 from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.commands import GameCommand
@@ -274,10 +274,23 @@ def test_snapshot_roundtrip_preserves_polygon_objective_site() -> None:
         army=Army.with_detachment("Chaos Daemons", "Test"),
     )
     game = Game(Battlefield(width=60, height=44), players=[player])
+    terrain_area = TerrainArea(
+        ShapelyPolygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        area_id="terrain_area:central_ruin",
+        effect_tags=["RUINS", "OBSCURING"],
+        cover_mode="LEGACY_FEATURE_RULES",
+        obscuring=True,
+        related_feature_ids=["terrain_feature:central_ruin"],
+        layout_slot_id="layout:center_ruin",
+        metadata={"source": "test"},
+    )
+    game.map.terrain_areas = [terrain_area]
     site = ObjectiveSite.terrain_footprint(
         footprint=ShapelyPolygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
         feature_key="terrain_feature:central_ruin",
         feature_label="Central Ruin",
+        terrain_area_id=terrain_area.id,
+        layout_slot_id=terrain_area.layout_slot_id,
     )
     objective = Objective(
         name="Central Ruin Objective",
@@ -296,7 +309,12 @@ def test_snapshot_roundtrip_preserves_polygon_objective_site() -> None:
     assert loaded_site.site_kind == "TERRAIN_FOOTPRINT"
     assert loaded_site.geometry_kind == "POLYGON_FOOTPRINT"
     assert loaded_site.feature_key == "terrain_feature:central_ruin"
+    assert loaded_site.terrain_area_id == "terrain_area:central_ruin"
+    assert loaded_site.layout_slot_id == "layout:center_ruin"
     assert loaded_site.primary_score_source().score_source_id == f"score_source:objective:{loaded.map.objectives[0].id}"
+    assert len(loaded.map.terrain_areas) == 1
+    assert loaded.map.terrain_areas[0].id == "terrain_area:central_ruin"
+    assert loaded.map.terrain_areas[0].layout_slot_id == "layout:center_ruin"
     assert list(loaded_site.footprint.exterior.coords)[:4] == [
         (8.0, 8.0),
         (14.0, 8.0),

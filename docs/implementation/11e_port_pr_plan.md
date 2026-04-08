@@ -224,7 +224,7 @@ shows what is done versus what remains.
 | PR-009 | Completed | Pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`). |
 | PR-010 | Completed | Pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`). |
 | PR-011 | Completed | Pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`). |
-| PR-012 | Pending | Terrain-area runtime, serialization, and objective/layout identifier scaffolding. |
+| PR-012 | Completed | Implemented terrain-area runtime, serialization, and objective/layout identifier scaffolding on April 8, 2026. |
 | PR-013 | Pending | Hidden/detection visibility, cover abstraction, and Plunging/elevation scaffolding. |
 | PR-014 | Pending | Mission-authored terrain layouts, template shapes, and preview pack alignment. |
 | PR-015 | Pending | Release-day exactness pass. |
@@ -842,7 +842,7 @@ The project does not intend to keep supporting 10th after 11th launches.
 
 ## PR-012 — Terrain-area runtime, serialization, and objective/layout identifiers
 
-**Status:** Pending.
+**Status:** Completed on April 8, 2026.
 
 ### Goal
 Add first-class terrain-area runtime/state/descriptor objects and bind objective/layout metadata to them without activating preview terrain behavior as final canon.

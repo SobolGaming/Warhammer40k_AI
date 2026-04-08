@@ -27,10 +27,16 @@ Current site styles:
 - marker objective sites
 - terrain-footprint objective sites
 - keyed-feature objective sites
+- terrain-bound objective identifiers via `terrain_area_id` and `layout_slot_id`
 
 Default Chapter Approved missions still instantiate marker sites, but state blobs,
 descriptors, and snapshots now preserve the richer site/control/scoring split so
 terrain-footprint or keyed-feature missions can be added without reworking those schemas again.
+
+PR-012 also introduces a separate runtime `terrain_areas` collection alongside `terrain_features`.
+Explicit authored terrain areas are serialized directly, while feature-only battlefields can still
+expose provisional adapter-backed terrain areas derived from existing terrain footprints for
+descriptor/state compatibility work.
 
 ## Mission-pack compiler
 Defined in `src/warhammer40k_ai/engine/mission_selection.py`:

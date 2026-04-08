@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..battlefield.terrain_runtime import terrain_feature_type_name, terrain_runtime_kind
 from .descriptor_bundle import CompiledDescriptor, descriptor_id, iter_terrain, json_safe, safe_float
 
 
-def footprint_points(feature: object) -> list[list[float]]:
-    footprint = getattr(feature, "footprint", None)
+def footprint_points(entity: object) -> list[list[float]]:
+    footprint = getattr(entity, "footprint", None)
     exterior = getattr(footprint, "exterior", None)
     coords = list(getattr(exterior, "coords", []) or []) if exterior is not None else []
     result: list[list[float]] = []
@@ -17,7 +18,7 @@ def footprint_points(feature: object) -> list[list[float]]:
     return result
 
 
-def terrain_semantic_tags(terrain_type: str) -> list[str]:
+def terrain_feature_semantic_tags(terrain_type: str) -> list[str]:
     key = str(terrain_type or "").strip().upper()
     if key == "RUINS":
         return ["BLOCKER", "STAGING_ANCHOR", "BREACHABLE_REGION"]
@@ -34,26 +35,75 @@ def terrain_semantic_tags(terrain_type: str) -> list[str]:
     return []
 
 
-def build_terrain_descriptor_payload(feature: object) -> dict[str, Any]:
-    terrain_type_obj = getattr(feature, "terrain_type", None)
-    terrain_type = str(getattr(terrain_type_obj, "name", terrain_type_obj or "") or "")
+def terrain_area_semantic_tags(area: object) -> list[str]:
+    tags = [str(tag) for tag in list(getattr(area, "effect_tags", []) or []) if str(tag).strip()]
+    if bool(getattr(area, "obscuring", False)):
+        tags.append("OBSCURING_AREA")
+    cover_mode = str(getattr(area, "cover_mode", "") or "").strip()
+    if cover_mode:
+        tags.append(f"COVER_MODE:{cover_mode}")
+    detection_range = getattr(area, "detection_range", None)
+    if detection_range is not None:
+        tags.append("DETECTION_RANGE")
+    return sorted(set(tags))
+
+
+def build_terrain_descriptor_payload(entity: object) -> dict[str, Any]:
+    runtime_kind = terrain_runtime_kind(entity)
+    if runtime_kind == "AREA":
+        payload = {
+            "terrain_id": str(getattr(entity, "id", "") or ""),
+            "terrain_runtime_kind": "AREA",
+            "terrain_type": "TERRAIN_AREA",
+            "geometry": {
+                "footprint": footprint_points(entity),
+                "bounding_box": {},
+            },
+            "line_of_sight_semantics": {
+                "obscuring": bool(getattr(entity, "obscuring", False)),
+                "blocks_visibility_through_area": bool(getattr(entity, "obscuring", False)),
+            },
+            "cover_semantics": {
+                "provides_cover": bool(str(getattr(entity, "cover_mode", "") or "").strip()),
+                "cover_mode": str(getattr(entity, "cover_mode", "") or ""),
+            },
+            "movement_semantics": {},
+            "layer_count": 0,
+            "semantic_tags": terrain_area_semantic_tags(entity),
+            "terrain_area": {
+                "terrain_area_id": str(getattr(entity, "id", "") or ""),
+                "effect_tags": [str(tag) for tag in list(getattr(entity, "effect_tags", []) or []) if str(tag)],
+                "detection_range": getattr(entity, "detection_range", None),
+                "related_feature_ids": [
+                    str(feature_id)
+                    for feature_id in list(getattr(entity, "related_feature_ids", []) or [])
+                    if str(feature_id)
+                ],
+                "layout_slot_id": str(getattr(entity, "layout_slot_id", "") or ""),
+                "metadata": json_safe(dict(getattr(entity, "metadata", {}) or {})),
+            },
+        }
+        return json_safe(payload)
+
+    terrain_type = terrain_feature_type_name(entity)
     payload = {
-        "terrain_id": str(getattr(feature, "id", "") or ""),
+        "terrain_id": str(getattr(entity, "id", "") or ""),
+        "terrain_runtime_kind": "FEATURE",
         "terrain_type": terrain_type,
         "geometry": {
-            "footprint": footprint_points(feature),
-            "bounding_box": json_safe(dict(getattr(feature, "bounding_box", {}) or {})),
+            "footprint": footprint_points(entity),
+            "bounding_box": json_safe(dict(getattr(entity, "bounding_box", {}) or {})),
         },
         "line_of_sight_semantics": {
-            "has_walls": bool(getattr(feature, "walls", None)),
-            "has_openings": bool(getattr(feature, "openings", None)),
+            "has_walls": bool(getattr(entity, "walls", None)),
+            "has_openings": bool(getattr(entity, "openings", None)),
         },
         "cover_semantics": {
-            "provides_cover": bool(dict(getattr(feature, "traversal_rules", {}) or {}).get("provides_cover", False)),
+            "provides_cover": bool(dict(getattr(entity, "traversal_rules", {}) or {}).get("provides_cover", False)),
         },
-        "movement_semantics": json_safe(dict(getattr(feature, "traversal_rules", {}) or {})),
-        "layer_count": int(len(list(getattr(feature, "floors", []) or []))),
-        "semantic_tags": terrain_semantic_tags(terrain_type),
+        "movement_semantics": json_safe(dict(getattr(entity, "traversal_rules", {}) or {})),
+        "layer_count": int(len(list(getattr(entity, "floors", []) or []))),
+        "semantic_tags": terrain_feature_semantic_tags(terrain_type),
     }
     return json_safe(payload)
 
@@ -77,5 +127,6 @@ __all__ = [
     "build_terrain_descriptor_payload",
     "compile_terrain_descriptors",
     "footprint_points",
-    "terrain_semantic_tags",
+    "terrain_area_semantic_tags",
+    "terrain_feature_semantic_tags",
 ]

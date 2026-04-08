@@ -96,6 +96,7 @@ def rebuild_registry_from_game(registry: EntityRegistry, game: object) -> None:
     game_map = getattr(game, "map", None)
     if game_map is not None:
         registry.register_many(getattr(game_map, "terrain_features", []) or [], kind="terrain")
+        registry.register_many(getattr(game_map, "terrain_areas", []) or [], kind="terrain_area")
         objectives = list(getattr(game_map, "objectives", []) or [])
         registry.register_many(objectives, kind="objective")
         for obj in objectives:

@@ -5,6 +5,8 @@ import hashlib
 import json
 from typing import Any
 
+from ..battlefield.terrain_runtime import iter_runtime_terrain
+
 
 def safe_float(value: object, default: float = 0.0) -> float:
     try:
@@ -65,9 +67,7 @@ def iter_objectives(game: object) -> list[object]:
 
 
 def iter_terrain(game: object) -> list[object]:
-    game_map = getattr(game, "map", None)
-    terrain = list(getattr(game_map, "terrain_features", []) or [])
-    return sorted(terrain, key=lambda feature: str(getattr(feature, "id", "") or ""))
+    return list(iter_runtime_terrain(game))
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,7 @@ from shapely.affinity import scale, translate
 from typing import Union
 from .map_geometry import battlefield_edge_repulsors, create_boundary_polygon as build_boundary_polygon
 from .objective_sites import Objective, ObjectiveCategory, ObjectivePoint
-from .terrain_runtime import TerrainFeature, TerrainType
+from .terrain_runtime import TerrainArea, TerrainFeature, TerrainType
 from ..utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class Map:
         self.height = height
         self.boundary = self.create_boundary_polygon()
         self.terrain_features: List['TerrainFeature'] = []
+        self.terrain_areas: List['TerrainArea'] = []
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
@@ -76,6 +77,14 @@ class Map:
     def add_terrain_features(self, terrain_features: List['TerrainFeature']) -> None:
         """Add multiple terrain features."""
         self.terrain_features.extend(terrain_features)
+
+    def add_terrain_area(self, terrain_area: 'TerrainArea') -> None:
+        """Add terrain area."""
+        self.terrain_areas.append(terrain_area)
+
+    def add_terrain_areas(self, terrain_areas: List['TerrainArea']) -> None:
+        """Add multiple terrain areas."""
+        self.terrain_areas.extend(terrain_areas)
 
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)

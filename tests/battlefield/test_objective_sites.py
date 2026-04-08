@@ -81,6 +81,8 @@ def test_marker_objective_site_binds_control_region_and_score_source_ids() -> No
 def test_terrain_footprint_objective_site_uses_polygon_control_region() -> None:
     site = ObjectiveSite.terrain_footprint(
         footprint=Polygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        terrain_area_id="terrain_area:central_ruin",
+        layout_slot_id="layout:center_ruin",
         metadata={"fixture": "terrain_footprint"},
     )
     objective = Objective(
@@ -98,7 +100,11 @@ def test_terrain_footprint_objective_site_uses_polygon_control_region() -> None:
 
     assert site.controlling_player is player
     assert entry["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert entry["geometry"]["terrain_area_id"] == "terrain_area:central_ruin"
+    assert entry["geometry"]["layout_slot_id"] == "layout:center_ruin"
     assert entry["control_region"]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
+    assert entry["control_region"]["terrain_area_id"] == "terrain_area:central_ruin"
+    assert entry["control_region"]["layout_slot_id"] == "layout:center_ruin"
     assert "footprint" in entry["geometry"]
 
 

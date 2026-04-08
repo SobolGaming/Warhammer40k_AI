@@ -15,6 +15,7 @@ This lets the engine represent:
 - traditional circular marker objectives
 - terrain-footprint objectives
 - keyed-feature objectives that resolve against a battlefield feature at runtime
+- objective bindings to authored terrain-area IDs and mission layout slots
 
 ## Runtime modules
 
@@ -51,5 +52,13 @@ State blobs, descriptors, and snapshots now preserve:
 - sticky-control minimum Level of Control floors
 - optional footprint geometry
 - optional keyed-feature references
+- optional `terrain_area_id` bindings
+- optional `layout_slot_id` bindings
 
-This is the architectural seam PR-012 will use when final 11th objective semantics land.
+PR-012 also extends the runtime to preserve terrain/layout identity without activating preview-only objective/terrain behavior as final rules. A site can now point at:
+
+- `feature_key` / `feature_label`
+- `terrain_area_id`
+- `layout_slot_id`
+
+This keeps current marker and footprint semantics intact while giving later terrain/objective work a stable authored reference instead of guessing from feature labels.

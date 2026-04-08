@@ -4,7 +4,7 @@ import json
 
 from shapely.geometry import Polygon
 
-from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, TerrainArea, TerrainFeature, TerrainType
 from warhammer40k_ai.battlefield.objective_sites import ObjectiveSite
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.game import Game
@@ -117,7 +117,7 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
     observed = player_obs_state(game, player.id)
     army_build = dict(omniscient.get("army_build_state", {}) or {})
 
-    assert str(omniscient.get("state_blob_version", "") or "") == "1.3.0"
+    assert str(omniscient.get("state_blob_version", "") or "") == "1.4.0"
     assert army_build["army_build_descriptor_id"].startswith("army_build_descriptor:")
     assert army_build["players"][0]["primary_detachment_type"] == "Gladius Task Force"
     assert army_build["players"][0]["detachment_points_summary"] == {
@@ -132,10 +132,31 @@ def test_state_blob_includes_army_build_state_and_descriptor_id() -> None:
 def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> None:
     player = Player("P1", army=Army.with_detachment("Chaos Daemons", "Test"))
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    feature = TerrainFeature(
+        TerrainType.RUINS,
+        Polygon([(10.0, 10.0), (16.0, 10.0), (16.0, 16.0), (10.0, 16.0)]),
+        bounding_box={"min": (10.0, 10.0, 0.0), "max": (16.0, 16.0, 6.0)},
+        traversal_rules={"provides_cover": True},
+    )
+    feature._id = "terrain_feature:central_ruin"
+    terrain_area = TerrainArea(
+        Polygon([(10.0, 10.0), (16.0, 10.0), (16.0, 16.0), (10.0, 16.0)]),
+        area_id="terrain_area:central_ruin",
+        effect_tags=["RUINS", "OBSCURING"],
+        cover_mode="LEGACY_FEATURE_RULES",
+        obscuring=True,
+        related_feature_ids=[feature.id],
+        layout_slot_id="layout:center_ruin",
+        metadata={"source": "test"},
+    )
+    game.map.terrain_features = [feature]
+    game.map.terrain_areas = [terrain_area]
     site = ObjectiveSite.terrain_footprint(
         footprint=Polygon([(10.0, 10.0), (16.0, 10.0), (16.0, 16.0), (10.0, 16.0)]),
-        feature_key="terrain_feature:central_ruin",
+        feature_key=feature.id,
         feature_label="Central Ruin",
+        terrain_area_id=terrain_area.id,
+        layout_slot_id=terrain_area.layout_slot_id,
     )
     objective = Objective(
         name="Central Ruin Objective",
@@ -152,8 +173,38 @@ def test_state_blob_includes_polygon_objective_sites_and_score_surfaces() -> Non
 
     state = canonical_omniscient_state(game)
 
-    assert str(state.get("state_blob_version", "") or "") == "1.3.0"
+    terrain_entries = {entry["terrain_id"]: entry for entry in state["terrain"]}
+
+    assert str(state.get("state_blob_version", "") or "") == "1.4.0"
     assert state["objectives"][0]["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert state["objectives"][0]["geometry"]["terrain_area_id"] == terrain_area.id
+    assert state["objectives"][0]["geometry"]["layout_slot_id"] == "layout:center_ruin"
     assert state["objectives"][0]["sticky_minimum_control"] == 5
     assert state["control_regions"][0]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
+    assert state["control_regions"][0]["terrain_area_id"] == terrain_area.id
+    assert state["control_regions"][0]["layout_slot_id"] == "layout:center_ruin"
     assert state["scoring_surfaces"][0]["score_source_id"] == f"score_source:objective:{objective.id}"
+    assert terrain_entries[feature.id]["runtime_kind"] == "FEATURE"
+    assert terrain_entries[terrain_area.id]["runtime_kind"] == "AREA"
+    assert terrain_entries[terrain_area.id]["layout_slot_id"] == "layout:center_ruin"
+    assert terrain_entries[terrain_area.id]["related_feature_ids"] == [feature.id]
+
+
+def test_state_blob_derives_provisional_terrain_area_from_feature_only_maps() -> None:
+    player = Player("P1", army=Army.with_detachment("Chaos Daemons", "Test"))
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    feature = TerrainFeature(
+        TerrainType.RUINS,
+        Polygon([(4.0, 4.0), (8.0, 4.0), (8.0, 8.0), (4.0, 8.0)]),
+        bounding_box={"min": (4.0, 4.0, 0.0), "max": (8.0, 8.0, 6.0)},
+        traversal_rules={"provides_cover": True},
+    )
+    feature._id = "terrain_feature:adapter_source"
+    game.map.terrain_features = [feature]
+
+    state = canonical_omniscient_state(game)
+    terrain_entries = {entry["terrain_id"]: entry for entry in state["terrain"]}
+
+    assert "terrain_area:feature:terrain_feature:adapter_source" in terrain_entries
+    assert terrain_entries["terrain_area:feature:terrain_feature:adapter_source"]["runtime_kind"] == "AREA"
+    assert terrain_entries["terrain_area:feature:terrain_feature:adapter_source"]["metadata"]["adapter_kind"] == "feature_footprint"

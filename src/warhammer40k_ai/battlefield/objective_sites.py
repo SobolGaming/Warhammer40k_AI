@@ -69,6 +69,8 @@ class ControlRegion:
     footprint: Polygon | None = None
     feature_key: str = ""
     feature_label: str = ""
+    terrain_area_id: str = ""
+    layout_slot_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def centroid(self, *, game_state: object | None = None) -> tuple[float, float, float]:
@@ -95,6 +97,10 @@ class ControlRegion:
             entry["feature_key"] = str(self.feature_key)
         if self.feature_label:
             entry["feature_label"] = str(self.feature_label)
+        if self.terrain_area_id:
+            entry["terrain_area_id"] = str(self.terrain_area_id)
+        if self.layout_slot_id:
+            entry["layout_slot_id"] = str(self.layout_slot_id)
         return entry
 
 
@@ -112,6 +118,8 @@ class ObjectiveSite:
         self.footprint: Polygon | None = None
         self.feature_key = ""
         self.feature_label = ""
+        self.terrain_area_id = ""
+        self.layout_slot_id = ""
         self.metadata: dict[str, Any] = {}
         self.controlling_player = None
         self.terraformed_by = None
@@ -167,6 +175,8 @@ class ObjectiveSite:
         z: float = 0.0,
         feature_key: str | None = None,
         feature_label: str | None = None,
+        terrain_area_id: str | None = None,
+        layout_slot_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> "ObjectiveSite":
         centroid = footprint.centroid
@@ -177,6 +187,8 @@ class ObjectiveSite:
         site.footprint = footprint
         site.feature_key = str(feature_key or "")
         site.feature_label = str(feature_label or "")
+        site.terrain_area_id = str(terrain_area_id or "")
+        site.layout_slot_id = str(layout_slot_id or "")
         site.metadata = dict(metadata or {})
         site.control_region = ControlRegion(
             region_id=f"region:site:{site.id}",
@@ -188,6 +200,8 @@ class ObjectiveSite:
             footprint=footprint,
             feature_key=site.feature_key,
             feature_label=site.feature_label,
+            terrain_area_id=site.terrain_area_id,
+            layout_slot_id=site.layout_slot_id,
         )
         site.score_sources = [
             ScoreSource(
@@ -210,6 +224,8 @@ class ObjectiveSite:
         control_radius: float = 0.0,
         fallback_footprint: Polygon | None = None,
         feature_label: str | None = None,
+        terrain_area_id: str | None = None,
+        layout_slot_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> "ObjectiveSite":
         if fallback_footprint is not None:
@@ -223,6 +239,8 @@ class ObjectiveSite:
         site.footprint = fallback_footprint
         site.feature_key = str(feature_key or "")
         site.feature_label = str(feature_label or "")
+        site.terrain_area_id = str(terrain_area_id or "")
+        site.layout_slot_id = str(layout_slot_id or "")
         site.metadata = dict(metadata or {})
         site.control_region = ControlRegion(
             region_id=f"region:site:{site.id}",
@@ -234,6 +252,8 @@ class ObjectiveSite:
             footprint=fallback_footprint,
             feature_key=site.feature_key,
             feature_label=site.feature_label,
+            terrain_area_id=site.terrain_area_id,
+            layout_slot_id=site.layout_slot_id,
         )
         site.score_sources = [
             ScoreSource(
@@ -298,6 +318,8 @@ class ObjectiveSite:
             "control_radius": float(self.control_radius or 0.0),
             "feature_key": str(self.feature_key or ""),
             "feature_label": str(self.feature_label or ""),
+            "terrain_area_id": str(self.terrain_area_id or ""),
+            "layout_slot_id": str(self.layout_slot_id or ""),
         }
         footprint = serialize_polygon_geometry(self.footprint)
         if footprint is not None:

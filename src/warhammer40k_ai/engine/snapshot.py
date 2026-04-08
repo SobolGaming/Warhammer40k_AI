@@ -25,6 +25,7 @@ from ..battlefield.map import (
     ObjectiveCategory,
     ObjectivePoint,
     RuinsTerrain,
+    TerrainArea,
     TerrainFeature,
     TerrainType,
     WoodsTerrain,
@@ -592,6 +593,8 @@ def _serialize_objective_point(point: ObjectivePoint) -> dict:
         "geometry_kind": str(getattr(point, "geometry_kind", "MARKER") or "MARKER"),
         "feature_key": str(getattr(point, "feature_key", "") or ""),
         "feature_label": str(getattr(point, "feature_label", "") or ""),
+        "terrain_area_id": str(getattr(point, "terrain_area_id", "") or ""),
+        "layout_slot_id": str(getattr(point, "layout_slot_id", "") or ""),
         "footprint": _serialize_polygon(getattr(point, "footprint", None)),
         "control_region": {
             "region_id": str(getattr(getattr(point, "control_region", None), "region_id", "") or ""),
@@ -603,6 +606,8 @@ def _serialize_objective_point(point: ObjectivePoint) -> dict:
             "footprint": _serialize_polygon(getattr(getattr(point, "control_region", None), "footprint", None)),
             "feature_key": str(getattr(getattr(point, "control_region", None), "feature_key", "") or ""),
             "feature_label": str(getattr(getattr(point, "control_region", None), "feature_label", "") or ""),
+            "terrain_area_id": str(getattr(getattr(point, "control_region", None), "terrain_area_id", "") or ""),
+            "layout_slot_id": str(getattr(getattr(point, "control_region", None), "layout_slot_id", "") or ""),
             "metadata": encode_refs(dict(getattr(getattr(point, "control_region", None), "metadata", {}) or {})),
         },
         "score_sources": [
@@ -644,6 +649,8 @@ def _deserialize_objective_point(data: dict) -> ObjectivePoint:
             z=_from_fixed(data.get("z", 0)),
             feature_key=str(data.get("feature_key", "") or ""),
             feature_label=str(data.get("feature_label", "") or ""),
+            terrain_area_id=str(data.get("terrain_area_id", "") or ""),
+            layout_slot_id=str(data.get("layout_slot_id", "") or ""),
             metadata=decode_refs(data.get("metadata", {}) or {}, EntityRegistry()),
         )
     elif site_kind == "KEYED_FEATURE":
@@ -655,6 +662,8 @@ def _deserialize_objective_point(data: dict) -> ObjectivePoint:
             control_radius=_from_fixed(data.get("control_radius", 0)),
             fallback_footprint=footprint,
             feature_label=str(data.get("feature_label", "") or ""),
+            terrain_area_id=str(data.get("terrain_area_id", "") or ""),
+            layout_slot_id=str(data.get("layout_slot_id", "") or ""),
             metadata=decode_refs(data.get("metadata", {}) or {}, EntityRegistry()),
         )
     else:
@@ -670,6 +679,8 @@ def _deserialize_objective_point(data: dict) -> ObjectivePoint:
     point.geometry_kind = str(data.get("geometry_kind", getattr(point, "geometry_kind", "MARKER")) or "MARKER")
     point.feature_key = str(data.get("feature_key", getattr(point, "feature_key", "")) or "")
     point.feature_label = str(data.get("feature_label", getattr(point, "feature_label", "")) or "")
+    point.terrain_area_id = str(data.get("terrain_area_id", getattr(point, "terrain_area_id", "")) or "")
+    point.layout_slot_id = str(data.get("layout_slot_id", getattr(point, "layout_slot_id", "")) or "")
     point.footprint = footprint
     control_region_data = dict(data.get("control_region", {}) or {})
     if getattr(point, "control_region", None) is not None:
@@ -685,6 +696,14 @@ def _deserialize_objective_point(data: dict) -> ObjectivePoint:
         point.control_region.footprint = _deserialize_polygon(control_region_data.get("footprint")) or footprint
         point.control_region.feature_key = str(control_region_data.get("feature_key", getattr(point.control_region, "feature_key", "")) or "")
         point.control_region.feature_label = str(control_region_data.get("feature_label", getattr(point.control_region, "feature_label", "")) or "")
+        point.control_region.terrain_area_id = str(
+            control_region_data.get("terrain_area_id", getattr(point.control_region, "terrain_area_id", ""))
+            or ""
+        )
+        point.control_region.layout_slot_id = str(
+            control_region_data.get("layout_slot_id", getattr(point.control_region, "layout_slot_id", ""))
+            or ""
+        )
         point.control_region.metadata = decode_refs(control_region_data.get("metadata", {}) or {}, EntityRegistry())
     point.score_sources = [
         ScoreSource(
@@ -812,6 +831,49 @@ def _serialize_terrain_feature(feature: TerrainFeature) -> dict:
     return base
 
 
+def _serialize_terrain_area(area: TerrainArea) -> dict:
+    return {
+        "id": get_entity_id(area),
+        "footprint": _serialize_polygon(getattr(area, "footprint", None)),
+        "effect_tags": sorted(str(tag) for tag in list(getattr(area, "effect_tags", []) or []) if str(tag)),
+        "detection_range": None
+        if getattr(area, "detection_range", None) is None
+        else _to_fixed(getattr(area, "detection_range", 0.0)),
+        "cover_mode": str(getattr(area, "cover_mode", "") or ""),
+        "obscuring": bool(getattr(area, "obscuring", False)),
+        "related_feature_ids": sorted(
+            str(feature_id)
+            for feature_id in list(getattr(area, "related_feature_ids", []) or [])
+            if str(feature_id)
+        ),
+        "layout_slot_id": str(getattr(area, "layout_slot_id", "") or ""),
+        "metadata": encode_refs(dict(getattr(area, "metadata", {}) or {})),
+    }
+
+
+def _deserialize_terrain_area(data: dict) -> TerrainArea:
+    detection_range = data.get("detection_range", None)
+    return TerrainArea(
+        _deserialize_polygon(data.get("footprint")),
+        area_id=str(data.get("id", "") or ""),
+        effect_tags=[
+            str(tag)
+            for tag in list(data.get("effect_tags", []) or [])
+            if str(tag).strip()
+        ],
+        detection_range=None if detection_range is None else _from_fixed(detection_range),
+        cover_mode=str(data.get("cover_mode", "") or ""),
+        obscuring=bool(data.get("obscuring", False)),
+        related_feature_ids=[
+            str(feature_id)
+            for feature_id in list(data.get("related_feature_ids", []) or [])
+            if str(feature_id).strip()
+        ],
+        layout_slot_id=str(data.get("layout_slot_id", "") or ""),
+        metadata=decode_refs(data.get("metadata", {}) or {}, EntityRegistry()),
+    )
+
+
 def _deserialize_terrain_feature(data: dict) -> TerrainFeature:
     terrain_type = TerrainType[str(data.get("terrain_type"))]
     footprint = _deserialize_polygon(data.get("footprint"))
@@ -910,6 +972,7 @@ def _serialize_map(game_map) -> dict:
             "width": 0,
             "height": 0,
             "terrain_features": [],
+            "terrain_areas": [],
             "objective_points": [],
             "objectives": [],
             "deployment_zones": {},
@@ -925,6 +988,7 @@ def _serialize_map(game_map) -> dict:
         "width": int(getattr(game_map, "width", 0)),
         "height": int(getattr(game_map, "height", 0)),
         "terrain_features": [_serialize_terrain_feature(t) for t in list(getattr(game_map, "terrain_features", []) or [])],
+        "terrain_areas": [_serialize_terrain_area(t) for t in list(getattr(game_map, "terrain_areas", []) or [])],
         "objective_points": [_serialize_objective_point(p) for p in objective_points],
         "objectives": [_serialize_objective(o) for o in objectives],
         "deployment_zones": _serialize_deployment_zones(getattr(game_map, "deployment_zones", {}) or {}),
@@ -1578,6 +1642,7 @@ def load_game_snapshot(snapshot: dict) -> Game:
 
     game.map = Map(int(map_data.get("width", 0) or 0), int(map_data.get("height", 0) or 0))
     game.map.terrain_features = [_deserialize_terrain_feature(t) for t in map_data.get("terrain_features", []) or []]
+    game.map.terrain_areas = [_deserialize_terrain_area(t) for t in map_data.get("terrain_areas", []) or []]
 
     point_objs = {}
     for pdata in map_data.get("objective_points", []) or []:

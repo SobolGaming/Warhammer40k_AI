@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from shapely.geometry import Polygon
 
-from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, TerrainArea, TerrainFeature, TerrainType
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
@@ -201,10 +201,30 @@ def test_record_resolution_without_context_uses_compiled_descriptor_ids() -> Non
 
 def test_descriptor_compiler_emits_polygon_objective_site_semantics() -> None:
     game, _player = _build_game()
+    feature = TerrainFeature(
+        TerrainType.RUINS,
+        Polygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        bounding_box={"min": (8.0, 8.0, 0.0), "max": (14.0, 14.0, 6.0)},
+        traversal_rules={"provides_cover": True},
+    )
+    feature._id = "terrain_feature:test"
+    terrain_area = TerrainArea(
+        Polygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
+        area_id="terrain_area:test",
+        effect_tags=["RUINS", "OBSCURING"],
+        cover_mode="LEGACY_FEATURE_RULES",
+        obscuring=True,
+        related_feature_ids=[feature.id],
+        layout_slot_id="layout:center_ruin",
+    )
+    game.map.terrain_features = [feature]
+    game.map.terrain_areas = [terrain_area]
     site = ObjectiveSite.terrain_footprint(
         footprint=Polygon([(8.0, 8.0), (14.0, 8.0), (14.0, 14.0), (8.0, 14.0)]),
-        feature_key="terrain_feature:test",
+        feature_key=feature.id,
         feature_label="Central Ruin",
+        terrain_area_id=terrain_area.id,
+        layout_slot_id=terrain_area.layout_slot_id,
     )
     objective = Objective(
         name="Central Ruin Objective",
@@ -219,9 +239,44 @@ def test_descriptor_compiler_emits_polygon_objective_site_semantics() -> None:
 
     bundle = compile_descriptor_bundle(game)
     objective_payload = bundle.objective_descriptors[0].payload
+    terrain_payloads = {descriptor.payload["terrain_id"]: descriptor.payload for descriptor in bundle.terrain_descriptors}
 
     assert objective_payload["site_kind"] == "TERRAIN_FOOTPRINT"
     assert objective_payload["geometry"]["kind"] == "POLYGON_FOOTPRINT"
+    assert objective_payload["geometry"]["terrain_area_id"] == terrain_area.id
+    assert objective_payload["geometry"]["layout_slot_id"] == "layout:center_ruin"
     assert objective_payload["control_region"]["kind"] == "OBJECTIVE_CONTROL_FOOTPRINT"
     assert objective_payload["score_source_bindings"] == [f"score_source:objective:{objective.id}"]
     assert bundle.mission_descriptor.payload["primary_scoring_sources"] == [f"score_source:objective:{objective.id}"]
+    assert terrain_payloads[feature.id]["terrain_runtime_kind"] == "FEATURE"
+    assert terrain_payloads[terrain_area.id]["terrain_runtime_kind"] == "AREA"
+    assert terrain_payloads[terrain_area.id]["terrain_area"]["layout_slot_id"] == "layout:center_ruin"
+
+
+def test_descriptor_compiler_is_deterministic_when_terrain_areas_are_present() -> None:
+    game, _player = _build_game()
+    feature = TerrainFeature(
+        TerrainType.RUINS,
+        Polygon([(20.0, 20.0), (26.0, 20.0), (26.0, 26.0), (20.0, 26.0)]),
+        bounding_box={"min": (20.0, 20.0, 0.0), "max": (26.0, 26.0, 6.0)},
+        traversal_rules={"provides_cover": True},
+    )
+    feature._id = "terrain_feature:deterministic"
+    game.map.terrain_features = [feature]
+    game.map.terrain_areas = [
+        TerrainArea(
+            Polygon([(20.0, 20.0), (26.0, 20.0), (26.0, 26.0), (20.0, 26.0)]),
+            area_id="terrain_area:deterministic",
+            effect_tags=["RUINS", "OBSCURING"],
+            cover_mode="LEGACY_FEATURE_RULES",
+            obscuring=True,
+            related_feature_ids=[feature.id],
+            layout_slot_id="layout:deterministic",
+        )
+    ]
+
+    first = compile_descriptor_bundle(game)
+    second = compile_descriptor_bundle(game)
+
+    assert first.bundle_id == second.bundle_id
+    assert first.descriptor_ids()["terrain_descriptor_ids"] == second.descriptor_ids()["terrain_descriptor_ids"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-STATE_BLOB_VERSION = "1.3.0"
+STATE_BLOB_VERSION = "1.4.0"
 
 
 def safe_int(value: object, default: int = 0) -> int:

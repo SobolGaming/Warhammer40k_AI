@@ -23,12 +23,14 @@ Top-level fields:
 
 Design notes:
 - Terrain geometry and terrain semantics are public and versioned.
+- `terrain` entries can now represent both terrain features and terrain areas via `runtime_kind`.
 - Objective markers and score sources are distinct concepts when the active mission pack requires that split.
 - Objective entries now carry:
   - site geometry (`MARKER`, `POLYGON_FOOTPRINT`, or `KEYED_FEATURE`)
   - an explicit primary `control_region`
   - one or more explicit `score_sources`
   - sticky-control metadata including any minimum Level of Control floor
+  - optional `terrain_area_id` / `layout_slot_id` bindings
 - `army_build_state` carries public army-construction semantics plus the active `army_build_descriptor_id`.
 - `army_build_state.players[*].detachment_points_summary.spent` is always present, while `budget` / `remaining` may be `null` until the roster has an authored detachment-point budget.
 - The state must preserve enough structure for descriptor recompilation and cross-version relabeling.
@@ -50,3 +52,4 @@ Derived deterministic feature examples:
 Version notes:
 - `1.2.0` adds explicit objective-site geometry/control/scoring payloads for terrain-footprint and keyed-feature objective support.
 - `1.3.0` adds persisted objective sticky-control minimum Level of Control support.
+- `1.4.0` adds terrain-area entries, explicit terrain/runtime kind tagging, and objective/layout terrain-area identifiers.
