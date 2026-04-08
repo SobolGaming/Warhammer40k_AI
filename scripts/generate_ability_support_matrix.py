@@ -1669,7 +1669,7 @@ def _cp_on_destroy_sentence(sentence: str) -> Optional[dict]:
         r"each time (?:this model|this unit|this models unit) destroys an? (?:enemy )?"
         r"(?P<kw>character|epic hero|monster|vehicle|psyker)? ?(?:model|unit)? you gain (?P<cp>\d+) ?cp"
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.search(pattern, norm)
     if not m:
         return None
     kw = m.group("kw")
@@ -8572,7 +8572,7 @@ def _contains_keyword_objective_cover_support(description: str) -> Optional[Tupl
         r"if this unit is within range of an objective marker(?P<controlled> you control)? "
         r"models in this unit have the benefit of cover(?: against that attack)?"
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.search(pattern, norm)
     if not m:
         return None
     keyword = str(m.group("keyword") or "").strip().upper()
@@ -10377,17 +10377,17 @@ def _obscuring_model_cover_support(description: str) -> Optional[Tuple[str, str]
         return None
     pattern = (
         r"each time a ranged attack is allocated to (?:an? )?(?:(?P<target>[a-z0-9 ]+?) )?model from your army "
-        r"if that model is not fully visible to every model in the attacking unit because of this (?P<source>[a-z0-9 ]+) model "
+        r"if that model is not fully visible to every model in the attacking unit because of (?:(?:this|your) )?(?P<source>[a-z0-9 ]+?)(?: model)? "
         r"that model has the benefit of cover(?: and a (?P<inv>\d+) invulnerable save)? against that attack"
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.search(pattern, norm)
     if not m:
         return None
     target = str(m.group("target") or "").strip().upper()
     source = str(m.group("source") or "Model").strip().upper()
     inv = str(m.group("inv") or "").strip()
     target_text = f"{target} model" if target else "friendly model"
-    note = f"Model-obscuring cover: {target_text}s obscured by this {source} model gain Benefit of Cover against ranged attacks."
+    note = f"Model-obscuring cover: {target_text}s obscured by this {source} gain Benefit of Cover against ranged attacks."
     if inv:
         note = note[:-1] + f" and a {inv}+ invulnerable save."
     return ("Supported", note)
@@ -20485,8 +20485,12 @@ def _stratagem_support(
         "MORDIAN MINUTE": "Shooting phase: ASTRA MILITARUM INFANTRY with First Rank, Fire! Second Rank, Fire! (not yet shot) gains +1 Strength on ranged attacks this phase.",
         "AERIAL EXTRACTION": "End of opponent Fight phase: selected ASTRA MILITARUM unit with Deep Strike, or a Valkyrie, that is not within Engagement Range enters Strategic Reserves.",
         "BELLICOSA DROP": "Movement phase Reinforcements step: selected ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike can be set up more than 6\" horizontally from enemy units this phase and cannot declare a charge this turn.",
+        "COORDINATED ACTION": "Start of any phase: select one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; until end of phase, Orders affecting either selected unit affect the other as well.",
         "FIRE AND RELOCATE": "Shooting phase: selected non-TITANIC ASTRA MILITARUM unit on the battlefield can shoot after Advancing until end of phase.",
+        "FIELDS OF FIRE": "Your Shooting phase: select one friendly REGIMENT unit and one friendly SQUADRON unit that have not shot plus one enemy unit; selected friendly units improve AP by 1 against that enemy until end of phase.",
         "FIRING HOT": "Shooting phase: selected MILITARUM TEMPESTUS or Kasrkin unit that has not yet shot improves the Strength and AP of listed hot-shot ranged weapons by 1 against targets within 12\" until end of phase.",
+        "FLEXIBLE COMMAND": "Your Command phase: selected ASTRA MILITARUM OFFICER units can issue Orders to REGIMENT units and SQUADRON units until end of phase.",
+        "INSPIRED COMMAND": "Opponent Command phase: selected ASTRA MILITARUM OFFICER issues one Voice of Command order immediately as if it were your Command phase.",
         "AGGRESSOR IMPERATIVE": "Movement phase: selected SKITARII unit that has not been selected to move treats its Advance distance this phase as a fixed +6\"; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move to gain the same effect.",
         "BALEFUL HALO": "Fight phase reaction after enemy targets are selected: selected non-VEHICLE ADEPTUS MECHANICUS unit imposes -1 to Wound rolls for attacks that target it this turn; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "BULWARK IMPERATIVE": "Opponent Shooting phase reaction after enemy targets are selected: selected SKITARII unit gains a 4+ invulnerable save this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
@@ -20497,8 +20501,10 @@ def _stratagem_support(
         "ON MY POSITION": "End of opponent Fight phase: selected REGIMENT INFANTRY unit within Engagement Range rolls one D6 for each engaged enemy unit, dealing D6 mortal wounds on each 2+, then suffers 3D3 mortal wounds.",
         "PRE-CALIBRATED PURGE SOLUTION": "Shooting phase: selected ADEPTUS MECHANICUS unit not yet selected to shoot re-rolls ranged Hit rolls against enemy units in the opponent deployment zone this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "PURGING FIRE": "Shooting phase: ordered ASTRA MILITARUM unit within objective range (not yet shot) gains Lethal Hits on ranged attacks this phase.",
+        "REINFORCEMENTS!": "Any phase: a friendly INFANTRY REGIMENT unit that was just destroyed is cloned back into Strategic Reserves at Starting Strength; once per battle.",
         "SERVO-DESIGNATORS": "Your Shooting phase, just after a friendly ASTRA MILITARUM INFANTRY unit shoots: select one visible enemy unit it hit so that enemy cannot gain Benefit of Cover until end of phase.",
         "SNAP TO IT": "Any phase: ASTRA MILITARUM OFFICER issues one Voice of Command order immediately (local prompt or explicit remote officer/order/target payload).",
+        "STALWART PROTECTOR": "Opponent Shooting phase, after enemy targets are selected: selected friendly ASTRA MILITARUM VEHICLE grants Benefit of Cover to obscured friendly INFANTRY models against incoming ranged attacks until end of phase.",
         "UNTRAMMELLED FEROCITY": "Movement phase: targeted TYRANIDS MONSTER unit can move through models (excluding TITANIC) and terrain <=4\"; can move within Engagement Range but cannot end there; crossing >4\" terrain risks Battle-shock on 1.",
         "THE SMOTHERING SHADOW": "Any phase reaction after an enemy unit fails a Battle-shock test: selected friendly SYNAPSE unit within 12\" rolls 6D6 and inflicts 1 mortal wound for each 3+ on that enemy.",
         "SYNAPTIC CHANNELLING": "Command phase: selected friendly SYNAPSE unit projects Synapse Range to friendly TYRANIDS units within 9\" until end of turn.",

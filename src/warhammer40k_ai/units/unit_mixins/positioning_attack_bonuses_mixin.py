@@ -260,15 +260,29 @@ class PositioningAttackBonusesMixin:
                     if owner_player is None or current_player is not owner_player:
                         apply_bonus = False
                 if apply_bonus and bool(rule.get("requires_active_order")):
-                    active_order = ""
-                    for candidate in (unit, root):
-                        sr = getattr(candidate, "special_rules", None)
-                        if not isinstance(sr, dict):
-                            continue
-                        active_order = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
-                        if active_order:
-                            break
-                    if not active_order:
+                    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                    voice = getattr(army, "voice_of_command", None) if army is not None else None
+                    has_any_order = False
+                    if voice is not None and hasattr(voice, "attached_unit_has_any_order"):
+                        has_any_order = bool(voice.attached_unit_has_any_order(root))
+                    else:
+                        for candidate in (unit, root):
+                            sr = getattr(candidate, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                continue
+                            active_order = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+                            if active_order:
+                                has_any_order = True
+                                break
+                            additional = list(sr.get("voice_of_command_additional_order_keys", []) or [])
+                            if any(str(key or "").strip().upper() for key in additional):
+                                has_any_order = True
+                                break
+                            temporary = list(sr.get("voice_of_command_temp_order_keys", []) or [])
+                            if any(str(key or "").strip().upper() for key in temporary):
+                                has_any_order = True
+                                break
+                    if not has_any_order:
                         apply_bonus = False
                 if apply_bonus and bool(rule.get("requires_heavy_weapon")):
                     is_heavy_weapon = False

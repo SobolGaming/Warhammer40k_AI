@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 import re
@@ -26,6 +26,13 @@ def _normalize_name(name: str) -> str:
         return ""
     text = re.sub(r"[^a-z0-9]+", "", text)
     return text
+
+
+_STRATAGEM_DESCRIPTOR_NAME_OVERRIDES: dict[str, str] = {
+    "000008886004": "ALWAYS LOOKIN\u2019 FER A FIGHT",
+    "000008886006": "CUT\u2019EM DOWN",
+    "000010681005": "Auto\u2011Sense Coordination",
+}
 
 
 _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -2465,6 +2472,74 @@ _BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
 
 _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS.values()
+}
+
+_COMBINED_ARMS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008381002": StratagemToolDescriptor(
+        stratagem_id="000008381002",
+        name="Coordinated Action",
+        timing="start_of_any_phase",
+        target="regiment_unit_and_visible_squadron_unit_within_6",
+        duration="until_end_of_phase",
+        effect="shared_orders_between_two_units",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"requires_visibility": True},
+    ),
+    "000008381003": StratagemToolDescriptor(
+        stratagem_id="000008381003",
+        name="Reinforcements!",
+        timing="any_phase_after_friendly_unit_destroyed",
+        target="destroyed_infantry_regiment_unit",
+        duration="immediate",
+        effect="clone_unit_to_strategic_reserves",
+        cp_cost=2,
+        effect_params={"once_per_battle": True, "starting_strength": True},
+    ),
+    "000008381004": StratagemToolDescriptor(
+        stratagem_id="000008381004",
+        name="Flexible Command",
+        timing="command_phase",
+        target="any_number_of_astra_militarum_officer_units",
+        duration="until_end_of_phase",
+        effect="expanded_order_target_keywords",
+        cp_cost=2,
+        effect_params={"target_keywords": ["REGIMENT", "SQUADRON"]},
+    ),
+    "000008381005": StratagemToolDescriptor(
+        stratagem_id="000008381005",
+        name="Fields of Fire",
+        timing="shooting_phase_on_select_to_shoot",
+        target="regiment_unit_and_squadron_unit_not_yet_shot_plus_enemy_unit",
+        duration="until_end_of_phase",
+        effect="paired_target_ap_bonus",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1},
+    ),
+    "000008381006": StratagemToolDescriptor(
+        stratagem_id="000008381006",
+        name="Inspired Command",
+        timing="opponent_command_phase",
+        target="astra_militarum_officer_unit",
+        duration="immediate",
+        effect="issue_order_as_if_command_phase",
+        cp_cost=1,
+        effect_params={"orders": 1},
+    ),
+    "000008381007": StratagemToolDescriptor(
+        stratagem_id="000008381007",
+        name="Stalwart Protector",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="astra_militarum_vehicle_unit",
+        duration="until_end_of_phase",
+        effect="vehicle_grants_cover_to_infantry",
+        cp_cost=1,
+        effect_params={"requires_obscured_by_vehicle": True, "target_keyword": "INFANTRY"},
+    ),
+}
+
+_COMBINED_ARMS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COMBINED_ARMS_STRATAGEM_DESCRIPTORS.values()
 }
 
 _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -12005,16 +12080,31 @@ _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME = {
 
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
+    def _with_override(desc: Optional[StratagemToolDescriptor]) -> Optional[StratagemToolDescriptor]:
+        if desc is None:
+            return None
+        override_name = _STRATAGEM_DESCRIPTOR_NAME_OVERRIDES.get(str(desc.stratagem_id))
+        if override_name and str(desc.name) != override_name:
+            return replace(desc, name=override_name)
+        return desc
+
+    if stratagem_id == "000008886004":
+        return _with_override(_ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS.get("000008886004"))
+    if stratagem_id == "000008886006":
+        return _with_override(_ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS.get("000008886006"))
+    if stratagem_id == "000010681005":
+        return _with_override(_ORBITAL_ASSAULT_FORCE_STRATAGEM_DESCRIPTORS.get("000010681005"))
+
     if stratagem_id:
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
-            return desc
+            return _with_override(desc)
         desc = _HOUNDPACK_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
-            return desc
+            return _with_override(desc)
         desc = _ICONOCLAST_FIEFDOM_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
-            return desc
+            return _with_override(desc)
         desc = _LORDS_OF_DREAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12082,6 +12172,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         if desc is not None:
             return desc
         desc = _BRIDGEHEAD_STRIKE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
+        desc = _COMBINED_ARMS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
@@ -12447,6 +12540,14 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
     key = _normalize_name(name)
     if not key:
         return None
+    override_by_name = {
+        _normalize_name("ALWAYS LOOKIN\u2019 FER A FIGHT"): "000008886004",
+        _normalize_name("CUT\u2019EM DOWN"): "000008886006",
+        _normalize_name("Auto\u2011Sense Coordination"): "000010681005",
+    }
+    override_id = override_by_name.get(key)
+    if override_id:
+        return get_stratagem_tool_descriptor(stratagem_id=override_id)
     return (
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _HOUNDPACK_LANCE_STRATAGEM_BY_NAME.get(key)
@@ -12474,6 +12575,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)
+        or _COMBINED_ARMS_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)

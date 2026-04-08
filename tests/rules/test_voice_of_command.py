@@ -1211,6 +1211,91 @@ class TestVoiceOfCommand(unittest.TestCase):
         )
         self.assertFalse(any("Lethal Hits" in str(e or "") for e in list(hidden_target.get("special_effects", []) or [])))
 
+    def test_combined_arms_coordinated_action_mirrors_orders_until_phase_end(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+        from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, VoiceOfCommandManager
+
+        army = _ArmyStub(detachment_type="Combined Arms")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", "This model can issue 1 order to REGIMENT units within 6\"."),
+            ],
+            army=army,
+        )
+        regiment = _UnitStub("Regiment", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        squadron = _UnitStub("Squadron", keywords=["SQUADRON", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, regiment, squadron]
+        for unit in list(army.units):
+            unit.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, regiment, squadron]), get_current_player=lambda: army.player)
+        army.player.game = game
+
+        self.assertTrue(
+            mgr.set_coordinated_action_pair(
+                regiment,
+                squadron,
+                game=game,
+                phase_name="COMMAND_PHASE",
+                source="COORDINATED ACTION",
+            )
+        )
+        self.assertTrue(mgr.issue_order(game, officer, regiment, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertIn(ORDER_MOVE.key, list(mgr.get_active_order_keys(regiment) or []))
+        self.assertIn(ORDER_MOVE.key, list(mgr.get_active_order_keys(squadron) or []))
+
+        mgr.clear_coordinated_action_phase_effects(
+            phase_name="COMMAND_PHASE",
+            player=army.player,
+            game=game,
+            battle_round=1,
+        )
+        self.assertNotIn(ORDER_MOVE.key, list(mgr.get_active_order_keys(squadron) or []))
+
+    def test_combined_arms_inspired_command_pending_use_and_skip(self):
+        from warhammer40k_ai.rules.voice_of_command import ORDER_MOVE, VoiceOfCommandManager
+
+        army = _ArmyStub(detachment_type="Combined Arms")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", "This model can issue 1 order to REGIMENT units within 6\"."),
+            ],
+            army=army,
+        )
+        target = _UnitStub("Target", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, target]
+        officer.set_parent_army(army)
+        target.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target]), get_current_player=lambda: army.player)
+        army.player.game = game
+
+        pending = list(mgr.start_inspired_command_pending([officer], battle_round=1) or [])
+        self.assertEqual(pending, [officer])
+        self.assertEqual(mgr.orders_remaining_for_trigger(officer, 1, trigger="inspired_command"), 1)
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE", trigger="inspired_command"))
+        self.assertEqual(mgr.orders_remaining_for_trigger(officer, 1, trigger="inspired_command"), 0)
+
+        pending = list(mgr.start_inspired_command_pending([officer], battle_round=1) or [])
+        self.assertEqual(pending, [officer])
+        self.assertTrue(mgr.consume_inspired_command_skip(officer, game=game))
+        self.assertEqual(mgr.orders_remaining_for_trigger(officer, 1, trigger="inspired_command"), 0)
+
     def test_mechanised_assault_armoured_fist_adds_wound_after_disembark(self):
         from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
 

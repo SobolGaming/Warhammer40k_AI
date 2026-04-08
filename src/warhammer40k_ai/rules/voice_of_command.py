@@ -627,7 +627,395 @@ class VoiceOfCommandManager:
             for extra_key in self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", [])):
                 if extra_key not in keys:
                     keys.append(extra_key)
+            for temp_key in self._normalise_order_key_list(sr.get("voice_of_command_temp_order_keys", [])):
+                if temp_key not in keys:
+                    keys.append(temp_key)
         return keys
+
+    def _attached_unit_permanent_order_keys(self, unit) -> list[str]:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return []
+        members = self._attached_unit_members(root)
+        keys: list[str] = []
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+            if active_key in ORDER_BY_KEY and active_key not in keys:
+                keys.append(active_key)
+            for extra_key in self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", [])):
+                if extra_key not in keys:
+                    keys.append(extra_key)
+        return keys
+
+    def get_active_order_keys(self, unit) -> list[str]:
+        return list(self._attached_unit_order_keys(unit))
+
+    def get_permanent_order_keys(self, unit) -> list[str]:
+        return list(self._attached_unit_permanent_order_keys(unit))
+
+    def attached_unit_has_any_order(self, unit) -> bool:
+        return bool(self._attached_unit_order_keys(unit))
+
+    def _refresh_order_state_for_unit_and_attached(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        units = [root]
+        units.extend(list(getattr(root, "attached_leaders", []) or []))
+        for member in units:
+            if member is None or not self._unit_is_astra_militarum(member):
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+            if active_key not in ORDER_BY_KEY:
+                for key in (
+                    "voice_of_command_order_key",
+                    "voice_of_command_order_owner",
+                    "voice_of_command_order_source",
+                ):
+                    sr.pop(key, None)
+                active_key = ""
+            additional_keys = self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", []))
+            temp_keys = self._normalise_order_key_list(sr.get("voice_of_command_temp_order_keys", []))
+            if additional_keys:
+                sr["voice_of_command_additional_order_keys"] = list(additional_keys)
+            else:
+                sr.pop("voice_of_command_additional_order_keys", None)
+            if temp_keys:
+                sr["voice_of_command_temp_order_keys"] = list(temp_keys)
+            else:
+                sr.pop("voice_of_command_temp_order_keys", None)
+            sr.pop("voice_of_command_take_cover_cap", None)
+            member.special_rules = sr
+            try:
+                member.remove_characteristic_modifiers_by_source("voice_of_command:")
+            except Exception:
+                pass
+            try:
+                member.remove_characteristic_modifiers_by_source("voice_of_command_temp:")
+            except Exception:
+                pass
+            if active_key:
+                self._apply_order_modifiers(member, active_key, source_prefix="voice_of_command:")
+            for extra_key in additional_keys:
+                self._apply_order_modifiers(member, extra_key, source_prefix="voice_of_command:")
+            for temp_key in temp_keys:
+                self._apply_order_modifiers(member, temp_key, source_prefix="voice_of_command_temp:")
+
+    def _set_temp_order_keys_on_unit_and_attached(self, unit, order_keys: list[str]) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        temp_keys = self._normalise_order_key_list(order_keys)
+        units = [root]
+        units.extend(list(getattr(root, "attached_leaders", []) or []))
+        for member in units:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if temp_keys:
+                sr["voice_of_command_temp_order_keys"] = list(temp_keys)
+            else:
+                sr.pop("voice_of_command_temp_order_keys", None)
+            member.special_rules = sr
+        self._refresh_order_state_for_unit_and_attached(root)
+
+    def _current_game(self):
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        return getattr(player, "game", None) if player is not None else None
+
+    def _resolve_army_root_by_id(self, entity_id: str):
+        wanted = str(entity_id or "").strip()
+        if not wanted or self.army is None:
+            return None
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if root_id == wanted:
+                return root
+        return None
+
+    def _active_player_id(self, game=None) -> str:
+        game_obj = game if game is not None else self._current_game()
+        active_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        return str(getattr(active_player, "id", "") or "")
+
+    @staticmethod
+    def _phase_key(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _clear_inspired_command_pending_for_officer(self, officer_unit) -> None:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "combined_arms_inspired_command_pending_round",
+            "combined_arms_inspired_command_pending",
+        ):
+            sr.pop(key, None)
+        officer_unit.special_rules = sr
+
+    def _clear_inspired_command_pending(self) -> None:
+        if self.army is None:
+            return
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            self._clear_inspired_command_pending_for_officer(unit)
+
+    def _inspired_command_pending_state(self, officer_unit, battle_round: int) -> int:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        try:
+            pending_round = int(sr.get("combined_arms_inspired_command_pending_round", -1) or -1)
+        except Exception:
+            pending_round = -1
+        if pending_round != int(battle_round):
+            self._clear_inspired_command_pending_for_officer(officer_unit)
+            return 0
+        return 1 if bool(sr.get("combined_arms_inspired_command_pending")) else 0
+
+    def start_inspired_command_pending(self, officers, battle_round: int) -> list:
+        self._clear_inspired_command_pending()
+        applied: list = []
+        seen: set[str] = set()
+        for officer in list(officers or []):
+            root = self._attached_unit_root(officer)
+            if root is None:
+                continue
+            unit_id = str(get_entity_id(root) or "").strip()
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["combined_arms_inspired_command_pending_round"] = int(battle_round)
+            sr["combined_arms_inspired_command_pending"] = True
+            root.special_rules = sr
+            applied.append(root)
+        return applied
+
+    def _consume_inspired_command_pending_order(self, officer_unit, battle_round: int) -> bool:
+        if self._inspired_command_pending_state(officer_unit, battle_round) <= 0:
+            return False
+        self._clear_inspired_command_pending()
+        return True
+
+    def consume_inspired_command_skip(self, officer_unit=None, *, game=None, battle_round: int | None = None) -> bool:
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round or 0)
+            except Exception:
+                round_now = 0
+        if round_now <= 0:
+            game_obj = game if game is not None else self._current_game()
+            try:
+                round_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except Exception:
+                round_now = 0
+        if round_now <= 0:
+            round_now = 1
+        had_pending = False
+        if self.army is not None:
+            for unit in list(getattr(self.army, "units", []) or []):
+                if self._inspired_command_pending_state(unit, round_now) > 0:
+                    had_pending = True
+                    break
+        self._clear_inspired_command_pending()
+        return had_pending
+
+    def _set_coordinated_action_state(self, unit, partner_unit, *, battle_round: int, phase_name: str, owner_id: str, source: str = "") -> None:
+        root = self._attached_unit_root(unit)
+        partner_root = self._attached_unit_root(partner_unit)
+        if root is None or partner_root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["voice_of_command_coordinated_action_partner_id"] = str(get_entity_id(partner_root) or "")
+        sr["voice_of_command_coordinated_action_round"] = int(battle_round)
+        sr["voice_of_command_coordinated_action_phase"] = self._phase_key(phase_name)
+        sr["voice_of_command_coordinated_action_owner"] = str(owner_id or "")
+        sr["voice_of_command_coordinated_action_source"] = str(source or "COORDINATED ACTION").strip() or "COORDINATED ACTION"
+        root.special_rules = sr
+
+    def _clear_coordinated_action_state_for_unit(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        for key in (
+            "voice_of_command_coordinated_action_partner_id",
+            "voice_of_command_coordinated_action_round",
+            "voice_of_command_coordinated_action_phase",
+            "voice_of_command_coordinated_action_owner",
+            "voice_of_command_coordinated_action_source",
+        ):
+            sr.pop(key, None)
+        sr.pop("voice_of_command_temp_order_keys", None)
+        root.special_rules = sr
+        self._refresh_order_state_for_unit_and_attached(root)
+
+    def _coordinated_action_partner(self, unit, *, game=None, battle_round: int | None = None, phase_name: str = "", owner_id: str = ""):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        partner_id = str(sr.get("voice_of_command_coordinated_action_partner_id", "") or "").strip()
+        if not partner_id:
+            return None
+        game_obj = game if game is not None else self._current_game()
+        round_now = int(battle_round or 0)
+        if round_now <= 0:
+            try:
+                round_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except Exception:
+                round_now = 0
+        phase_key = self._phase_key(phase_name)
+        if not phase_key and game_obj is not None:
+            phase_key = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        current_owner = str(owner_id or "")
+        if not current_owner:
+            current_owner = self._active_player_id(game_obj)
+        try:
+            marked_round = int(sr.get("voice_of_command_coordinated_action_round", -1) or -1)
+        except Exception:
+            marked_round = -1
+        marked_phase = self._phase_key(str(sr.get("voice_of_command_coordinated_action_phase", "") or ""))
+        marked_owner = str(sr.get("voice_of_command_coordinated_action_owner", "") or "")
+        if round_now > 0 and marked_round > 0 and marked_round != round_now:
+            return None
+        if phase_key and marked_phase and marked_phase != phase_key:
+            return None
+        if current_owner and marked_owner and marked_owner != current_owner:
+            return None
+        return self._resolve_army_root_by_id(partner_id)
+
+    def _sync_coordinated_action_pair(self, unit, *, game=None, battle_round: int | None = None, phase_name: str = "", owner_id: str = "") -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        partner = self._coordinated_action_partner(
+            root,
+            game=game,
+            battle_round=battle_round,
+            phase_name=phase_name,
+            owner_id=owner_id,
+        )
+        if partner is None:
+            self._set_temp_order_keys_on_unit_and_attached(root, [])
+            return
+        root_permanent = self._attached_unit_permanent_order_keys(root)
+        partner_permanent = self._attached_unit_permanent_order_keys(partner)
+        root_temp = [key for key in partner_permanent if key not in root_permanent]
+        partner_temp = [key for key in root_permanent if key not in partner_permanent]
+        self._set_temp_order_keys_on_unit_and_attached(root, root_temp)
+        self._set_temp_order_keys_on_unit_and_attached(partner, partner_temp)
+
+    def set_coordinated_action_pair(self, regiment_unit, squadron_unit, *, game=None, phase_name: str = "", source: str = "") -> bool:
+        regiment_root = self._attached_unit_root(regiment_unit)
+        squadron_root = self._attached_unit_root(squadron_unit)
+        if regiment_root is None or squadron_root is None or regiment_root is squadron_root:
+            return False
+        game_obj = game if game is not None else self._current_game()
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            battle_round = 0
+        phase_text = str(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._active_player_id(game_obj)
+        self._set_coordinated_action_state(
+            regiment_root,
+            squadron_root,
+            battle_round=battle_round,
+            phase_name=phase_text,
+            owner_id=owner_id,
+            source=source,
+        )
+        self._set_coordinated_action_state(
+            squadron_root,
+            regiment_root,
+            battle_round=battle_round,
+            phase_name=phase_text,
+            owner_id=owner_id,
+            source=source,
+        )
+        self._sync_coordinated_action_pair(
+            regiment_root,
+            game=game_obj,
+            battle_round=battle_round,
+            phase_name=phase_text,
+            owner_id=owner_id,
+        )
+        return True
+
+    def clear_coordinated_action_phase_effects(self, *, phase_name: str = "", player=None, game=None, battle_round: int | None = None) -> None:
+        if self.army is None:
+            return
+        game_obj = game if game is not None else self._current_game()
+        phase_key = self._phase_key(phase_name)
+        if not phase_key and game_obj is not None:
+            phase_key = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        round_now = int(battle_round or 0)
+        if round_now <= 0:
+            try:
+                round_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except Exception:
+                round_now = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            partner_id = str(sr.get("voice_of_command_coordinated_action_partner_id", "") or "").strip()
+            if not partner_id:
+                continue
+            try:
+                marked_round = int(sr.get("voice_of_command_coordinated_action_round", -1) or -1)
+            except Exception:
+                marked_round = -1
+            marked_phase = self._phase_key(str(sr.get("voice_of_command_coordinated_action_phase", "") or ""))
+            marked_owner = str(sr.get("voice_of_command_coordinated_action_owner", "") or "")
+            if round_now > 0 and marked_round > 0 and marked_round != round_now:
+                continue
+            if phase_key and marked_phase and marked_phase != phase_key:
+                continue
+            if owner_id and marked_owner and marked_owner != owner_id:
+                continue
+            self._clear_coordinated_action_state_for_unit(root)
 
     def _attached_unit_command_rod_order_capacity(self, unit) -> int:
         root = self._attached_unit_root(unit)
@@ -664,18 +1052,40 @@ class VoiceOfCommandManager:
     def _set_orders_on_unit_and_attached(self, unit, order_keys: list[str], owner_id: str, source_id: str) -> None:
         if unit is None:
             return
-        keys = self._normalise_order_key_list(order_keys)
-        self.clear_order(unit)
-        try:
-            for leader in list(getattr(unit, "attached_leaders", []) or []):
-                self.clear_order(leader)
-        except Exception:
-            pass
-        if not keys:
+        root = self._attached_unit_root(unit)
+        if root is None:
             return
-        self._apply_order_to_unit_and_attached(unit, keys[0], owner_id, source_id)
-        for extra_key in keys[1:]:
-            self._apply_additional_order_to_unit_and_attached(unit, extra_key)
+        keys = self._normalise_order_key_list(order_keys)
+        units = [root]
+        units.extend(list(getattr(root, "attached_leaders", []) or []))
+        for member in units:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            for key in (
+                "voice_of_command_order_key",
+                "voice_of_command_order_owner",
+                "voice_of_command_order_source",
+                "voice_of_command_additional_order_keys",
+            ):
+                sr.pop(key, None)
+            member.special_rules = sr
+        if not keys:
+            self._refresh_order_state_for_unit_and_attached(root)
+            return
+        self._apply_order_to_unit_and_attached(root, keys[0], owner_id, source_id)
+        if len(keys) > 1:
+            for member in units:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["voice_of_command_additional_order_keys"] = list(keys[1:])
+                member.special_rules = sr
+        self._refresh_order_state_for_unit_and_attached(root)
 
     @staticmethod
     def _enhancement_bearer_alive(unit, sr, *, bearer_key: str = "") -> bool:
@@ -1158,6 +1568,8 @@ class VoiceOfCommandManager:
         trigger_key = str(trigger or "").strip().lower()
         if trigger_key == "reactive_command_setup":
             return self._reactive_command_pending_state(unit, battle_round)
+        if trigger_key == "inspired_command":
+            return self._inspired_command_pending_state(unit, battle_round)
         return self.orders_remaining(unit, battle_round)
 
     def officer_has_order_capacity(self, unit, battle_round: int, *, trigger: str = "") -> bool:
@@ -1270,6 +1682,16 @@ class VoiceOfCommandManager:
             if not extra_keywords:
                 extra_keywords = ["OGRYN"]
             keywords.extend(extra_keywords)
+        army = self.army
+        if army is None:
+            try:
+                army = officer_unit.get_parent_army()
+            except Exception:
+                army = None
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        extra_target_keywords_fn = getattr(mgr, "combined_arms_flexible_command_target_keywords", None) if mgr is not None else None
+        if callable(extra_target_keywords_fn):
+            keywords.extend(list(extra_target_keywords_fn(officer_unit, game=game) or ()))
         seen_keywords = set()
         deduped_keywords: list[str] = []
         for kw in keywords:
@@ -1369,11 +1791,16 @@ class VoiceOfCommandManager:
                 "voice_of_command_order_owner",
                 "voice_of_command_order_source",
                 "voice_of_command_additional_order_keys",
+                "voice_of_command_temp_order_keys",
                 "voice_of_command_take_cover_cap",
             ):
                 sr.pop(k, None)
         try:
             unit.remove_characteristic_modifiers_by_source("voice_of_command:")
+        except Exception:
+            pass
+        try:
+            unit.remove_characteristic_modifiers_by_source("voice_of_command_temp:")
         except Exception:
             pass
 
@@ -1434,18 +1861,18 @@ class VoiceOfCommandManager:
         for unit in list(getattr(army, "units", []) or []):
             self.clear_order(unit)
 
-    def _apply_order_modifiers(self, unit, order_key: str) -> None:
+    def _apply_order_modifiers(self, unit, order_key: str, *, source_prefix: str = "voice_of_command:") -> None:
         if unit is None:
             return
         if not self._unit_is_astra_militarum(unit):
             return
         if order_key == ORDER_MOVE.key:
             unit.add_characteristic_modifier(
-                "movement", Modifier(ModifierOp.ADD, 3, source=f"voice_of_command:{order_key}")
+                "movement", Modifier(ModifierOp.ADD, 3, source=f"{source_prefix}{order_key}")
             )
         elif order_key == ORDER_TAKE_COVER.key:
             unit.add_characteristic_modifier(
-                "save", Modifier(ModifierOp.SUB, 1, source=f"voice_of_command:{order_key}")
+                "save", Modifier(ModifierOp.SUB, 1, source=f"{source_prefix}{order_key}")
             )
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
@@ -1454,10 +1881,10 @@ class VoiceOfCommandManager:
             unit.special_rules = sr
         elif order_key == ORDER_DUTY_HONOUR.key:
             unit.add_characteristic_modifier(
-                "leadership", Modifier(ModifierOp.SUB, 1, source=f"voice_of_command:{order_key}")
+                "leadership", Modifier(ModifierOp.SUB, 1, source=f"{source_prefix}{order_key}")
             )
             unit.add_characteristic_modifier(
-                "objective_control", Modifier(ModifierOp.ADD, 1, source=f"voice_of_command:{order_key}")
+                "objective_control", Modifier(ModifierOp.ADD, 1, source=f"{source_prefix}{order_key}")
             )
 
     def _apply_order_to_unit_and_attached(self, unit, order_key: str, owner_id: str, source_id: str) -> None:
@@ -1480,7 +1907,6 @@ class VoiceOfCommandManager:
             sr["voice_of_command_order_owner"] = owner_id
             sr["voice_of_command_order_source"] = source_id
             u.special_rules = sr
-            self._apply_order_modifiers(u, order_key)
 
     def _apply_additional_order_to_unit_and_attached(self, unit, order_key: str) -> None:
         if unit is None:
@@ -1506,7 +1932,7 @@ class VoiceOfCommandManager:
             extra_keys.append(key)
             sr["voice_of_command_additional_order_keys"] = list(extra_keys)
             member.special_rules = sr
-            self._apply_order_modifiers(member, key)
+        self._refresh_order_state_for_unit_and_attached(unit)
 
     def issue_order(self, game, officer_unit, target_unit, order_key: str, *, phase_name: str = "", trigger: str = "") -> bool:
         if officer_unit is None or target_unit is None:
@@ -1543,6 +1969,7 @@ class VoiceOfCommandManager:
             return False
         trigger_key = str(trigger or "").strip().lower()
         reactive_trigger = trigger_key == "reactive_command_setup"
+        inspired_trigger = trigger_key == "inspired_command"
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         pending_calm = self._calm_under_fire_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         continuation_kind = ""
@@ -1574,8 +2001,14 @@ class VoiceOfCommandManager:
         reactive_pending_available = (
             self._reactive_command_pending_state(officer_unit, battle_round) if reactive_trigger and battle_round > 0 else 0
         )
+        inspired_pending_available = (
+            self._inspired_command_pending_state(officer_unit, battle_round) if inspired_trigger and battle_round > 0 else 0
+        )
         if not continuation_issue and reactive_trigger:
             if reactive_pending_available <= 0:
+                return False
+        elif not continuation_issue and inspired_trigger:
+            if inspired_pending_available <= 0:
                 return False
         elif not continuation_issue and self.orders_remaining(officer_unit, battle_round) <= 0:
             return False
@@ -1610,20 +2043,6 @@ class VoiceOfCommandManager:
             if target_unit_id and target_unit_id in selected_target_ids:
                 return False
 
-        if not continuation_issue:
-            # Consume an order.
-            if reactive_trigger and reactive_pending_available > 0:
-                self._consume_reactive_command_pending_order(officer_unit, battle_round)
-            else:
-                issued = self._order_issued_state(officer_unit, battle_round)
-                issued_after = int(issued) + 1
-                self._set_orders_issued(officer_unit, battle_round, issued_after)
-                recurring_capacity = self._orders_recurring_capacity(officer_unit)
-                if issued_after > int(recurring_capacity):
-                    mark_extra = getattr(officer_unit, "mark_servo_scribes_additional_order_used", None)
-                    if callable(mark_extra):
-                        mark_extra()
-
         try:
             owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
         except Exception:
@@ -1634,7 +2053,7 @@ class VoiceOfCommandManager:
             source_id = ""
 
         max_orders = max(1, int(self._attached_unit_command_rod_order_capacity(target_unit)))
-        current_order_keys = self._attached_unit_order_keys(target_unit)
+        current_order_keys = self._attached_unit_permanent_order_keys(target_unit)
         target_order_keys = [order_key]
         if max_orders > 1 and current_order_keys:
             if order_key in current_order_keys:
@@ -1651,6 +2070,28 @@ class VoiceOfCommandManager:
         additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
         if additional_order_key and additional_order_key not in target_order_keys:
             self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)
+        if not continuation_issue:
+            if reactive_trigger and reactive_pending_available > 0:
+                self._consume_reactive_command_pending_order(officer_unit, battle_round)
+            elif inspired_trigger:
+                if not self._consume_inspired_command_pending_order(officer_unit, battle_round):
+                    return False
+            else:
+                issued = self._order_issued_state(officer_unit, battle_round)
+                issued_after = int(issued) + 1
+                self._set_orders_issued(officer_unit, battle_round, issued_after)
+                recurring_capacity = self._orders_recurring_capacity(officer_unit)
+                if issued_after > int(recurring_capacity):
+                    mark_extra = getattr(officer_unit, "mark_servo_scribes_additional_order_used", None)
+                    if callable(mark_extra):
+                        mark_extra()
+        self._sync_coordinated_action_pair(
+            target_unit,
+            game=game,
+            battle_round=battle_round,
+            phase_name=phase_name,
+            owner_id=self._active_player_id(game),
+        )
         if continuation_kind == "bombast":
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)
         elif continuation_kind == "calm_under_fire":
@@ -1702,6 +2143,9 @@ class VoiceOfCommandManager:
                 return True
             additional_keys = self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", []))
             if order_key in additional_keys:
+                return True
+            temp_keys = self._normalise_order_key_list(sr.get("voice_of_command_temp_order_keys", []))
+            if order_key in temp_keys:
                 return True
         return False
 

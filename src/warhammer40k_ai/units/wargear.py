@@ -4848,6 +4848,29 @@ class WargearProfile:
                     ap_val -= int(bonus)
         except Exception:
             pass
+        try:
+            unit = attacker_unit
+            army = unit.get_parent_army() if unit is not None else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "combined_arms_fields_of_fire_ap_bonus", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                attack_type = "any"
+                if self.parent_wargear is not None:
+                    if callable(getattr(self.parent_wargear, "is_ranged", None)) and self.parent_wargear.is_ranged():
+                        attack_type = "ranged"
+                    elif callable(getattr(self.parent_wargear, "is_melee", None)) and self.parent_wargear.is_melee():
+                        attack_type = "melee"
+                bonus, _source = bonus_fn(
+                    attacker,
+                    target_root,
+                    attack_type=attack_type,
+                    game=game,
+                )
+                if bonus:
+                    ap_val -= int(bonus)
+        except Exception:
+            pass
         # Death Hex: marked target suffers AP -1 for attacks by the caster's army.
         if target_root is not None and attacker_unit is not None:
             sr = getattr(target_root, "special_rules", None)
@@ -7225,9 +7248,27 @@ class WargearProfile:
             pass
 
         try:
-            sr = getattr(attacker.parent_unit, "special_rules", None)
-            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
-            if order_key == "FIRST_RANK_FIRE" and self.is_rapid_fire():
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            voice = getattr(army, "voice_of_command", None) if army is not None else None
+            order_keys = set()
+            if voice is not None and hasattr(voice, "get_active_order_keys"):
+                order_keys = set(str(key or "").strip().upper() for key in list(voice.get_active_order_keys(unit) or []))
+            else:
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict):
+                    active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+                    if active_key:
+                        order_keys.add(active_key)
+                    for raw_key in list(sr.get("voice_of_command_additional_order_keys", []) or []):
+                        key = str(raw_key or "").strip().upper()
+                        if key:
+                            order_keys.add(key)
+                    for raw_key in list(sr.get("voice_of_command_temp_order_keys", []) or []):
+                        key = str(raw_key or "").strip().upper()
+                        if key:
+                            order_keys.add(key)
+            if "FIRST_RANK_FIRE" in order_keys and self.is_rapid_fire():
                 attack_result.attacks_special_modifiers.append("First Rank, Fire! Second Rank, Fire! +1A")
                 atk_mods.append(Modifier(ModifierOp.ADD, 1, source="voice_of_command:first_rank_fire"))
         except Exception:
@@ -10992,14 +11033,31 @@ class WargearProfile:
             pass
         try:
             unit = getattr(attacker, "parent_unit", None)
-            sr = getattr(unit, "special_rules", None)
-            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
-            if order_key:
+            army = unit.get_parent_army() if unit is not None else None
+            voice = getattr(army, "voice_of_command", None) if army is not None else None
+            order_keys = set()
+            if voice is not None and hasattr(voice, "get_active_order_keys"):
+                order_keys = set(str(key or "").strip().upper() for key in list(voice.get_active_order_keys(unit) or []))
+            else:
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict):
+                    active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+                    if active_key:
+                        order_keys.add(active_key)
+                    for raw_key in list(sr.get("voice_of_command_additional_order_keys", []) or []):
+                        key = str(raw_key or "").strip().upper()
+                        if key:
+                            order_keys.add(key)
+                    for raw_key in list(sr.get("voice_of_command_temp_order_keys", []) or []):
+                        key = str(raw_key or "").strip().upper()
+                        if key:
+                            order_keys.add(key)
+            if order_keys:
                 is_ranged = _parent_wargear_is_ranged()
                 is_melee = _parent_wargear_is_melee()
-                if order_key == "TAKE_AIM" and is_ranged:
+                if "TAKE_AIM" in order_keys and is_ranged:
                     _add_skill_mod(1, "Take Aim!: +1 BS")
-                elif order_key == "FIX_BAYONETS" and is_melee:
+                if "FIX_BAYONETS" in order_keys and is_melee:
                     _add_skill_mod(1, "Fix Bayonets!: +1 WS")
         except Exception:
             pass

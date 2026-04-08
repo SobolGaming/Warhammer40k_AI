@@ -10992,6 +10992,18 @@ class KeywordsDetachmentsMixin:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        except Exception:
+            army = None
+        det_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        dynamic_rule = (
+            det_mgr.combined_arms_stalwart_protector_rule(root)
+            if det_mgr is not None and hasattr(det_mgr, "combined_arms_stalwart_protector_rule")
+            else None
+        )
+        if isinstance(dynamic_rule, dict):
+            return dynamic_rule
         cache_key = "selfless_protector_rule"
         if cache_key in getattr(root, "_ability_cache", {}):
             return root._ability_cache[cache_key]

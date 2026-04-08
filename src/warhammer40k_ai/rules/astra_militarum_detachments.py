@@ -39,6 +39,10 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         except (TypeError, ValueError):
             return int(default)
 
+    @staticmethod
+    def _phase_key(value: Any) -> str:
+        return str(value or "").strip().upper().replace(" ", "_")
+
     def is_bridgehead_strike(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -85,6 +89,15 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if player is None:
             return None
         return getattr(player, "game", None)
+
+    @staticmethod
+    def _player_id(player) -> str:
+        return str(getattr(player, "id", "") or "")
+
+    def _current_player_id(self, *, game=None) -> str:
+        game_obj = game if game is not None else self._current_game()
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        return self._player_id(current_player)
 
     def _unit_is_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -985,9 +998,21 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     def _unit_has_order(self, unit) -> bool:
         if unit is None:
             return False
-        sr = getattr(unit, "special_rules", None)
-        if isinstance(sr, dict) and str(sr.get("voice_of_command_order_key", "") or "").strip():
-            return True
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        voice = getattr(self.army, "voice_of_command", None) if self.army is not None else None
+        has_any_order = getattr(voice, "attached_unit_has_any_order", None) if voice is not None else None
+        if callable(has_any_order):
+            return bool(has_any_order(root))
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            if str(sr.get("voice_of_command_order_key", "") or "").strip():
+                return True
+            if list(sr.get("voice_of_command_additional_order_keys", []) or []):
+                return True
+            if list(sr.get("voice_of_command_temp_order_keys", []) or []):
+                return True
         return False
 
     def _attached_unit_has_order(self, unit) -> bool:
@@ -1550,6 +1575,282 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if self._unit_is_squadron_model(root, attacker_model) and target_is_monster_or_vehicle:
             return True, "Born Soldiers"
         return False, ""
+
+    def activate_combined_arms_flexible_command(
+        self,
+        officers,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> int:
+        if not self.is_combined_arms():
+            return 0
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        source_name = str(source or "FLEXIBLE COMMAND").strip() or "FLEXIBLE COMMAND"
+        applied = 0
+        seen: set[str] = set()
+        for officer in list(officers or []):
+            root = self._unit_root(officer)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self.unit_is_astra_militarum(root) or not self.unit_is_officer(root):
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["combined_arms_flexible_command_active"] = True
+            sr["combined_arms_flexible_command_round"] = int(round_now)
+            sr["combined_arms_flexible_command_phase"] = phase_key
+            sr["combined_arms_flexible_command_owner"] = owner_id
+            sr["combined_arms_flexible_command_source"] = source_name
+            root.special_rules = sr
+            applied += 1
+        return applied
+
+    def combined_arms_flexible_command_target_keywords(self, officer_unit, *, game=None) -> tuple[str, ...]:
+        if not self.is_combined_arms():
+            return ()
+        root = self._unit_root(officer_unit)
+        if root is None or not self._unit_in_army(root):
+            return ()
+        if not self.unit_is_astra_militarum(root) or not self.unit_is_officer(root):
+            return ()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("combined_arms_flexible_command_active", False)):
+            return ()
+        game_obj = game if game is not None else self._current_game()
+        current_round = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_round = self._safe_int(sr.get("combined_arms_flexible_command_round", 0) or 0, 0)
+        if marked_round and current_round and marked_round != current_round:
+            return ()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get("combined_arms_flexible_command_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return ()
+        owner_id = str(sr.get("combined_arms_flexible_command_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id != active_player_id:
+            return ()
+        return ("REGIMENT", "SQUADRON")
+
+    def activate_combined_arms_fields_of_fire(
+        self,
+        regiment_unit,
+        squadron_unit,
+        enemy_unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_combined_arms():
+            return False
+        regiment_root = self._unit_root(regiment_unit)
+        squadron_root = self._unit_root(squadron_unit)
+        enemy_root = self._unit_root(enemy_unit)
+        if regiment_root is None or squadron_root is None or enemy_root is None:
+            return False
+        if regiment_root is squadron_root:
+            return False
+        if not self._unit_in_army(regiment_root) or not self._unit_in_army(squadron_root):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        source_name = str(source or "FIELDS OF FIRE").strip() or "FIELDS OF FIRE"
+        target_unit_id = self._entity_id(enemy_root)
+        if not target_unit_id:
+            return False
+        for root in (regiment_root, squadron_root):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["combined_arms_fields_of_fire_active"] = True
+            sr["combined_arms_fields_of_fire_target_unit_id"] = target_unit_id
+            sr["combined_arms_fields_of_fire_round"] = int(round_now)
+            sr["combined_arms_fields_of_fire_phase"] = phase_key
+            sr["combined_arms_fields_of_fire_owner"] = owner_id
+            sr["combined_arms_fields_of_fire_ap_bonus"] = 1
+            sr["combined_arms_fields_of_fire_source"] = source_name
+            root.special_rules = sr
+        return True
+
+    def combined_arms_fields_of_fire_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_combined_arms():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None or not self._unit_in_army(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("combined_arms_fields_of_fire_active", False)):
+            return 0, ""
+        target_unit_id = str(sr.get("combined_arms_fields_of_fire_target_unit_id", "") or "")
+        if not target_unit_id or target_unit_id != self._entity_id(target_root):
+            return 0, ""
+        game_obj = game if game is not None else self._current_game()
+        current_round = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_round = self._safe_int(sr.get("combined_arms_fields_of_fire_round", 0) or 0, 0)
+        if marked_round and current_round and marked_round != current_round:
+            return 0, ""
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get("combined_arms_fields_of_fire_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return 0, ""
+        owner_id = str(sr.get("combined_arms_fields_of_fire_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id != active_player_id:
+            return 0, ""
+        bonus = self._safe_int(sr.get("combined_arms_fields_of_fire_ap_bonus", 0) or 0, 0)
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("combined_arms_fields_of_fire_source", "") or "FIELDS OF FIRE").strip() or "FIELDS OF FIRE"
+        return int(bonus), source
+
+    def activate_combined_arms_stalwart_protector(
+        self,
+        vehicle_unit,
+        *,
+        game=None,
+        phase_name: str = "",
+        source: str = "",
+    ) -> bool:
+        if not self.is_combined_arms():
+            return False
+        root = self._unit_root(vehicle_unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self.unit_is_astra_militarum(root) or not self._unit_has_keyword(root, "VEHICLE"):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(getattr(self.army, "player", None))
+        source_name = str(source or "STALWART PROTECTOR").strip() or "STALWART PROTECTOR"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["combined_arms_stalwart_protector_active"] = True
+        sr["combined_arms_stalwart_protector_round"] = int(round_now)
+        sr["combined_arms_stalwart_protector_phase"] = phase_key
+        sr["combined_arms_stalwart_protector_owner"] = owner_id
+        sr["combined_arms_stalwart_protector_source"] = source_name
+        root.special_rules = sr
+        return True
+
+    def combined_arms_stalwart_protector_rule(self, unit, *, game=None) -> dict | None:
+        if not self.is_combined_arms():
+            return None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("combined_arms_stalwart_protector_active", False)):
+            return None
+        game_obj = game if game is not None else self._current_game()
+        current_round = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_round = self._safe_int(sr.get("combined_arms_stalwart_protector_round", 0) or 0, 0)
+        if marked_round and current_round and marked_round != current_round:
+            return None
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get("combined_arms_stalwart_protector_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
+            return None
+        owner_id = str(sr.get("combined_arms_stalwart_protector_owner", "") or "")
+        active_player_id = self._current_player_id(game=game_obj)
+        if owner_id and active_player_id and owner_id == active_player_id:
+            return None
+        source = str(sr.get("combined_arms_stalwart_protector_source", "") or "STALWART PROTECTOR").strip()
+        source_name = source or "STALWART PROTECTOR"
+        model_id = ""
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id:
+                break
+        return {
+            "source": source_name,
+            "model_id": model_id,
+            "target_keyword": "INFANTRY",
+            "invulnerable_save": None,
+        }
+
+    def cleanup_combined_arms_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_combined_arms() or self.army is None:
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for prefix in (
+                "combined_arms_flexible_command",
+                "combined_arms_fields_of_fire",
+                "combined_arms_stalwart_protector",
+            ):
+                if not bool(sr.get(f"{prefix}_active", False)):
+                    continue
+                marked_round = self._safe_int(sr.get(f"{prefix}_round", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get(f"{prefix}_phase", "") or "")
+                marked_owner = str(sr.get(f"{prefix}_owner", "") or "")
+                if marked_round and round_now and marked_round != round_now:
+                    continue
+                if phase_key and marked_phase and marked_phase != phase_key:
+                    continue
+                if owner_id and marked_owner and marked_owner != owner_id:
+                    continue
+                for key in list(sr.keys()):
+                    if key == f"{prefix}_active" or key.startswith(f"{prefix}_"):
+                        sr.pop(key, None)
+            root.special_rules = sr
+            ability_cache = getattr(root, "_ability_cache", None)
+            if isinstance(ability_cache, dict):
+                ability_cache.pop("selfless_protector_rule", None)
 
     def _unit_is_transport_unit(self, unit) -> bool:
         root = self._unit_root(unit)

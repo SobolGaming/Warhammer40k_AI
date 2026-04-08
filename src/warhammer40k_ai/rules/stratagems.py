@@ -61,6 +61,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A TRAP WELL LAID",
     "AUTOMATED REPAIR DRONES",
     "BOUNDING ADVANCE",
+    "COORDINATED ACTION",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "CONNOISSEURS OF PAIN",
@@ -411,7 +412,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FEIGNED RETREAT",
     "FIRE AND FADE",
     "FIRE AND RELOCATE",
+    "FIELDS OF FIRE",
     "FIRING HOT",
+    "FLEXIBLE COMMAND",
     "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
@@ -837,6 +840,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HONOUR OF THE HOLD",
     "HUNTR'S MARK",
     "ILLUMINATED PRIORITY",
+    "INSPIRED COMMAND",
     "INEXORABLE EFFICIENCY",
     "GRAND ARTIFICE",
     "MOBILE EXPLOITATION",
@@ -857,8 +861,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORDERED RETREAT",
     "PREVENTATIVE PURGE",
     "REACTIVE REPRISAL",
+    "REINFORCEMENTS!",
     "RANGER TACTICS",
     "SECURE POSITIONS",
+    "STALWART PROTECTOR",
     "SUPERIOR CRAFTSMANSHIP",
     "SURE OF PURPOSE",
     "TECTONIC FRACTURE",
@@ -1166,6 +1172,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REACTIVE REPRISAL",
     "RANGER TACTICS",
     "SECURE POSITIONS",
+    "STALWART PROTECTOR",
     "UNWAVERING ACCURACY",
     "VENGEANCE FLARE",
     "VOID HARDENED",
@@ -2314,6 +2321,7 @@ class StratagemManager(
             "YOUR TIME IS NIGH",
             "FINAL REDEMPTION",
             "AVENGE THE MASTERS!",
+            "REINFORCEMENTS!",
             "WRETCHED MASSES",
         }:
             add("unit_destroyed", self._on_unit_destroyed)
@@ -2516,6 +2524,7 @@ class StratagemManager(
             "VENGEFUL SURGE",
             "CLOAK AND SHADOW",
             "SPIRALLING EVASION",
+            "STALWART PROTECTOR",
     "VENGEFUL SORROW",
     "THE TORCHSTAR GAMBIT",
     "VOID HARDENED",
@@ -2770,13 +2779,19 @@ class StratagemManager(
             "FEINT AND THRUST",
             "MOBILE LETHALITY",
             "BELLICOSA DROP",
+            "COORDINATED ACTION",
             "STRIKE FROM THE SHADOWS",
             "STUNNING FUSILLADE",
             "PEERLESS WARRIOR",
             "PITILESS CANNONADE",
             "POINT-BLANK DESTRUCTION",
             "FIRE AND RELOCATE",
+            "FIELDS OF FIRE",
             "FIRING HOT",
+            "FLEXIBLE COMMAND",
+            "INSPIRED COMMAND",
+            "REINFORCEMENTS!",
+            "STALWART PROTECTOR",
             "SMASH THROUGH",
             "UNYIELDING FORMS",
             "CHRONODISTORTION",
@@ -5602,12 +5617,26 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase Reinforcements step and ASTRA MILITARUM INFANTRY in Reserves with Deep Strike"
             return result
+        if name_u == "COORDINATED ACTION":
+            if self._combined_arms_coordinated_action_regiment_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly REGIMENT unit plus a visible friendly SQUADRON unit within 6\""
+            return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
                 result["available"] = True
                 result["reason"] = None
                 return result
             result["reason"] = "Requires non-TITANIC ASTRA MILITARUM unit on the battlefield"
+            return result
+        if name_u == "FIELDS OF FIRE":
+            if self._combined_arms_fields_of_fire_regiment_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase, a friendly REGIMENT unit and friendly SQUADRON unit that have not shot, plus an enemy unit"
             return result
         if name_u == "FIRING HOT":
             if self._bridgehead_firing_hot_candidates():
@@ -5616,9 +5645,23 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires MILITARUM TEMPESTUS or Kasrkin unit that has not shot this phase"
             return result
+        if name_u == "FLEXIBLE COMMAND":
+            if self._combined_arms_flexible_command_officer_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly ASTRA MILITARUM OFFICER with Voice of Command on the battlefield"
+            return result
+        if name_u == "INSPIRED COMMAND":
+            if self._combined_arms_inspired_command_officer_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Command phase and a friendly ASTRA MILITARUM OFFICER with Voice of Command on the battlefield"
+            return result
         if name_u in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
             for reaction in list(getattr(self, "_pending_reactions", []) or []):
-                reaction_name = str(reaction.get("stratagem", "") or "").strip().upper()
+                reaction_name = self._normalize_stratagem_name(reaction.get("stratagem", "") or "")
                 if reaction_name not in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
                     continue
                 if list(reaction.get("candidates") or []):
@@ -5646,6 +5689,25 @@ class StratagemManager(
                     result["reason"] = None
                     return result
             result["reason"] = "Requires end of opponent's Fight phase and engaged REGIMENT INFANTRY unit on the battlefield"
+            return result
+        if name_u == "REINFORCEMENTS!":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REINFORCEMENTS!":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("destroyed_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._combined_arms_reinforcements_candidates(destroyed_unit=destroyed_unit)
+            if candidates and not bool(self._used_once_per_battle.get("REINFORCEMENTS!", False)):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a friendly INFANTRY REGIMENT unit that was just destroyed, and this stratagem has not already been used this battle"
             return result
         if name_u == "MORDIAN MINUTE":
             if self._grizzled_mordian_minute_candidates():
@@ -5779,6 +5841,28 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires eligible ASTRA MILITARUM OFFICER that can issue an order"
+            return result
+        if name_u == "STALWART PROTECTOR":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "STALWART PROTECTOR":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+            target_units = list(context.get("target_units") or [])
+            if attacking_unit is not None and target_units:
+                candidates = self._combined_arms_stalwart_protector_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+                if candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires your opponent's Shooting phase after enemy targets are selected, and a friendly ASTRA MILITARUM VEHICLE on the battlefield"
             return result
         if name_u == "NO RETREAT!":
             target_unit = context.get("target_unit") or context.get("unit")
@@ -7860,14 +7944,20 @@ class StratagemManager(
             "HEIGHTENED JEALOUSY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured or after destroying an enemy)",
             "AERIAL EXTRACTION": "Target: your ASTRA MILITARUM Deep Strike unit or Valkyrie not within Engagement Range at end of opponent's Fight phase; enters Strategic Reserves",
             "BELLICOSA DROP": "Target: ASTRA MILITARUM INFANTRY unit in Reserves with Deep Strike",
+            "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
             "FIRE AND RELOCATE": "Target: non-TITANIC ASTRA MILITARUM unit on the battlefield; can shoot after advancing this phase",
+            "FIELDS OF FIRE": "Target: one friendly REGIMENT unit, one friendly SQUADRON unit, and one enemy unit; selected friendlies improve AP by 1 against that enemy this phase",
             "FIRING HOT": "Target: MILITARUM TEMPESTUS or Kasrkin unit that has not been selected to shoot this phase",
+            "FLEXIBLE COMMAND": "Target: your ASTRA MILITARUM OFFICER units this Command phase; they can issue Orders to REGIMENT and SQUADRON units",
+            "INSPIRED COMMAND": "Target: one ASTRA MILITARUM OFFICER during your opponent's Command phase; issue one Voice of Command order now",
             "MORDIAN MINUTE": "Target: ASTRA MILITARUM INFANTRY unit with First Rank, Fire! Second Rank, Fire! (not shot)",
             "NO RETREAT!": "Target: ASTRA MILITARUM unit with Duty and Honour!; select controlled objective in range",
             "ON MY POSITION": "Target: REGIMENT INFANTRY unit within Engagement Range at end of opponent's Fight phase",
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
+            "REINFORCEMENTS!": "Target: your destroyed ASTRA MILITARUM INFANTRY REGIMENT unit; add an identical replacement unit to Strategic Reserves at Starting Strength",
             "SERVO-DESIGNATORS": "Target: ASTRA MILITARUM INFANTRY unit that just shot; choose one visible enemy unit it hit",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
+            "STALWART PROTECTOR": "Target: your ASTRA MILITARUM VEHICLE after enemy shooting targets are selected; it grants cover to obscured friendly INFANTRY this phase",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
             "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
@@ -9832,6 +9922,28 @@ class StratagemManager(
             raise
         try:
             self._queue_bridgehead_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            army = getattr(self.player, "army", None)
+            voice = getattr(army, "voice_of_command", None) if army is not None else None
+            clear_coordinated = getattr(voice, "clear_coordinated_action_phase_effects", None) if voice is not None else None
+            if callable(clear_coordinated):
+                clear_coordinated(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            cleanup_combined = getattr(am_mgr, "cleanup_combined_arms_phase_effects", None) if am_mgr is not None else None
+            if callable(cleanup_combined):
+                cleanup_combined(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
         except Exception:
             raise
         try:
@@ -13387,6 +13499,13 @@ class StratagemManager(
                 )
             if owner_player is self.player:
                 return  # only opponent can react
+        except Exception:
+            raise
+        try:
+            self._queue_combined_arms_stalwart_protector_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -17397,6 +17516,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_combined_arms_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_awakened_dynasty_unit_destroyed_reactions(
                 destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -17800,7 +17926,7 @@ class StratagemManager(
         s = self.get_by_name(name)
         if not s:
             return False
-        name_u = (s.name or "").strip().upper()
+        name_u = self._normalize_stratagem_name(s.name or "")
         if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
@@ -17820,7 +17946,7 @@ class StratagemManager(
         if not s:
             return False
 
-        name_u = (s.name or "").strip().upper()
+        name_u = self._normalize_stratagem_name(s.name or "")
         if name_u == "GILDED CHAMPION":
             model = self._resolve_gilded_champion_model(kwargs)
             if model is not None:
@@ -17838,7 +17964,7 @@ class StratagemManager(
         try:
             phase_name = kwargs.get("phase_name") or self._current_phase_name
             if phase_name:
-                key = (s.name or "").strip().upper()
+                key = self._normalize_stratagem_name(s.name or "")
                 if key and key in self._used_stratagems_this_phase:
                     if key == "COMMAND RE-ROLL" and self._command_reroll_repeat_allowed(
                         target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
@@ -17876,7 +18002,7 @@ class StratagemManager(
         # - Battle-shocked units cannot be targeted by stratagems, except INSANE BRAVERY.
         try:
             tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
-            name_u = (s.name or "").strip().upper()
+            name_u = self._normalize_stratagem_name(s.name or "")
             if name_u not in (
                 "BLOOD OFFERING",
                 "A GRIM WARNING",
@@ -17884,6 +18010,7 @@ class StratagemManager(
                 "DRAWN TO THE SLAUGHTER",
                 "PALL OF DREAD",
                 "AVENGE THE MASTERS!",
+                "REINFORCEMENTS!",
                 "WRETCHED MASSES",
             ) and _unit_cannot_be_target_of_stratagem(tgt):
                 if name_u == "INSANE BRAVERY":

@@ -12150,6 +12150,132 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability in {
+        "combined_arms_coordinated_action_regiment",
+        "combined_arms_coordinated_action_squadron",
+        "combined_arms_fields_of_fire_regiment",
+        "combined_arms_fields_of_fire_squadron",
+        "combined_arms_fields_of_fire_enemy",
+    }:
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return None
+        stratagems = getattr(player, "stratagems", None)
+        if stratagems is None:
+            return None
+        phase_name = str(payload.get("phase_name", "") or ctx.get("phase_name", "") or "")
+        if ability == "combined_arms_coordinated_action_regiment":
+            regiment_unit = resolve_unit(
+                game,
+                payload.get("regiment_unit_id") or ctx.get("regiment_unit_id"),
+            )
+            if regiment_unit is None:
+                return None
+            stratagem = getattr(stratagems, "get_by_name", lambda _name: None)("COORDINATED ACTION")
+            queue_next = getattr(stratagems, "_queue_combined_arms_coordinated_action_squadron_request", None)
+            if stratagem is None or not callable(queue_next):
+                return None
+            if not bool(queue_next(stratagem, phase_name=phase_name, regiment_unit=regiment_unit)):
+                return None
+            return {"regiment_unit_id": str(get_entity_id(regiment_unit) or "")}
+        if ability == "combined_arms_coordinated_action_squadron":
+            regiment_unit = resolve_unit(
+                game,
+                payload.get("regiment_unit_id") or ctx.get("regiment_unit_id"),
+            )
+            squadron_unit = resolve_unit(
+                game,
+                payload.get("squadron_unit_id") or ctx.get("squadron_unit_id"),
+            )
+            if regiment_unit is None or squadron_unit is None:
+                return None
+            if not bool(
+                stratagems.use(
+                    "COORDINATED ACTION",
+                    regiment_unit=regiment_unit,
+                    squadron_unit=squadron_unit,
+                    phase_name=phase_name,
+                )
+            ):
+                return None
+            return {
+                "regiment_unit_id": str(get_entity_id(regiment_unit) or ""),
+                "squadron_unit_id": str(get_entity_id(squadron_unit) or ""),
+            }
+        if ability == "combined_arms_fields_of_fire_regiment":
+            regiment_unit = resolve_unit(
+                game,
+                payload.get("regiment_unit_id") or ctx.get("regiment_unit_id"),
+            )
+            if regiment_unit is None:
+                return None
+            stratagem = getattr(stratagems, "get_by_name", lambda _name: None)("FIELDS OF FIRE")
+            queue_next = getattr(stratagems, "_queue_combined_arms_fields_of_fire_squadron_request", None)
+            if stratagem is None or not callable(queue_next):
+                return None
+            if not bool(queue_next(stratagem, phase_name=phase_name, regiment_unit=regiment_unit)):
+                return None
+            return {"regiment_unit_id": str(get_entity_id(regiment_unit) or "")}
+        if ability == "combined_arms_fields_of_fire_squadron":
+            regiment_unit = resolve_unit(
+                game,
+                payload.get("regiment_unit_id") or ctx.get("regiment_unit_id"),
+            )
+            squadron_unit = resolve_unit(
+                game,
+                payload.get("squadron_unit_id") or ctx.get("squadron_unit_id"),
+            )
+            if regiment_unit is None or squadron_unit is None:
+                return None
+            stratagem = getattr(stratagems, "get_by_name", lambda _name: None)("FIELDS OF FIRE")
+            queue_next = getattr(stratagems, "_queue_combined_arms_fields_of_fire_enemy_request", None)
+            if stratagem is None or not callable(queue_next):
+                return None
+            if not bool(
+                queue_next(
+                    stratagem,
+                    phase_name=phase_name,
+                    regiment_unit=regiment_unit,
+                    squadron_unit=squadron_unit,
+                )
+            ):
+                return None
+            return {
+                "regiment_unit_id": str(get_entity_id(regiment_unit) or ""),
+                "squadron_unit_id": str(get_entity_id(squadron_unit) or ""),
+            }
+        regiment_unit = resolve_unit(
+            game,
+            payload.get("regiment_unit_id") or ctx.get("regiment_unit_id"),
+        )
+        squadron_unit = resolve_unit(
+            game,
+            payload.get("squadron_unit_id") or ctx.get("squadron_unit_id"),
+        )
+        enemy_unit = resolve_unit(
+            game,
+            payload.get("enemy_unit_id") or ctx.get("enemy_unit_id") or payload.get("target_unit_id"),
+        )
+        if regiment_unit is None or squadron_unit is None or enemy_unit is None:
+            return None
+        if not bool(
+            stratagems.use(
+                "FIELDS OF FIRE",
+                regiment_unit=regiment_unit,
+                squadron_unit=squadron_unit,
+                enemy_unit=enemy_unit,
+                phase_name=phase_name,
+            )
+        ):
+            return None
+        return {
+            "regiment_unit_id": str(get_entity_id(regiment_unit) or ""),
+            "squadron_unit_id": str(get_entity_id(squadron_unit) or ""),
+            "enemy_unit_id": str(get_entity_id(enemy_unit) or ""),
+        }
     if ability == "tau_kauyon_tempting_trap_objective":
         if is_skip_choice(request, result):
             return None
@@ -32105,16 +32231,21 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
     payload = _option_payload(request, result)
     if is_skip_choice(request, result):
         trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "").strip().lower()
-        if trigger == "reactive_command_setup":
+        if trigger in {"reactive_command_setup", "inspired_command"}:
             army = _resolve_army(game, request, payload)
             mgr = getattr(army, "voice_of_command", None) if army is not None else None
-            consume_fn = getattr(mgr, "consume_reactive_command_skip", None) if mgr is not None else None
             officer = resolve_unit(
                 game,
                 payload.get("officer_unit_id") or payload.get("officer_unit") or request.context.get("officer_unit_id"),
             )
-            if callable(consume_fn):
-                consume_fn(officer, game=game)
+            if trigger == "reactive_command_setup":
+                consume_fn = getattr(mgr, "consume_reactive_command_skip", None) if mgr is not None else None
+                if callable(consume_fn):
+                    consume_fn(officer, game=game)
+            else:
+                consume_fn = getattr(mgr, "consume_inspired_command_skip", None) if mgr is not None else None
+                if callable(consume_fn):
+                    consume_fn(officer, game=game)
         return None
     army = _resolve_army(game, request, payload)
     if army is None:
