@@ -101,6 +101,8 @@ class TestBenefitOfCover:
         info = game_map.get_benefit_of_cover_for_ranged_attack(attacking_unit=attacker, target_model=target.models[0])
         assert info["has_benefit_of_cover"] is True
         assert info["source_terrain_type"] == "WOODS"
+        assert info["compatibility_mode"] == "SAVE_BONUS_COMPATIBILITY"
+        assert info["reason_trace"][0]["code"] == "TARGET_WHOLLY_WITHIN_TERRAIN"
 
     def test_ruins_not_fully_visible_to_every_attacker_grants_cover(self):
         game_map = Map(width=48, height=72)
@@ -118,6 +120,7 @@ class TestBenefitOfCover:
         info = game_map.get_benefit_of_cover_for_ranged_attack(attacking_unit=attacker, target_model=target.models[0])
         assert info["has_benefit_of_cover"] is True
         assert info["source_terrain_type"] == "RUINS"
+        assert info["reason_trace"][0]["code"] == "TERRAIN_BREAKS_FULL_VISIBILITY"
 
     def test_benefit_of_cover_adds_plus_one_to_armor_save_roll(self, monkeypatch):
         # Force a deterministic save roll of 3

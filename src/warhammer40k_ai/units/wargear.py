@@ -1965,68 +1965,19 @@ class WargearProfile:
         try:
             if not (self.parent_wargear and self.parent_wargear.is_ranged()):
                 return False
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return False
-
-        # Attacker must be >= 6" from ground level (z measured in inches)
-        try:
-            attacker_z = float(getattr(attacker, "z", 0.0))
-        except Exception:
-            attacker_z = 0.0
-        if attacker_z < 6.0:
-            return False
-
-        # Target unit must have all alive models at ground level
-        alive_targets = [m for m in getattr(target, "models", []) if getattr(m, "is_alive", True)]
-        if not alive_targets:
-            return False
-        for m in alive_targets:
-            try:
-                z = float(getattr(m, "z", 0.0))
-            except Exception:
-                z = 0.0
-            # Ground level tolerance matches RUINS placement validation tolerance (+/-1")
-            if abs(z) >= 1.0:
-                return False
-
-        # Attacker must be wholly within a RUINS feature footprint
         game_map = self._get_game_map_from_model(attacker)
-        if not game_map or not hasattr(game_map, "terrain_features"):
+        if game_map is None:
             return False
-
-        base_geom = None
+        get_context = getattr(game_map, "get_plunging_fire_context", None)
+        if not callable(get_context):
+            return False
         try:
-            mb = getattr(attacker, "model_base", None)
-            if mb is not None:
-                base_geom = mb.get_base_shape_at(mb.x, mb.y, getattr(mb, "facing", 0.0))
-        except Exception:
-            base_geom = None
-        if base_geom is None:
+            context = get_context(attacker, target)
+        except (AttributeError, TypeError, ValueError):
             return False
-
-        try:
-            from ..battlefield.map import TerrainType
-        except Exception:
-            return False
-
-        for terrain in getattr(game_map, "terrain_features", []) or []:
-            try:
-                if getattr(terrain, "terrain_type", None) != TerrainType.RUINS:
-                    continue
-                footprint = getattr(terrain, "footprint", None)
-                if footprint is None:
-                    continue
-                # "Wholly within" should allow touching the boundary
-                if hasattr(footprint, "covers"):
-                    if footprint.covers(base_geom):
-                        return True
-                else:
-                    if footprint.contains(base_geom):
-                        return True
-            except Exception:
-                continue
-
-        return False
+        return bool(context.get("applies", False))
 
     def _phase_effect_special_rules(
         self,

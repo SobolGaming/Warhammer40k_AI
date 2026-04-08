@@ -81,7 +81,9 @@ Key rules applied:
   These affect wall blocking and vertical movement costs.
 
 ## Line of sight
-`Map.can_model_see_model` applies ruins-aware LOS:
+`Map.can_model_see_model` now delegates to `src/warhammer40k_ai/battlefield/terrain_visibility.py`, which keeps the stable map-facing API while moving the sampled LOS logic into a dedicated service.
+
+Current ruins-aware LOS behavior remains:
 - The footprint blocks outside-to-outside visibility regardless of openings or height
   (unless aircraft are involved).
 - Models partially inside the footprint cannot see out unless they are towering.
@@ -90,12 +92,25 @@ Key rules applied:
 - Walls block LOS unless an opening with `allows_los` intersects the line segment at the
   relevant height (applies only to valid "normal LOS" cases above).
 
+PR-013 also adds provisional visibility context queries:
+- Hidden / detection-range scaffolding
+- terrain-area obscuring gating
+- deterministic visibility reason traces
+
 ## Benefit of Cover and Plunging Fire
-- Benefit of Cover for RUINS is evaluated in `Map.get_benefit_of_cover_for_ranged_attack`.
-- Plunging Fire is evaluated in `WargearProfile._plunging_fire_applies`.
+- Benefit of Cover for RUINS and fortification-derived cover now route through
+  `src/warhammer40k_ai/battlefield/terrain_cover.py`.
+- The live engine still keeps current cover behavior in save-bonus compatibility mode until PR-015.
+- Surface-height queries and Plunging Fire scaffolding now route through
+  `src/warhammer40k_ai/battlefield/terrain_elevation.py`.
+- `WargearProfile._plunging_fire_applies` now consumes the map/elevation query context instead of
+  owning the geometry logic directly.
 
 
 ## Files
 - `src/warhammer40k_ai/battlefield/map.py`
+- `src/warhammer40k_ai/battlefield/terrain_visibility.py`
+- `src/warhammer40k_ai/battlefield/terrain_cover.py`
+- `src/warhammer40k_ai/battlefield/terrain_elevation.py`
 - `src/warhammer40k_ai/utility/calcs.py`
 - `src/warhammer40k_ai/utility/constants.py`

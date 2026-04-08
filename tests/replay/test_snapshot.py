@@ -323,6 +323,52 @@ def test_snapshot_roundtrip_preserves_polygon_objective_site() -> None:
     ]
 
 
+def test_snapshot_roundtrip_preserves_keyed_feature_objective_site_with_terrain_area_binding() -> None:
+    player = Player(
+        "Player One",
+        control=PlayerControl.LOCAL,
+        army=Army.with_detachment("Chaos Daemons", "Test"),
+    )
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    terrain_area = TerrainArea(
+        ShapelyPolygon([(20.0, 8.0), (26.0, 8.0), (26.0, 14.0), (20.0, 14.0)]),
+        area_id="terrain_area:keyed_feature",
+        effect_tags=["RUINS", "HIDDEN_CAPABLE"],
+        detection_range=15.0,
+        layout_slot_id="layout:keyed_feature",
+        metadata={"source": "test"},
+    )
+    game.map.terrain_areas = [terrain_area]
+    site = ObjectiveSite.keyed_feature(
+        feature_key="terrain_feature:keyed_ruin",
+        fallback_footprint=ShapelyPolygon([(20.0, 8.0), (26.0, 8.0), (26.0, 14.0), (20.0, 14.0)]),
+        feature_label="Keyed Ruin",
+        terrain_area_id=terrain_area.id,
+        layout_slot_id=terrain_area.layout_slot_id,
+    )
+    objective = Objective(
+        name="Keyed Ruin Objective",
+        category=ObjectiveCategory.PRIMARY,
+        points=5,
+        description="Control the keyed ruin",
+        conditions=lambda game, point=site: point.primary_score_source().is_active(point.controlling_player),
+        location=site,
+    )
+    game.map.objectives = [objective]
+    game.objectives = [objective]
+
+    loaded = load_game_snapshot(snapshot_game(game))
+    loaded_site = loaded.map.objectives[0].location
+
+    assert loaded_site.site_kind == "KEYED_FEATURE"
+    assert loaded_site.geometry_kind == "KEYED_FEATURE"
+    assert loaded_site.feature_key == "terrain_feature:keyed_ruin"
+    assert loaded_site.terrain_area_id == "terrain_area:keyed_feature"
+    assert loaded_site.layout_slot_id == "layout:keyed_feature"
+    assert loaded_site.control_region.terrain_area_id == "terrain_area:keyed_feature"
+    assert loaded_site.control_region.layout_slot_id == "layout:keyed_feature"
+
+
 def test_snapshot_preserves_army_points_totals(waha_helper):
     army_one = parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper)
     army_two = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper)

@@ -17,7 +17,37 @@ from shapely.affinity import scale, translate
 from typing import Union
 from .map_geometry import battlefield_edge_repulsors, create_boundary_polygon as build_boundary_polygon
 from .objective_sites import Objective, ObjectiveCategory, ObjectivePoint
+from .terrain_cover import (
+    _footprint_and_bounding_box_for_models as terrain_footprint_and_bounding_box_for_models,
+    get_benefit_of_cover_for_ranged_attack as terrain_get_benefit_of_cover_for_ranged_attack,
+    get_benefit_of_cover_from_fortifications as terrain_get_benefit_of_cover_from_fortifications,
+    get_defence_line_bonus_for_ranged_attack as terrain_get_defence_line_bonus_for_ranged_attack,
+    get_selfless_protector_bonus_for_ranged_attack as terrain_get_selfless_protector_bonus_for_ranged_attack,
+)
+from .terrain_elevation import (
+    _candidate_base_for_pose as terrain_candidate_base_for_pose,
+    _compound_part_surface_entry as terrain_compound_part_surface_entry,
+    _iter_emplacement_platform_surface_entries as terrain_iter_emplacement_platform_surface_entries,
+    _iter_root_models as terrain_iter_root_models,
+    _shape_covers as terrain_shape_covers,
+    _unit_has_keyword as terrain_unit_has_keyword,
+    _unit_root as terrain_unit_root,
+    get_emplacement_platform_placement as terrain_get_emplacement_platform_placement,
+    get_emplacement_platform_surface_entries as terrain_get_emplacement_platform_surface_entries,
+    get_height_at_point as terrain_get_height_at_point,
+    get_plunging_fire_context as terrain_get_plunging_fire_context,
+    get_surface_height_for_model as terrain_get_surface_height_for_model,
+    get_surface_options_for_model as terrain_get_surface_options_for_model,
+    validate_model_surface_placement as terrain_validate_model_surface_placement,
+)
 from .terrain_runtime import TerrainArea, TerrainFeature, TerrainType
+from .terrain_visibility import (
+    can_model_see_model as terrain_can_model_see_model,
+    get_visibility_context_for_models as terrain_get_visibility_context_for_models,
+    is_fully_visible_due_to_terrain as terrain_is_fully_visible_due_to_terrain,
+    sample_model_points_3d as terrain_sample_model_points_3d,
+    segment_blocked_by_terrain_feature as terrain_segment_blocked_by_terrain_feature,
+)
 from ..utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
@@ -256,34 +286,7 @@ class Map:
     # Benefit of Cover (terrain-based save bonus)
     ###########################################################################
     def _sample_model_points_3d(self, model: Model, perimeter_points: int = 8, z_levels: int = 3) -> List[Tuple[float, float, float]]:
-        """Sample points on a model's 3D volume for visibility tests."""
-        base_shape = model.model_base.get_base_shape()
-        exterior = base_shape.exterior
-
-        perimeter_samples: List[Tuple[float, float]] = []
-        if exterior.length > 0 and perimeter_points > 0:
-            step = exterior.length / perimeter_points
-            for i in range(perimeter_points):
-                p = exterior.interpolate(step * i)
-                perimeter_samples.append((p.x, p.y))
-
-        centroid = base_shape.centroid
-        xy_points = [(centroid.x, centroid.y)] + perimeter_samples
-
-        z_bottom, z_top = model.model_base.volume_z_bounds()
-        if z_levels <= 1:
-            z_samples = [z_bottom + 0.01]
-        elif z_levels == 2:
-            z_samples = [z_bottom + 0.01, z_top - 0.01]
-        else:
-            z_mid = (z_bottom + z_top) / 2.0
-            z_samples = [z_bottom + 0.01, z_mid, z_top - 0.01]
-
-        points_3d: List[Tuple[float, float, float]] = []
-        for (x, y) in xy_points:
-            for z in z_samples:
-                points_3d.append((x, y, z))
-        return points_3d
+        return terrain_sample_model_points_3d(model, perimeter_points=perimeter_points, z_levels=z_levels)
 
     def _segment_blocked_by_terrain_feature(
         self,
@@ -293,161 +296,16 @@ class Map:
         shooter_model: Model,
         target_model: Model,
     ) -> bool:
-        """Return True if the segment is blocked by *this* terrain feature."""
-        line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
-        if line2d.length == 0:
-            return False
-
-        def z_at_t(t: float) -> float:
-            return p0[2] + t * (p1[2] - p0[2])
-
-        footprint = getattr(terrain, 'footprint', None)
-        if footprint is None:
-            return False
-
-        # RUINS special visibility rules (tournament-style)
-        is_ruins = hasattr(terrain, 'walls') and hasattr(terrain, 'openings')
-        if is_ruins:
-            shooter_shape = shooter_model.model_base.get_base_shape()
-            target_shape = target_model.model_base.get_base_shape()
-            shooter_inside_any = footprint.intersects(shooter_shape)
-            target_inside_any = footprint.intersects(target_shape)
-            shooter_wholly_within = footprint.covers(shooter_shape)
-            shooter_is_aircraft = bool(getattr(shooter_model.parent_unit, "is_aircraft", False))
-            target_is_aircraft = bool(getattr(target_model.parent_unit, "is_aircraft", False))
-            shooter_is_towering = bool(getattr(shooter_model.parent_unit, "is_towering", False))
-
-            # Aircraft always use normal LOS: skip blanket ruins blocking.
-            if not (shooter_is_aircraft or target_is_aircraft):
-                # Outside-to-outside across footprint blocks.
-                if not shooter_inside_any and not target_inside_any and line2d.intersects(footprint):
-                    return True
-
-                # Partially-inside (not wholly within) cannot see out unless towering.
-                if shooter_inside_any and not shooter_wholly_within and not shooter_is_towering:
-                    if not target_inside_any:
-                        return True
-
-        # Walls/openings handling (RUINS)
-        walls = getattr(terrain, 'walls', None)
-        openings = getattr(terrain, 'openings', None)
-        if walls:
-            for wall in walls:
-                wall_poly = wall.get('polygon')
-                if wall_poly is None:
-                    continue
-                if not line2d.intersects(wall_poly):
-                    continue
-                inter = line2d.intersection(wall_poly)
-                if inter.is_empty:
-                    continue
-                if inter.geom_type == 'Point':
-                    inter_pt = inter
-                elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
-                    inter_pt = inter.centroid
-                else:
-                    inter_pt = inter.representative_point()
-
-                t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
-                if t <= 1e-6 or t >= 1.0 - 1e-6:
-                    continue
-                z_here = z_at_t(t)
-                z_bottom = wall.get('z_bottom', 0.0)
-                z_top = wall.get('z_top', z_bottom)
-
-                if z_bottom <= z_here <= z_top:
-                    allowed = False
-                    if openings:
-                        for op in openings:
-                            if not op.get('allows_los', False):
-                                continue
-                            op_poly = op.get('polygon')
-                            if op_poly is None:
-                                continue
-                            if not op_poly.contains(inter_pt):
-                                continue
-                            if op.get('z_bottom', -1e9) <= z_here <= op.get('z_top', 1e9):
-                                allowed = True
-                                break
-                    if not allowed:
-                        return True
-            return False
-
-        # Generic terrain: footprint blocks within vertical span
-        if not line2d.intersects(footprint):
-            return False
-        inter = line2d.intersection(footprint)
-        if inter.is_empty:
-            return False
-        if inter.geom_type == 'Point':
-            inter_pt = inter
-        elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
-            inter_pt = inter.centroid
-        else:
-            inter_pt = inter.representative_point()
-        t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
-        if t <= 1e-6 or t >= 1.0 - 1e-6:
-            return False
-        z_here = z_at_t(t)
-
-        min_z, max_z = 0.0, 0.0
-        if hasattr(terrain, 'height'):
-            min_z, max_z = 0.0, float(getattr(terrain, 'height'))
-        elif hasattr(terrain, 'rim_height'):
-            min_z, max_z = 0.0, float(getattr(terrain, 'rim_height'))
-        elif hasattr(terrain, 'bounding_box') and isinstance(terrain.bounding_box, dict):
-            try:
-                min_z = float(terrain.bounding_box.get('min', (0, 0, 0))[2])
-                max_z = float(terrain.bounding_box.get('max', (0, 0, 0))[2])
-            except (TypeError, ValueError, IndexError):
-                min_z, max_z = 0.0, 2.0
-        else:
-            max_z = 2.0
-
-        return min_z <= z_here <= max_z
+        return terrain_segment_blocked_by_terrain_feature(p0, p1, terrain, shooter_model, target_model)
 
     def _is_fully_visible_due_to_terrain(self, shooter_model: Model, target_model: Model, terrain: 'TerrainFeature') -> bool:
-        """True iff every sampled point on target is visible to shooter w.r.t this terrain."""
-        shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=8, z_levels=3)
-        target_points = self._sample_model_points_3d(target_model, perimeter_points=8, z_levels=3)
+        return terrain_is_fully_visible_due_to_terrain(shooter_model, target_model, terrain)
 
-        for tp in target_points:
-            any_visible = False
-            for sp in shooter_points:
-                if not self._segment_blocked_by_terrain_feature(sp, tp, terrain, shooter_model, target_model):
-                    any_visible = True
-                    break
-            if not any_visible:
-                return False
-        return True
+    def get_visibility_context_for_models(self, shooter_model: Model, target_model: Model) -> Dict[str, Any]:
+        return terrain_get_visibility_context_for_models(self, shooter_model, target_model)
 
     def can_model_see_model(self, shooter_model: Model, target_model: Model) -> bool:
-        """
-        Best-effort line-of-sight check for visibility requirements (e.g. PRECISION).
-
-        Returns True if there exists at least one sampled point on the target that is not blocked
-        from at least one sampled point on the shooter by any terrain feature.
-        """
-        shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
-        target_points = self._sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
-        if not shooter_points or not target_points:
-            return False
-
-        terrain_features = list(getattr(self, "terrain_features", []) or [])
-        for tp in target_points:
-            for sp in shooter_points:
-                blocked = False
-                for terrain in terrain_features:
-                    try:
-                        if self._segment_blocked_by_terrain_feature(sp, tp, terrain, shooter_model, target_model):
-                            blocked = True
-                            break
-                    except (GEOSException, TypeError, ValueError):
-                        blocked = True
-                        break
-                if not blocked:
-                    return True
-        return False
+        return terrain_can_model_see_model(self, shooter_model, target_model)
 
     def get_benefit_of_cover_for_ranged_attack(
         self,
@@ -456,122 +314,33 @@ class Map:
         weapon_profile: Optional[Any] = None,
         ap: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Evaluate Benefit of Cover for RUINS/WOODS for a single ranged attack allocation.
-
-        RUINS & WOODS:
-        - If target_model is wholly within the terrain feature, OR
-        - If target_model is not fully visible to every model in attacking_unit because of that terrain feature,
-          then target_model has Benefit of Cover against that attack.
-
-        TODO: Extend this method to support other terrain types (Crater, Barricade, etc.).
-        """
-        result: Dict[str, Any] = {
-            "has_benefit_of_cover": False,
-            "source_terrain_type": None,
-            "reason": None,
-        }
-
-        # If weapon ignores cover, it cancels Benefit of Cover.
-        if weapon_profile is not None:
-            parent_wg = getattr(weapon_profile, "parent_wargear", None)
-            ignores_cover = getattr(parent_wg, "is_ignores_cover", None)
-            if callable(ignores_cover) and ignores_cover():
-                return result
-
-        # Evaluate per terrain feature. Multiple instances are not cumulative, so we early-return on first match.
-        for terrain in getattr(self, "terrain_features", []):
-            ttype = getattr(terrain, "terrain_type", None)
-            if ttype not in (TerrainType.RUINS, TerrainType.WOODS):
-                continue
-
-            footprint = getattr(terrain, "footprint", None)
-            if footprint is None:
-                continue
-
-            # Wholly within (2D footprint-based: base wholly within footprint)
-            base_shape = target_model.model_base.get_base_shape()
-            if footprint.covers(base_shape):
-                result["has_benefit_of_cover"] = True
-                result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
-                result["reason"] = "Target model wholly within terrain feature"
-                return result
-
-            # Not fully visible to every model in the attacking unit because of this terrain feature.
-            for attacker_model in getattr(attacking_unit, "models", []):
-                if not getattr(attacker_model, "is_alive", False):
-                    continue
-                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, terrain)
-                if not fully_visible:
-                    result["has_benefit_of_cover"] = True
-                    result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
-                    result["reason"] = f"Not fully visible to {getattr(attacker_model, 'name', 'an attacker model')} due to terrain"
-                    return result
-
-        return result
+        return terrain_get_benefit_of_cover_for_ranged_attack(
+            self,
+            attacking_unit=attacking_unit,
+            target_model=target_model,
+            weapon_profile=weapon_profile,
+            ap=ap,
+        )
 
     @staticmethod
     def _unit_root(unit: Optional[Unit]) -> Optional[Unit]:
-        if unit is None:
-            return None
-        getter = getattr(unit, "get_attached_unit_root", None)
-        if callable(getter):
-            return getter()
-        return unit
+        return terrain_unit_root(unit)
 
     @staticmethod
     def _unit_has_keyword(unit: Optional[Unit], keyword: str) -> bool:
-        if unit is None:
-            return False
-        checker = getattr(unit, "has_any_keyword", None)
-        if callable(checker):
-            try:
-                return bool(checker(keyword))
-            except Exception:
-                return False
-        return False
+        return terrain_unit_has_keyword(unit, keyword)
 
     @staticmethod
     def _iter_root_models(root: Optional[Unit]) -> list[Model]:
-        if root is None:
-            return []
-        getter = getattr(root, "get_attached_unit_models", None)
-        if callable(getter):
-            return list(getter() or [])
-        return list(getattr(root, "models", []) or [])
+        return terrain_iter_root_models(root)
 
     @staticmethod
     def _shape_covers(container: Any, target: Any) -> bool:
-        if container is None or target is None:
-            return False
-        if hasattr(container, "covers"):
-            return bool(container.covers(target))
-        return bool(container.contains(target))
+        return terrain_shape_covers(container, target)
 
     @staticmethod
     def _candidate_base_for_pose(model: Optional[Model], x: float, y: float, z: float) -> Optional[Any]:
-        if model is None:
-            return None
-        unit = getattr(model, "parent_unit", None)
-        create_potential_base = getattr(unit, "_create_potential_base", None)
-        facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
-        if callable(create_potential_base):
-            try:
-                candidate = create_potential_base(float(x), float(y), float(z), facing, model=model)
-            except Exception:
-                candidate = None
-            if candidate is not None:
-                return candidate
-        base = getattr(model, "model_base", None)
-        if base is None:
-            return None
-        try:
-            from ..utility.model_base import clone_base
-            candidate = clone_base(base)
-            candidate.set_position(float(x), float(y), float(z))
-            candidate.set_facing(float(facing))
-            return candidate
-        except Exception:
-            return None
+        return terrain_candidate_base_for_pose(model, x, y, z)
 
     @staticmethod
     def _compound_part_surface_entry(
@@ -579,46 +348,10 @@ class Map:
         *,
         part_id: str,
     ) -> Optional[dict[str, Any]]:
-        if source_model is None:
-            return None
-        base = getattr(source_model, "model_base", None)
-        if base is None:
-            return None
-        get_parts = getattr(base, "get_compound_parts", None)
-        parts = list(get_parts() or []) if callable(get_parts) else []
-        if not parts:
-            return None
-        wanted = str(part_id or "").strip().lower()
-        selected_part = None
-        for part in parts:
-            if str(part.get("part_id", "")).strip().lower() == wanted:
-                selected_part = part
-                break
-        if selected_part is None:
-            return None
-        part_shape_fn = getattr(base, "_compound_part_shape_at", None)
-        if not callable(part_shape_fn):
-            return None
-        try:
-            shape = part_shape_fn(
-                selected_part,
-                float(getattr(base, "x", 0.0) or 0.0),
-                float(getattr(base, "y", 0.0) or 0.0),
-                float(getattr(base, "facing", 0.0) or 0.0),
-            )
-        except (TypeError, ValueError, GEOSException):
-            return None
-        if shape is None:
-            return None
-        try:
-            _bottom_z, top_z = base.volume_z_bounds()
-        except (AttributeError, TypeError, ValueError):
-            top_z = float(getattr(base, "z", 0.0) or 0.0) + float(getattr(base, "model_height", 0.0) or 0.0)
-        return {
-            "polygon": shape,
-            "surface_z": float(top_z),
-            "part_id": wanted,
-        }
+        return terrain_compound_part_surface_entry(
+            source_model,
+            part_id=part_id,
+        )
 
     def _iter_emplacement_platform_surface_entries(
         self,
@@ -626,67 +359,11 @@ class Map:
         moving_model: Optional[Model] = None,
         require_eligibility: bool = True,
     ) -> tuple[dict[str, Any], ...]:
-        moving_unit = getattr(moving_model, "parent_unit", None) if moving_model is not None else None
-        moving_army = None
-        if moving_unit is not None:
-            get_army = getattr(moving_unit, "get_parent_army", None)
-            moving_army = get_army() if callable(get_army) else None
-        if require_eligibility and moving_unit is not None:
-            if not self._unit_has_keyword(moving_unit, "INFANTRY"):
-                return tuple()
-        entries: list[dict[str, Any]] = []
-        seen_roots: set[str] = set()
-        for unit in list(getattr(self, "units", []) or []):
-            root = self._unit_root(unit)
-            if root is None:
-                continue
-            root_id = str(maybe_entity_id(root) or f"object:{id(root)}")
-            if root_id in seen_roots:
-                continue
-            seen_roots.add(root_id)
-            if moving_army is not None:
-                get_army = getattr(root, "get_parent_army", None)
-                root_army = get_army() if callable(get_army) else None
-                if root_army is not moving_army:
-                    continue
-            is_alive = getattr(root, "is_alive", None)
-            if callable(is_alive) and not is_alive():
-                continue
-            if not bool(getattr(root, "deployed", True)):
-                continue
-            in_reserves = getattr(root, "is_in_reserves", None)
-            if callable(in_reserves) and in_reserves():
-                continue
-            if bool(getattr(root, "is_embarked", False)):
-                continue
-            get_rule = getattr(root, "get_emplacement_platform_rule", None)
-            rule = get_rule() if callable(get_rule) else None
-            if not isinstance(rule, dict):
-                continue
-            if moving_unit is not None:
-                faction_keyword = str(rule.get("faction_keyword", "") or "").strip().upper()
-                unit_keyword = str(rule.get("unit_keyword", "") or "").strip().upper()
-                if faction_keyword and not self._unit_has_keyword(moving_unit, faction_keyword):
-                    continue
-                if require_eligibility and unit_keyword and not self._unit_has_keyword(moving_unit, unit_keyword):
-                    continue
-            models = self._iter_root_models(root)
-            if not models:
-                continue
-            surface = self._compound_part_surface_entry(models[0], part_id=str(rule.get("part_id", "") or "platform"))
-            if surface is None:
-                continue
-            entries.append(
-                {
-                    "source_unit": root,
-                    "source_name": str(rule.get("source", "") or getattr(root, "name", "Emplacement Platform") or "Emplacement Platform"),
-                    "polygon": surface["polygon"],
-                    "surface_z": float(surface["surface_z"]),
-                    "part_id": str(surface["part_id"]),
-                    "surface_id": f"emplacement_platform:{root_id or getattr(root, 'name', 'unit')}",
-                }
-            )
-        return tuple(entries)
+        return terrain_iter_emplacement_platform_surface_entries(
+            self,
+            moving_model=moving_model,
+            require_eligibility=require_eligibility,
+        )
 
     def get_emplacement_platform_surface_entries(
         self,
@@ -694,7 +371,8 @@ class Map:
         moving_model: Optional[Model] = None,
         require_eligibility: bool = True,
     ) -> tuple[dict[str, Any], ...]:
-        return self._iter_emplacement_platform_surface_entries(
+        return terrain_get_emplacement_platform_surface_entries(
+            self,
             moving_model=moving_model,
             require_eligibility=require_eligibility,
         )
@@ -708,129 +386,31 @@ class Map:
         z: Optional[float] = None,
         require_eligibility: bool = True,
     ) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
-            "applies": False,
-            "source_unit": None,
-            "source_name": None,
-            "surface_z": None,
-            "reason": None,
-        }
-        candidate_base = self._candidate_base_for_pose(moving_model, x=float(x), y=float(y), z=float(z or 0.0))
-        if candidate_base is None:
-            return result
-        candidate_shape = candidate_base.get_base_shape()
-        z_value = float(z) if z is not None else None
-        for entry in self._iter_emplacement_platform_surface_entries(
-            moving_model=moving_model,
+        return terrain_get_emplacement_platform_placement(
+            self,
+            moving_model,
+            x=x,
+            y=y,
+            z=z,
             require_eligibility=require_eligibility,
-        ):
-            polygon = entry.get("polygon")
-            if not self._shape_covers(polygon, candidate_shape):
-                continue
-            surface_z = float(entry.get("surface_z", 0.0) or 0.0)
-            if z_value is not None and abs(surface_z - z_value) > 0.05:
-                continue
-            result["applies"] = True
-            result["source_unit"] = entry.get("source_unit")
-            result["source_name"] = entry.get("source_name")
-            result["surface_z"] = surface_z
-            result["reason"] = f"Supported by {entry.get('source_name') or 'Emplacement Platform'}"
-            return result
-        return result
+        )
 
     def validate_model_surface_placement(
         self,
         model: Optional[Model],
         position: tuple[float, float, float],
     ) -> Dict[str, Any]:
-        result: Dict[str, Any] = {"valid": True, "reason": "Valid special-surface placement"}
-        if model is None:
-            return result
-        x, y, z = float(position[0]), float(position[1]), float(position[2])
-        eligible = self.get_emplacement_platform_placement(
-            model,
-            x=x,
-            y=y,
-            z=z,
-            require_eligibility=True,
-        )
-        if eligible.get("applies", False):
-            return result
-        ineligible = self.get_emplacement_platform_placement(
-            model,
-            x=x,
-            y=y,
-            z=z,
-            require_eligibility=False,
-        )
-        if ineligible.get("applies", False):
-            source_name = str(ineligible.get("source_name", "") or "Emplacement Platform").strip() or "Emplacement Platform"
-            return {
-                "valid": False,
-                "reason": f"{source_name}: only friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the platform section.",
-            }
-        return result
+        return terrain_validate_model_surface_placement(self, model, position)
 
     def get_surface_options_for_model(self, model: Optional[Model], x: float, y: float) -> list[float]:
-        options = [float(self.get_height_at_point(x, y))]
-        special = self.get_emplacement_platform_placement(
-            model,
-            x=float(x),
-            y=float(y),
-            require_eligibility=True,
-        )
-        if special.get("applies", False):
-            options.append(float(special.get("surface_z", 0.0) or 0.0))
-        unique: list[float] = []
-        for value in options:
-            if all(abs(value - existing) > 1e-4 for existing in unique):
-                unique.append(float(value))
-        unique.sort()
-        return unique
+        return terrain_get_surface_options_for_model(self, model, x, y)
 
     def get_surface_height_for_model(self, model: Optional[Model], x: float, y: float) -> float:
-        options = self.get_surface_options_for_model(model, x, y)
-        if not options:
-            return 0.0
-        return float(max(options))
+        return terrain_get_surface_height_for_model(self, model, x, y)
 
     @staticmethod
     def _footprint_and_bounding_box_for_models(models: list[Model]) -> tuple[Any, Optional[dict]]:
-        shapes = []
-        max_z = 0.0
-        for model in list(models or []):
-            if model is None or not bool(getattr(model, "is_alive", True)):
-                continue
-            base = getattr(model, "model_base", None)
-            if base is None:
-                continue
-            shape = base.get_base_shape()
-            if shape is None:
-                continue
-            shapes.append(shape)
-            try:
-                z_here = float(getattr(base, "z", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                z_here = 0.0
-            try:
-                height = float(getattr(base, "model_height", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                height = 0.0
-            max_z = max(max_z, z_here + height)
-        if not shapes:
-            return None, None
-        try:
-            footprint = unary_union(shapes)
-        except GEOSException:
-            footprint = shapes[0]
-        try:
-            bounds = footprint.bounds
-        except (TypeError, ValueError):
-            return None, None
-        return footprint, {
-            "min": (bounds[0], bounds[1], 0.0),
-            "max": (bounds[2], bounds[3], max_z),
-        }
+        return terrain_footprint_and_bounding_box_for_models(models)
 
     def get_benefit_of_cover_from_fortifications(
         self,
@@ -839,73 +419,13 @@ class Map:
         fortification_units: list,
         weapon_profile: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Evaluate Benefit of Cover from Fortification units that grant Cover."""
-        result: Dict[str, Any] = {
-            "has_benefit_of_cover": False,
-            "source_unit": None,
-            "reason": None,
-        }
-
-        if target_model is None or attacking_unit is None:
-            return result
-
-        # If weapon ignores cover, it cancels Benefit of Cover.
-        if weapon_profile is not None:
-            parent_wg = getattr(weapon_profile, "parent_wargear", None)
-            ignores_cover = getattr(parent_wg, "is_ignores_cover", None)
-            if callable(ignores_cover) and ignores_cover():
-                return result
-
-        if not fortification_units:
-            return result
-
-        target_root = self._unit_root(getattr(target_model, "parent_unit", None))
-
-        for fort in list(fortification_units or []):
-            if fort is None:
-                continue
-            root = self._unit_root(fort)
-            if root is None:
-                continue
-            if target_root is not None and root is target_root:
-                continue
-            is_alive = getattr(root, "is_alive", None)
-            if callable(is_alive) and not is_alive():
-                continue
-            if not getattr(root, "deployed", True):
-                continue
-            in_reserves = getattr(root, "is_in_reserves", None)
-            if callable(in_reserves) and in_reserves():
-                continue
-            if bool(getattr(root, "is_embarked", False)):
-                continue
-            get_rule = getattr(root, "get_fortification_cover_rule", None)
-            rule = get_rule() if callable(get_rule) else None
-            if not rule:
-                continue
-            get_models = getattr(root, "get_attached_unit_models", None)
-            if callable(get_models):
-                root_models = list(get_models() or [])
-            else:
-                root_models = list(getattr(root, "models", []) or [])
-            footprint, bbox = self._footprint_and_bounding_box_for_models(root_models)
-            if footprint is None or bbox is None:
-                continue
-            proxy = type("FortificationCoverProxy", (), {})()
-            proxy.footprint = footprint
-            proxy.bounding_box = bbox
-            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-                if not getattr(attacker_model, "is_alive", False):
-                    continue
-                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
-                if not fully_visible:
-                    result["has_benefit_of_cover"] = True
-                    result["source_unit"] = root
-                    src_name = str(rule.get("source", "") or getattr(root, "name", "Fortification") or "Fortification")
-                    result["reason"] = f"Not fully visible due to {src_name}"
-                    return result
-
-        return result
+        return terrain_get_benefit_of_cover_from_fortifications(
+            self,
+            attacking_unit=attacking_unit,
+            target_model=target_model,
+            fortification_units=fortification_units,
+            weapon_profile=weapon_profile,
+        )
 
     def get_selfless_protector_bonus_for_ranged_attack(
         self,
@@ -914,126 +434,13 @@ class Map:
         protector_units: list,
         weapon_profile: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Evaluate Selfless Protector defensive bonuses for a ranged attack allocation."""
-        result: Dict[str, Any] = {
-            "applies": False,
-            "source_unit": None,
-            "source_model": None,
-            "grants_benefit_of_cover": False,
-            "invulnerable_save": None,
-            "reason": None,
-        }
-        if target_model is None or attacking_unit is None:
-            return result
-        if not protector_units:
-            return result
-
-        target_root = self._unit_root(getattr(target_model, "parent_unit", None))
-        if target_root is None:
-            return result
-
-        ignores_cover = False
-        if weapon_profile is not None:
-            parent_wg = getattr(weapon_profile, "parent_wargear", None)
-            ignores_cover_fn = getattr(parent_wg, "is_ignores_cover", None)
-            if callable(ignores_cover_fn):
-                ignores_cover = bool(ignores_cover_fn())
-
-        for protector in list(protector_units or []):
-            protector_root = self._unit_root(protector)
-            if protector_root is None:
-                continue
-            if protector_root is target_root:
-                continue
-            is_alive = getattr(protector_root, "is_alive", None)
-            if callable(is_alive) and not is_alive():
-                continue
-            if not bool(getattr(protector_root, "deployed", True)):
-                continue
-            in_reserves = getattr(protector_root, "is_in_reserves", None)
-            if callable(in_reserves) and in_reserves():
-                continue
-            if bool(getattr(protector_root, "is_embarked", False)):
-                continue
-
-            get_rule = getattr(protector_root, "get_selfless_protector_rule", None)
-            rule = get_rule() if callable(get_rule) else None
-            if not isinstance(rule, dict):
-                continue
-            target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
-            if target_keyword:
-                target_matches = False
-                model_has_any = getattr(target_model, "has_any_keyword", None)
-                if callable(model_has_any):
-                    try:
-                        target_matches = bool(model_has_any(target_keyword))
-                    except Exception:
-                        target_matches = False
-                if not target_matches:
-                    model_has_kw = getattr(target_model, "has_keyword", None)
-                    if callable(model_has_kw):
-                        try:
-                            target_matches = bool(model_has_kw(target_keyword))
-                        except Exception:
-                            target_matches = False
-                if not target_matches and not self._unit_has_keyword(target_root, target_keyword):
-                    continue
-
-            get_models = getattr(protector_root, "get_attached_unit_models", None)
-            if callable(get_models):
-                protector_models = list(get_models() or [])
-            else:
-                protector_models = list(getattr(protector_root, "models", []) or [])
-            if not protector_models:
-                continue
-
-            source_model = None
-            source_model_id = str(rule.get("model_id", "") or "")
-            if source_model_id:
-                for model in protector_models:
-                    if model is None:
-                        continue
-                    if str(maybe_entity_id(model) or "") != source_model_id:
-                        continue
-                    source_model = model
-                    break
-            if source_model is None:
-                for model in protector_models:
-                    if model is None or not bool(getattr(model, "is_alive", True)):
-                        continue
-                    source_model = model
-                    break
-            if source_model is None:
-                continue
-
-            footprint, bbox = self._footprint_and_bounding_box_for_models([source_model])
-            if footprint is None or bbox is None:
-                continue
-            proxy = type("SelflessProtectorProxy", (), {})()
-            proxy.footprint = footprint
-            proxy.bounding_box = bbox
-
-            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-                if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                    continue
-                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
-                if fully_visible:
-                    continue
-                result["applies"] = True
-                result["source_unit"] = protector_root
-                result["source_model"] = source_model
-                try:
-                    invulnerable_save = int(rule.get("invulnerable_save", 0) or 0)
-                except (TypeError, ValueError):
-                    invulnerable_save = 0
-                result["invulnerable_save"] = int(invulnerable_save) if invulnerable_save > 0 else None
-                if not ignores_cover:
-                    result["grants_benefit_of_cover"] = True
-                source_name = str(rule.get("source", "") or getattr(protector_root, "name", "Selfless Protector") or "Selfless Protector")
-                result["reason"] = f"Not fully visible due to {source_name}"
-                return result
-
-        return result
+        return terrain_get_selfless_protector_bonus_for_ranged_attack(
+            self,
+            attacking_unit=attacking_unit,
+            target_model=target_model,
+            protector_units=protector_units,
+            weapon_profile=weapon_profile,
+        )
 
     def get_defence_line_bonus_for_ranged_attack(
         self,
@@ -1042,136 +449,19 @@ class Map:
         fortification_units: list,
         weapon_profile: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Evaluate Defence Line invulnerable-save bonuses from fortifications."""
-        result: Dict[str, Any] = {
-            "applies": False,
-            "source_unit": None,
-            "invulnerable_save": None,
-            "reason": None,
-        }
-        if target_model is None or attacking_unit is None:
-            return result
-
-        target_unit = getattr(target_model, "parent_unit", None)
-        if target_unit is None:
-            return result
-
-        ignores_cover = False
-        if weapon_profile is not None:
-            parent_wg = getattr(weapon_profile, "parent_wargear", None)
-            ignores_cover_fn = getattr(parent_wg, "is_ignores_cover", None)
-            if callable(ignores_cover_fn):
-                ignores_cover = bool(ignores_cover_fn())
-        if ignores_cover:
-            return result
-
-        target_root = self._unit_root(target_unit)
-        for fort in list(fortification_units or []):
-            root = self._unit_root(fort)
-            if root is None:
-                continue
-            if target_root is not None and root is target_root:
-                continue
-            is_alive = getattr(root, "is_alive", None)
-            if callable(is_alive) and not is_alive():
-                continue
-            if not bool(getattr(root, "deployed", True)):
-                continue
-            in_reserves = getattr(root, "is_in_reserves", None)
-            if callable(in_reserves) and in_reserves():
-                continue
-            if bool(getattr(root, "is_embarked", False)):
-                continue
-
-            get_rule = getattr(root, "get_defence_line_rule", None)
-            rule = get_rule() if callable(get_rule) else None
-            if not isinstance(rule, dict):
-                continue
-            faction_keyword = str(rule.get("faction_keyword", "") or "").strip().upper()
-            unit_keyword = str(rule.get("unit_keyword", "") or "").strip().upper()
-            if faction_keyword and not self._unit_has_keyword(target_unit, faction_keyword):
-                continue
-            if unit_keyword and not self._unit_has_keyword(target_unit, unit_keyword):
-                continue
-            get_cover_rule = getattr(root, "get_fortification_cover_rule", None)
-            cover_rule = get_cover_rule() if callable(get_cover_rule) else None
-            if not isinstance(cover_rule, dict):
-                continue
-
-            get_models = getattr(root, "get_attached_unit_models", None)
-            root_models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
-            footprint, bbox = self._footprint_and_bounding_box_for_models(root_models)
-            if footprint is None or bbox is None:
-                continue
-            proxy = type("DefenceLineProxy", (), {})()
-            proxy.footprint = footprint
-            proxy.bounding_box = bbox
-
-            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-                if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                    continue
-                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
-                if fully_visible:
-                    continue
-                result["applies"] = True
-                result["source_unit"] = root
-                result["invulnerable_save"] = int(rule.get("invulnerable_save", 0) or 0)
-                source_name = str(rule.get("source", "") or getattr(root, "name", "Defence Line") or "Defence Line")
-                result["reason"] = f"Not fully visible due to {source_name}"
-                return result
-
-        return result
+        return terrain_get_defence_line_bonus_for_ranged_attack(
+            self,
+            attacking_unit=attacking_unit,
+            target_model=target_model,
+            fortification_units=fortification_units,
+            weapon_profile=weapon_profile,
+        )
 
     def get_height_at_point(self, x: float, y: float) -> float:
-        """
-        Check if a given X,Y coordinate has terrain and return its height (Z coordinate).
-        If multiple terrain features overlap, return the maximum height.
+        return terrain_get_height_at_point(self, x, y)
 
-        Args:
-            x (float): X coordinate to check
-            y (float): Y coordinate to check
-
-        Returns:
-            float: Maximum height of terrain at the given point, or 0 if no terrain is present
-        """
-        point = Point(x, y)
-        max_height = 0.0
-
-        for terrain_feature in self.terrain_features:
-            if terrain_feature.footprint.contains(point):
-                # RUINS: compute floor surface height properly (prefer the lowest floor that contains XY)
-                if getattr(terrain_feature, 'terrain_type', None) == TerrainType.RUINS and hasattr(terrain_feature, 'floors'):
-                    try:
-                        candidate_surfaces = []
-                        for fl in getattr(terrain_feature, 'floors', []) or []:
-                            poly = fl.get('polygon')
-                            if poly is not None and poly.contains(point):
-                                elev = fl.get('elevation', 0.0)
-                                thickness = fl.get('thickness', RUINS_FLOOR_THICKNESS)
-                                candidate_surfaces.append(elev + thickness)
-                        if candidate_surfaces:
-                            # Choose the lowest surface (ground first if present)
-                            surface_z = min(candidate_surfaces)
-                            max_height = max(max_height, surface_z)
-                            continue
-                        else:
-                            # Inside RUINS footprint but no explicit floor polygon match; assume ground floor top thickness
-                            max_height = max(max_height, RUINS_FLOOR_THICKNESS)
-                            continue
-                    except (TypeError, ValueError, KeyError, GEOSException):
-                        # Fall through to generic handling if something goes wrong
-                        pass
-
-                # Generic terrain handling
-                if hasattr(terrain_feature, 'height'):
-                    max_height = max(max_height, terrain_feature.height)
-                elif hasattr(terrain_feature, 'rim_height'):
-                    max_height = max(max_height, terrain_feature.rim_height)
-                else:
-                    # Default minimal ground height
-                    max_height = max(max_height, 0.0)
-
-        return max_height
+    def get_plunging_fire_context(self, attacker: Model, target: Unit) -> Dict[str, Any]:
+        return terrain_get_plunging_fire_context(self, attacker, target)
 
     def get_distance_between_units(self, unit1: Unit, unit2: Unit) -> float:
         """Calculate the shortest distance between two units.

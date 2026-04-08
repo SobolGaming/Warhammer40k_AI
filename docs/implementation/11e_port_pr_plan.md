@@ -225,7 +225,7 @@ shows what is done versus what remains.
 | PR-010 | Completed | Pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`). |
 | PR-011 | Completed | Pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`). |
 | PR-012 | Completed | Implemented terrain-area runtime, serialization, and objective/layout identifier scaffolding on April 8, 2026. |
-| PR-013 | Pending | Hidden/detection visibility, cover abstraction, and Plunging/elevation scaffolding. |
+| PR-013 | Completed | Implemented terrain visibility, cover, and elevation service scaffolding on April 8, 2026. |
 | PR-014 | Pending | Mission-authored terrain layouts, template shapes, and preview pack alignment. |
 | PR-015 | Pending | Release-day exactness pass. |
 
@@ -891,7 +891,7 @@ The April 8, 2026 terrain article makes terrain a two-layer model: terrain featu
 
 ## PR-013 — Hidden/detection visibility scaffolding, cover abstraction, and elevation queries
 
-**Status:** Pending.
+**Status:** Completed on April 8, 2026.
 
 ### Goal
 Extract terrain visibility/cover logic into dedicated services and add provisional Hidden / detection-range / Plunging scaffolding without cutting the repo over to preview behavior as final canonical gameplay.
