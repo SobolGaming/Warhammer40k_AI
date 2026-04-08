@@ -12916,6 +12916,32 @@ class WargearProfile:
                     _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
         except Exception:
             pass
+        try:
+            target_army = None
+            try:
+                get_parent_army = getattr(target, "get_parent_army", None)
+                if callable(get_parent_army):
+                    target_army = get_parent_army()
+            except Exception:
+                target_army = None
+            am_mgr = getattr(target_army, "astra_militarum_detachments", None) if target_army is not None else None
+            penalty_fn = (
+                getattr(am_mgr, "recon_element_courageous_diversion_target_hit_penalty", None)
+                if am_mgr is not None
+                else None
+            )
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(
+                    target,
+                    attacker_model=attacker,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if penalty:
+                    source_name = str(source or "COURAGEOUS DIVERSION").strip() or "COURAGEOUS DIVERSION"
+                    _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
+        except Exception:
+            pass
         # Imperial Agents: Ordo Malleus Daemon Hunters (Grimoire of True Names (Aura)).
         try:
             target_army = None

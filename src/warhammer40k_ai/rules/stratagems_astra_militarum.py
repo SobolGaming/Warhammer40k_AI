@@ -54,6 +54,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_mechanised_assault", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_recon_element(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_recon_element", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_astra_militarum_unit(self, unit: Any) -> bool:
         root = self._am_root(unit)
         if root is None:
@@ -1432,6 +1437,29 @@ class AstraMilitarumStratagemMixin:
             setattr(round_state, "charge_roll_id", None)
         return True
 
+    def _am_apply_pending_charge_roll_modifier(self, charging_unit: Any, *, value: int, source: str) -> None:
+        request, state = self._am_pending_charge_roll_request(charging_unit)
+        if request is None or state is None:
+            return
+        try:
+            modifier_value = int(value or 0)
+        except (TypeError, ValueError):
+            modifier_value = 0
+        if modifier_value == 0:
+            return
+        source_name = str(source or "").strip()
+        state.sum_modifier = int(getattr(state, "sum_modifier", 0) or 0) + modifier_value
+        reasons = list(getattr(state, "sum_modifier_reasons", []) or [])
+        label = f"{modifier_value:+d}"
+        reasons.append(f"{source_name}: {label}" if source_name else label)
+        state.sum_modifier_reasons = reasons
+        context = dict(getattr(request, "context", {}) or {})
+        roll_spec = dict(context.get("roll_spec", {}) or {})
+        roll_spec["sum_modifier"] = int(getattr(state, "sum_modifier", 0) or 0)
+        roll_spec["sum_modifier_reasons"] = list(getattr(state, "sum_modifier_reasons", []) or [])
+        context["roll_spec"] = roll_spec
+        request.context = context
+
     def _queue_mechanised_pair_embark_decision(
         self,
         *,
@@ -1752,6 +1780,303 @@ class AstraMilitarumStratagemMixin:
             self._am_battlefield_units(),
             source="MOVE OUT",
         )
+
+    def _recon_crack_shots_candidates(self) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_not_shot=True) or []):
+            if self._am_has_keyword(root, "PLATOON"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _recon_courageous_diversion_candidates(self) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if self._am_has_keyword(root, "INFANTRY") or self._am_has_keyword(root, "MOUNTED"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _recon_draw_them_out_candidates(self, *, enemy_unit: Any, action: str) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            return []
+        enemy_root = self._am_root(enemy_unit)
+        if enemy_root is None or self._am_owned_by_player(enemy_root, self.player):
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if not self._am_has_keyword(root, "PLATOON"):
+                continue
+            if self._am_is_in_engagement_range(root):
+                continue
+            distance = self._am_distance_between_units(root, enemy_root)
+            if distance is None or distance > 9.0 + 1e-6:
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _recon_scramble_field_candidates(self) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        return self._am_battlefield_units(require_infantry=True)
+
+    def _recon_tanglefoot_grenades_candidates(self) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if self._am_has_keyword(root, "GRENADES"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _recon_scouting_outriders_candidates(self) -> list[Any]:
+        if not self._is_recon_element():
+            return []
+        edge_checker = getattr(self, "_unit_wholly_within_battlefield_edge_distance", None)
+        if not callable(edge_checker):
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if not (self._am_has_keyword(root, "MOUNTED") or self._am_has_keyword(root, "WALKER")):
+                continue
+            if self._am_is_in_engagement_range(root):
+                continue
+            if not bool(edge_checker(root, 10.0)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _queue_recon_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_recon_element() or player is self.player:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "SHOOTING_PHASE":
+            stratagem_name = "COURAGEOUS DIVERSION"
+            candidates = self._recon_courageous_diversion_candidates()
+            phase_label = "Shooting phase"
+        elif phase_key == "CHARGE_PHASE":
+            stratagem_name = "TANGLEFOOT GRENADES"
+            candidates = self._recon_tanglefoot_grenades_candidates()
+            phase_label = "Charge phase"
+        else:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() == phase_label.lower():
+                return
+        payload = {
+            "event": "phase_start",
+            "phase_name": phase_label,
+            "phase": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_recon_draw_them_out_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_recon_element():
+            return
+        enemy_root = self._am_root(unit)
+        if enemy_root is None or self._am_owned_by_player(enemy_root, self.player):
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("DRAW THEM OUT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._recon_draw_them_out_candidates(enemy_unit=enemy_root, action=action)
+        if not candidates:
+            return
+        enemy_id = self._am_sort_key(enemy_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_ended":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("enemy_unit_id", "") or "") == enemy_id:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "enemy_unit_id": enemy_id,
+            "candidates": list(candidates),
+            "action": action,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_recon_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_recon_element() or player is self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SCOUTING OUTRIDERS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._recon_scouting_outriders_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_end":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() == name_u:
+                return
+        payload = {
+            "event": "phase_end",
+            "phase_name": "Fight phase",
+            "phase": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_recon_element_reinforcements_step_reactions(self, *, current_player: Any) -> None:
+        if not self._is_recon_element():
+            return
+        if current_player is None or current_player is self.player:
+            return
+        if str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SCRAMBLE FIELD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._recon_scramble_field_candidates()
+        if not candidates:
+            return
+        current_player_id = str(getattr(current_player, "id", "") or "")
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "reinforcements_step_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("current_player_id", "") or "") == current_player_id:
+                return
+        payload = {
+            "event": "reinforcements_step_start",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "current_player_id": current_player_id,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _process_recon_tanglefoot_charge_declared(self, *, charging_unit: Any, target_units: Any) -> None:
+        if not self._is_recon_element():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        charging_root = self._am_root(charging_unit)
+        if charging_root is None or self._am_owned_by_player(charging_root, self.player):
+            return
+        for target in self._am_resolve_unit_list(target_units):
+            if not self._am_owned_by_player(target, self.player):
+                continue
+            sr = getattr(target, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("recon_tanglefoot_grenades_active", False)):
+                continue
+            source_name = str(sr.get("recon_tanglefoot_grenades_source", "") or "TANGLEFOOT GRENADES").strip() or "TANGLEFOOT GRENADES"
+            charging_sr = getattr(charging_root, "special_rules", None)
+            if not isinstance(charging_sr, dict):
+                charging_sr = {}
+            modifiers = [
+                entry
+                for entry in list(charging_sr.get("charge_roll_modifiers", []) or [])
+                if not (isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "astra_militarum_tanglefoot_grenades")
+            ]
+            modifiers.append(
+                {
+                    "value": -2,
+                    "source": source_name,
+                    "source_key": "astra_militarum_tanglefoot_grenades",
+                    "tag": "stratagem:astra_militarum_tanglefoot_grenades",
+                }
+            )
+            charging_sr["charge_roll_modifiers"] = modifiers
+            charging_sr["astra_militarum_tanglefoot_grenades_source"] = source_name
+            charging_sr["astra_militarum_tanglefoot_grenades_turn"] = int(getattr(game, "turn", 0) or 0)
+            charging_sr["astra_militarum_tanglefoot_grenades_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            charging_root.special_rules = charging_sr
+            self._am_apply_pending_charge_roll_modifier(charging_root, value=-2, source=source_name)
+            return
 
     def _queue_mechanised_swift_interception_reactions(self, *, unit: Any, action: str) -> None:
         if not self._is_mechanised_assault():
@@ -3629,6 +3954,350 @@ class AstraMilitarumStratagemMixin:
         logger.info("INFO: MOVE OUT: queued end-of-turn embark choice.")
         return True
 
+    def _use_recon_crack_shots(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CRACK SHOTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CRACK SHOTS: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: CRACK SHOTS: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_crack_shots_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: CRACK SHOTS: target must be a PLATOON unit that has not yet shot this phase")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "CRACK SHOTS").strip() or "CRACK SHOTS"
+        for model_index, model in enumerate(list(getattr(root, "models", []) or [])):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            weapon_names: list[str] = []
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if callable(is_ranged) and bool(is_ranged()):
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if weapon_name:
+                        weapon_names.append(weapon_name)
+            for weapon_index, weapon_name in enumerate(weapon_names):
+                set_keywords(
+                    key=f"astra_militarum_recon_crack_shots:{maybe_entity_id(model)}:{model_index}:{weapon_index}",
+                    weapon_name=weapon_name,
+                    keywords=["PRECISION"],
+                    source=source,
+                    expires_phase="SHOOTING_PHASE",
+                    attack_type="ranged",
+                )
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRACK SHOTS: %s gains [PRECISION] on ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_recon_courageous_diversion(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element():
+            return False
+        pending = self._am_pending_reaction_by_names("COURAGEOUS DIVERSION")
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if pending is not None else None)
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COURAGEOUS DIVERSION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COURAGEOUS DIVERSION: only usable in your opponent's Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or (pending.get("unit") if pending is not None else None)
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: COURAGEOUS DIVERSION: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_courageous_diversion_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: COURAGEOUS DIVERSION: target must be an ASTRA MILITARUM INFANTRY or MOUNTED unit")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        source = str(getattr(stratagem, "name", "") or "COURAGEOUS DIVERSION").strip() or "COURAGEOUS DIVERSION"
+        for model_index, model in enumerate(list(getattr(root, "models", []) or [])):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            set_fnp = getattr(model, "set_temporary_fnp", None)
+            if not callable(set_fnp):
+                continue
+            set_fnp(
+                key=f"astra_militarum_recon_courageous_diversion:{maybe_entity_id(model)}:{model_index}",
+                value=6,
+                source=source,
+                expires_phase="SHOOTING_PHASE",
+            )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["recon_courageous_diversion_active"] = True
+        sr["recon_courageous_diversion_source"] = source
+        sr["recon_courageous_diversion_expires_phase"] = "SHOOTING_PHASE"
+        sr["recon_courageous_diversion_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["recon_courageous_diversion_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COURAGEOUS DIVERSION: %s gains Feel No Pain 6+ and its closest-eligible-target hit penalty this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_recon_draw_them_out(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element() or self.game is None:
+            return False
+        pending = self._am_pending_reaction_by_names("DRAW THEM OUT")
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if pending is not None else None)
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DRAW THEM OUT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: DRAW THEM OUT: only usable in your opponent's Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or (pending.get("unit") if pending is not None else None)
+        enemy_unit = kwargs.get("enemy_unit") or (pending.get("enemy_unit") if pending is not None else None)
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        action = kwargs.get("action") or (pending.get("action") if pending is not None else None)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        enemy_root = self._am_root(enemy_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: DRAW THEM OUT: target unit or enemy mover missing")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_draw_them_out_candidates(enemy_unit=enemy_root, action=action))
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: DRAW THEM OUT: target must be an eligible PLATOON unit within 9\" and not in Engagement Range")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: DRAW THEM OUT: reactive move queue unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="astra_militarum_draw_them_out",
+            movement_type="move",
+            reactive_movement_type="draw_them_out",
+            source=str(getattr(stratagem, "name", "DRAW THEM OUT") or "DRAW THEM OUT"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: DRAW THEM OUT: failed to queue reactive move")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DRAW THEM OUT: %s can make a Normal move of up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_recon_scramble_field(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element():
+            return False
+        pending = self._am_pending_reaction_by_names("SCRAMBLE FIELD")
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if pending is not None else None)
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SCRAMBLE FIELD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SCRAMBLE FIELD: only usable in your opponent's Movement phase")
+            return False
+        if self.game is None or not bool(getattr(self.game, "reinforcements_step_active", False)):
+            logger.error("ERROR: SCRAMBLE FIELD: Reinforcements step is not active")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or (pending.get("unit") if pending is not None else None)
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: SCRAMBLE FIELD: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_scramble_field_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: SCRAMBLE FIELD: target must be an ASTRA MILITARUM INFANTRY unit")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        mgr = self._get_astra_militarum_mgr()
+        activate = getattr(mgr, "activate_recon_element_scramble_field", None) if mgr is not None else None
+        if not callable(activate):
+            logger.error("ERROR: SCRAMBLE FIELD: detachment effect helper unavailable")
+            return False
+        activate(root, game=self.game, source=str(getattr(stratagem, "name", "") or "SCRAMBLE FIELD"))
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCRAMBLE FIELD: enemy Reinforcements must remain outside 12\" of %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_recon_tanglefoot_grenades(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element():
+            return False
+        pending = self._am_pending_reaction_by_names("TANGLEFOOT GRENADES")
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if pending is not None else None)
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: TANGLEFOOT GRENADES: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: TANGLEFOOT GRENADES: only usable in your opponent's Charge phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or (pending.get("unit") if pending is not None else None)
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: TANGLEFOOT GRENADES: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_tanglefoot_grenades_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: TANGLEFOOT GRENADES: target must be an ASTRA MILITARUM GRENADES unit")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["recon_tanglefoot_grenades_active"] = True
+        sr["recon_tanglefoot_grenades_source"] = str(getattr(stratagem, "name", "") or "TANGLEFOOT GRENADES")
+        sr["recon_tanglefoot_grenades_expires_phase"] = "CHARGE_PHASE"
+        sr["recon_tanglefoot_grenades_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["recon_tanglefoot_grenades_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TANGLEFOOT GRENADES: enemies that charge %s suffer -2 to their Charge roll this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_recon_scouting_outriders(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_recon_element():
+            return False
+        pending = self._am_pending_reaction_by_names("SCOUTING OUTRIDERS")
+        phase_name = str(
+            kwargs.get("phase_name")
+            or (pending.get("phase_name") if pending is not None else None)
+            or self._current_phase_name
+            or ""
+        ).strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SCOUTING OUTRIDERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: SCOUTING OUTRIDERS: only usable at the end of your opponent's turn")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or (pending.get("unit") if pending is not None else None)
+        candidates = list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: SCOUTING OUTRIDERS: no target unit provided")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._recon_scouting_outriders_candidates())
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error(
+                "ERROR: SCOUTING OUTRIDERS: target must be an ASTRA MILITARUM MOUNTED or WALKER unit wholly within 10\" of a battlefield edge and not in Engagement Range"
+            )
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._am_prepare_unit_in_strategic_reserves(
+            root,
+            reason=str(getattr(stratagem, "name", "") or "SCOUTING OUTRIDERS"),
+        ):
+            logger.error("ERROR: SCOUTING OUTRIDERS: failed to move unit into Strategic Reserves")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SCOUTING OUTRIDERS: %s moves into Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_astra_militarum_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if name_u == "ABLATIVE PLATING":
@@ -3643,8 +4312,14 @@ class AstraMilitarumStratagemMixin:
             return self._use_mechanised_clear_and_secure(stratagem, **kwargs)
         if name_u == "COORDINATED ACTION":
             return self._use_combined_arms_coordinated_action(stratagem, **kwargs)
+        if name_u == "COURAGEOUS DIVERSION":
+            return self._use_recon_courageous_diversion(stratagem, **kwargs)
+        if name_u == "CRACK SHOTS":
+            return self._use_recon_crack_shots(stratagem, **kwargs)
         if name_u == "CRASH THROUGH":
             return self._use_hammer_crash_through(stratagem, **kwargs)
+        if name_u == "DRAW THEM OUT":
+            return self._use_recon_draw_them_out(stratagem, **kwargs)
         if name_u == "FIRE AND RELOCATE":
             return self._use_bridgehead_fire_and_relocate(stratagem, **kwargs)
         if name_u == "FIELDS OF FIRE":
@@ -3669,12 +4344,18 @@ class AstraMilitarumStratagemMixin:
             return self._use_mechanised_rapid_dispersal(stratagem, **kwargs)
         if name_u == "REINFORCEMENTS!":
             return self._use_combined_arms_reinforcements(stratagem, **kwargs)
+        if name_u == "SCOUTING OUTRIDERS":
+            return self._use_recon_scouting_outriders(stratagem, **kwargs)
+        if name_u == "SCRAMBLE FIELD":
+            return self._use_recon_scramble_field(stratagem, **kwargs)
         if name_u in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
             return self._use_bridgehead_servo_designators(stratagem, **kwargs)
         if name_u == "STALWART PROTECTOR":
             return self._use_combined_arms_stalwart_protector(stratagem, **kwargs)
         if name_u == "SWIFT INTERCEPTION":
             return self._use_mechanised_swift_interception(stratagem, **kwargs)
+        if name_u == "TANGLEFOOT GRENADES":
+            return self._use_recon_tanglefoot_grenades(stratagem, **kwargs)
         if name_u == "TACTICAL WITHDRAWAL":
             return self._use_hammer_tactical_withdrawal(stratagem, **kwargs)
         if name_u == "VOX-RELAY":

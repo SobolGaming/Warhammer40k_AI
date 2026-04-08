@@ -1540,6 +1540,21 @@ class GameSetupDeploymentReservesMixin:
                     denial_range = 0.0
                 if denial_range > 0.0:
                     ranges.append(dict(entry))
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        scramble_field_fn = (
+            getattr(am_mgr, "recon_element_scramble_field_reserves_denial", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(scramble_field_fn):
+            entry = scramble_field_fn(root, game=self)
+            if isinstance(entry, dict):
+                try:
+                    denial_range = float(entry.get("range", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    denial_range = 0.0
+                if denial_range > 0.0:
+                    ranges.append(dict(entry))
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         kroothawk_denial_fn = (
             getattr(tau_mgr, "kroot_hunting_pack_kroothawk_flock_reserves_denial", None)
@@ -2257,6 +2272,13 @@ class GameSetupDeploymentReservesMixin:
             )
             if callable(queue_reaction):
                 queue_reaction(current_player=current_player)
+            queue_recon = (
+                getattr(stratagem_mgr, "_queue_recon_element_reinforcements_step_reactions", None)
+                if stratagem_mgr is not None
+                else None
+            )
+            if callable(queue_recon):
+                queue_recon(current_player=current_player)
 
         current_stratagems = getattr(current_player, "stratagems", None)
         queue_dread_talons = (

@@ -1494,6 +1494,95 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return 1, "Masters of Camouflage"
         return 0, ""
 
+    def recon_element_courageous_diversion_target_hit_penalty(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.is_recon_element():
+            return 0, ""
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("recon_courageous_diversion_active", False)):
+            return 0, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged = bool(parent_wargear and callable(getattr(parent_wargear, "is_ranged", None)) and parent_wargear.is_ranged())
+        if not is_ranged:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        game_obj = game if game is not None else self._current_game()
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        closest_check = getattr(attacker_root, "is_target_closest_eligible", None) if attacker_root is not None else None
+        if not callable(closest_check) or game_map is None:
+            return 0, ""
+        if not bool(closest_check(attacker_model, weapon_profile, root, game_map)):
+            return 0, ""
+        source = str(sr.get("recon_courageous_diversion_source", "") or "COURAGEOUS DIVERSION").strip() or "COURAGEOUS DIVERSION"
+        return 1, source
+
+    def activate_recon_element_scramble_field(self, unit, *, game=None, source: str = "") -> bool:
+        if not self.is_recon_element():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return False
+        game_obj = game if game is not None else self._current_game()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["recon_scramble_field_active"] = True
+        sr["recon_scramble_field_range"] = 12.0
+        sr["recon_scramble_field_horizontal_only"] = False
+        sr["recon_scramble_field_expires_phase"] = "MOVEMENT_PHASE"
+        sr["recon_scramble_field_turn"] = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        sr["recon_scramble_field_turn_owner"] = self._player_id(getattr(self.army, "player", None))
+        sr["recon_scramble_field_source"] = str(source or "SCRAMBLE FIELD").strip() or "SCRAMBLE FIELD"
+        root.special_rules = sr
+        return True
+
+    def recon_element_scramble_field_reserves_denial(self, unit, *, game=None) -> dict | None:
+        resolved_game = game if game is not None else self._current_game()
+        if resolved_game is None or not bool(getattr(resolved_game, "reinforcements_step_active", False)):
+            return None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root) or not self._unit_is_on_battlefield(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("recon_scramble_field_active", False)):
+            return None
+        try:
+            denial_range = float(sr.get("recon_scramble_field_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            denial_range = 12.0
+        if denial_range <= 0.0:
+            return None
+        horizontal_only = bool(sr.get("recon_scramble_field_horizontal_only", False))
+        source_model_id = ""
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            source_model_id = str(get_entity_id(model) or "").strip()
+            if source_model_id:
+                break
+        return {
+            "range": float(denial_range),
+            "horizontal_only": bool(horizontal_only),
+            "source": str(sr.get("recon_scramble_field_source", "") or "SCRAMBLE FIELD").strip() or "SCRAMBLE FIELD",
+            "source_model_id": source_model_id,
+        }
+
     def only_the_best_hit_reroll_mods(
         self,
         attacker_model,
@@ -2282,6 +2371,79 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                     not phase_key or not marked_phase or marked_phase == phase_key
                 ) and (not owner_id or not marked_owner or marked_owner == owner_id):
                     self._clear_prefixed_special_rules(sr, "hammer_of_the_emperor_furious_cannonade")
+            root.special_rules = sr
+
+    def cleanup_recon_element_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_recon_element():
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for prefix in (
+                "recon_courageous_diversion",
+                "recon_tanglefoot_grenades",
+                "recon_scramble_field",
+            ):
+                if not bool(sr.get(f"{prefix}_active", False)):
+                    continue
+                marked_round = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+                marked_owner = str(sr.get(f"{prefix}_turn_owner", "") or "")
+                if marked_round and round_now and marked_round != round_now:
+                    continue
+                if phase_key and marked_phase and marked_phase != phase_key:
+                    continue
+                if owner_id and marked_owner and marked_owner != owner_id:
+                    continue
+                self._clear_prefixed_special_rules(sr, prefix)
+            root.special_rules = sr
+
+        if phase_key != "CHARGE_PHASE":
+            return
+        for root in self._iter_game_unit_roots(game=game_obj):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            modifiers = []
+            changed = False
+            for entry in list(sr.get("charge_roll_modifiers", []) or []):
+                if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "astra_militarum_tanglefoot_grenades":
+                    changed = True
+                    continue
+                modifiers.append(entry)
+            if changed:
+                if modifiers:
+                    sr["charge_roll_modifiers"] = modifiers
+                else:
+                    sr.pop("charge_roll_modifiers", None)
+            sr.pop("astra_militarum_tanglefoot_grenades_source", None)
+            sr.pop("astra_militarum_tanglefoot_grenades_turn", None)
+            sr.pop("astra_militarum_tanglefoot_grenades_turn_owner", None)
             root.special_rules = sr
 
     def cleanup_hammer_of_the_emperor_battle_round_effects(

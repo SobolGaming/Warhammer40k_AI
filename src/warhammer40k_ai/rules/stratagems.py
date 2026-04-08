@@ -64,11 +64,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AUTOMATED REPAIR DRONES",
     "BOUNDING ADVANCE",
     "COORDINATED ACTION",
+    "COURAGEOUS DIVERSION",
     "COORDINATED STRIKE",
     "COORDINATED TRAP",
     "CONNOISSEURS OF PAIN",
     "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
+    "CRACK SHOTS",
     "CRASH THROUGH",
     "CONQUERORS WITHOUT MERCY",
     "CORROSIVE VISCERA",
@@ -92,6 +94,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DIABOLIC REGENERATION",
     "DISDAIN FOR THE WEAK",
     "DISTILLERS OF FEAR",
+    "DRAW THEM OUT",
     "ARCANE FOCUS",
     "ASSASSIN BEASTS",
     "FROM ALL SIDES",
@@ -134,6 +137,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ANIMALISTIC RAGE",
     "HARRYING HOUNDS",
     "ENCIRCLING PACK",
+    "SCOUTING OUTRIDERS",
+    "SCRAMBLE FIELD",
     "AVENGE THE MASTERS!",
     "WRETCHED MASSES",
     "SOUL HUNGER",
@@ -168,6 +173,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PHOTON GRENADES",
     "POINT-BLANK DESTRUCTION",
     "OPPORTUNISTIC RAIDERS",
+    "TANGLEFOOT GRENADES",
     "POUNCE ON THE PREY",
     "PREY ON THE WEAK",
     "PULSE ONSLAUGHT",
@@ -927,6 +933,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "BURNING VENGEANCE",
     "CALL DAT DAKKA?",
+    "COURAGEOUS DIVERSION",
     "CRUSHED LIKE VERMIN",
     "COORDINATED STRIKE",
     "CUT DOWN THE WEAK",
@@ -938,9 +945,12 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "EMP GRENADES",
     "FAIL-SAFE DETONATOR",
     "ONLY IN DEATH DOES DUTY END",
+    "DRAW THEM OUT",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
     "MOVE OUT",
+    "SCOUTING OUTRIDERS",
+    "SCRAMBLE FIELD",
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
     "EVASIVE MANOEUVRES",
@@ -963,6 +973,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CYBERSPIRIT MACHINATIONS",
     "STRANDS OF TIME",
     "THROUGH THE VEIL",
+    "TANGLEFOOT GRENADES",
     "TITANIC DUEL",
     "WRATH OF THE DOOMED",
     "KALEIDOSCOPIC TEMPEST",
@@ -2294,6 +2305,7 @@ class StratagemManager(
             "UNYIELDING AGGRESSION",
             "WALL OF STEEL",
             "BLAZING ADVANCE",
+            "DRAW THEM OUT",
             "SWIFT INTERCEPTION",
             "BOUNDLESS ZEAL",
             "CRUSHED LIKE VERMIN",
@@ -2315,6 +2327,7 @@ class StratagemManager(
             "HASTY EXTRACTION",
             "PHOTON GRENADES",
             "SHADE PATH",
+            "TANGLEFOOT GRENADES",
             "CHRONOSORCEROUS BLEED",
         }:
             add("charge_declared", self._on_charge_declared)
@@ -2761,6 +2774,7 @@ class StratagemManager(
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
             "MOVE OUT",
+            "SCOUTING OUTRIDERS",
             "RAPID EMBARKATION",
             "RETURN TO THE SHADOWS",
             "COGITATED NEED",
@@ -5725,6 +5739,28 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Shooting phase and an ASTRA MILITARUM unit that disembarked from a Transport this turn and has not shot"
             return result
+        if name_u == "COURAGEOUS DIVERSION":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "COURAGEOUS DIVERSION":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if self._recon_courageous_diversion_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the start of your opponent's Shooting phase and an ASTRA MILITARUM INFANTRY or MOUNTED unit on the battlefield"
+            return result
+        if name_u == "CRACK SHOTS":
+            if self._recon_crack_shots_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a PLATOON unit that has not been selected to shoot this phase"
+            return result
         if name_u == "CRASH THROUGH":
             if self._hammer_crash_through_candidates(phase_name=phase_name):
                 result["available"] = True
@@ -5733,6 +5769,31 @@ class StratagemManager(
             result["reason"] = (
                 "Requires your Movement or Charge phase and a friendly ASTRA MILITARUM VEHICLE that has not yet been selected this phase"
             )
+            return result
+        if name_u == "DRAW THEM OUT":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DRAW THEM OUT":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            enemy_unit = context.get("enemy_unit") or context.get("moving_unit") or context.get("unit")
+            action = str(context.get("action", "") or "")
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_unit is not None:
+                candidates = list(
+                    self._recon_draw_them_out_candidates(
+                        enemy_unit=enemy_unit,
+                        action=action,
+                    )
+                    or []
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Movement phase after an enemy ends a Normal, Advance, or Fall Back move within 9\" of one of your eligible PLATOON units"
             return result
         if name_u == "FIRE AND RELOCATE":
             if self._bridgehead_fire_and_relocate_candidates():
@@ -5892,6 +5953,35 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Movement phase and an ASTRA MILITARUM INFANTRY unit that disembarked from a Transport this phase"
+            return result
+        if name_u == "SCOUTING OUTRIDERS":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SCOUTING OUTRIDERS":
+                    continue
+                if list(reaction.get("candidates") or []):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if self._recon_scouting_outriders_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the end of your opponent's turn and an ASTRA MILITARUM MOUNTED or WALKER unit wholly within 10\" of a battlefield edge and not in Engagement Range"
+            return result
+        if name_u == "SCRAMBLE FIELD":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SCRAMBLE FIELD":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if bool(getattr(self.game, "reinforcements_step_active", False)) and self._recon_scramble_field_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the start of your opponent's Reinforcements step and an ASTRA MILITARUM INFANTRY unit on the battlefield"
             return result
         if name_u == "AGGRESSOR IMPERATIVE":
             if self._rad_zone_aggressor_imperative_primary_candidates():
@@ -6065,6 +6155,21 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your opponent's Movement phase after an enemy unit ends a Normal, Advance, or Fall Back move within 9\" of one of your eligible friendly Transports"
+            return result
+        if name_u == "TANGLEFOOT GRENADES":
+            for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "TANGLEFOOT GRENADES":
+                    continue
+                pending_candidates = list(reaction.get("candidates") or [])
+                if pending_candidates or reaction.get("target_unit") is not None:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if self._recon_tanglefoot_grenades_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the start of your opponent's Charge phase and an ASTRA MILITARUM GRENADES unit on the battlefield"
             return result
         if name_u == "TACTICAL WITHDRAWAL":
             for reaction in list(getattr(self, "_pending_reactions", []) or []):
@@ -8167,7 +8272,10 @@ class StratagemManager(
             "BLAZING ADVANCE": "Target: your SQUADRON unit that just Advanced; it can shoot this turn after advancing",
             "CLEAR AND SECURE": "Target: your ASTRA MILITARUM unit that disembarked from a Transport this turn and has not been selected to shoot; it re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase",
             "COORDINATED ACTION": "Target: one friendly REGIMENT unit and one visible friendly SQUADRON unit within 6\"; each copies Orders received by the other this phase",
+            "COURAGEOUS DIVERSION": "Target: one of your ASTRA MILITARUM INFANTRY or MOUNTED units at the start of your opponent's Shooting phase; it gains Feel No Pain 6+, and enemy attacks suffer -1 to hit if it is the closest eligible target until end of phase",
+            "CRACK SHOTS": "Target: your PLATOON unit that has not been selected to shoot this phase; its ranged weapons gain [PRECISION] until end of phase",
             "CRASH THROUGH": "Target: your ASTRA MILITARUM VEHICLE not yet selected to move or charge this phase; it can move horizontally through terrain this phase",
+            "DRAW THEM OUT": "Target: your eligible PLATOON unit within 9\" of an enemy unit that just ended a Normal, Advance, or Fall Back move and not in Engagement Range; it can make a reactive Normal move up to 6\"",
             "FIRE AND RELOCATE": "Target: non-TITANIC ASTRA MILITARUM unit on the battlefield; can shoot after advancing this phase",
             "FIELDS OF FIRE": "Target: one friendly REGIMENT unit, one friendly SQUADRON unit, and one enemy unit; selected friendlies improve AP by 1 against that enemy this phase",
             "FIRING HOT": "Target: MILITARUM TEMPESTUS or Kasrkin unit that has not been selected to shoot this phase",
@@ -8183,10 +8291,13 @@ class StratagemManager(
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
             "RAPID DISPERSAL": "Target: your ASTRA MILITARUM INFANTRY unit that disembarked from a Transport this phase; it makes a Normal move of D6\"",
             "REINFORCEMENTS!": "Target: your destroyed ASTRA MILITARUM INFANTRY REGIMENT unit; add an identical replacement unit to Strategic Reserves at Starting Strength",
+            "SCOUTING OUTRIDERS": "Target: your ASTRA MILITARUM MOUNTED or WALKER unit wholly within 10\" of a battlefield edge and not in Engagement Range at the end of your opponent's turn; it enters Strategic Reserves",
+            "SCRAMBLE FIELD": "Target: your ASTRA MILITARUM INFANTRY unit at the start of your opponent's Reinforcements step; enemy Reinforcements cannot be set up within 12\" of it until end of phase",
             "SERVO-DESIGNATORS": "Target: ASTRA MILITARUM INFANTRY unit that just shot; choose one visible enemy unit it hit",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "STALWART PROTECTOR": "Target: your ASTRA MILITARUM VEHICLE after enemy shooting targets are selected; it grants cover to obscured friendly INFANTRY this phase",
             "SWIFT INTERCEPTION": "Target: your friendly non-AIRCRAFT, non-TITANIC ASTRA MILITARUM TRANSPORT that is not in Engagement Range and is within 9\" of an enemy unit that just ended a Normal, Advance, or Fall Back move; it makes a Normal move up to 6\"",
+            "TANGLEFOOT GRENADES": "Target: your ASTRA MILITARUM GRENADES unit at the start of your opponent's Charge phase; enemy units that select it as a charge target suffer -2 to Charge rolls this phase, non-cumulative with other negative charge modifiers",
             "TACTICAL WITHDRAWAL": "Target: your SQUADRON unit that just Fell Back; it can shoot this turn after falling back",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOX-RELAY": "Target: your embarked ASTRA MILITARUM INFANTRY OFFICER in your Command phase; that Officer can issue Orders while embarked and can target eligible friendly non-TITANIC Transports regardless of distance this phase",
@@ -9161,6 +9272,10 @@ class StratagemManager(
             self._queue_renegade_raiders_phase_start_reactions(player=player, phase=phase)
             self._queue_soulforged_phase_start_reactions(player=player, phase=phase)
             self._queue_veterans_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_recon_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -10160,6 +10275,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_recon_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             army = getattr(self.player, "army", None)
             voice = getattr(army, "voice_of_command", None) if army is not None else None
             clear_coordinated = getattr(voice, "clear_coordinated_action_phase_effects", None) if voice is not None else None
@@ -10182,6 +10301,14 @@ class StratagemManager(
             cleanup_hammer = getattr(am_mgr, "cleanup_hammer_of_the_emperor_phase_effects", None) if am_mgr is not None else None
             if callable(cleanup_hammer):
                 cleanup_hammer(
+                    phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
+                    player=self.player,
+                    game=self.game,
+                    battle_round=int(getattr(self.game, "turn", 0) or 0) if self.game is not None else None,
+                )
+            cleanup_recon = getattr(am_mgr, "cleanup_recon_element_phase_effects", None) if am_mgr is not None else None
+            if callable(cleanup_recon):
+                cleanup_recon(
                     phase_name=self._current_phase_name or str(getattr(phase, "name", "") or ""),
                     player=self.player,
                     game=self.game,
@@ -12487,6 +12614,7 @@ class StratagemManager(
         self._queue_hammer_blazing_advance_reactions(unit=unit, action=action)
         self._queue_hammer_tactical_withdrawal_reactions(unit=unit, action=action)
         self._queue_mechanised_swift_interception_reactions(unit=unit, action=action)
+        self._queue_recon_draw_them_out_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
@@ -12535,6 +12663,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_mechanised_hasty_extraction_charge_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._process_recon_tanglefoot_charge_declared(
             charging_unit=unit,
             target_units=list(target_units or []),
         )

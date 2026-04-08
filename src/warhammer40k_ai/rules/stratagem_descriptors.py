@@ -2705,6 +2705,87 @@ _MECHANISED_ASSAULT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MECHANISED_ASSAULT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RECON_ELEMENT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009870005": StratagemToolDescriptor(
+        stratagem_id="000009870005",
+        name="Courageous Diversion",
+        timing="start_of_opponent_shooting_phase",
+        target="astra_militarum_infantry_or_mounted_unit",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={
+            "feel_no_pain_value": 6,
+            "attack_type": "any",
+            "conditional_hit_penalty_if_closest_eligible_target": 1,
+        },
+    ),
+    "000009870002": StratagemToolDescriptor(
+        stratagem_id="000009870002",
+        name="Crack Shots",
+        timing="shooting_phase_on_select_to_shoot",
+        target="platoon_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_precision_to_unit_weapons",
+        cp_cost=1,
+        effect_params={"attack_types": ["ranged"], "required_keywords_any": ["PLATOON"]},
+    ),
+    "000009870003": StratagemToolDescriptor(
+        stratagem_id="000009870003",
+        name="Draw Them Out",
+        timing="opponent_movement_phase_after_enemy_move_ends",
+        target="platoon_unit_within_9_of_enemy_mover_not_engaged",
+        duration="immediate",
+        effect="reactive_normal_move_up_to_6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "reactive_move_distance_in": 6.0,
+            "requires_not_in_engagement_range": True,
+            "required_keywords_any": ["PLATOON"],
+        },
+    ),
+    "000009870007": StratagemToolDescriptor(
+        stratagem_id="000009870007",
+        name="Scouting Outriders",
+        timing="end_of_opponent_fight_phase",
+        target="astra_militarum_mounted_or_walker_unit_wholly_within_10_of_battlefield_edge_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=10.0,
+        effect_params={
+            "required_keywords_any": ["MOUNTED", "WALKER"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000009870004": StratagemToolDescriptor(
+        stratagem_id="000009870004",
+        name="Scramble Field",
+        timing="start_of_opponent_reinforcements_step",
+        target="astra_militarum_infantry_unit",
+        duration="until_end_of_phase",
+        effect="reinforcements_setup_denial",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"min_distance": 12.0, "horizontal_only": False},
+    ),
+    "000009870006": StratagemToolDescriptor(
+        stratagem_id="000009870006",
+        name="Tanglefoot Grenades",
+        timing="start_of_opponent_charge_phase",
+        target="astra_militarum_grenades_unit",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_modifier_non_cumulative_negative",
+        cp_cost=1,
+        effect_params={"charge_roll_modifier": -2, "non_cumulative_negative_modifiers": True},
+    ),
+}
+
+_RECON_ELEMENT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RECON_ELEMENT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010638007": StratagemToolDescriptor(
         stratagem_id="000010638007",
@@ -12346,6 +12427,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _MECHANISED_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RECON_ELEMENT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12747,6 +12831,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COMBINED_ARMS_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
         or _MECHANISED_ASSAULT_STRATAGEM_BY_NAME.get(key)
+        or _RECON_ELEMENT_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
