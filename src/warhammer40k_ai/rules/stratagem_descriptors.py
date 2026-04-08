@@ -2850,6 +2850,78 @@ _GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SIEGE_REGIMENT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009858002": StratagemToolDescriptor(
+        stratagem_id="000009858002",
+        name="Trench Fighters",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="astra_militarum_infantry_unit_targeted_by_enemy_melee_attacks",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={"base_threshold": 4, "regiment_threshold_modifier": 2},
+    ),
+    "000009858003": StratagemToolDescriptor(
+        stratagem_id="000009858003",
+        name="Over the Top",
+        timing="start_of_your_command_phase",
+        target="astra_militarum_infantry_officer_unit",
+        duration="until_end_of_phase",
+        effect="move_move_move_order_to_any_number_of_infantry_regiment_units_ignore_range",
+        cp_cost=2,
+        effect_params={
+            "order_key": "MOVE",
+            "target_keywords_any": ["INFANTRY", "REGIMENT"],
+            "ignore_range": True,
+        },
+    ),
+    "000009858004": StratagemToolDescriptor(
+        stratagem_id="000009858004",
+        name="Flare Burst",
+        timing="shooting_phase_on_select_to_shoot",
+        target="astra_militarum_character_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_reroll_within_12_visible",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"requires_visibility": True},
+    ),
+    "000009858005": StratagemToolDescriptor(
+        stratagem_id="000009858005",
+        name="Callous Sacrifice",
+        timing="shooting_phase",
+        target="platoon_unit_within_engagement_range",
+        duration="until_end_of_phase",
+        effect="ignore_engagement_for_ranged_targeting_and_self_destroy_after_damaging_engaged_enemy",
+        cp_cost=1,
+        effect_params={"destroy_threshold": 4},
+    ),
+    "000009858006": StratagemToolDescriptor(
+        stratagem_id="000009858006",
+        name="Furious Fusillade",
+        timing="shooting_phase_on_select_to_shoot",
+        target="platoon_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_attacks_bonus_within_half_range",
+        cp_cost=1,
+        effect_params={"attacks_bonus": 1},
+    ),
+    "000009858007": StratagemToolDescriptor(
+        stratagem_id="000009858007",
+        name="Minefield",
+        timing="start_of_opponent_charge_phase",
+        target="platoon_unit",
+        duration="until_end_of_phase",
+        effect="charge_end_roll_per_enemy_model_mortals_capped",
+        cp_cost=1,
+        effect_params={"mortal_wound_threshold": 5, "max_mortal_wounds": 6},
+    ),
+}
+
+_SIEGE_REGIMENT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SIEGE_REGIMENT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008386002": StratagemToolDescriptor(
         stratagem_id="000008386002",
@@ -12433,6 +12505,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SIEGE_REGIMENT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12833,6 +12908,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MECHANISED_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _RECON_ELEMENT_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
+        or _SIEGE_REGIMENT_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)

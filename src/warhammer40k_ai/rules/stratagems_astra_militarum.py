@@ -59,6 +59,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_recon_element", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_siege_regiment(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_siege_regiment", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_astra_militarum_unit(self, unit: Any) -> bool:
         root = self._am_root(unit)
         if root is None:
@@ -1859,6 +1864,359 @@ class AstraMilitarumStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._am_sort_key)
+
+    def _siege_callous_sacrifice_candidates(self) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if not self._am_has_keyword(root, "PLATOON"):
+                continue
+            if not self._am_is_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _siege_flare_burst_candidates(self) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_not_shot=True) or []):
+            if self._am_has_keyword(root, "CHARACTER"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _siege_furious_fusillade_candidates(self) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units(require_not_shot=True) or []):
+            if self._am_has_keyword(root, "PLATOON"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _siege_minefield_candidates(self) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "CHARGE_PHASE":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return []
+        out: list[Any] = []
+        for root in list(self._am_battlefield_units() or []):
+            if self._am_has_keyword(root, "PLATOON"):
+                out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _siege_over_the_top_candidates(self) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return []
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        voice = getattr(army, "voice_of_command", None) if army is not None else None
+        getter = getattr(voice, "get_eligible_officers", None) if voice is not None else None
+        if callable(getter):
+            officers = list(
+                getter(
+                    game=self.game,
+                    player=self.player,
+                    phase_name="COMMAND_PHASE",
+                    trigger="command_phase_start",
+                )
+                or []
+            )
+        else:
+            officers = list(self._am_battlefield_units(require_infantry=True, require_officer=True) or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for officer in officers:
+            root = officer
+            uid = self._am_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._am_has_keyword(root, "INFANTRY"):
+                continue
+            if not self._is_officer_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _siege_trench_fighters_candidates(self, *, attacking_unit: Any, target_units: list[Any]) -> list[Any]:
+        if not self._is_siege_regiment():
+            return []
+        phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return []
+        attacker_root = self._am_root(attacking_unit)
+        if attacker_root is None or self._am_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._am_root(unit)
+            if root is None:
+                continue
+            uid = self._am_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._am_owned_by_player(root, self.player):
+                continue
+            if not self._am_on_battlefield(root):
+                continue
+            if not self._is_astra_militarum_unit(root) or not self._am_has_keyword(root, "INFANTRY"):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _queue_siege_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_siege_regiment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if player is self.player and phase_key == "COMMAND_PHASE":
+            stratagem_name = "OVER THE TOP"
+            candidates = self._siege_over_the_top_candidates()
+            phase_label = "Command phase"
+        elif player is not self.player and phase_key == "CHARGE_PHASE":
+            stratagem_name = "MINEFIELD"
+            candidates = self._siege_minefield_candidates()
+            phase_label = "Charge phase"
+        else:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)(stratagem_name)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() == phase_label.lower():
+                return
+        payload = {
+            "event": "phase_start",
+            "phase_name": phase_label,
+            "phase": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_siege_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        if not self._is_siege_regiment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacking_root = self._am_root(attacking_unit)
+        if attacking_root is None or self._am_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("TRENCH FIGHTERS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._siege_trench_fighters_candidates(
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if self._normalize_stratagem_name(reaction.get("stratagem", "") or "") != name_u:
+                continue
+            if reaction.get("attacking_unit") is attacking_root:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _siege_callous_sacrifice_has_pending_decision(self, *, unit_id: str) -> bool:
+        if self.game is None:
+            return False
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_TARGET_MODEL:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("selection_kind", "") or "") != "worthless_chattel_destroy":
+                continue
+            if str(ctx.get("ability_name", "") or "").strip().upper() != "CALLOUS SACRIFICE":
+                continue
+            if str(ctx.get("target_unit_id", "") or "") != str(unit_id or ""):
+                continue
+            return True
+        return False
+
+    def _resolve_siege_callous_sacrifice_after_shooting(
+        self,
+        *,
+        attacker_unit: Any,
+        damage_by_target_while_engaged: dict[Any, int] | None,
+    ) -> None:
+        if not self._is_siege_regiment() or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._am_root(attacker_unit)
+        if attacker_root is None or not self._am_owned_by_player(attacker_root, self.player):
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("siege_regiment_callous_sacrifice_active", False)):
+            return
+        exp = str(sr.get("siege_regiment_callous_sacrifice_expires_phase", "") or "").strip().upper()
+        if exp and exp != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("siege_regiment_callous_sacrifice_turn_owner", "") or "").strip()
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        damage_map = damage_by_target_while_engaged if isinstance(damage_by_target_while_engaged, dict) else {}
+        if not damage_map:
+            return
+        total_rolls = 0
+        for target in sorted(list(damage_map), key=self._am_sort_key):
+            target_root = self._am_root(target)
+            if target_root is None or self._am_owned_by_player(target_root, self.player):
+                continue
+            try:
+                total_rolls += max(0, int(damage_map.get(target, 0) or 0))
+            except (TypeError, ValueError):
+                continue
+        if total_rolls <= 0:
+            return
+        destroy_count = 0
+        for _ in range(int(total_rolls)):
+            if int(get_roll("D6") or 0) >= 4:
+                destroy_count += 1
+        get_models = getattr(attacker_root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(attacker_root, "models", []) or [])
+        alive_models = []
+        for model in models:
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if is_alive:
+                alive_models.append(model)
+        destroy_count = min(int(destroy_count), len(alive_models))
+        if destroy_count <= 0:
+            return
+        try:
+            from ..utility.event_bus import append_action
+        except Exception:
+            append_action = None
+        if len(alive_models) == 1:
+            try:
+                alive_models[0].die(game_map=getattr(self.game, "map", None))
+            except Exception:
+                return
+            if callable(append_action):
+                append_action(
+                    self.player,
+                    f"{getattr(attacker_root, 'name', 'Unit')}: Callous Sacrifice destroys 1 model after shooting.",
+                )
+            return
+        unit_id = self._am_sort_key(attacker_root)
+        if self._siege_callous_sacrifice_has_pending_decision(unit_id=unit_id):
+            return
+        from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                str(getattr(model, "name", "Model") or "Model"),
+                payload={"model_id": maybe_entity_id(model)},
+            )
+            for model in list(alive_models or [])
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            f"Callous Sacrifice: select a model to destroy ({int(destroy_count)} remaining).",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "selection_kind": "worthless_chattel_destroy",
+                "target_unit_id": unit_id,
+                "destroy_remaining": int(destroy_count),
+                "ability_name": "Callous Sacrifice",
+            },
+        )
+        try:
+            self.game.request_decision(request)
+        except Exception:
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "add"):
+                queue.add(request)
 
     def _queue_recon_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_recon_element() or player is self.player:
@@ -4298,6 +4656,281 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_siege_callous_sacrifice(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CALLOUS SACRIFICE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CALLOUS SACRIFICE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: CALLOUS SACRIFICE: no PLATOON unit provided")
+            return False
+        eligible = candidates or self._siege_callous_sacrifice_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: CALLOUS SACRIFICE: selected unit is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_callous_sacrifice_active"] = True
+        sr["siege_regiment_callous_sacrifice_expires_phase"] = "SHOOTING_PHASE"
+        sr["siege_regiment_callous_sacrifice_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_callous_sacrifice_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_callous_sacrifice_source"] = str(getattr(stratagem, "name", "") or "CALLOUS SACRIFICE")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CALLOUS SACRIFICE: %s can target out of Engagement Range and may lose models after damaging engaged enemies this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_siege_flare_burst(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FLARE BURST: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FLARE BURST: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: FLARE BURST: no CHARACTER unit provided")
+            return False
+        eligible = candidates or self._siege_flare_burst_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: FLARE BURST: selected unit is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_flare_burst_active"] = True
+        sr["siege_regiment_flare_burst_expires_phase"] = "SHOOTING_PHASE"
+        sr["siege_regiment_flare_burst_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_flare_burst_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_flare_burst_source"] = str(getattr(stratagem, "name", "") or "FLARE BURST")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: FLARE BURST: %s gains ranged hit re-rolls within 12\" this phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_siege_furious_fusillade(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FURIOUS FUSILLADE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FURIOUS FUSILLADE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: FURIOUS FUSILLADE: no PLATOON unit provided")
+            return False
+        eligible = candidates or self._siege_furious_fusillade_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: FURIOUS FUSILLADE: selected unit is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_furious_fusillade_active"] = True
+        sr["siege_regiment_furious_fusillade_expires_phase"] = "SHOOTING_PHASE"
+        sr["siege_regiment_furious_fusillade_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_furious_fusillade_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_furious_fusillade_source"] = str(getattr(stratagem, "name", "") or "FURIOUS FUSILLADE")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: FURIOUS FUSILLADE: %s gains +1 ranged attack within half range this phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_siege_minefield(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: MINEFIELD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: MINEFIELD: not opponent's Charge phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("MINEFIELD")
+            if pending is not None:
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: MINEFIELD: no PLATOON unit provided")
+            return False
+        eligible = candidates or self._siege_minefield_candidates()
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: MINEFIELD: selected unit is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_minefield_active"] = True
+        sr["siege_regiment_minefield_expires_phase"] = "CHARGE_PHASE"
+        sr["siege_regiment_minefield_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_minefield_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_minefield_source"] = str(getattr(stratagem, "name", "") or "MINEFIELD")
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: MINEFIELD: %s threatens charging enemies until end of phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_siege_over_the_top(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: OVER THE TOP: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: OVER THE TOP: not your Command phase")
+            return False
+        officer = kwargs.get("officer_unit") or kwargs.get("officer") or kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if officer is None or not candidates:
+            pending = self._am_pending_reaction_by_names("OVER THE TOP")
+            if pending is not None:
+                officer = officer or pending.get("officer_unit") or pending.get("officer") or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+        if officer is None and len(candidates) == 1:
+            officer = candidates[0]
+        if officer is None:
+            logger.error("ERROR: OVER THE TOP: no Infantry Officer provided")
+            return False
+        officer_candidates = candidates or self._siege_over_the_top_candidates()
+        selected_officer = None
+        selected_id = self._am_sort_key(officer)
+        for candidate in list(officer_candidates or []):
+            if candidate is officer or self._am_sort_key(candidate) == selected_id:
+                selected_officer = candidate
+                break
+        if selected_officer is None:
+            logger.error("ERROR: OVER THE TOP: selected officer is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=selected_officer):
+            return False
+        sr = getattr(selected_officer, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_over_the_top_active"] = True
+        sr["siege_regiment_over_the_top_expires_phase"] = "COMMAND_PHASE"
+        sr["siege_regiment_over_the_top_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_over_the_top_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_over_the_top_source"] = str(getattr(stratagem, "name", "") or "OVER THE TOP")
+        selected_officer.special_rules = sr
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        voice = getattr(army, "voice_of_command", None) if army is not None else None
+        clear_pending = getattr(voice, "_clear_siege_over_the_top_pending", None) if voice is not None else None
+        if callable(clear_pending):
+            clear_pending(selected_officer)
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: OVER THE TOP: %s can issue Move! Move! Move! to any number of eligible Infantry Regiment units this phase.",
+            getattr(selected_officer, "name", "Officer"),
+        )
+        return True
+
+    def _use_siege_trench_fighters(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_siege_regiment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: TRENCH FIGHTERS: wrong phase")
+            return False
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("TRENCH FIGHTERS")
+            if pending is not None:
+                attacking_unit = attacking_unit or pending.get("attacking_unit") or pending.get("enemy_unit")
+                if not target_units:
+                    target_units = list(pending.get("target_units") or [])
+                unit = unit or pending.get("unit") or pending.get("target_unit")
+                if not candidates:
+                    candidates = list(pending.get("candidates") or [])
+        attacking_root = self._am_root(attacking_unit)
+        if attacking_root is not None and self._am_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: TRENCH FIGHTERS: attacking unit must be an enemy unit")
+            return False
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: TRENCH FIGHTERS: no target Infantry unit provided")
+            return False
+        eligible = candidates or self._siege_trench_fighters_candidates(
+            attacking_unit=attacking_root,
+            target_units=target_units,
+        )
+        if not eligible or root not in list(eligible or []):
+            logger.error("ERROR: TRENCH FIGHTERS: selected unit is not eligible")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_trench_fighters_active"] = True
+        sr["siege_regiment_trench_fighters_expires_phase"] = "FIGHT_PHASE"
+        sr["siege_regiment_trench_fighters_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["siege_regiment_trench_fighters_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["siege_regiment_trench_fighters_source"] = str(getattr(stratagem, "name", "") or "TRENCH FIGHTERS")
+        root.special_rules = sr
+        mgr = self._get_astra_militarum_mgr()
+        clear_cache = getattr(mgr, "_clear_unit_ability_cache", None) if mgr is not None else None
+        if callable(clear_cache):
+            clear_cache(root)
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: TRENCH FIGHTERS: %s gains fight-on-death sequencing until end of phase.", getattr(root, "name", "Unit"))
+        return True
+
     def _use_astra_militarum_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if name_u == "ABLATIVE PLATING":
@@ -4318,8 +4951,12 @@ class AstraMilitarumStratagemMixin:
             return self._use_recon_crack_shots(stratagem, **kwargs)
         if name_u == "CRASH THROUGH":
             return self._use_hammer_crash_through(stratagem, **kwargs)
+        if name_u == "CALLOUS SACRIFICE":
+            return self._use_siege_callous_sacrifice(stratagem, **kwargs)
         if name_u == "DRAW THEM OUT":
             return self._use_recon_draw_them_out(stratagem, **kwargs)
+        if name_u == "FLARE BURST":
+            return self._use_siege_flare_burst(stratagem, **kwargs)
         if name_u == "FIRE AND RELOCATE":
             return self._use_bridgehead_fire_and_relocate(stratagem, **kwargs)
         if name_u == "FIELDS OF FIRE":
@@ -4332,14 +4969,20 @@ class AstraMilitarumStratagemMixin:
             return self._use_combined_arms_flexible_command(stratagem, **kwargs)
         if name_u == "FURIOUS CANNONADE":
             return self._use_hammer_furious_cannonade(stratagem, **kwargs)
+        if name_u == "FURIOUS FUSILLADE":
+            return self._use_siege_furious_fusillade(stratagem, **kwargs)
         if name_u == "HASTY EXTRACTION":
             return self._use_mechanised_hasty_extraction(stratagem, **kwargs)
         if name_u == "INSPIRED COMMAND":
             return self._use_combined_arms_inspired_command(stratagem, **kwargs)
+        if name_u == "MINEFIELD":
+            return self._use_siege_minefield(stratagem, **kwargs)
         if name_u == "MOVE OUT":
             return self._use_mechanised_move_out(stratagem, **kwargs)
         if name_u == "ON MY POSITION":
             return self._use_bridgehead_on_my_position(stratagem, **kwargs)
+        if name_u == "OVER THE TOP":
+            return self._use_siege_over_the_top(stratagem, **kwargs)
         if name_u == "RAPID DISPERSAL":
             return self._use_mechanised_rapid_dispersal(stratagem, **kwargs)
         if name_u == "REINFORCEMENTS!":
@@ -4358,6 +5001,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_recon_tanglefoot_grenades(stratagem, **kwargs)
         if name_u == "TACTICAL WITHDRAWAL":
             return self._use_hammer_tactical_withdrawal(stratagem, **kwargs)
+        if name_u == "TRENCH FIGHTERS":
+            return self._use_siege_trench_fighters(stratagem, **kwargs)
         if name_u == "VOX-RELAY":
             return self._use_mechanised_vox_relay(stratagem, **kwargs)
         if name_u == "MORDIAN MINUTE":

@@ -5169,6 +5169,38 @@ class Game(
                                     reacting_player,
                                     f"{source_name}: no effect on {mover_name}.",
                                 )
+                minefield_fn = getattr(am_mgr, "siege_regiment_minefield_on_enemy_move_ended", None)
+                if callable(minefield_fn):
+                    outcomes = list(
+                        minefield_fn(
+                            moving_root,
+                            action=action_key,
+                            game=self,
+                            player=reacting_player,
+                        )
+                        or []
+                    )
+                    if outcomes:
+                        mover_name = str(getattr(moving_root, "name", "Unit") or "Unit")
+                        for outcome in outcomes:
+                            source_name = str(outcome.get("source_name", "") or "MINEFIELD").strip() or "MINEFIELD"
+                            rolls = [int(roll or 0) for roll in list(outcome.get("rolls") or [])]
+                            mortal_wounds = int(outcome.get("mortal_wounds", 0) or 0)
+                            roll_text = ", ".join(str(roll) for roll in rolls) if rolls else "no rolls"
+                            append_dice(
+                                reacting_player,
+                                f"{source_name}: {mover_name} charge-end rolls [{roll_text}] (5+ inflicts a mortal wound, max 6).",
+                            )
+                            if mortal_wounds > 0:
+                                append_action(
+                                    reacting_player,
+                                    f"{source_name}: {mover_name} suffers {mortal_wounds} mortal wound(s).",
+                                )
+                            else:
+                                append_action(
+                                    reacting_player,
+                                    f"{source_name}: no mortal wounds dealt to {mover_name}.",
+                                )
 
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:

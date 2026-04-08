@@ -105,6 +105,23 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             if key == f"{prefix}_active" or key.startswith(f"{prefix}_"):
                 sr.pop(key, None)
 
+    @staticmethod
+    def _clear_unit_ability_cache(unit) -> None:
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None) if unit is not None else None
+        if callable(get_root):
+            root = get_root()
+        if root is None:
+            return
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+            root._ability_cache = cache
+
     def _unit_is_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -1104,6 +1121,37 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         owner_id = str(sr.get(f"{prefix}_owner", "") or "")
         army_owner_id = self._player_id(getattr(self.army, "player", None))
         if owner_id and army_owner_id and owner_id != army_owner_id:
+            return None, None
+        return root, sr
+
+    def _siege_turn_effect_state(self, unit, *, prefix: str, game=None):
+        if not self.is_siege_regiment():
+            return None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{prefix}_active", False)):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_turn = self._safe_int(getattr(game_obj, "turn", 0) or 0, 0)
+        marked_turn = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None, None
+        owner_id = str(sr.get(f"{prefix}_turn_owner", "") or "")
+        army_owner_id = self._player_id(getattr(self.army, "player", None))
+        if owner_id and army_owner_id and owner_id != army_owner_id:
+            return None, None
+        return root, sr
+
+    def _siege_phase_effect_state(self, unit, *, prefix: str, game=None):
+        root, sr = self._siege_turn_effect_state(unit, prefix=prefix, game=game)
+        if root is None or not isinstance(sr, dict):
+            return None, None
+        game_obj = game if game is not None else self._current_game()
+        current_phase = self._phase_key(getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+        if current_phase and marked_phase and current_phase != marked_phase:
             return None, None
         return root, sr
 
@@ -2446,6 +2494,66 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             sr.pop("astra_militarum_tanglefoot_grenades_turn_owner", None)
             root.special_rules = sr
 
+    def cleanup_siege_regiment_phase_effects(
+        self,
+        *,
+        phase_name: str = "",
+        player=None,
+        game=None,
+        battle_round=None,
+    ) -> None:
+        if not self.is_siege_regiment() or self.army is None:
+            return
+        game_obj = game if game is not None else self._current_game()
+        round_now = self._safe_int(
+            battle_round if battle_round is not None else getattr(game_obj, "turn", 0) or 0,
+            0,
+        )
+        phase_key = self._phase_key(phase_name or getattr(getattr(game_obj, "phase", None), "name", "") or "")
+        owner_id = self._player_id(player)
+        seen: set[str] = set()
+        roots_to_invalidate: list[Any] = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            trench_changed = False
+            for prefix in (
+                "siege_regiment_callous_sacrifice",
+                "siege_regiment_flare_burst",
+                "siege_regiment_furious_fusillade",
+                "siege_regiment_minefield",
+                "siege_regiment_trench_fighters",
+                "siege_regiment_over_the_top",
+            ):
+                if not bool(sr.get(f"{prefix}_active", False)):
+                    continue
+                marked_round = self._safe_int(sr.get(f"{prefix}_turn", 0) or 0, 0)
+                marked_phase = self._phase_key(sr.get(f"{prefix}_expires_phase", "") or "")
+                marked_owner = str(sr.get(f"{prefix}_turn_owner", "") or "")
+                if marked_round and round_now and marked_round != round_now:
+                    continue
+                if phase_key and marked_phase and marked_phase != phase_key:
+                    continue
+                if owner_id and marked_owner and marked_owner != owner_id:
+                    continue
+                self._clear_prefixed_special_rules(sr, prefix)
+                if prefix == "siege_regiment_trench_fighters":
+                    trench_changed = True
+            root.special_rules = sr
+            if trench_changed:
+                roots_to_invalidate.append(root)
+        for root in list(roots_to_invalidate or []):
+            self._clear_unit_ability_cache(root)
+
     def cleanup_hammer_of_the_emperor_battle_round_effects(
         self,
         *,
@@ -2738,6 +2846,105 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
         }
 
+    def siege_regiment_flare_burst_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+        game_map=None,
+        target_visible=None,
+    ) -> dict:
+        if not self.is_siege_regiment():
+            return {}
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        if attacker_model is None or target_unit is None:
+            return {}
+        root, sr = self._siege_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="siege_regiment_flare_burst",
+            game=game,
+        )
+        target_root = self._unit_root(target_unit)
+        if root is None or target_root is None or not isinstance(sr, dict):
+            return {}
+        game_obj = game if game is not None else self._current_game()
+        visible = True
+        if target_visible is None:
+            local_map = game_map if game_map is not None else getattr(game_obj, "map", None)
+            los_checker = getattr(root, "_has_line_of_sight_to_target", None)
+            if local_map is not None and callable(los_checker):
+                visible = bool(los_checker(attacker_model, target_root, local_map))
+        else:
+            visible = bool(target_visible)
+        if not visible:
+            return {}
+        distance = self._distance_between_units(root, target_root, game=game_obj)
+        if distance is None or distance > 12.0 + 1e-6:
+            return {}
+        source = str(sr.get("siege_regiment_flare_burst_source", "") or "FLARE BURST").strip() or "FLARE BURST"
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
+        }
+
+    def siege_regiment_furious_fusillade_ranged_attacks_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+        within_half_range: bool = False,
+    ) -> tuple[int, str]:
+        _ = target_unit
+        if not self.is_siege_regiment():
+            return 0, ""
+        if attacker_model is None or not bool(within_half_range):
+            return 0, ""
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return 0, ""
+        root, sr = self._siege_phase_effect_state(
+            getattr(attacker_model, "parent_unit", None),
+            prefix="siege_regiment_furious_fusillade",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return 0, ""
+        source = (
+            str(sr.get("siege_regiment_furious_fusillade_source", "") or "FURIOUS FUSILLADE").strip()
+            or "FURIOUS FUSILLADE"
+        )
+        return 1, source
+
+    def siege_regiment_trench_fighters_fight_on_death_rule(
+        self,
+        unit,
+        *,
+        model=None,
+        game=None,
+    ) -> dict | None:
+        root, sr = self._siege_phase_effect_state(
+            unit,
+            prefix="siege_regiment_trench_fighters",
+            game=game,
+        )
+        if root is None or not isinstance(sr, dict):
+            return None
+        threshold = 4
+        if model is not None:
+            if self._unit_is_regiment_model(root, model):
+                threshold = 2
+        elif self._unit_has_keyword(root, "REGIMENT"):
+            threshold = 2
+        source = (
+            str(sr.get("siege_regiment_trench_fighters_source", "") or "TRENCH FIGHTERS").strip()
+            or "TRENCH FIGHTERS"
+        )
+        return {"threshold": int(threshold), "source": source}
+
     def mechanised_assault_clear_and_secure_hit_reroll_mods(
         self,
         attacker_model,
@@ -2837,6 +3044,79 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             "reroll_full": True,
             "reroll_full_reasons": (f"{source}: re-roll Wound roll vs targets within objective range",),
         }
+
+    def siege_regiment_minefield_on_enemy_move_ended(
+        self,
+        moving_unit,
+        *,
+        action: str,
+        game=None,
+        player=None,
+    ) -> list[dict]:
+        _ = player
+        if not self.is_siege_regiment():
+            return []
+        action_key = str(action or "").strip().lower()
+        if action_key != "charge":
+            return []
+        moving_root = self._unit_root(moving_unit)
+        if moving_root is None or not self._unit_is_on_battlefield(moving_root):
+            return []
+        moving_army = getattr(moving_root, "get_parent_army", lambda: None)()
+        if moving_army is self.army:
+            return []
+        game_obj = game if game is not None else self._current_game()
+        game_map = getattr(game_obj, "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(within_engagement):
+            return []
+
+        outcome: list[dict] = []
+        seen_sources: set[str] = set()
+        for friendly_root in self._friendly_battlefield_roots():
+            source_id = self._entity_id(friendly_root)
+            if source_id and source_id in seen_sources:
+                continue
+            effect_root, sr = self._siege_phase_effect_state(
+                friendly_root,
+                prefix="siege_regiment_minefield",
+                game=game_obj,
+            )
+            if effect_root is None or not isinstance(sr, dict):
+                continue
+            if source_id:
+                seen_sources.add(source_id)
+            if not bool(within_engagement(moving_root, effect_root)):
+                continue
+            get_models = getattr(moving_root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(moving_root, "models", []) or [])
+            alive_models = []
+            for model in models:
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if is_alive:
+                    alive_models.append(model)
+            if not alive_models:
+                continue
+            rolls = [int(get_roll("D6") or 0) for _ in list(alive_models or [])]
+            mortal_wounds = min(6, sum(1 for roll in list(rolls or []) if int(roll) >= 5))
+            if mortal_wounds > 0:
+                effect_root._apply_mortal_wounds_to_unit(
+                    moving_root,
+                    int(mortal_wounds),
+                    game_map=game_map,
+                )
+            source_name = str(sr.get("siege_regiment_minefield_source", "") or "MINEFIELD").strip() or "MINEFIELD"
+            outcome.append(
+                {
+                    "source_unit": effect_root,
+                    "source_name": source_name,
+                    "rolls": list(rolls),
+                    "mortal_wounds": int(mortal_wounds),
+                    "target_unit": moving_root,
+                }
+            )
+        return outcome
 
     def _apply_tripwires_stunned(
         self,

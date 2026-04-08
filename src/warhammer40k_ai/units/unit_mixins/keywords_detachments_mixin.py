@@ -2187,6 +2187,23 @@ class KeywordsDetachmentsMixin:
                     source = str(tyr_rule.get("source", "") or "Enraged Reserves").strip() or "Enraged Reserves"
                     return {"threshold": int(threshold), "source": source}
 
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        am_rule_fn = (
+            getattr(am_mgr, "siege_regiment_trench_fighters_fight_on_death_rule", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(am_rule_fn):
+            am_rule = am_rule_fn(self, model=model, game=game)
+            if isinstance(am_rule, dict):
+                try:
+                    threshold = int(am_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = str(am_rule.get("source", "") or "Trench Fighters").strip() or "Trench Fighters"
+                    return {"threshold": int(threshold), "source": source}
+
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
             resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(

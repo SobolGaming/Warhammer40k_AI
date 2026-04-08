@@ -482,6 +482,36 @@ class VoiceOfCommandManager:
     def _officer_has_calm_under_fire(self, officer_unit) -> bool:
         return self._unit_has_enhancement_flag(officer_unit, "enhancement_calm_under_fire")
 
+    def _officer_has_siege_over_the_top_active(self, officer_unit, battle_round: int, *, game=None) -> bool:
+        if officer_unit is None:
+            return False
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("siege_regiment_over_the_top_active", False)):
+            return False
+        try:
+            marked_round = int(sr.get("siege_regiment_over_the_top_turn", 0) or 0)
+        except Exception:
+            marked_round = 0
+        if marked_round and battle_round and marked_round != int(battle_round):
+            return False
+        game_obj = game
+        if game_obj is None:
+            try:
+                army = officer_unit.get_parent_army()
+            except Exception:
+                army = None
+            game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper() if game_obj is not None else ""
+        expires_phase = str(sr.get("siege_regiment_over_the_top_expires_phase", "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            return False
+        owner_id = str(sr.get("siege_regiment_over_the_top_turn_owner", "") or "").strip()
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        current_owner_id = str(getattr(current_player, "id", "") or "").strip()
+        if owner_id and current_owner_id and owner_id != current_owner_id:
+            return False
+        return True
+
     def _calm_under_fire_order_target_keyword(self, officer_unit) -> str:
         sr = getattr(officer_unit, "special_rules", None)
         if isinstance(sr, dict):
@@ -614,6 +644,9 @@ class VoiceOfCommandManager:
         if self._officer_calm_under_fire_used_this_round(officer_unit, battle_round):
             return False
         return True
+
+    def _target_matches_siege_over_the_top_keyword(self, target_unit) -> bool:
+        return self._target_has_keyword(target_unit, "INFANTRY") and self._target_has_keyword(target_unit, "REGIMENT")
 
     def _target_has_keyword(self, target_unit, keyword: str) -> bool:
         key = str(keyword or "").strip().upper()
@@ -1373,6 +1406,75 @@ class VoiceOfCommandManager:
     def _officer_has_calm_under_fire_pending_targets(self, officer_unit, battle_round: int) -> bool:
         return bool(self._calm_under_fire_pending_state(officer_unit, battle_round))
 
+    def _clear_siege_over_the_top_pending(self, officer_unit) -> None:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "siege_regiment_over_the_top_pending_round",
+            "siege_regiment_over_the_top_pending_order_key",
+            "siege_regiment_over_the_top_pending_target_ids",
+        ):
+            sr.pop(key, None)
+        officer_unit.special_rules = sr
+
+    def _siege_over_the_top_pending_state(self, officer_unit, battle_round: int) -> dict:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return {}
+        try:
+            pending_round = int(sr.get("siege_regiment_over_the_top_pending_round", -1) or -1)
+        except Exception:
+            pending_round = -1
+        if pending_round != int(battle_round):
+            self._clear_siege_over_the_top_pending(officer_unit)
+            return {}
+        order_key = str(sr.get("siege_regiment_over_the_top_pending_order_key", "") or "").strip().upper()
+        if order_key != ORDER_MOVE.key:
+            self._clear_siege_over_the_top_pending(officer_unit)
+            return {}
+        selected_ids: set[str] = set()
+        for raw in list(sr.get("siege_regiment_over_the_top_pending_target_ids", []) or []):
+            text = str(raw or "").strip()
+            if text:
+                selected_ids.add(text)
+        if not selected_ids:
+            self._clear_siege_over_the_top_pending(officer_unit)
+            return {}
+        return {"order_key": ORDER_MOVE.key, "selected_target_ids": selected_ids}
+
+    def _start_siege_over_the_top_pending(self, officer_unit, battle_round: int, target_unit_id: str) -> None:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_over_the_top_pending_round"] = int(battle_round)
+        sr["siege_regiment_over_the_top_pending_order_key"] = ORDER_MOVE.key
+        target_ids = []
+        text = str(target_unit_id or "").strip()
+        if text:
+            target_ids.append(text)
+        sr["siege_regiment_over_the_top_pending_target_ids"] = target_ids
+        officer_unit.special_rules = sr
+
+    def _consume_siege_over_the_top_pending_target(self, officer_unit, battle_round: int, target_unit_id: str) -> None:
+        pending = self._siege_over_the_top_pending_state(officer_unit, battle_round)
+        if not pending:
+            return
+        selected = {str(v or "").strip() for v in list(pending.get("selected_target_ids", set()) or set()) if str(v or "").strip()}
+        text = str(target_unit_id or "").strip()
+        if text:
+            selected.add(text)
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["siege_regiment_over_the_top_pending_round"] = int(battle_round)
+        sr["siege_regiment_over_the_top_pending_order_key"] = ORDER_MOVE.key
+        sr["siege_regiment_over_the_top_pending_target_ids"] = sorted(selected)
+        officer_unit.special_rules = sr
+
+    def _officer_has_siege_over_the_top_pending_targets(self, officer_unit, battle_round: int) -> bool:
+        return bool(self._siege_over_the_top_pending_state(officer_unit, battle_round))
+
     def _officer_reactive_command_spec(self, officer_unit) -> dict:
         if officer_unit is None:
             return {}
@@ -1634,6 +1736,8 @@ class VoiceOfCommandManager:
             return True
         if self._officer_has_bombast_pending_targets(unit, battle_round):
             return True
+        if self._officer_has_siege_over_the_top_pending_targets(unit, battle_round):
+            return True
         return self._officer_has_calm_under_fire_pending_targets(unit, battle_round)
 
     def _unit_ready_for_end_phase(self, unit, phase_name: str, battle_round: Optional[int] = None) -> bool:
@@ -1768,6 +1872,15 @@ class VoiceOfCommandManager:
             deduped_keywords.append(k)
         keywords = deduped_keywords
         max_range = self.get_order_range(officer_unit, order_key=order_key)
+        pending_siege = self._siege_over_the_top_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        if pending_siege:
+            pending_order = str(pending_siege.get("order_key", "") or "").strip().upper()
+            if order_key and pending_order and order_key != pending_order:
+                return []
+        siege_over_the_top_active = bool(
+            order_key == ORDER_MOVE.key
+            and self._officer_has_siege_over_the_top_active(officer_unit, battle_round, game=game)
+        )
 
         out = []
         try:
@@ -1799,13 +1912,17 @@ class VoiceOfCommandManager:
                 and self._target_has_keyword(root, "TRANSPORT")
                 and not self._target_has_keyword(root, "TITANIC")
             )
-            if keywords:
+            if siege_over_the_top_active or pending_siege:
+                if not self._target_matches_siege_over_the_top_keyword(root):
+                    continue
+            elif keywords:
                 try:
                     if not any(root.has_any_keyword(k) for k in keywords) and not vox_relay_transport_target:
                         continue
                 except Exception:
                     continue
-            if not vox_relay_transport_target:
+            ignore_range = bool(vox_relay_transport_target or siege_over_the_top_active or pending_siege)
+            if not ignore_range:
                 try:
                     dist = float(game_map.get_distance_between_units(order_anchor or officer_unit, root))
                 except Exception:
@@ -1846,6 +1963,21 @@ class VoiceOfCommandManager:
             filtered = []
             for target in out:
                 if not self._target_matches_calm_under_fire_keyword(officer_unit, target):
+                    continue
+                target_id = str(get_entity_id(target) or "").strip()
+                if target_id and target_id in selected_target_ids:
+                    continue
+                filtered.append(target)
+            out = filtered
+        if pending_siege:
+            selected_target_ids = {
+                str(v or "").strip()
+                for v in list(pending_siege.get("selected_target_ids", set()) or set())
+                if str(v or "").strip()
+            }
+            filtered = []
+            for target in out:
+                if not self._target_matches_siege_over_the_top_keyword(target):
                     continue
                 target_id = str(get_entity_id(target) or "").strip()
                 if target_id and target_id in selected_target_ids:
@@ -1911,6 +2043,11 @@ class VoiceOfCommandManager:
         if battle_round > 0:
             if self.orders_remaining(officer_unit, battle_round) <= 0:
                 pending = self._bombast_pending_state(officer_unit, battle_round)
+                if pending:
+                    pending_order = ORDER_BY_KEY.get(str(pending.get("order_key", "") or "").strip().upper())
+                    if pending_order is not None:
+                        return [pending_order]
+                pending = self._siege_over_the_top_pending_state(officer_unit, battle_round)
                 if pending:
                     pending_order = ORDER_BY_KEY.get(str(pending.get("order_key", "") or "").strip().upper())
                     if pending_order is not None:
@@ -2052,6 +2189,7 @@ class VoiceOfCommandManager:
         inspired_trigger = trigger_key == "inspired_command"
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         pending_calm = self._calm_under_fire_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        pending_siege = self._siege_over_the_top_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         continuation_kind = ""
         continuation_pending = {}
 
@@ -2076,6 +2214,18 @@ class VoiceOfCommandManager:
             else:
                 self._clear_calm_under_fire_pending(officer_unit)
                 pending_calm = {}
+        if pending_siege:
+            pending_order_key = str(pending_siege.get("order_key", "") or "").strip().upper()
+            if continuation_kind:
+                if pending_order_key != order_key:
+                    self._clear_siege_over_the_top_pending(officer_unit)
+                    pending_siege = {}
+            elif pending_order_key == order_key:
+                continuation_kind = "siege_over_the_top"
+                continuation_pending = pending_siege
+            else:
+                self._clear_siege_over_the_top_pending(officer_unit)
+                pending_siege = {}
 
         continuation_issue = bool(continuation_kind)
         reactive_pending_available = (
@@ -2114,6 +2264,18 @@ class VoiceOfCommandManager:
                 return False
         elif continuation_kind == "calm_under_fire":
             if not self._target_matches_calm_under_fire_keyword(officer_unit, target_unit):
+                return False
+            selected_target_ids = {
+                str(v or "").strip()
+                for v in list(continuation_pending.get("selected_target_ids", set()) or set())
+                if str(v or "").strip()
+            }
+            if target_unit_id and target_unit_id in selected_target_ids:
+                return False
+        elif continuation_kind == "siege_over_the_top":
+            if order_key != ORDER_MOVE.key:
+                return False
+            if not self._target_matches_siege_over_the_top_keyword(target_unit):
                 return False
             selected_target_ids = {
                 str(v or "").strip()
@@ -2176,6 +2338,10 @@ class VoiceOfCommandManager:
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)
         elif continuation_kind == "calm_under_fire":
             self._consume_calm_under_fire_pending_target(officer_unit, battle_round, target_unit_id)
+        elif continuation_kind == "siege_over_the_top":
+            self._consume_siege_over_the_top_pending_target(officer_unit, battle_round, target_unit_id)
+            if not self.get_eligible_targets(officer_unit, game=game, order_key=order_key):
+                self._clear_siege_over_the_top_pending(officer_unit)
         else:
             if self._officer_bombast_multi_target_available(officer_unit) and self._target_matches_bombast_keyword(
                 officer_unit, target_unit
@@ -2190,6 +2356,23 @@ class VoiceOfCommandManager:
                 self._start_calm_under_fire_pending(officer_unit, battle_round, order_key, target_unit_id)
             else:
                 self._clear_calm_under_fire_pending(officer_unit)
+            if (
+                order_key == ORDER_MOVE.key
+                and self._officer_has_siege_over_the_top_active(officer_unit, battle_round, game=game)
+                and self._target_matches_siege_over_the_top_keyword(target_unit)
+            ):
+                remaining_siege_targets = [
+                    candidate
+                    for candidate in list(eligible_targets or [])
+                    if str(get_entity_id(candidate) or "").strip() != target_unit_id
+                    and self._target_matches_siege_over_the_top_keyword(candidate)
+                ]
+                if remaining_siege_targets:
+                    self._start_siege_over_the_top_pending(officer_unit, battle_round, target_unit_id)
+                else:
+                    self._clear_siege_over_the_top_pending(officer_unit)
+            else:
+                self._clear_siege_over_the_top_pending(officer_unit)
         return True
 
     def _attached_unit_has_order_key(self, unit, order_key: str) -> bool:
