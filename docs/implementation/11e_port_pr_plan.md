@@ -4,7 +4,7 @@
 
 This document is an execution plan for GPT-5.4 to prepare the `SobolGaming/Warhammer40k_AI` codebase for a clean one-way transition from 10th Edition assumptions to an 11th Edition-first architecture.
 
-**Execution contract:** PR-001 through PR-011 prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-012 is the release-day exactness pass.
+**Execution contract:** PR-001 through PR-014 prepare the codebase so the final rules can be ingested cleanly when they are live. They should not be treated as permission to encode preview articles as final canonical gameplay. PR-015 is the release-day exactness pass.
 
 This plan is **preview-driven**, not release-day finalization. It is based on the currently announced 11th Edition changes around:
 
@@ -12,6 +12,10 @@ This plan is **preview-driven**, not release-day finalization. It is based on th
 - detachment-point budgeting
 - Force Dispositions affecting mission generation
 - revised pregame sequencing
+- terrain features plus terrain areas
+- Hidden / detection-range / Obscuring terrain interactions
+- terrain-area-driven cover and height-based Plunging Fire
+- mission-authored terrain layouts and standard footprint templates
 - terrain-footprint / key-location style objective handling
 - attachment semantics (Leader / Support selected during list building)
 - edition-level runtime invariants (e.g. stratagem stacking limits, charge target timing, melee/disembark timing changes)
@@ -39,6 +43,8 @@ Use these as the authoritative context while implementing:
   - `https://www.warhammer-community.com/en-gb/articles/ctdexme4/warhammer-40000-the-new-edition-is-revealed-at-adepticon-preview-2026/`
 - Missions / Force Dispositions:
   - `https://www.warhammer-community.com/en-gb/articles/oefzq9fg/new40k-how-your-army-affects-your-mission/`
+- Terrain:
+  - `https://www.warhammer-community.com/en-gb/articles/xlppkx5s/new40k-take-cover-with-updated-terrain-rules/`
 - Army building:
   - `https://www.warhammer-community.com/en-gb/articles/95fucn12/building-an-army-in-the-new-edition-of-warhammer-40000/`
 
@@ -53,8 +59,8 @@ Use these as the authoritative context while implementing:
 7. **Keep PRs reviewable.** If a PR would exceed roughly 1,500 changed lines excluding pure moves/renames, split it.
 8. **No broad neural-network training in this plan.** Only add the plumbing and stable interfaces required to make later training portable.
 9. **Every PR must end with passing tests** for the touched area, updated docs for changed public interfaces, and no broken replay serialization.
-10. **PR-001 through PR-011 are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
-11. **PR-012 is the first PR allowed to ingest and activate exact 11th Edition release behavior/data.** Before PR-012, any preview-derived runtime behavior must be clearly marked provisional and limited to scaffolding, stubs, feature-gated validation, or placeholder data needed to keep the architecture coherent.
+10. **PR-001 through PR-014 are compatibility/preparation PRs only.** They may add schemas, adapters, hooks, services, validators, data compilers, and provisional placeholder content, but they must not claim to implement final authoritative 11th Edition rules.
+11. **PR-015 is the first PR allowed to ingest and activate exact 11th Edition release behavior/data.** Before PR-015, any preview-derived runtime behavior must be clearly marked provisional and limited to scaffolding, stubs, feature-gated validation, or placeholder data needed to keep the architecture coherent.
 
 ## Global design decisions
 
@@ -115,6 +121,21 @@ Do not bury 11th-edition invariants inside faction files. Add engine-level enfor
 - melee timing hooks
 - disembark timing hooks
 
+### G. Separate terrain features from terrain areas
+Introduce explicit terrain-area runtime/state/descriptor objects instead of treating a terrain feature footprint as the only battlefield terrain abstraction.
+
+Do **not** overload `TerrainFeature` to stand in for both article concepts once terrain-area data starts appearing in the runtime.
+
+### H. Terrain visibility and cover must be service-based
+Move terrain visibility, cover, and elevation evaluation behind dedicated services / context objects instead of continuing to grow `Map`-local special cases or save-step booleans.
+
+Do **not** keep encoding new terrain semantics directly as ad-hoc checks in `Map` or as one-off mutations on wound/save payloads.
+
+### I. Mission pairings own recommended terrain layouts
+Recommended terrain layouts belong to mission pairings (or pairing-owned mission entries), not generic deployment definitions.
+
+Terrain layouts should be authored from reusable terrain-area templates and recipes, not only ruin presets.
+
 ---
 
 # Codebase review and refactor recommendations
@@ -160,6 +181,17 @@ The tests directory is also too flat and too large; it needs package-aligned reo
 | `src/warhammer40k_ai/network/game_session.py` | 358 lines / 13.6 KB | Fine as-is for now | Defer |
 | `src/warhammer40k_ai/engine/mission_selection.py` | 37 lines / 2.5 KB | Not oversized, but semantically obsolete; replace entirely | PR-006 |
 
+## Terrain follow-up note
+
+PR-007 established the battlefield/objective split, but the April 8, 2026 terrain preview adds a second terrain-focused preparation seam that still deserves additive work before release-day exactness:
+
+- terrain areas as first-class runtime/state objects
+- Hidden / detection-range / Obscuring visibility plumbing
+- terrain cover and Plunging Fire service boundaries
+- mission-authored terrain layouts and standard area templates
+
+These should land as additive scaffolding PRs before the final release-day exactness pass.
+
 ## File-size / focus guardrails after refactor
 
 These are not hard rules, but they should guide review:
@@ -192,7 +224,10 @@ shows what is done versus what remains.
 | PR-009 | Completed | Pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`). |
 | PR-010 | Completed | Pushed to `dev` on April 6, 2026 as commit `ee0c065b` (`Implement PR-010 replay and training manifest updates`). |
 | PR-011 | Completed | Pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`). |
-| PR-012 | Pending | Not started. |
+| PR-012 | Pending | Terrain-area runtime, serialization, and objective/layout identifier scaffolding. |
+| PR-013 | Pending | Hidden/detection visibility, cover abstraction, and Plunging/elevation scaffolding. |
+| PR-014 | Pending | Mission-authored terrain layouts, template shapes, and preview pack alignment. |
+| PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
 
@@ -514,7 +549,7 @@ The current fixed mission-combination table is too 10th-shaped and blocks portab
 - Matched-play mission generation is driven by force-disposition-capable mission-pack data.
 - The fixed 10th-style approved-combinations table is no longer the primary path.
 - Deployment selection is modular and data-driven.
-- Preview-era disposition/missions content may remain placeholder or stubbed until PR-012 confirms the exact release behavior.
+- Preview-era disposition/missions content may remain placeholder or stubbed until PR-015 confirms the exact release behavior.
 
 ### Acceptance checks
 - Tests cover all supported disposition pairings.
@@ -529,7 +564,7 @@ The current fixed mission-combination table is too 10th-shaped and blocks portab
 ### Implementation notes
 - Chapter Approved 2025-26 remains fully supported as the current default/autorandom matched-play pack.
 - Additional provisional mission-pack entries can now appear when both armies expose compatible Force Dispositions.
-- Twist handling is explicit in setup state: Chapter Approved entries resolve as "no twist", while preview-era entries remain stubbed placeholders until PR-012.
+- Twist handling is explicit in setup state: Chapter Approved entries resolve as "no twist", while preview-era entries remain stubbed placeholders until PR-015.
 
 ---
 
@@ -626,7 +661,7 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 - Attachment bindings can be authored at list-build time and propagated into runtime setup when present, while unresolved armies can still use the current `DECLARE_BATTLE_FORMATIONS` attachment decisions.
 - Runtime unit attachment logic is explicit and decomposed.
 - Character/support/bodyguard semantics are no longer hidden inside broad unit logic.
-- Exact released attachment exceptions remain data/config work for PR-012.
+- Exact released attachment exceptions remain data/config work for PR-015.
 
 ### Acceptance checks
 - Tests cover:
@@ -653,7 +688,7 @@ Move attachment semantics to the build/runtime seam and make leader/support/body
 **Status:** Completed and pushed to `dev` on April 5, 2026 as commit `bb8cf6dc` (`Implement PR-009 combat timing and decomposition`).
 
 ### Goal
-Centralize the engine services, validation points, and timing hooks required by the previewed 11th-edition invariants, and split the combat monoliths while doing it. Do not treat preview text as final canonical behavior until PR-012.
+Centralize the engine services, validation points, and timing hooks required by the previewed 11th-edition invariants, and split the combat monoliths while doing it. Do not treat preview text as final canonical behavior until PR-015.
 
 ### Why now
 These are rules-semantics changes that should live at engine level, not as incidental patches scattered across phases or faction code.
@@ -694,7 +729,7 @@ These are rules-semantics changes that should live at engine level, not as incid
 ### Non-goals
 - No ML training yet.
 - No full release-day codex audit yet.
-- No claim that preview-derived combat timing semantics are final until PR-012.
+- No claim that preview-derived combat timing semantics are final until PR-015.
 
 ---
 
@@ -764,7 +799,7 @@ Only after the runtime seams are stable should the data pipeline be updated to m
 **Status:** Completed and pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`).
 
 ### Goal
-Delete transitional 10th-only architectural assumptions so the codebase does not carry long-lived migration debt, while keeping final rules exactness deferred to PR-012.
+Delete transitional 10th-only architectural assumptions so the codebase does not carry long-lived migration debt, while keeping final rules exactness deferred to PR-015.
 
 ### Why now
 The project does not intend to keep supporting 10th after 11th launches.
@@ -805,7 +840,161 @@ The project does not intend to keep supporting 10th after 11th launches.
 
 ---
 
-## PR-012 — Release-day alignment PR (required when final 11th rules are in hand)
+## PR-012 — Terrain-area runtime, serialization, and objective/layout identifiers
+
+**Status:** Pending.
+
+### Goal
+Add first-class terrain-area runtime/state/descriptor objects and bind objective/layout metadata to them without activating preview terrain behavior as final canon.
+
+### Why now
+The April 8, 2026 terrain article makes terrain a two-layer model: terrain features plus terrain areas. The repo already has terrain-footprint objective support, but runtime terrain still revolves around `TerrainFeature` and feature footprints alone.
+
+### Main changes
+1. Add explicit terrain-area runtime/state types:
+   - `TerrainArea`
+   - terrain-area resolver helpers
+   - deterministic terrain-area IDs
+2. Extend battlefield runtime so the map can carry `terrain_areas` alongside `terrain_features`.
+3. Extend descriptors, state blobs, snapshots, and version boundaries to serialize / compile terrain areas deterministically.
+4. Extend `ObjectiveSite` / `ControlRegion` to carry:
+   - `terrain_area_id`
+   - `layout_slot_id`
+5. Add temporary adapters that can derive provisional terrain-area records from existing terrain-feature footprints when explicit authored areas do not yet exist.
+6. Update battlefield/runtime docs to describe the new feature-versus-area split and provisional adapter behavior.
+
+### Start condition
+- PR-011 merged.
+- Current objective-site / battlefield split is stable.
+
+### End condition
+- The engine can represent terrain features and terrain areas separately.
+- Objective/control/scoring runtime can point at a terrain area without inferring it indirectly from a feature label.
+- Replay/state/descriptor plumbing preserves terrain-area identity cleanly.
+
+### Acceptance checks
+- Terrain-area state-blob and snapshot round-trip tests pass.
+- Descriptor bundle IDs remain deterministic when terrain areas are present.
+- Objective-site tests cover terrain-area and layout-slot identifier round-tripping.
+- Existing terrain-feature-only fixtures still load through compatibility adapters.
+
+### Non-goals
+- No live Hidden / detection-range / Obscuring activation yet.
+- No final release-day terrain data ingestion.
+- No mission-layout template rewrite yet.
+
+### Implementation notes
+- This PR is driven by the April 8, 2026 terrain preview article, which states that terrain is made up of terrain features and terrain areas and that terrain-area footprints will be standardized.
+- Objective/terrain interaction exactness still remains deferred until final release data is available.
+
+---
+
+## PR-013 — Hidden/detection visibility scaffolding, cover abstraction, and elevation queries
+
+**Status:** Pending.
+
+### Goal
+Extract terrain visibility/cover logic into dedicated services and add provisional Hidden / detection-range / Plunging scaffolding without cutting the repo over to preview behavior as final canonical gameplay.
+
+### Why now
+The current repo still has ruins-centric LOS and feature-centric cover logic concentrated in `Map`, while cover is still injected as a save-side boolean. The April 8 preview adds Hidden, detection range, Obscuring terrain areas, BS-based cover, and updated height-based Plunging Fire expectations.
+
+### Main changes
+1. Extract terrain evaluation out of `map.py` into focused services/modules, at minimum:
+   - `terrain_visibility.py`
+   - `terrain_cover.py`
+   - `terrain_elevation.py`
+2. Introduce a neutral terrain combat/visibility context object that can carry:
+   - visibility reasons
+   - obscuring state
+   - detection-range state
+   - attacker skill modifiers
+   - save modifiers
+3. Add provisional Hidden-state data plumbing for units/models:
+   - hidden eligibility
+   - “did not shoot in the current or preceding player turn” tracking hooks
+   - detection-range override data
+   - explicit visibility-reason traces
+4. Add elevation / Plunging query hooks that can answer:
+   - whether an attacker is on a qualifying 3"+ section of terrain feature
+   - whether the target contains ground-level models
+   - whether a TOWERING short-range exception applies
+5. Route existing terrain cover logic through the new services while keeping current 10th-style cover outputs alive behind compatibility adapters until PR-015.
+6. Add clearly preview-derived tests for Hidden / Obscuring and Plunging examples without claiming the final release wording is already implemented.
+
+### Start condition
+- PR-012 merged.
+- Terrain areas exist in runtime/state/descriptor plumbing.
+
+### End condition
+- LOS/cover/plunging evaluation is no longer trapped inside `Map` special cases.
+- The engine has explicit provisional hooks for Hidden and detection range.
+- Terrain cover can migrate later from save modifiers to BS modifiers without another monolithic refactor.
+
+### Acceptance checks
+- Existing LOS/cover tests continue to pass or are intentionally updated through compatibility adapters.
+- New preview-derived tests cover:
+  - Hidden blocked by distance
+  - detection-range visibility override
+  - area-based obscuring
+  - 3"+ elevated Plunging query scaffolding
+- Visibility and cover reason traces are deterministic and serializable.
+
+### Non-goals
+- No final BS-based cover cutover yet.
+- No final TOWERING / Plunging behavior activation yet.
+- No final objective-and-terrain interaction behavior yet.
+
+---
+
+## PR-014 — Mission-authored terrain layouts, template shapes, and preview pack alignment
+
+**Status:** Pending.
+
+### Goal
+Make terrain layouts pairing-authored mission data built from reusable terrain-area templates instead of ruin presets, and update the preview mission-pack scaffolding to the currently announced five Force Dispositions while staying explicitly provisional.
+
+### Why now
+The April 3 mission preview says each mission pairing recommends three terrain layouts, and the April 8 terrain preview adds the standard terrain-area template shapes and sizes. The current repo still stores layouts on deployment definitions and instantiates layouts through a ruin-preset registry.
+
+### Main changes
+1. Split or replace `terrain_layouts.py` into focused pieces, for example:
+   - `terrain_area_templates.py`
+   - `terrain_layout_recipes.py`
+   - `terrain_feature_renderers.py`
+2. Add standard terrain-area templates for the published preview sizes:
+   - large rectangles
+   - large right-angle triangles
+   - medium rectangles
+   - long lines
+   - short lines
+3. Move recommended-layout ownership from generic `DeploymentDefinition.allowed_layouts` to mission-pairing-owned layout recommendations.
+4. Update the provisional preview mission pack from the placeholder three-disposition model to the announced five Force Dispositions and a 5x5 pairing matrix.
+5. Bind layout recipes to deterministic `layout_slot_id`s and terrain-area IDs so future objective/terrain rules can refer to authored battlefield areas directly.
+6. Update mission/deployment docs and catalog tests to reflect pairing-owned recommended layouts and explicitly provisional preview data.
+
+### Start condition
+- PR-012 and PR-013 merged.
+- Mission compiler and battlefield/runtime seams are stable.
+
+### End condition
+- Terrain layouts are authored from terrain-area templates/recipes, not only ruin presets.
+- Recommended layouts are owned by mission pairings, not by reusable deployment definitions alone.
+- The preview pack matches the currently announced Force Disposition catalog while remaining provisional.
+
+### Acceptance checks
+- Terrain template construction tests cover rectangles, right-angle triangles, long lines, and short lines.
+- Mission-selection tests cover the five Force Dispositions and pairing-owned layout recommendations.
+- Existing deployment/layout entrypoints keep working through compatibility adapters or façade functions.
+
+### Non-goals
+- No exact release-day mission/layout data ingestion.
+- No final competitive-layout audit.
+- No activation of final objective interactions before the official objective article / rules corpus is available.
+
+---
+
+## PR-015 — Release-day alignment PR (required when final 11th rules are in hand)
 
 **Status:** Pending.
 
@@ -817,14 +1006,15 @@ The previous PRs build the right seams, but preview articles are not a substitut
 
 ### Main changes
 1. Ingest final 11th mission pack / army construction / deployment / twist / objective wording.
-2. Replace preview TODOs / placeholder assumptions with exact implementations.
-3. Re-run semantic-diff / replay migration / descriptor compilation checks.
-4. Rebaseline fixtures where the final wording differs from the preview.
-5. Perform a final audit of detachment-point handling, attachment rules, secondaries, and edition invariants.
+2. Ingest final terrain-area / Hidden / detection-range / Obscuring / cover / Plunging / layout wording and data.
+3. Replace preview TODOs / placeholder assumptions with exact implementations.
+4. Re-run semantic-diff / replay migration / descriptor compilation checks.
+5. Rebaseline fixtures where the final wording differs from the preview.
+6. Perform a final audit of detachment-point handling, attachment rules, secondaries, terrain/layout semantics, and edition invariants.
 
 ### Start condition
 - Official 11th rules data is available to the team.
-- PR-011 merged.
+- PR-014 merged.
 
 ### End condition
 - Preview assumptions are either confirmed and retained or replaced with final release behavior.
@@ -836,6 +1026,7 @@ The previous PRs build the right seams, but preview articles are not a substitut
   - army build
   - setup flow
   - mission generation
+  - terrain areas / layouts / visibility
   - objective/control/scoring
   - attachments
   - core combat timing invariants
@@ -860,7 +1051,10 @@ Use this dependency order unless a smaller split is obviously safer:
 9. PR-009 → edition invariants / combat split
 10. PR-010 → replay / telemetry / training plumbing
 11. PR-011 → remove 10th-only assumptions
-12. PR-012 → release-day exactness pass
+12. PR-012 → terrain-area runtime / objective-layout identifiers
+13. PR-013 → visibility / cover / plunging scaffolding
+14. PR-014 → terrain layouts / preview pack alignment
+15. PR-015 → release-day exactness pass
 
 If a PR is too large, split it at module boundaries, not at arbitrary halfway points.
 
@@ -875,10 +1069,10 @@ If a PR is too large, split it at module boundaries, not at arbitrary halfway po
 - Avoid a giant “move everything everywhere” PR.
 
 ## How to handle adapters
-- Temporary adapters are acceptable in PR-002 through PR-010.
+- Temporary adapters are acceptable in PR-002 through PR-014.
 - They should be clearly marked with:
   - `TODO(11e-cleanup)` or equivalent
-  - a reference to PR-011 as the deletion point
+  - a reference to PR-015 as the deletion point
 
 ## How to handle tests during reorganization
 - Preserve existing assertions whenever possible.
@@ -893,12 +1087,15 @@ Every PR must update the docs that define the changed subsystem. At minimum:
 - PR-007: state blob / battlefield docs
 - PR-008 / PR-009: architecture docs
 - PR-011: README and top-level architecture docs
+- PR-012 / PR-013: battlefield / terrain runtime / state schema docs
+- PR-014: mission/deployment and battlefield layout docs
+- PR-015: final release-day rules-ingestion docs and any preview clean-up notes
 
 ---
 
 # Post-port training guidance
 
-Do **not** start broad hierarchical training before PR-010 and PR-012 are complete.
+Do **not** start broad hierarchical training before PR-010 and PR-015 are complete.
 
 ## Training work that is reasonable before final 11th rules
 - Tier 3 action-scoring / candidate-ranking models that are conditioned on semantic metadata and descriptor bundles
@@ -922,9 +1119,10 @@ The port-prep effort is complete when all of the following are true:
 2. Multi-detachment armies are native runtime objects.
 3. Army build participates in descriptors, version boundaries, replay, and manifests.
 4. Mission generation is data-driven from Force Dispositions, not a fixed 10th combination table.
-5. Objectives are modeled as sites/control/scoring, not marker-only assumptions.
-6. Attachment bindings are chosen at build time and propagated cleanly to runtime.
-7. Edition invariants are enforced centrally.
-8. Giant files have been materially reduced and split along coherent responsibility boundaries.
-9. The codebase is 11th-first and no longer architecturally anchored to 10th.
-10. Pre-11th training is limited to portable, descriptor-conditioned components.
+5. Terrain is modeled as features plus areas, and recommended terrain layouts are pairing-owned data rather than ruin-only presets.
+6. Objectives are modeled as sites/control/scoring, not marker-only assumptions.
+7. Attachment bindings are chosen at build time and propagated cleanly to runtime.
+8. Edition invariants are enforced centrally.
+9. Giant files have been materially reduced and split along coherent responsibility boundaries.
+10. The codebase is 11th-first and no longer architecturally anchored to 10th.
+11. Pre-11th training is limited to portable, descriptor-conditioned components.
