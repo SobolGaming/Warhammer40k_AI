@@ -345,6 +345,57 @@ class GamePhaseHandlersMixin:
             return request
         return None
 
+    def _clear_pending_charge_followup(self, *, unit: object) -> None:
+        if unit is None:
+            return
+        unit_id = str(get_entity_id(unit) or "").strip()
+        if not unit_id:
+            return
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list") and hasattr(queue, "pop"):
+            from ..decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES, DECISION_MOVE_UNIT
+
+            for request in list(queue.list() or []):
+                decision_type = str(getattr(request, "decision_type", "") or "").strip()
+                ctx = dict(getattr(request, "context", {}) or {})
+                if decision_type == DECISION_MOVE_UNIT:
+                    if str(ctx.get("movement_type", "") or "").strip().lower() != "charge":
+                        continue
+                    if str(ctx.get("unit_id", "") or "").strip() != unit_id:
+                        continue
+                    queue.pop(getattr(request, "decision_id", None))
+                    continue
+                if decision_type != DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+                    continue
+                if str(ctx.get("unit_id", "") or "").strip() != unit_id:
+                    continue
+                queue.pop(getattr(request, "decision_id", None))
+
+        round_state = getattr(unit, "round_state", None)
+        if round_state is not None:
+            round_state.charge_target_ids = set()
+            round_state.charge_move_target_ids = None
+            if hasattr(round_state, "charge_modifier_choice_pending"):
+                round_state.charge_modifier_choice_pending = False
+            if hasattr(round_state, "charge_modifier_choice"):
+                round_state.charge_modifier_choice = None
+            if hasattr(round_state, "charge_modifier_choice_targets"):
+                round_state.charge_modifier_choice_targets = []
+
+        phase_charge_targets = getattr(self, "phase_charge_targets", None)
+        if isinstance(phase_charge_targets, dict):
+            stale_target_ids: list[str] = []
+            for target_id, chargers in list(phase_charge_targets.items()):
+                if not isinstance(chargers, set):
+                    continue
+                if unit_id not in chargers:
+                    continue
+                chargers.discard(unit_id)
+                if not chargers:
+                    stale_target_ids.append(str(target_id or ""))
+            for target_id in stale_target_ids:
+                phase_charge_targets.pop(target_id, None)
+
     def _charge_targets_from_ids(self, target_unit_ids: list[str]) -> list[object]:
         resolved: list[object] = []
         seen: set[str] = set()

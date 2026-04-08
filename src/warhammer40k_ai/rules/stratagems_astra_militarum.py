@@ -49,6 +49,11 @@ class AstraMilitarumStratagemMixin:
         checker = getattr(mgr, "is_hammer_of_the_emperor", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_mechanised_assault(self) -> bool:
+        mgr = self._get_astra_militarum_mgr()
+        checker = getattr(mgr, "is_mechanised_assault", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_astra_militarum_unit(self, unit: Any) -> bool:
         root = self._am_root(unit)
         if root is None:
@@ -1255,6 +1260,663 @@ class AstraMilitarumStratagemMixin:
             if reaction_name in wanted:
                 return reaction
         return None
+
+    def _am_resolve_unit_list(self, units: Any) -> list[Any]:
+        if units is None:
+            return []
+        if isinstance(units, (list, tuple, set)):
+            values = list(units)
+        else:
+            values = [units]
+        out: list[Any] = []
+        seen: set[str] = set()
+        for value in values:
+            root = self._am_root(value)
+            if root is None:
+                continue
+            unit_id = self._am_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _am_distance_between_units(self, unit_a: Any, unit_b: Any) -> Optional[float]:
+        root_a = self._am_root(unit_a)
+        root_b = self._am_root(unit_b)
+        if root_a is None or root_b is None:
+            return None
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        distance_fn = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(distance_fn) and self.game is not None:
+            distance_fn = getattr(self.game, "get_distance_between_units", None)
+        if not callable(distance_fn):
+            return None
+        try:
+            return float(distance_fn(root_a, root_b))
+        except (TypeError, ValueError):
+            return None
+
+    def _am_embarked_target_blocked_by_rules(self, unit: Any) -> bool:
+        root = self._am_root(unit)
+        if root is None:
+            return False
+        allow_while_battle_shocked = False
+        allow_fn = getattr(root, "can_be_targeted_with_stratagems_while_battle_shocked", None)
+        if callable(allow_fn):
+            allow_while_battle_shocked = bool(allow_fn())
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()) and not allow_while_battle_shocked:
+            return True
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("cannot_use_stratagems", False)) and not allow_while_battle_shocked:
+            return True
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+            return False
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._am_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._am_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            is_alive = getattr(enemy_root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            has_voice_eater = getattr(enemy_root, "has_voice_eater", None)
+            if not callable(has_voice_eater) or not bool(has_voice_eater()):
+                continue
+            if bool(is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    def _am_disembarked_from_transport_this_turn(self, unit: Any) -> bool:
+        root = self._am_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        if not transport_id:
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return True
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return True
+        try:
+            disembark_turn = int(sr.get("voice_of_command_disembark_round", 0) or 0)
+        except (TypeError, ValueError):
+            disembark_turn = 0
+        if disembark_turn > 0:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn > 0 and current_turn != disembark_turn:
+                return False
+        current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "").strip()
+        disembark_owner = str(sr.get("voice_of_command_disembark_owner", "") or "").strip()
+        if current_owner and disembark_owner and current_owner != disembark_owner:
+            return False
+        return True
+
+    def _am_disembarked_from_transport_this_phase(self, unit: Any) -> bool:
+        if not self._am_disembarked_from_transport_this_turn(unit):
+            return False
+        root = self._am_root(unit)
+        sr = getattr(root, "special_rules", None) if root is not None else None
+        if not isinstance(sr, dict):
+            return True
+        game = getattr(self, "game", None)
+        if game is None:
+            return True
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        disembark_phase = str(sr.get("voice_of_command_disembark_phase", "") or "").strip().upper()
+        if current_phase and disembark_phase and current_phase != disembark_phase:
+            return False
+        return True
+
+    def _am_pending_charge_roll_request(self, charging_unit: Any):
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return None, None
+        charging_unit_id = self._am_sort_key(charging_unit)
+        if not charging_unit_id:
+            return None, None
+        from ..engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
+
+        for request in list(queue.list() or []):
+            if str(getattr(request, "decision_type", "") or "") != str(DECISION_REQUEST_DICE_ROLL):
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("roll_type", "") or "").strip().lower() != "charge":
+                continue
+            roll_spec = dict(ctx.get("roll_spec", {}) or {})
+            if str(roll_spec.get("unit_id", "") or "") != charging_unit_id:
+                continue
+            roll_id = ctx.get("roll_id")
+            state = None
+            roll_manager = getattr(game, "roll_manager", None)
+            if roll_id is not None and roll_manager is not None:
+                state = roll_manager.get_roll(int(roll_id))
+            return request, state
+        return None, None
+
+    def _am_remove_pending_charge_roll_request(self, charging_unit: Any) -> bool:
+        request, state = self._am_pending_charge_roll_request(charging_unit)
+        if request is None:
+            return False
+        game = getattr(self, "game", None)
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is not None and hasattr(queue, "pop"):
+            queue.pop(getattr(request, "decision_id", None))
+        if state is not None and game is not None:
+            roll_manager = getattr(game, "roll_manager", None)
+            if roll_manager is not None:
+                roll_manager.rolls.pop(int(state.roll_id), None)
+        round_state = getattr(charging_unit, "round_state", None)
+        if round_state is not None:
+            setattr(round_state, "charge_roll_id", None)
+        return True
+
+    def _queue_mechanised_pair_embark_decision(
+        self,
+        *,
+        ability: str,
+        ability_name: str,
+        prompt: str,
+        candidates: list[dict[str, Any]],
+        context: dict[str, Any],
+        duplicate_match: Optional[dict[str, Any]] = None,
+        allow_skip: bool = False,
+    ):
+        game = getattr(self, "game", None)
+        request_decision = getattr(game, "request_decision", None) if game is not None else None
+        if game is None or not callable(request_decision):
+            return None
+        if self._am_pending_choose_quarry_request(ability=ability, **dict(duplicate_match or {})):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        sorted_candidates = [
+            dict(candidate or {})
+            for candidate in list(candidates or [])
+            if isinstance(candidate, dict)
+        ]
+        sorted_candidates.sort(
+            key=lambda candidate: (
+                str(candidate.get("transport_id", "") or ""),
+                str(candidate.get("target_unit_id", "") or ""),
+            )
+        )
+        for candidate in sorted_candidates:
+            transport_id = str(candidate.get("transport_id", "") or "")
+            target_unit_id = str(candidate.get("target_unit_id", "") or "")
+            if not transport_id or not target_unit_id:
+                continue
+            label = str(candidate.get("label", "") or "").strip()
+            if not label:
+                label = "Embark"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "transport_id": transport_id,
+                        "target_unit_id": target_unit_id,
+                        "spec": dict(candidate.get("spec", {}) or {}),
+                    },
+                )
+            )
+        if not options:
+            return None
+
+        ctx = {
+            "ability": str(ability or "").strip(),
+            "ability_name": str(ability_name or "").strip(),
+            "optional": bool(allow_skip),
+        }
+        ctx.update(dict(context or {}))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        request_decision(request)
+        return request
+
+    def _mechanised_vox_relay_candidates(self) -> list[Any]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for root in self._am_army_roots():
+            unit_id = self._am_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            if not self._am_owned_by_player(root, self.player):
+                continue
+            if not self._am_is_alive(root):
+                continue
+            if not self._is_astra_militarum_unit(root):
+                continue
+            if not self._is_officer_unit(root) or not self._am_has_keyword(root, "INFANTRY"):
+                continue
+            if self._am_embarked_target_blocked_by_rules(root):
+                continue
+            transport = getattr(root, "embarked_in", None)
+            if transport is None:
+                continue
+            transport_root = self._am_root(transport)
+            if transport_root is None or not self._am_on_battlefield(transport_root):
+                continue
+            if not self._is_astra_militarum_unit(transport_root) or not self._am_has_keyword(transport_root, "TRANSPORT"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _mechanised_rapid_dispersal_candidates(self) -> list[Any]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in self._am_battlefield_units(require_infantry=True):
+            if not self._am_disembarked_from_transport_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _mechanised_clear_and_secure_candidates(self) -> list[Any]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return []
+        out: list[Any] = []
+        for root in self._am_battlefield_units(require_not_shot=True):
+            if not self._am_disembarked_from_transport_this_turn(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _mechanised_transport_units_on_battlefield(
+        self,
+        *,
+        require_targetable: bool,
+        exclude_aircraft: bool = False,
+        exclude_titanic: bool = False,
+    ) -> list[Any]:
+        out: list[Any] = []
+        for root in self._am_army_roots():
+            if not self._am_owned_by_player(root, self.player):
+                continue
+            if not self._am_on_battlefield(root):
+                continue
+            if not self._is_astra_militarum_unit(root):
+                continue
+            if require_targetable and bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._am_has_keyword(root, "TRANSPORT"):
+                continue
+            if exclude_aircraft and self._am_has_keyword(root, "AIRCRAFT"):
+                continue
+            if exclude_titanic and self._am_has_keyword(root, "TITANIC"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._am_sort_key)
+
+    def _mechanised_swift_interception_candidates(self, *, enemy_unit: Any, action: str) -> list[Any]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            return []
+        enemy_root = self._am_root(enemy_unit)
+        if enemy_root is None or self._am_owned_by_player(enemy_root, self.player):
+            return []
+        out: list[Any] = []
+        for transport in self._mechanised_transport_units_on_battlefield(
+            require_targetable=True,
+            exclude_aircraft=True,
+            exclude_titanic=True,
+        ):
+            distance = self._am_distance_between_units(transport, enemy_root)
+            if distance is None or distance > 9.0 + 1e-6:
+                continue
+            if self._am_is_in_engagement_range(transport):
+                continue
+            out.append(transport)
+        return sorted(out, key=self._am_sort_key)
+
+    def _mechanised_embark_pairs_for_units(
+        self,
+        units: Any,
+        *,
+        source: str,
+    ) -> list[dict[str, Any]]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game is None or game_map is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except ImportError:
+            return []
+        transports = self._mechanised_transport_units_on_battlefield(require_targetable=False)
+        if not transports:
+            return []
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for target in self._am_resolve_unit_list(units):
+            if not self._am_owned_by_player(target, self.player):
+                continue
+            if not self._am_on_battlefield(target):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(target)):
+                continue
+            if self._am_is_in_engagement_range(target):
+                continue
+            for transport in list(transports):
+                if transport is target:
+                    continue
+                can_transport = getattr(transport, "can_transport", None)
+                if not callable(can_transport) or not bool(can_transport(target)):
+                    continue
+                if not bool(unit_wholly_within_range_of_unit(transport, target, 3.0)):
+                    continue
+                transport_id = self._am_sort_key(transport)
+                target_id = self._am_sort_key(target)
+                pair_key = (transport_id, target_id)
+                if pair_key in seen:
+                    continue
+                seen.add(pair_key)
+                out.append(
+                    {
+                        "transport_id": transport_id,
+                        "transport_unit": transport,
+                        "target_unit_id": target_id,
+                        "target_unit": target,
+                        "label": f"{getattr(target, 'name', 'Unit')} -> {getattr(transport, 'name', 'Transport')}",
+                        "spec": {
+                            "source": str(source or "").strip() or "Embark",
+                            "range": 3.0,
+                            "allow_existing_passengers": True,
+                        },
+                    }
+                )
+        out.sort(key=lambda item: (str(item.get("transport_id", "") or ""), str(item.get("target_unit_id", "") or "")))
+        return out
+
+    def _mechanised_hasty_extraction_candidates(
+        self,
+        *,
+        charging_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[dict[str, Any]]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "CHARGE_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        charging_root = self._am_root(charging_unit)
+        if charging_root is None or self._am_owned_by_player(charging_root, self.player):
+            return []
+        declared_targets = []
+        for target in self._am_resolve_unit_list(target_units):
+            if not self._am_owned_by_player(target, self.player):
+                continue
+            if not self._is_astra_militarum_unit(target):
+                continue
+            if not self._am_has_keyword(target, "INFANTRY"):
+                continue
+            declared_targets.append(target)
+        return self._mechanised_embark_pairs_for_units(
+            declared_targets,
+            source="HASTY EXTRACTION",
+        )
+
+    def _mechanised_move_out_candidates(self) -> list[dict[str, Any]]:
+        if not self._is_mechanised_assault():
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return []
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return []
+        return self._mechanised_embark_pairs_for_units(
+            self._am_battlefield_units(),
+            source="MOVE OUT",
+        )
+
+    def _queue_mechanised_swift_interception_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_mechanised_assault():
+            return
+        enemy_root = self._am_root(unit)
+        if enemy_root is None or self._am_owned_by_player(enemy_root, self.player):
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SWIFT INTERCEPTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._mechanised_swift_interception_candidates(enemy_unit=enemy_root, action=action)
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "unit_move_ended":
+                continue
+            if reaction.get("enemy_unit") is enemy_root:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "candidates": list(candidates),
+            "action": action,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_mechanised_hasty_extraction_charge_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if not self._is_mechanised_assault():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        charging_root = self._am_root(charging_unit)
+        if charging_root is None or self._am_owned_by_player(charging_root, self.player):
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("HASTY EXTRACTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._mechanised_hasty_extraction_candidates(
+            charging_unit=charging_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        charging_id = self._am_sort_key(charging_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") != "charge_declared":
+                continue
+            if str(reaction.get("charging_unit_id", "") or "") == charging_id:
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "charging_unit": charging_root,
+            "charging_unit_id": charging_id,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        unique_target_ids = {
+            str(candidate.get("target_unit_id", "") or "")
+            for candidate in list(candidates)
+            if isinstance(candidate, dict)
+        }
+        if len(unique_target_ids) == 1:
+            only_target_id = next(iter(unique_target_ids))
+            for candidate in list(candidates):
+                if str(candidate.get("target_unit_id", "") or "") != only_target_id:
+                    continue
+                payload["unit"] = candidate.get("target_unit")
+                payload["target_unit"] = candidate.get("target_unit")
+                break
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_mechanised_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_mechanised_assault():
+            return
+        if player is self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("MOVE OUT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._mechanised_move_out_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("event") == "phase_end":
+                return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": list(candidates),
+        }
+        unique_target_ids = {
+            str(candidate.get("target_unit_id", "") or "")
+            for candidate in list(candidates)
+            if isinstance(candidate, dict)
+        }
+        if len(unique_target_ids) == 1:
+            only_target_id = next(iter(unique_target_ids))
+            for candidate in list(candidates):
+                if str(candidate.get("target_unit_id", "") or "") != only_target_id:
+                    continue
+                payload["unit"] = candidate.get("target_unit")
+                payload["target_unit"] = candidate.get("target_unit")
+                break
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
 
     def _queue_combined_arms_stalwart_protector_reactions(
         self,
@@ -2605,6 +3267,368 @@ class AstraMilitarumStratagemMixin:
         )
         return True
 
+    def _use_mechanised_vox_relay(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: VOX-RELAY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: VOX-RELAY: not your Command phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: VOX-RELAY: no embarked Infantry Officer provided")
+            return False
+        eligible = [self._am_root(candidate) for candidate in (candidates or self._mechanised_vox_relay_candidates()) if self._am_root(candidate) is not None]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: VOX-RELAY: target must be an embarked ASTRA MILITARUM INFANTRY OFFICER")
+            return False
+        transport = self._am_root(getattr(root, "embarked_in", None))
+        if transport is None:
+            logger.error("ERROR: VOX-RELAY: target officer is not embarked in a Transport")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mechanised_vox_relay_active"] = True
+        sr["mechanised_vox_relay_expires_phase"] = "COMMAND_PHASE"
+        sr["mechanised_vox_relay_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mechanised_vox_relay_transport_id"] = self._am_sort_key(transport)
+        sr["mechanised_vox_relay_source"] = str(getattr(stratagem, "name", "") or "VOX-RELAY")
+        if self.game is not None:
+            sr["mechanised_vox_relay_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VOX-RELAY: %s can issue Orders while embarked and can order friendly non-TITANIC Transports regardless of distance this phase.",
+            getattr(root, "name", "Officer"),
+        )
+        return True
+
+    def _use_mechanised_rapid_dispersal(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: RAPID DISPERSAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: RAPID DISPERSAL: not your Movement phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: RAPID DISPERSAL: no target unit provided")
+            return False
+        eligible = [self._am_root(candidate) for candidate in (candidates or self._mechanised_rapid_dispersal_candidates()) if self._am_root(candidate) is not None]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: RAPID DISPERSAL: target must be ASTRA MILITARUM INFANTRY that disembarked from a Transport this phase")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: RAPID DISPERSAL: reactive move queue unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        try:
+            roll = int(get_roll("D6") or 0)
+        except (TypeError, ValueError):
+            roll = 0
+        if roll <= 0:
+            roll = 1
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(roll),
+            kind="astra_militarum_rapid_dispersal",
+            movement_type="move",
+            reactive_movement_type="rapid_dispersal",
+            source=str(getattr(stratagem, "name", "RAPID DISPERSAL") or "RAPID DISPERSAL"),
+        )
+        if request is None:
+            logger.error("ERROR: RAPID DISPERSAL: failed to queue movement decision")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RAPID DISPERSAL: %s can make a Normal move of up to %s\".",
+            getattr(root, "name", "Unit"),
+            int(roll),
+        )
+        return True
+
+    def _use_mechanised_clear_and_secure(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CLEAR AND SECURE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CLEAR AND SECURE: not your Shooting phase")
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        if root is None:
+            logger.error("ERROR: CLEAR AND SECURE: no target unit provided")
+            return False
+        eligible = [self._am_root(candidate) for candidate in (candidates or self._mechanised_clear_and_secure_candidates()) if self._am_root(candidate) is not None]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: CLEAR AND SECURE: target must be ASTRA MILITARUM unit that disembarked this turn and has not shot")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mechanised_clear_and_secure_active"] = True
+        sr["mechanised_clear_and_secure_expires_phase"] = "SHOOTING_PHASE"
+        sr["mechanised_clear_and_secure_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mechanised_clear_and_secure_source"] = str(getattr(stratagem, "name", "") or "CLEAR AND SECURE")
+        if self.game is not None:
+            sr["mechanised_clear_and_secure_turn"] = int(getattr(self.game, "turn", 0) or 0)
+        root.special_rules = sr
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CLEAR AND SECURE: %s re-rolls Hit and Wound rolls for ranged attacks against targets within objective range this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mechanised_swift_interception(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault() or self.game is None:
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = kwargs.get("action")
+        pending = None
+        if unit is None or enemy_unit is None or not candidates:
+            pending = self._am_pending_reaction_by_names("SWIFT INTERCEPTION")
+        if unit is None and pending is not None:
+            unit = pending.get("unit") or pending.get("target_unit")
+        if enemy_unit is None and pending is not None:
+            enemy_unit = pending.get("enemy_unit")
+        if not candidates and pending is not None:
+            candidates = list(pending.get("candidates") or [])
+        if action is None and pending is not None:
+            action = pending.get("action")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        root = self._am_root(unit)
+        enemy_root = self._am_root(enemy_unit)
+        if root is None or enemy_root is None:
+            logger.error("ERROR: SWIFT INTERCEPTION: target Transport or enemy trigger unit missing")
+            return False
+        phase_name = str(kwargs.get("phase_name") or (pending.get("phase_name") if pending is not None else None) or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SWIFT INTERCEPTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: SWIFT INTERCEPTION: only usable in your opponent's Movement phase")
+            return False
+        eligible = [
+            self._am_root(candidate)
+            for candidate in (candidates or self._mechanised_swift_interception_candidates(enemy_unit=enemy_root, action=action))
+            if self._am_root(candidate) is not None
+        ]
+        if not eligible or root not in eligible:
+            logger.error("ERROR: SWIFT INTERCEPTION: target must be an eligible friendly Transport within 9\" of the enemy mover")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: SWIFT INTERCEPTION: reactive move queue unavailable")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=root):
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="astra_militarum_swift_interception",
+            movement_type="move",
+            reactive_movement_type="swift_interception",
+            source=str(getattr(stratagem, "name", "SWIFT INTERCEPTION") or "SWIFT INTERCEPTION"),
+            moving_unit=enemy_root,
+            attacker_unit=enemy_root,
+            range_value=9,
+        )
+        if request is None:
+            logger.error("ERROR: SWIFT INTERCEPTION: failed to queue reactive move")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SWIFT INTERCEPTION: %s can make a Normal move of up to 6\".",
+            getattr(root, "name", "Transport"),
+        )
+        return True
+
+    def _use_mechanised_hasty_extraction(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault() or self.game is None:
+            return False
+        pending = self._am_pending_reaction_by_names("HASTY EXTRACTION")
+        phase_name = str(kwargs.get("phase_name") or (pending.get("phase_name") if pending is not None else None) or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: HASTY EXTRACTION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: HASTY EXTRACTION: only usable in your opponent's Charge phase")
+            return False
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("enemy_unit") or (pending.get("charging_unit") if pending is not None else None)
+        charging_root = self._am_root(charging_unit)
+        if charging_root is None or self._am_owned_by_player(charging_root, self.player):
+            logger.error("ERROR: HASTY EXTRACTION: charging unit missing or not enemy")
+            return False
+        target_units = list(kwargs.get("target_units") or (pending.get("target_units") if pending is not None else []) or [])
+        pair_candidates = [
+            dict(candidate or {})
+            for candidate in list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+            if isinstance(candidate, dict)
+        ]
+        if not pair_candidates:
+            pair_candidates = list(
+                self._mechanised_hasty_extraction_candidates(
+                    charging_unit=charging_root,
+                    target_units=target_units,
+                )
+                or []
+            )
+        selected_target = self._am_root(kwargs.get("unit") or kwargs.get("target_unit"))
+        if selected_target is not None:
+            target_id = self._am_sort_key(selected_target)
+            pair_candidates = [
+                candidate
+                for candidate in list(pair_candidates)
+                if str(candidate.get("target_unit_id", "") or "") == target_id
+            ]
+        selected_transport = self._am_root(kwargs.get("transport_unit") or kwargs.get("transport"))
+        if selected_transport is not None:
+            transport_id = self._am_sort_key(selected_transport)
+            pair_candidates = [
+                candidate
+                for candidate in list(pair_candidates)
+                if str(candidate.get("transport_id", "") or "") == transport_id
+            ]
+        if not pair_candidates:
+            logger.error("ERROR: HASTY EXTRACTION: no eligible embark pair available")
+            return False
+        target_for_cp = selected_target if selected_target is not None else self._am_root(pair_candidates[0].get("target_unit"))
+        if target_for_cp is None:
+            logger.error("ERROR: HASTY EXTRACTION: unable to resolve target Infantry unit")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=target_for_cp):
+            return False
+        self._am_remove_pending_charge_roll_request(charging_root)
+        charging_unit_id = self._am_sort_key(charging_root)
+        target_unit_ids = [
+            self._am_sort_key(target)
+            for target in self._am_resolve_unit_list(target_units)
+            if self._am_sort_key(target)
+        ]
+        request = self._queue_mechanised_pair_embark_decision(
+            ability="mechanised_hasty_extraction",
+            ability_name=str(getattr(stratagem, "name", "") or "HASTY EXTRACTION"),
+            prompt="Hasty Extraction: select the unit and Transport pair to embark.",
+            candidates=pair_candidates,
+            context={
+                "phase": "Opponent Charge phase",
+                "charging_unit_id": charging_unit_id,
+                "target_unit_ids": list(target_unit_ids),
+                "out_of_turn": False,
+                "count_as_charged": True,
+            },
+            duplicate_match={"charging_unit_id": charging_unit_id},
+            allow_skip=False,
+        )
+        if request is None:
+            logger.error("ERROR: HASTY EXTRACTION: failed to queue embark choice")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HASTY EXTRACTION: queued embark choice against %s.",
+            getattr(charging_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_mechanised_move_out(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_mechanised_assault() or self.game is None:
+            return False
+        pending = self._am_pending_reaction_by_names("MOVE OUT")
+        phase_name = str(kwargs.get("phase_name") or (pending.get("phase_name") if pending is not None else None) or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MOVE OUT: wrong phase trigger")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: MOVE OUT: only usable at the end of your opponent's turn")
+            return False
+        pair_candidates = [
+            dict(candidate or {})
+            for candidate in list(kwargs.get("candidates") or (pending.get("candidates") if pending is not None else []) or [])
+            if isinstance(candidate, dict)
+        ]
+        if not pair_candidates:
+            pair_candidates = list(self._mechanised_move_out_candidates() or [])
+        selected_target = self._am_root(kwargs.get("unit") or kwargs.get("target_unit"))
+        if selected_target is not None:
+            target_id = self._am_sort_key(selected_target)
+            pair_candidates = [
+                candidate
+                for candidate in list(pair_candidates)
+                if str(candidate.get("target_unit_id", "") or "") == target_id
+            ]
+        selected_transport = self._am_root(kwargs.get("transport_unit") or kwargs.get("transport"))
+        if selected_transport is not None:
+            transport_id = self._am_sort_key(selected_transport)
+            pair_candidates = [
+                candidate
+                for candidate in list(pair_candidates)
+                if str(candidate.get("transport_id", "") or "") == transport_id
+            ]
+        if not pair_candidates:
+            logger.error("ERROR: MOVE OUT: no eligible embark pair available")
+            return False
+        target_for_cp = selected_target if selected_target is not None else self._am_root(pair_candidates[0].get("target_unit"))
+        if target_for_cp is None:
+            logger.error("ERROR: MOVE OUT: unable to resolve target unit")
+            return False
+        if not self._am_spend_cp(stratagem, target_unit=target_for_cp):
+            return False
+        request = self._queue_mechanised_pair_embark_decision(
+            ability="mechanised_turn_end_embark",
+            ability_name=str(getattr(stratagem, "name", "") or "MOVE OUT"),
+            prompt="Move Out: select the unit and Transport pair to embark.",
+            candidates=pair_candidates,
+            context={
+                "phase": "End of opponent's turn",
+            },
+            allow_skip=False,
+        )
+        if request is None:
+            logger.error("ERROR: MOVE OUT: failed to queue embark choice")
+            return False
+        self._am_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: MOVE OUT: queued end-of-turn embark choice.")
+        return True
+
     def _use_astra_militarum_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "")
         if name_u == "ABLATIVE PLATING":
@@ -2615,6 +3639,8 @@ class AstraMilitarumStratagemMixin:
             return self._use_bridgehead_bellicosa_drop(stratagem, **kwargs)
         if name_u == "BLAZING ADVANCE":
             return self._use_hammer_blazing_advance(stratagem, **kwargs)
+        if name_u == "CLEAR AND SECURE":
+            return self._use_mechanised_clear_and_secure(stratagem, **kwargs)
         if name_u == "COORDINATED ACTION":
             return self._use_combined_arms_coordinated_action(stratagem, **kwargs)
         if name_u == "CRASH THROUGH":
@@ -2631,18 +3657,28 @@ class AstraMilitarumStratagemMixin:
             return self._use_combined_arms_flexible_command(stratagem, **kwargs)
         if name_u == "FURIOUS CANNONADE":
             return self._use_hammer_furious_cannonade(stratagem, **kwargs)
+        if name_u == "HASTY EXTRACTION":
+            return self._use_mechanised_hasty_extraction(stratagem, **kwargs)
         if name_u == "INSPIRED COMMAND":
             return self._use_combined_arms_inspired_command(stratagem, **kwargs)
+        if name_u == "MOVE OUT":
+            return self._use_mechanised_move_out(stratagem, **kwargs)
         if name_u == "ON MY POSITION":
             return self._use_bridgehead_on_my_position(stratagem, **kwargs)
+        if name_u == "RAPID DISPERSAL":
+            return self._use_mechanised_rapid_dispersal(stratagem, **kwargs)
         if name_u == "REINFORCEMENTS!":
             return self._use_combined_arms_reinforcements(stratagem, **kwargs)
         if name_u in {"SERVO-DESIGNATORS", "SERVOÃ¢â‚¬â€˜DESIGNATORS", "SERVOÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœDESIGNATORS"}:
             return self._use_bridgehead_servo_designators(stratagem, **kwargs)
         if name_u == "STALWART PROTECTOR":
             return self._use_combined_arms_stalwart_protector(stratagem, **kwargs)
+        if name_u == "SWIFT INTERCEPTION":
+            return self._use_mechanised_swift_interception(stratagem, **kwargs)
         if name_u == "TACTICAL WITHDRAWAL":
             return self._use_hammer_tactical_withdrawal(stratagem, **kwargs)
+        if name_u == "VOX-RELAY":
+            return self._use_mechanised_vox_relay(stratagem, **kwargs)
         if name_u == "MORDIAN MINUTE":
             return self._use_grizzled_mordian_minute(stratagem, **kwargs)
         if name_u == "NO RETREAT!":

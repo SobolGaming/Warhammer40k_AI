@@ -2613,6 +2613,98 @@ _HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.values()
 }
 
+_MECHANISED_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009862002": StratagemToolDescriptor(
+        stratagem_id="000009862002",
+        name="Vox-Relay",
+        timing="command_phase",
+        target="embarked_astra_militarum_infantry_officer_unit_in_friendly_transport",
+        duration="until_end_of_phase",
+        effect="embarked_officer_issue_orders_via_transport_and_to_transports_any_distance",
+        cp_cost=1,
+        effect_params={
+            "allow_embarked_source": True,
+            "ignore_distance": True,
+            "target_keywords_any": ["TRANSPORT"],
+            "exclude_target_keywords_any": ["TITANIC"],
+        },
+    ),
+    "000009862003": StratagemToolDescriptor(
+        stratagem_id="000009862003",
+        name="Rapid Dispersal",
+        timing="movement_phase_after_infantry_disembarks_from_transport",
+        target="astra_militarum_infantry_unit_that_disembarked_from_transport_this_phase",
+        duration="immediate",
+        effect="reactive_normal_move_d6",
+        cp_cost=1,
+        effect_params={
+            "reactive_move_distance": "D6",
+            "requires_disembarked_from_transport_this_phase": True,
+        },
+    ),
+    "000009862004": StratagemToolDescriptor(
+        stratagem_id="000009862004",
+        name="Clear and Secure",
+        timing="shooting_phase_on_select_to_shoot",
+        target="astra_militarum_unit_that_disembarked_from_transport_this_turn_and_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="disembarked_ranged_hit_and_wound_rerolls_vs_targets_within_objective_range",
+        cp_cost=1,
+        effect_params={
+            "requires_disembarked_from_transport_this_turn": True,
+            "requires_target_within_objective_range": True,
+            "reroll_hit": True,
+            "reroll_wound": True,
+        },
+    ),
+    "000009862005": StratagemToolDescriptor(
+        stratagem_id="000009862005",
+        name="Swift Interception",
+        timing="opponent_movement_phase_after_enemy_move_ends",
+        target="astra_militarum_transport_unit_within_9_of_enemy_mover_not_engaged_non_aircraft_non_titanic",
+        duration="immediate",
+        effect="reactive_normal_move_up_to_6",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "reactive_move_distance_in": 6.0,
+            "requires_not_in_engagement_range": True,
+            "exclude_keywords_any": ["AIRCRAFT", "TITANIC"],
+        },
+    ),
+    "000009862006": StratagemToolDescriptor(
+        stratagem_id="000009862006",
+        name="Hasty Extraction",
+        timing="opponent_charge_phase_after_targets_selected_before_charge_move",
+        target="astra_militarum_infantry_charge_target_within_3_of_friendly_transport_not_engaged",
+        duration="immediate",
+        effect="reactive_embark_and_continue_original_charge_targets",
+        cp_cost=1,
+        effect_params={
+            "embark_range": 3.0,
+            "allow_existing_passengers": True,
+            "continue_charge_against_remaining_original_targets": True,
+        },
+    ),
+    "000009862007": StratagemToolDescriptor(
+        stratagem_id="000009862007",
+        name="Move Out",
+        timing="end_of_opponent_turn",
+        target="astra_militarum_unit_within_3_of_friendly_transport_not_engaged",
+        duration="immediate",
+        effect="end_of_opponent_turn_embark",
+        cp_cost=1,
+        effect_params={
+            "embark_range": 3.0,
+            "allow_existing_passengers": True,
+        },
+    ),
+}
+
+_MECHANISED_ASSAULT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MECHANISED_ASSAULT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010638007": StratagemToolDescriptor(
         stratagem_id="000010638007",
@@ -12251,6 +12343,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HAMMER_OF_THE_EMPEROR_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _MECHANISED_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -12651,6 +12746,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _BRIDGEHEAD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _COMBINED_ARMS_STRATAGEM_BY_NAME.get(key)
         or _HAMMER_OF_THE_EMPEROR_STRATAGEM_BY_NAME.get(key)
+        or _MECHANISED_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)

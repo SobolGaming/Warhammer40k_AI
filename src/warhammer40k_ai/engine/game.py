@@ -6495,9 +6495,31 @@ class Game(
                 continue
             if game_map.is_within_engagement_range(passenger, enemy):
                 return False
-        # Cannot embark after disembarking this turn.
+        # Core embark restriction only blocks units that disembarked in the same phase.
         if getattr(passenger.round_state, "disembarked_this_round", False):
-            return False
+            current_phase = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            current_owner = str(getattr(getattr(self, "get_current_player", lambda: None)(), "id", "") or "").strip()
+            sr = getattr(passenger, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            disembark_phase = str(sr.get("voice_of_command_disembark_phase", "") or "").strip().upper()
+            try:
+                disembark_round = int(sr.get("voice_of_command_disembark_round", 0) or 0)
+            except (TypeError, ValueError):
+                disembark_round = 0
+            disembark_owner = str(sr.get("voice_of_command_disembark_owner", "") or "").strip()
+            same_phase = True
+            if current_phase and disembark_phase:
+                same_phase = current_phase == disembark_phase
+            if same_phase and disembark_round > 0:
+                try:
+                    same_phase = int(getattr(self, "turn", 0) or 0) == disembark_round
+                except (TypeError, ValueError):
+                    same_phase = False
+            if same_phase and current_owner and disembark_owner:
+                same_phase = current_owner == disembark_owner
+            if same_phase:
+                return False
         # Fire and Fade: cannot embark until end of turn.
         try:
             sr = getattr(passenger, "special_rules", None)
@@ -13854,6 +13876,9 @@ class Game(
     ) -> dict | None:
         if charging_unit is None:
             return None
+        reset_followup = getattr(self, "_clear_pending_charge_followup", None)
+        if callable(reset_followup):
+            reset_followup(unit=charging_unit)
         valid_targets: list[Unit] = []
         seen: set[str] = set()
         registry = getattr(self, "entity_registry", None)

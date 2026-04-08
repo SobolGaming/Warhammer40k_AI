@@ -17841,6 +17841,41 @@ class KeywordsDetachmentsMixin:
                         reason_text = str(reason or "").strip()
                         if reason_text:
                             reroll_full_reasons.append(reason_text)
+            clear_secure_fn = getattr(
+                am_mgr,
+                "mechanised_assault_clear_and_secure_hit_reroll_mods",
+                None,
+            ) if am_mgr is not None else None
+            if callable(clear_secure_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                clear_secure_mods = clear_secure_fn(
+                    model,
+                    target,
+                    attack_type=attack_scope,
+                    game=game,
+                )
+                if isinstance(clear_secure_mods, dict):
+                    if bool(clear_secure_mods.get("reroll_full", False)):
+                        reroll_full = True
+                    for value in list(
+                        clear_secure_mods.get("reroll_values", clear_secure_mods.get("reroll_hit_values", ())) or ()
+                    ):
+                        try:
+                            reroll_values.add(int(value))
+                        except Exception:
+                            continue
+                    for reason in list(
+                        clear_secure_mods.get("reroll_reasons", clear_secure_mods.get("reroll_hit_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_reasons.append(reason_text)
+                    for reason in list(
+                        clear_secure_mods.get("reroll_full_reasons", clear_secure_mods.get("reroll_hit_full_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_full_reasons.append(reason_text)
             holy_rule = self.get_model_non_battleshocked_melee_hit_reroll_rule(model)
             if holy_rule is not None:
                 required_attack_type = str(holy_rule.get("attack_type", "any") or "any").strip().lower()
@@ -18223,6 +18258,42 @@ class KeywordsDetachmentsMixin:
                 army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             except Exception:
                 army = None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            clear_secure_fn = getattr(
+                am_mgr,
+                "mechanised_assault_clear_and_secure_wound_reroll_mods",
+                None,
+            ) if am_mgr is not None else None
+            if callable(clear_secure_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                clear_secure_mods = clear_secure_fn(
+                    model,
+                    target,
+                    attack_type=str(attack_type or "any"),
+                    game=game,
+                )
+                if isinstance(clear_secure_mods, dict):
+                    if bool(clear_secure_mods.get("reroll_full", clear_secure_mods.get("reroll_wound_full", False))):
+                        reroll_full = True
+                    for value in list(
+                        clear_secure_mods.get("reroll_values", clear_secure_mods.get("reroll_wound_values", ())) or ()
+                    ):
+                        try:
+                            reroll_values.add(int(value))
+                        except Exception:
+                            continue
+                    for reason in list(
+                        clear_secure_mods.get("reroll_reasons", clear_secure_mods.get("reroll_wound_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_reasons.append(reason_text)
+                    for reason in list(
+                        clear_secure_mods.get("reroll_full_reasons", clear_secure_mods.get("reroll_wound_full_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_full_reasons.append(reason_text)
             csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
             reroll_fn = (
                 getattr(csm_mgr, "creations_of_bile_specimens_for_the_spider_reroll_wound_applies", None)

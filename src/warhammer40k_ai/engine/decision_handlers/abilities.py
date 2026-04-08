@@ -23737,6 +23737,21 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     out_of_turn=bool(ctx.get("out_of_turn", False)),
                     count_as_charged=bool(ctx.get("count_as_charged", True)),
                 )
+        if ability == "mechanised_hasty_extraction":
+            charging_unit = resolve_unit(game, ctx.get("charging_unit_id"))
+            original_target_unit_ids = [
+                str(value or "")
+                for value in list(ctx.get("target_unit_ids", []) or [])
+                if str(value or "")
+            ]
+            continue_fn = getattr(game, "continue_charge_after_emergency_combat_embarkation", None)
+            if callable(continue_fn) and charging_unit is not None:
+                return continue_fn(
+                    charging_unit,
+                    original_target_unit_ids,
+                    out_of_turn=bool(ctx.get("out_of_turn", False)),
+                    count_as_charged=bool(ctx.get("count_as_charged", True)),
+                )
         if ability == "master_of_shadows":
             payload = _option_payload(request, result)
             source_unit = resolve_unit(
@@ -27072,6 +27087,74 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
             return outcome
+    if str(ctx.get("ability", "") or "") == "mechanised_hasty_extraction":
+        charging_unit = resolve_unit(game, ctx.get("charging_unit_id"))
+        original_target_unit_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
+        out_of_turn = bool(ctx.get("out_of_turn", False))
+        ability_name = str(ctx.get("ability_name", "") or "Hasty Extraction").strip() or "Hasty Extraction"
+        transport = resolve_unit(game, payload.get("transport_id") or ctx.get("transport_id"))
+        passenger = chosen if chosen is not None else resolve_unit(game, payload.get("target_unit_id"))
+        if charging_unit is not None:
+            try:
+                player = getattr(getattr(charging_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+        else:
+            player = None
+        spec = dict(payload.get("spec", {}) or ctx.get("spec", {}) or {})
+        if "source" not in spec:
+            spec["source"] = ability_name
+        resolve_fn = getattr(game, "resolve_end_of_fight_embark", None)
+        continue_fn = getattr(game, "continue_charge_after_emergency_combat_embarkation", None)
+        embarked = False
+        if callable(resolve_fn) and transport is not None and passenger is not None:
+            embarked = bool(resolve_fn(transport, passenger, spec))
+        remaining_target_unit_ids = list(original_target_unit_ids)
+        passenger_id = str(get_entity_id(passenger) or "") if passenger is not None else ""
+        if embarked and passenger_id:
+            remaining_target_unit_ids = [
+                target_id
+                for target_id in list(original_target_unit_ids)
+                if str(target_id or "") and str(target_id or "") != passenger_id
+            ]
+        outcome = None
+        if callable(continue_fn) and charging_unit is not None:
+            outcome = continue_fn(
+                charging_unit,
+                remaining_target_unit_ids,
+                out_of_turn=out_of_turn,
+                count_as_charged=bool(ctx.get("count_as_charged", True)),
+            )
+        try:
+            pname = str(getattr(passenger, "name", "Unit") or "Unit")
+            tname = str(getattr(transport, "name", "Transport") or "Transport")
+            if embarked:
+                _log_action_for_players(game, player, f"{ability_name}: {pname} embarked in {tname}.")
+            else:
+                _log_action_for_players(game, player, f"{ability_name}: {pname} did not embark; the charge continues.")
+        except Exception:
+            pass
+        return outcome
+    if str(ctx.get("ability", "") or "") == "mechanised_turn_end_embark":
+        transport = resolve_unit(game, payload.get("transport_id") or ctx.get("transport_id") or ctx.get("unit_id"))
+        if transport is not None and chosen is not None:
+            spec = dict(payload.get("spec", {}) or ctx.get("spec", {}) or {})
+            if "source" not in spec:
+                spec["source"] = str(ctx.get("ability_name", "") or "Move Out").strip()
+            resolve_fn = getattr(game, "resolve_end_of_fight_embark", None)
+            if callable(resolve_fn):
+                resolve_fn(transport, chosen, spec)
+            try:
+                player = getattr(getattr(transport, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(transport, "name", "Transport") or "Transport")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                ability_name = str(ctx.get("ability_name", "") or "Move Out").strip()
+                _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "end_of_fight_embark":
         transport = resolve_unit(game, ctx.get("transport_id") or ctx.get("unit_id"))
         if transport is not None and chosen is not None:

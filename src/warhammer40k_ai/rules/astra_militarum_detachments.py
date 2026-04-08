@@ -930,7 +930,39 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not bool(getattr(round_state, "disembarked_this_round", False)):
             return False
         transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
-        return bool(transport_id)
+        if not transport_id:
+            return False
+        game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if game_obj is None:
+            return True
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return True
+        try:
+            disembark_round = int(sr.get("voice_of_command_disembark_round", 0) or 0)
+        except (TypeError, ValueError):
+            disembark_round = 0
+        if disembark_round > 0:
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round > 0 and current_round != disembark_round:
+                return False
+        current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "").strip()
+        disembark_owner = str(sr.get("voice_of_command_disembark_owner", "") or "").strip()
+        if current_owner and disembark_owner and current_owner != disembark_owner:
+            return False
+        return True
+
+    def _unit_within_any_objective_range(self, unit, *, game_map=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "is_within_any_objective_range", None)
+        if not callable(checker):
+            return False
+        return bool(checker(game_map=game_map))
 
     def _unit_is_astra_militarum_infantry_model(self, unit, model) -> bool:
         root = self._unit_root(unit)
@@ -2542,6 +2574,106 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         return {
             "reroll_full": True,
             "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
+        }
+
+    def mechanised_assault_clear_and_secure_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> dict:
+        if not self.is_mechanised_assault():
+            return {}
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("mechanised_clear_and_secure_active", False)):
+            return {}
+        exp_phase = str(sr.get("mechanised_clear_and_secure_expires_phase", "") or "").strip().upper()
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if exp_phase and current_phase and exp_phase != current_phase:
+            return {}
+        try:
+            effect_turn = int(sr.get("mechanised_clear_and_secure_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if effect_turn > 0:
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn > 0 and current_turn != effect_turn:
+                return {}
+        owner_id = str(sr.get("mechanised_clear_and_secure_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "").strip() if game_obj is not None else ""
+        if owner_id and current_owner and owner_id != current_owner:
+            return {}
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if target_unit is None or not self._unit_within_any_objective_range(target_unit, game_map=game_map):
+            return {}
+        source = str(sr.get("mechanised_clear_and_secure_source", "") or "Clear and Secure").strip() or "Clear and Secure"
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Hit roll vs targets within objective range",),
+        }
+
+    def mechanised_assault_clear_and_secure_wound_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+    ) -> dict:
+        if not self.is_mechanised_assault():
+            return {}
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("mechanised_clear_and_secure_active", False)):
+            return {}
+        exp_phase = str(sr.get("mechanised_clear_and_secure_expires_phase", "") or "").strip().upper()
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if exp_phase and current_phase and exp_phase != current_phase:
+            return {}
+        try:
+            effect_turn = int(sr.get("mechanised_clear_and_secure_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if effect_turn > 0:
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn > 0 and current_turn != effect_turn:
+                return {}
+        owner_id = str(sr.get("mechanised_clear_and_secure_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "").strip() if game_obj is not None else ""
+        if owner_id and current_owner and owner_id != current_owner:
+            return {}
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if target_unit is None or not self._unit_within_any_objective_range(target_unit, game_map=game_map):
+            return {}
+        source = str(sr.get("mechanised_clear_and_secure_source", "") or "Clear and Secure").strip() or "Clear and Secure"
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Wound roll vs targets within objective range",),
         }
 
     def _apply_tripwires_stunned(

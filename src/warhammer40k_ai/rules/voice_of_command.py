@@ -258,6 +258,60 @@ class VoiceOfCommandManager:
             return None
         return transport
 
+    def _mechanised_vox_relay_transport(
+        self,
+        officer_unit,
+        *,
+        phase_name: str = "",
+        battle_round: int = 0,
+        game=None,
+    ):
+        if officer_unit is None:
+            return None
+        transport = getattr(officer_unit, "embarked_in", None)
+        if transport is None:
+            return None
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("mechanised_vox_relay_active", False)):
+            return None
+        pname = str(phase_name or "").strip().upper()
+        game_obj = game
+        if game_obj is None:
+            try:
+                army = officer_unit.get_parent_army()
+            except Exception:
+                army = None
+            game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if not pname:
+            pname = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return None
+        exp_phase = str(sr.get("mechanised_vox_relay_expires_phase", "") or "").strip().upper()
+        if exp_phase and exp_phase != pname:
+            return None
+        if battle_round <= 0:
+            try:
+                battle_round = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except Exception:
+                battle_round = 0
+        try:
+            relay_round = int(sr.get("mechanised_vox_relay_turn", 0) or 0)
+        except Exception:
+            relay_round = 0
+        if relay_round > 0 and battle_round > 0 and relay_round != battle_round:
+            return None
+        owner_id = str(sr.get("mechanised_vox_relay_owner", "") or "").strip()
+        current_owner = str(getattr(getattr(game_obj, "get_current_player", lambda: None)(), "id", "") or "").strip() if game_obj is not None else ""
+        if owner_id and current_owner and owner_id != current_owner:
+            return None
+        relay_transport_id = str(sr.get("mechanised_vox_relay_transport_id", "") or "").strip()
+        transport_id = str(get_entity_id(transport) or "").strip()
+        if relay_transport_id and transport_id and relay_transport_id != transport_id:
+            return None
+        if not self._unit_is_available(transport):
+            return None
+        return transport
+
     def _unit_is_battleshocked(self, unit) -> bool:
         try:
             if hasattr(unit, "is_battle_shocked") and callable(unit.is_battle_shocked):
@@ -1635,7 +1689,13 @@ class VoiceOfCommandManager:
                 battle_round=battle_round,
                 game=game,
             )
-            if not self._unit_is_available(unit) and mobile_command_transport is None:
+            vox_relay_transport = self._mechanised_vox_relay_transport(
+                unit,
+                phase_name=phase_name,
+                battle_round=battle_round,
+                game=game,
+            )
+            if not self._unit_is_available(unit) and mobile_command_transport is None and vox_relay_transport is None:
                 continue
             if self._unit_is_battleshocked(unit):
                 continue
@@ -1661,11 +1721,17 @@ class VoiceOfCommandManager:
             battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
         except Exception:
             battle_round = 0
-        order_anchor = self._mobile_command_vehicle_transport(
+        mobile_command_transport = self._mobile_command_vehicle_transport(
             officer_unit,
             battle_round=battle_round,
             game=game,
         )
+        vox_relay_transport = self._mechanised_vox_relay_transport(
+            officer_unit,
+            battle_round=battle_round,
+            game=game,
+        )
+        order_anchor = mobile_command_transport or vox_relay_transport
         if order_anchor is None and not self._unit_is_available(officer_unit):
             return []
 
@@ -1727,18 +1793,25 @@ class VoiceOfCommandManager:
                 continue
             if self._unit_is_battleshocked(root):
                 continue
+            vox_relay_transport_target = bool(
+                vox_relay_transport is not None
+                and self._unit_is_astra_militarum(root)
+                and self._target_has_keyword(root, "TRANSPORT")
+                and not self._target_has_keyword(root, "TITANIC")
+            )
             if keywords:
                 try:
-                    if not any(root.has_any_keyword(k) for k in keywords):
+                    if not any(root.has_any_keyword(k) for k in keywords) and not vox_relay_transport_target:
                         continue
                 except Exception:
                     continue
-            try:
-                dist = float(game_map.get_distance_between_units(order_anchor or officer_unit, root))
-            except Exception:
-                dist = 999.0
-            if dist > float(max_range):
-                continue
+            if not vox_relay_transport_target:
+                try:
+                    dist = float(game_map.get_distance_between_units(order_anchor or officer_unit, root))
+                except Exception:
+                    dist = 999.0
+                if dist > float(max_range):
+                    continue
             out.append(root)
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         if pending_bombast:
@@ -1947,12 +2020,19 @@ class VoiceOfCommandManager:
             battle_round = int(getattr(game, "turn", 0) or 0)
         except Exception:
             battle_round = 0
-        order_anchor = self._mobile_command_vehicle_transport(
+        mobile_command_transport = self._mobile_command_vehicle_transport(
             officer_unit,
             phase_name=phase_name,
             battle_round=battle_round,
             game=game,
         )
+        vox_relay_transport = self._mechanised_vox_relay_transport(
+            officer_unit,
+            phase_name=phase_name,
+            battle_round=battle_round,
+            game=game,
+        )
+        order_anchor = mobile_command_transport or vox_relay_transport
         if not self._unit_is_available(officer_unit) and order_anchor is None:
             return False
         if self._unit_is_battleshocked(officer_unit):
@@ -2065,8 +2145,8 @@ class VoiceOfCommandManager:
                 target_order_keys = retained_keys[-(max_orders - 1) :] + [order_key]
 
         self._set_orders_on_unit_and_attached(target_unit, target_order_keys, owner_id, source_id)
-        if order_anchor is not None:
-            self._mark_mobile_command_vehicle_selected_officer(order_anchor, battle_round, officer_unit)
+        if mobile_command_transport is not None:
+            self._mark_mobile_command_vehicle_selected_officer(mobile_command_transport, battle_round, officer_unit)
         additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
         if additional_order_key and additional_order_key not in target_order_keys:
             self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)

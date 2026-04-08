@@ -4704,6 +4704,12 @@ class ShootingMixin:
                 if pname:
                     sr["voice_of_command_disembark_phase"] = pname
                     sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+                    current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                    owner_id = str(getattr(current_player, "id", "") or "").strip()
+                    if owner_id:
+                        sr["voice_of_command_disembark_owner"] = owner_id
+                    else:
+                        sr.pop("voice_of_command_disembark_owner", None)
                 self.special_rules = sr
                 self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
@@ -4779,6 +4785,12 @@ class ShootingMixin:
         if pname:
             sr["voice_of_command_disembark_phase"] = pname
             sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+            current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            owner_id = str(getattr(current_player, "id", "") or "").strip()
+            if owner_id:
+                sr["voice_of_command_disembark_owner"] = owner_id
+            else:
+                sr.pop("voice_of_command_disembark_owner", None)
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
@@ -5072,6 +5084,12 @@ class ShootingMixin:
         if pname:
             sr["voice_of_command_disembark_phase"] = pname
             sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+            current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            owner_id = str(getattr(current_player, "id", "") or "").strip()
+            if owner_id:
+                sr["voice_of_command_disembark_owner"] = owner_id
+            else:
+                sr.pop("voice_of_command_disembark_owner", None)
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
