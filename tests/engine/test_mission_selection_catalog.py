@@ -6,6 +6,7 @@ from warhammer40k_ai.engine.mission_selection import (
     DEFAULT_MISSION_PACK_ID,
     build_mission_selection_catalog,
     default_mission_selection,
+    get_mission_pack,
     iter_random_mission_options,
     selected_mission_info_from_choice,
 )
@@ -47,22 +48,42 @@ def test_catalog_without_force_dispositions_only_exposes_chapter_approved_pack()
 
 
 def test_catalog_with_force_dispositions_adds_preview_pack_options() -> None:
-    catalog = build_mission_selection_catalog(_build_game(player_a_force="Assault", player_b_force="Bulwark"))
+    catalog = build_mission_selection_catalog(
+        _build_game(player_a_force="Take and Hold", player_b_force="Priority Assets")
+    )
 
     preview_entries = [entry for entry in catalog if entry["pack_id"] == "provisional_11e_preview"]
     default_entries = [entry for entry in catalog if entry["pack_id"] == DEFAULT_MISSION_PACK_ID]
 
     assert default_entries
     assert len(preview_entries) == 1
-    assert preview_entries[0]["id"] == "P11-AB-1"
-    assert preview_entries[0]["force_disposition_pair_key"] == "assault__bulwark"
+    assert preview_entries[0]["id"] == "P11-TH-PA"
+    assert preview_entries[0]["force_disposition_pair_key"] == "take_and_hold__priority_assets"
     assert preview_entries[0]["twist_is_stubbed"] is True
     assert preview_entries[0]["random_selection_enabled"] is False
     assert preview_entries[0]["secondary_rule_set_id"] == "provisional_11e_preview"
+    assert preview_entries[0]["layouts"] == [3, 5, 8]
+    assert preview_entries[0]["metadata"]["preview_visibility_semantics_enabled"] is True
+    assert preview_entries[0]["metadata"]["preview_layout_recommendation_source"] == "mission_pairing"
+
+
+def test_preview_pack_exposes_five_force_dispositions() -> None:
+    pack = get_mission_pack("provisional_11e_preview")
+
+    assert [entry.display_name for entry in pack.force_dispositions] == [
+        "Take and Hold",
+        "Purge the Foe",
+        "Disruption",
+        "Reconnaissance",
+        "Priority Assets",
+    ]
+    assert len(pack.pairings) == 25
 
 
 def test_random_mission_options_stay_on_chapter_approved_pack() -> None:
-    random_options = iter_random_mission_options(_build_game(player_a_force="Assault", player_b_force="Bulwark"))
+    random_options = iter_random_mission_options(
+        _build_game(player_a_force="Take and Hold", player_b_force="Priority Assets")
+    )
 
     assert len(random_options) == 20
     assert {entry["pack_id"] for entry in random_options} == {DEFAULT_MISSION_PACK_ID}
@@ -70,7 +91,9 @@ def test_random_mission_options_stay_on_chapter_approved_pack() -> None:
 
 
 def test_selected_mission_info_roundtrips_into_deployment_validation() -> None:
-    catalog = build_mission_selection_catalog(_build_game(player_a_force="Siege", player_b_force="Bulwark"))
+    catalog = build_mission_selection_catalog(
+        _build_game(player_a_force="Disruption", player_b_force="Reconnaissance")
+    )
     preview_entry = next(entry for entry in catalog if entry["pack_id"] == "provisional_11e_preview")
     selected = selected_mission_info_from_choice(preview_entry, layout=preview_entry["layouts"][0])
 
@@ -78,3 +101,18 @@ def test_selected_mission_info_roundtrips_into_deployment_validation() -> None:
 
     assert deployment_definition.deployment_definition_id == preview_entry["deployment_definition_id"]
     assert selected_layout == preview_entry["layouts"][0]
+    assert selected["metadata"]["preview_visibility_semantics_enabled"] is True
+
+
+def test_preview_battlefield_creation_authors_terrain_areas_and_enables_preview_visibility_gate() -> None:
+    game = _build_game(player_a_force="Take and Hold", player_b_force="Purge the Foe")
+    catalog = build_mission_selection_catalog(game)
+    preview_entry = next(entry for entry in catalog if entry["pack_id"] == "provisional_11e_preview")
+    game.selected_mission_info = selected_mission_info_from_choice(preview_entry, layout=preview_entry["layouts"][0])
+
+    game.execute_create_battlefield_phase()
+
+    assert game.map.preview_visibility_semantics_enabled is True
+    assert game.map.preview_visibility_ruleset == "preview_11e_terrain_apr_2026"
+    assert len(game.map.terrain_features) > 0
+    assert len(game.map.terrain_areas) > 0

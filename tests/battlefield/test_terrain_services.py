@@ -88,6 +88,8 @@ def test_authored_terrain_area_wins_over_feature_adapter_area() -> None:
 
 def test_visibility_context_blocks_hidden_target_beyond_detection_range() -> None:
     game_map, attacker, _attacker_unit, target_unit = _build_units((40.0, 12.0, 0.0), [(12.0, 12.0, 0.0)])
+    game_map.preview_visibility_semantics_enabled = True
+    game_map.preview_visibility_ruleset = "test_preview"
     target_unit.terrain_hidden_active = True
     target_unit.terrain_hidden_eligible = True
     hidden_area = TerrainArea(
@@ -109,6 +111,8 @@ def test_visibility_context_blocks_hidden_target_beyond_detection_range() -> Non
 
 def test_visibility_context_allows_detection_range_override_for_hidden_target() -> None:
     game_map, attacker, _attacker_unit, target_unit = _build_units((20.0, 12.0, 0.0), [(12.0, 12.0, 0.0)])
+    game_map.preview_visibility_semantics_enabled = True
+    game_map.preview_visibility_ruleset = "test_preview"
     target_unit.terrain_hidden_active = True
     target_unit.terrain_hidden_eligible = True
     hidden_area = TerrainArea(
@@ -129,6 +133,8 @@ def test_visibility_context_allows_detection_range_override_for_hidden_target() 
 
 def test_visibility_context_blocks_through_obscuring_area() -> None:
     game_map, attacker, _attacker_unit, target_unit = _build_units((8.0, 12.0, 0.0), [(28.0, 12.0, 0.0)])
+    game_map.preview_visibility_semantics_enabled = True
+    game_map.preview_visibility_ruleset = "test_preview"
     obscuring_area = TerrainArea(
         Polygon([(14.0, 8.0), (22.0, 8.0), (22.0, 16.0), (14.0, 16.0)]),
         area_id="terrain_area:obscuring",
@@ -141,6 +147,28 @@ def test_visibility_context_blocks_through_obscuring_area() -> None:
     assert context["visible"] is False
     assert context["obscuring_state"] is True
     assert context["reason_trace"][0]["code"] == "OBSCURING_AREA_BLOCKS_VISIBILITY"
+
+
+def test_visibility_context_leaves_preview_semantics_disabled_until_explicitly_enabled() -> None:
+    game_map, attacker, _attacker_unit, target_unit = _build_units((40.0, 12.0, 0.0), [(12.0, 12.0, 0.0)])
+    target_unit.terrain_hidden_active = True
+    target_unit.terrain_hidden_eligible = True
+    game_map.terrain_areas = [
+        TerrainArea(
+            Polygon([(8.0, 8.0), (16.0, 8.0), (16.0, 16.0), (8.0, 16.0)]),
+            area_id="terrain_area:hidden_disabled",
+            effect_tags=["HIDDEN_CAPABLE"],
+            detection_range=15.0,
+            obscuring=True,
+        )
+    ]
+
+    context = game_map.get_visibility_context_for_models(attacker, target_unit.models[0])
+
+    assert context["preview_visibility_semantics_enabled"] is False
+    assert context["hidden_state_active"] is False
+    assert context["hidden_blocked"] is False
+    assert context["obscuring_state"] is False
 
 
 def test_plunging_fire_context_reports_preview_height_query_separately_from_legacy_threshold() -> None:

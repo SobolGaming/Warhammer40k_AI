@@ -97,6 +97,11 @@ PR-013 also adds provisional visibility context queries:
 - terrain-area obscuring gating
 - deterministic visibility reason traces
 
+Those preview-only Hidden / detection / obscuring area semantics are now explicitly gated by
+`Map.preview_visibility_semantics_enabled`. Chapter Approved and other non-preview setups leave
+the gate off, while preview-pack battlefield creation can enable it through selected-mission
+metadata.
+
 ## Benefit of Cover and Plunging Fire
 - Benefit of Cover for RUINS and fortification-derived cover now route through
   `src/warhammer40k_ai/battlefield/terrain_cover.py`.
@@ -109,6 +114,8 @@ PR-013 also adds provisional visibility context queries:
 
 ## Files
 - `src/warhammer40k_ai/battlefield/map.py`
+- `src/warhammer40k_ai/battlefield/terrain_presets.py`
+- `src/warhammer40k_ai/battlefield/terrain_ruins_placement.py`
 - `src/warhammer40k_ai/battlefield/terrain_visibility.py`
 - `src/warhammer40k_ai/battlefield/terrain_cover.py`
 - `src/warhammer40k_ai/battlefield/terrain_elevation.py`

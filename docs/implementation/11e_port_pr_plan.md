@@ -226,7 +226,7 @@ shows what is done versus what remains.
 | PR-011 | Completed | Pushed to `dev` on April 6, 2026 as commit `a46574c4` (`Implement PR-011 detachment seam cleanup`). |
 | PR-012 | Completed | Implemented terrain-area runtime, serialization, and objective/layout identifier scaffolding on April 8, 2026. |
 | PR-013 | Completed | Implemented terrain visibility, cover, and elevation service scaffolding on April 8, 2026. |
-| PR-014 | Pending | Mission-authored terrain layouts, template shapes, and preview pack alignment. |
+| PR-014 | Completed | Implemented mission-authored terrain layout recipes, pairing-owned preview layout recommendations, explicit preview visibility gating, and terrain/module splits on April 8, 2026. |
 | PR-015 | Pending | Release-day exactness pass. |
 
 ## PR-001 — Repository scaffolding, architectural guardrails, and test reorganization
@@ -949,7 +949,7 @@ The current repo still has ruins-centric LOS and feature-centric cover logic con
 
 ## PR-014 — Mission-authored terrain layouts, template shapes, and preview pack alignment
 
-**Status:** Pending.
+**Status:** Completed on April 8, 2026.
 
 ### Goal
 Make terrain layouts pairing-authored mission data built from reusable terrain-area templates instead of ruin presets, and update the preview mission-pack scaffolding to the currently announced five Force Dispositions while staying explicitly provisional.

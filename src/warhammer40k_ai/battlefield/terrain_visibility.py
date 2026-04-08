@@ -341,6 +341,10 @@ def _target_areas_for_model(game_map: object, target_model: object) -> list[obje
     return areas
 
 
+def preview_visibility_semantics_enabled(game_map: object) -> bool:
+    return bool(getattr(game_map, "preview_visibility_semantics_enabled", False))
+
+
 def get_visibility_context_for_models(
     game_map: object,
     shooter_model: object,
@@ -349,6 +353,8 @@ def get_visibility_context_for_models(
     reason_trace: list[dict[str, Any]] = []
     result: dict[str, Any] = {
         "visible": False,
+        "preview_visibility_semantics_enabled": preview_visibility_semantics_enabled(game_map),
+        "preview_visibility_ruleset": str(getattr(game_map, "preview_visibility_ruleset", "") or ""),
         "hidden_state_active": False,
         "hidden_blocked": False,
         "hidden_detection_range": None,
@@ -364,60 +370,62 @@ def get_visibility_context_for_models(
         return result
 
     target_areas = _target_areas_for_model(game_map, target_model)
-    hidden_active, detection_range = _hidden_active(game_map, target_model, target_areas)
-    result["hidden_state_active"] = bool(hidden_active)
-    result["hidden_detection_range"] = detection_range
-    if hidden_active:
-        distance = _distance_between_models_2d(shooter_model, target_model)
-        _append_reason(
-            reason_trace,
-            "TARGET_HIDDEN_ACTIVE",
-            "Target is in a provisional Hidden state.",
-            metadata={"distance": distance, "detection_range": detection_range},
-        )
-        if detection_range is None or distance > float(detection_range):
-            result["hidden_blocked"] = True
+    if result["preview_visibility_semantics_enabled"]:
+        hidden_active, detection_range = _hidden_active(game_map, target_model, target_areas)
+        result["hidden_state_active"] = bool(hidden_active)
+        result["hidden_detection_range"] = detection_range
+        if hidden_active:
+            distance = _distance_between_models_2d(shooter_model, target_model)
             _append_reason(
                 reason_trace,
-                "HIDDEN_BLOCKED_BY_DETECTION_RANGE",
-                "Target remains hidden because the shooter is outside detection range.",
+                "TARGET_HIDDEN_ACTIVE",
+                "Target is in a provisional Hidden state.",
                 metadata={"distance": distance, "detection_range": detection_range},
             )
-            return result
-        result["detection_range_override_applies"] = True
-        _append_reason(
-            reason_trace,
-            "DETECTION_RANGE_OVERRIDE_APPLIES",
-            "Target is visible because the shooter is within detection range.",
-            metadata={"distance": distance, "detection_range": detection_range},
-        )
+            if detection_range is None or distance > float(detection_range):
+                result["hidden_blocked"] = True
+                _append_reason(
+                    reason_trace,
+                    "HIDDEN_BLOCKED_BY_DETECTION_RANGE",
+                    "Target remains hidden because the shooter is outside detection range.",
+                    metadata={"distance": distance, "detection_range": detection_range},
+                )
+                return result
+            result["detection_range_override_applies"] = True
+            _append_reason(
+                reason_trace,
+                "DETECTION_RANGE_OVERRIDE_APPLIES",
+                "Target is visible because the shooter is within detection range.",
+                metadata={"distance": distance, "detection_range": detection_range},
+            )
 
     shooter_center = shooter_shape.centroid
     target_center = target_shape.centroid
     line2d = LineString([(float(shooter_center.x), float(shooter_center.y)), (float(target_center.x), float(target_center.y))])
-    for area in iter_terrain_areas(game_map):
-        if not bool(getattr(area, "obscuring", False)):
-            continue
-        footprint = getattr(area, "footprint", None)
-        if footprint is None:
-            continue
-        try:
-            if not line2d.intersects(footprint):
+    if result["preview_visibility_semantics_enabled"]:
+        for area in iter_terrain_areas(game_map):
+            if not bool(getattr(area, "obscuring", False)):
                 continue
-            shooter_inside = bool(footprint.intersects(shooter_shape))
-            target_inside = bool(footprint.intersects(target_shape))
-        except GEOSException:
-            continue
-        if shooter_inside and target_inside:
-            continue
-        result["obscuring_state"] = True
-        _append_reason(
-            reason_trace,
-            "OBSCURING_AREA_BLOCKS_VISIBILITY",
-            "An obscuring terrain area blocks visibility between the models.",
-            metadata={"terrain_area_id": str(getattr(area, "id", "") or "")},
-        )
-        return result
+            footprint = getattr(area, "footprint", None)
+            if footprint is None:
+                continue
+            try:
+                if not line2d.intersects(footprint):
+                    continue
+                shooter_inside = bool(footprint.intersects(shooter_shape))
+                target_inside = bool(footprint.intersects(target_shape))
+            except GEOSException:
+                continue
+            if shooter_inside and target_inside:
+                continue
+            result["obscuring_state"] = True
+            _append_reason(
+                reason_trace,
+                "OBSCURING_AREA_BLOCKS_VISIBILITY",
+                "An obscuring terrain area blocks visibility between the models.",
+                metadata={"terrain_area_id": str(getattr(area, "id", "") or "")},
+            )
+            return result
 
     shooter_points = sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
     target_points = sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
@@ -463,6 +471,7 @@ __all__ = [
     "can_model_see_model",
     "get_visibility_context_for_models",
     "is_fully_visible_due_to_terrain",
+    "preview_visibility_semantics_enabled",
     "sample_model_points_3d",
     "segment_blocked_by_terrain_feature",
 ]

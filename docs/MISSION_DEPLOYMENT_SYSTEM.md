@@ -58,6 +58,9 @@ Current pack behavior:
 - `provisional_11e_preview`
   - optional preview-era pack
   - only appears when both armies expose matching force dispositions
+  - now uses the April 3, 2026 five-Force-Disposition catalog
+  - pairing-owned recommended terrain layouts override deployment-default layout lists
+  - carries explicit preview visibility activation metadata for terrain Hidden/Obscuring scaffolding
   - remains explicitly provisional and twist-stubbed
 
 ## Mission model
@@ -100,6 +103,11 @@ class (see `engine/missions.py`).
   - primary mission name
 - `deployment_flow.selected_deployment_plan` converts `selected_mission_info` into a validated
   deployment plan with mission-pack and secondary/twist metadata.
+- `battlefield/terrain_layouts.py` remains the stable façade for integer layout ids, but now
+  delegates to:
+  - `battlefield/terrain_area_templates.py`
+  - `battlefield/terrain_layout_recipes.py`
+  - `battlefield/terrain_feature_renderers.py`
 - `DeploymentManager.create_deployment_zones` returns compound zone dicts with
   `mission_zones` (polygon zones + cutouts).
 - `DeploymentManager.setup_mission_objectives` uses `create_objectives_from_mission` to add
@@ -128,4 +136,7 @@ class (see `engine/missions.py`).
 - `src/warhammer40k_ai/battlefield/control_queries.py`
 - `src/warhammer40k_ai/battlefield/map_geometry.py`
 - `src/warhammer40k_ai/battlefield/terrain_runtime.py`
+- `src/warhammer40k_ai/battlefield/terrain_area_templates.py`
+- `src/warhammer40k_ai/battlefield/terrain_layout_recipes.py`
+- `src/warhammer40k_ai/battlefield/terrain_feature_renderers.py`
 - `src/warhammer40k_ai/battlefield/terrain_layouts.py`

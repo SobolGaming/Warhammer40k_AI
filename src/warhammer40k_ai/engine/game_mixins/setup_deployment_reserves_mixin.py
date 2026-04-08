@@ -2942,9 +2942,17 @@ class GameSetupDeploymentReservesMixin:
         battlefield_width, battlefield_height = self.get_battlefield_size()
         logger.info(f"Map created: {battlefield_width}\" x {battlefield_height}\"")
         
-        # 2. Terrain features based on selected terrain layout
-        from ...battlefield.terrain_layouts import instantiate_layout
-        terrain_features = instantiate_layout(terrain_layout)
+        # 2. Terrain features and authored terrain areas based on selected terrain layout
+        from ...battlefield.terrain_layouts import instantiate_layout_runtime
+
+        terrain_layout_runtime = instantiate_layout_runtime(terrain_layout)
+        terrain_features = list(terrain_layout_runtime.features)
+        terrain_areas = list(terrain_layout_runtime.terrain_areas)
+        mission_metadata = dict(selected_mission_info.get("metadata", {}) or {})
+        self.map.preview_visibility_semantics_enabled = bool(
+            mission_metadata.get("preview_visibility_semantics_enabled", False)
+        )
+        self.map.preview_visibility_ruleset = str(mission_metadata.get("preview_visibility_ruleset", "") or "")
         if terrain_features:
             self.map.add_terrain_features(terrain_features)
             logger.info(f"Terrain layout {terrain_layout} placed: {len(terrain_features)} features")
@@ -2968,6 +2976,9 @@ class GameSetupDeploymentReservesMixin:
                             logger.info(f"      - Floor L{level} (elev {elev:.1f}\"): {fpairs}")
         else:
             logger.info(f"Terrain layout {terrain_layout} has no registered features")
+        if terrain_areas:
+            self.map.add_terrain_areas(terrain_areas)
+            logger.info(f"Terrain layout {terrain_layout} authored: {len(terrain_areas)} terrain areas")
         
         # 3. Set up mission-based deployment zones and objectives
         from ..deployment import DeploymentManager

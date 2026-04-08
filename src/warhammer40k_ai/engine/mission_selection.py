@@ -139,6 +139,7 @@ class MissionPairing:
     player_a_force_disposition: str
     player_b_force_disposition: str
     mission_definition_ids: tuple[str, ...]
+    recommended_layouts: tuple[int, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -154,6 +155,7 @@ class MissionPairing:
             _normalize_force_disposition(self.player_b_force_disposition) or "*",
         )
         object.__setattr__(self, "mission_definition_ids", _string_tuple(self.mission_definition_ids))
+        object.__setattr__(self, "recommended_layouts", _layouts(self.recommended_layouts))
         object.__setattr__(self, "metadata", dict(self.metadata or {}))
 
     def matches(self, player_a_force_disposition: str | None, player_b_force_disposition: str | None) -> bool:
@@ -244,6 +246,9 @@ class MissionPack:
                 deployment_definition = self.deployment_by_id(mission_definition.deployment_definition_id)
                 secondary_rule_set = self.secondary_rule_set_by_id(mission_definition.secondary_rule_set_id)
                 twist_definition = self.twist_by_id(mission_definition.twist_definition_id)
+                selection_metadata = dict(mission_definition.metadata or {})
+                selection_metadata.update(dict(pairing.metadata or {}))
+                layouts = pairing.recommended_layouts or mission_definition.allowed_layouts or deployment_definition.allowed_layouts
                 options.append(
                     {
                         "id": mission_definition.selection_id,
@@ -252,7 +257,7 @@ class MissionPack:
                         "mission_definition_id": mission_definition.mission_definition_id,
                         "deployment": deployment_definition.deployment_name,
                         "deployment_definition_id": deployment_definition.deployment_definition_id,
-                        "layouts": list(mission_definition.allowed_layouts or deployment_definition.allowed_layouts),
+                        "layouts": [int(value) for value in list(layouts or ())],
                         "pack_id": self.pack_id,
                         "pack_display_name": self.display_name,
                         "pack_short_name": self.short_name,
@@ -269,7 +274,7 @@ class MissionPack:
                         "twist_name": twist_definition.display_name,
                         "twist_is_stubbed": twist_definition.is_stubbed,
                         "provisional": bool(self.provisional or mission_definition.provisional or twist_definition.provisional),
-                        "metadata": dict(mission_definition.metadata or {}),
+                        "metadata": selection_metadata,
                     }
                 )
         return options
@@ -400,64 +405,94 @@ def _chapter_approved_missions() -> tuple[MissionDefinition, ...]:
     return tuple(definitions)
 
 
-def _provisional_preview_missions() -> tuple[MissionDefinition, ...]:
-    return (
-        MissionDefinition(
-            mission_definition_id="preview_assault_assault",
-            selection_id="P11-AA-1",
-            primary_mission_name="Purge the Foe",
-            deployment_definition_id="crucible_of_battle",
-            allowed_layouts=(1, 2, 3, 4, 6),
-            secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
-            twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
-            provisional=True,
-            metadata={"preview_note": "Placeholder assault mirror pairing."},
-        ),
-        MissionDefinition(
-            mission_definition_id="preview_assault_bulwark",
-            selection_id="P11-AB-1",
-            primary_mission_name="Take and Hold",
-            deployment_definition_id="tipping_point",
-            allowed_layouts=(1, 2, 4, 6, 7, 8),
-            secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
-            twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
-            provisional=True,
-            metadata={"preview_note": "Placeholder assault vs bulwark pairing."},
-        ),
-        MissionDefinition(
-            mission_definition_id="preview_bulwark_bulwark",
-            selection_id="P11-BB-1",
-            primary_mission_name="Linchpin",
-            deployment_definition_id="dawn_of_war",
-            allowed_layouts=(5,),
-            secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
-            twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
-            provisional=True,
-            metadata={"preview_note": "Placeholder bulwark mirror pairing."},
-        ),
-        MissionDefinition(
-            mission_definition_id="preview_siege_assault",
-            selection_id="P11-SA-1",
-            primary_mission_name="Scorched Earth",
-            deployment_definition_id="hammer_and_anvil",
-            allowed_layouts=(1, 7, 8),
-            secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
-            twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
-            provisional=True,
-            metadata={"preview_note": "Placeholder siege vs assault pairing."},
-        ),
-        MissionDefinition(
-            mission_definition_id="preview_siege_bulwark",
-            selection_id="P11-SB-1",
-            primary_mission_name="Terraform",
-            deployment_definition_id="sweeping_engagement",
-            allowed_layouts=(3, 5),
-            secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
-            twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
-            provisional=True,
-            metadata={"preview_note": "Placeholder siege vs bulwark pairing."},
-        ),
+_PREVIEW_FORCE_DISPOSITION_SPECS: tuple[tuple[str, str, str], ...] = (
+    ("take_and_hold", "Take and Hold", "Board-control focused force posture."),
+    ("purge_the_foe", "Purge the Foe", "Attritional force posture focused on destroying enemy units."),
+    ("disruption", "Disruption", "Pressure posture focused on actions and enemy-territory interference."),
+    ("reconnaissance", "Reconnaissance", "Mobility posture focused on scouting lanes and forward staging."),
+    ("priority_assets", "Priority Assets", "Posture focused on securing critical battlefield assets."),
+)
+
+_PREVIEW_FORCE_DISPOSITION_CODES = {
+    "take_and_hold": "TH",
+    "purge_the_foe": "PF",
+    "disruption": "DI",
+    "reconnaissance": "RE",
+    "priority_assets": "PA",
+}
+
+_PREVIEW_PAIRING_DEPLOYMENTS = (
+    "tipping_point",
+    "hammer_and_anvil",
+    "search_and_destroy",
+    "crucible_of_battle",
+    "sweeping_engagement",
+    "dawn_of_war",
+)
+
+_PREVIEW_RECOMMENDED_LAYOUTS_BY_DEPLOYMENT: dict[str, tuple[int, ...]] = {
+    "tipping_point": (1, 2, 6),
+    "hammer_and_anvil": (1, 7, 8),
+    "search_and_destroy": (1, 3, 4),
+    "crucible_of_battle": (2, 4, 6),
+    "sweeping_engagement": (3, 5, 8),
+    "dawn_of_war": (5, 7, 8),
+}
+
+
+def _preview_pairing_deployment(player_a_index: int, player_b_index: int) -> str:
+    rotation_index = (int(player_a_index) * 3 + int(player_b_index)) % len(_PREVIEW_PAIRING_DEPLOYMENTS)
+    return _PREVIEW_PAIRING_DEPLOYMENTS[rotation_index]
+
+
+def _preview_pairing_layouts(deployment_definition_id: str) -> tuple[int, ...]:
+    if deployment_definition_id not in _PREVIEW_RECOMMENDED_LAYOUTS_BY_DEPLOYMENT:
+        raise KeyError(f"Missing preview layout recommendations for deployment '{deployment_definition_id}'.")
+    return _PREVIEW_RECOMMENDED_LAYOUTS_BY_DEPLOYMENT[deployment_definition_id]
+
+
+def _preview_mission_definition(
+    player_a_spec: tuple[str, str, str],
+    player_b_spec: tuple[str, str, str],
+    *,
+    player_a_index: int,
+    player_b_index: int,
+) -> MissionDefinition:
+    player_a_id, player_a_name, _player_a_description = player_a_spec
+    player_b_id, player_b_name, _player_b_description = player_b_spec
+    deployment_definition_id = _preview_pairing_deployment(player_a_index, player_b_index)
+    code_a = _PREVIEW_FORCE_DISPOSITION_CODES[player_a_id]
+    code_b = _PREVIEW_FORCE_DISPOSITION_CODES[player_b_id]
+    return MissionDefinition(
+        mission_definition_id=f"preview_{player_a_id}_vs_{player_b_id}",
+        selection_id=f"P11-{code_a}-{code_b}",
+        primary_mission_name=f"{player_a_name} vs {player_b_name} Preview Mission",
+        deployment_definition_id=deployment_definition_id,
+        allowed_layouts=(),
+        secondary_rule_set_id=_PREVIEW_SECONDARY_RULES.secondary_rule_set_id,
+        twist_definition_id=_TWIST_PREVIEW_PLACEHOLDER.twist_definition_id,
+        provisional=True,
+        metadata={
+            "preview_note": "Provisional mission entry aligned to the April 2026 preview articles.",
+            "preview_force_disposition_primary": player_a_name,
+            "preview_force_disposition_opponent": player_b_name,
+        },
     )
+
+
+def _provisional_preview_missions() -> tuple[MissionDefinition, ...]:
+    definitions: list[MissionDefinition] = []
+    for player_a_index, player_a_spec in enumerate(_PREVIEW_FORCE_DISPOSITION_SPECS):
+        for player_b_index, player_b_spec in enumerate(_PREVIEW_FORCE_DISPOSITION_SPECS):
+            definitions.append(
+                _preview_mission_definition(
+                    player_a_spec,
+                    player_b_spec,
+                    player_a_index=player_a_index,
+                    player_b_index=player_b_index,
+                )
+            )
+    return tuple(definitions)
 
 
 _CHAPTER_APPROVED_MISSIONS = _chapter_approved_missions()
@@ -488,10 +523,9 @@ _CHAPTER_APPROVED_PACK = MissionPack(
     ),
 )
 
-_PREVIEW_FORCE_DISPOSITIONS: tuple[ForceDisposition, ...] = (
-    ForceDisposition("Assault", "Assault", description="Aggressive force posture.", provisional=True),
-    ForceDisposition("Bulwark", "Bulwark", description="Defensive force posture.", provisional=True),
-    ForceDisposition("Siege", "Siege", description="Attritional pressure posture.", provisional=True),
+_PREVIEW_FORCE_DISPOSITIONS: tuple[ForceDisposition, ...] = tuple(
+    ForceDisposition(disposition_id, display_name, description=description, provisional=True)
+    for disposition_id, display_name, description in _PREVIEW_FORCE_DISPOSITION_SPECS
 )
 
 _PREVIEW_PACK = MissionPack(
@@ -507,16 +541,25 @@ _PREVIEW_PACK = MissionPack(
     secondary_rule_sets=(_PREVIEW_SECONDARY_RULES,),
     force_dispositions=_PREVIEW_FORCE_DISPOSITIONS,
     mission_definitions=_PREVIEW_MISSIONS,
-    pairings=(
-        MissionPairing("preview_assault_assault", "assault", "assault", ("preview_assault_assault",)),
-        MissionPairing("preview_assault_bulwark", "assault", "bulwark", ("preview_assault_bulwark",)),
-        MissionPairing("preview_bulwark_assault", "bulwark", "assault", ("preview_assault_bulwark",)),
-        MissionPairing("preview_bulwark_bulwark", "bulwark", "bulwark", ("preview_bulwark_bulwark",)),
-        MissionPairing("preview_siege_assault", "siege", "assault", ("preview_siege_assault",)),
-        MissionPairing("preview_assault_siege", "assault", "siege", ("preview_siege_assault",)),
-        MissionPairing("preview_siege_bulwark", "siege", "bulwark", ("preview_siege_bulwark",)),
-        MissionPairing("preview_bulwark_siege", "bulwark", "siege", ("preview_siege_bulwark",)),
-        MissionPairing("preview_siege_siege", "siege", "siege", ("preview_siege_assault", "preview_siege_bulwark")),
+    pairings=tuple(
+        MissionPairing(
+            pairing_id=f"preview_{player_a_id}_vs_{player_b_id}",
+            player_a_force_disposition=player_a_id,
+            player_b_force_disposition=player_b_id,
+            mission_definition_ids=(f"preview_{player_a_id}_vs_{player_b_id}",),
+            recommended_layouts=_preview_pairing_layouts(_preview_pairing_deployment(player_a_index, player_b_index)),
+            metadata={
+                "preview_visibility_semantics_enabled": True,
+                "preview_visibility_ruleset": "preview_11e_terrain_apr_2026",
+                "preview_layout_recommendation_source": "mission_pairing",
+            },
+        )
+        for player_a_index, (player_a_id, _player_a_name, _player_a_description) in enumerate(
+            _PREVIEW_FORCE_DISPOSITION_SPECS
+        )
+        for player_b_index, (player_b_id, _player_b_name, _player_b_description) in enumerate(
+            _PREVIEW_FORCE_DISPOSITION_SPECS
+        )
     ),
 )
 
